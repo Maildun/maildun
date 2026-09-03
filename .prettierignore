@@ -1,0 +1,3 @@
+resources/js/components/ui/*
+resources/js/email-builder/**
+resources/views/mail/*

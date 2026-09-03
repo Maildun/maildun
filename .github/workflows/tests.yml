@@ -1,0 +1,133 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php:
+          - '8.4'
+          - '8.5'
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: redis
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Validate Composer Manifest
+        run: composer validate --no-interaction
+
+      - name: Audit PHP Dependencies
+        run: composer audit --locked --no-interaction
+
+      - name: Audit JavaScript Dependencies
+        run: pnpm audit --audit-level=high
+
+      - name: Setup Application
+        run: composer setup
+
+      - name: Run CI Checks
+        run: composer ci:check
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the runtime image
+        run: docker build --tag maildun:ci .
+
+      - name: Verify the extensions the application depends on
+        run: |
+          KEY="base64:$(head -c 32 /dev/urandom | base64)"
+          docker run --rm -e APP_KEY="$KEY" maildun:ci \
+            php -r '
+              $missing = array_values(array_diff(
+                  ["gd", "pcntl", "pdo_mysql", "pdo_pgsql", "pdo_sqlite", "posix", "redis"],
+                  array_map("strtolower", get_loaded_extensions())
+              ));
+              if ($missing) {
+                  fwrite(STDERR, "missing extensions: " . implode(", ", $missing) . PHP_EOL);
+                  exit(1);
+              }
+              if (! function_exists("imagewebp")) {
+                  fwrite(STDERR, "gd was built without WebP support" . PHP_EOL);
+                  exit(1);
+              }
+              echo "extensions ok" . PHP_EOL;
+            '
+
+      - name: Verify the image boots and serves the health endpoint
+        run: |
+          KEY="base64:$(head -c 32 /dev/urandom | base64)"
+          docker run -d --name maildun-ci -p 8080:8080 \
+            -e APP_KEY="$KEY" \
+            -e DB_CONNECTION=sqlite \
+            -e DB_DATABASE=:memory: \
+            -e CACHE_STORE=file \
+            -e SESSION_DRIVER=file \
+            -e QUEUE_CONNECTION=sync \
+            maildun:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/up > /dev/null 2>&1; then
+              echo "health endpoint responded after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "the container never served /up" >&2
+          docker logs maildun-ci
+          exit 1
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs maildun-ci || true

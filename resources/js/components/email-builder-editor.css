@@ -1,0 +1,41 @@
+.email-builder-js {
+    position: relative;
+    isolation: isolate;
+    container-type: inline-size;
+    overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: min(70vh, 52rem);
+    min-height: 40rem;
+}
+
+.email-builder-js[data-fill] {
+    flex: 1 1 0%;
+    min-height: 0;
+    height: auto;
+}
+
+.email-builder-js > .MuiStack-root {
+    height: 100%;
+    min-width: 0;
+}
+
+.email-builder-js .MuiDrawer-root,
+.email-builder-js .MuiDrawer-paper {
+    position: absolute !important;
+    top: 0;
+    height: 100% !important;
+}
+
+.email-builder-js .MuiDrawer-anchorRight,
+.email-builder-js .MuiDrawer-paperAnchorRight {
+    left: auto !important;
+    right: 0 !important;
+}
+
+@container (max-width: 43rem) {
+    .email-builder-js > .MuiStack-root {
+        margin-right: 0 !important;
+    }
+}

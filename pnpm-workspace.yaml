@@ -1,0 +1,12 @@
+packages:
+  - '.'
+
+# unrs-resolver (via eslint-import-resolver-typescript) only needs its build
+# script to compile a native binary on platforms it has no prebuilt binding for.
+# Every platform we build on resolves one from its optionalDependencies
+# (@unrs/resolver-binding-linux-x64-gnu on CI), so the script stays blocked.
+allowBuilds:
+  unrs-resolver: false
+
+publicHoistPattern:
+  - '@inertiajs/core'

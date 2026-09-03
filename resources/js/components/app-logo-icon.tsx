@@ -1,0 +1,96 @@
+import type { HTMLAttributes, SVGProps } from 'react';
+
+import { cn } from '@/lib/utils';
+
+type LogoMode = 'theme' | 'light' | 'dark';
+
+type AppLogoIconProps = Omit<SVGProps<SVGSVGElement>, 'children' | 'color'> & {
+    animate?: 'none' | 'pulse' | 'spin';
+    color?: string;
+    mode?: LogoMode;
+    title?: string;
+};
+
+type AppLogoWordmarkProps = Omit<HTMLAttributes<HTMLSpanElement>, 'color'> & {
+    animate?: AppLogoIconProps['animate'];
+    color?: string;
+    label?: string;
+    mode?: LogoMode;
+};
+
+const animationClassNames = {
+    none: undefined,
+    pulse: 'motion-safe:animate-pulse',
+    spin: 'motion-safe:animate-spin',
+} as const;
+
+const markColors = {
+    dark: '#ffffff',
+    light: '#212121',
+    theme: undefined,
+} as const;
+
+/**
+ * The Maildun mark rendered inline so its color can inherit from Tailwind's
+ * text color utilities or be set precisely with the `color` prop.
+ */
+export default function AppLogoIcon({
+    animate = 'none',
+    className,
+    color,
+    mode = 'theme',
+    title,
+    ...props
+}: AppLogoIconProps) {
+    const isDecorative =
+        title === undefined &&
+        props['aria-label'] === undefined &&
+        props['aria-labelledby'] === undefined;
+
+    return (
+        <svg
+            {...props}
+            viewBox="0 0 63.72 70.16"
+            fill="currentColor"
+            color={color ?? markColors[mode]}
+            role={props.role ?? (isDecorative ? undefined : 'img')}
+            aria-hidden={props['aria-hidden'] ?? isDecorative}
+            focusable="false"
+            className={cn(
+                'block shrink-0',
+                animationClassNames[animate],
+                className,
+            )}
+        >
+            {title && <title>{title}</title>}
+            <path d="M58.72,36.08c-.74-.57-.42-1.79.21-2.29,4.18-3.34,5.86-8.83,4.11-14-1.58-4.67-5.97-8.24-11.16-8.51-1.96-.1-3.77.33-5.58.98-.92.33-1.8-.26-1.93-1.21-.67-4.74-3.83-8.77-8.38-10.35-3.29-1.14-6.85-.88-9.92.7-1.54.79-2.77,1.89-3.89,3.2-1.48,1.72-2.4,3.9-2.74,6.15-.08.55-.2.98-.55,1.27-1.1.89-2.54-.53-5.61-.73-5.53-.36-10.57,3.1-12.45,8.09-2.02,5.37-.26,11.11,4.16,14.58.76.6.46,1.82-.16,2.31-5.61,4.4-6.42,12.47-1.9,17.96,3.57,4.34,9.48,5.8,14.69,3.65.77-.32,1.64.35,1.73,1.07.5,4.07,2.92,7.6,6.18,9.48,3.87,2.23,8.37,2.31,12.21.27,3.81-2.03,6.1-5.61,6.67-9.75.12-.85,1.08-1.35,1.87-1.03,4.92,2.01,10.48.73,14.06-3.14,5.12-5.55,4.33-14.14-1.61-18.7ZM46.38,46.9c-.13,1.17-.9,2.17-2.02,2.53-1.72.55-4.07-.67-5.62-1.48l-2.43-1.27c-.76-.4-1.54-.67-2.37-.88-.93-.24-1.88-.36-2.84-.24-1.04.14-2.02.47-2.98.89l-1.16.56-2.12,1.16c-.91.5-1.83.92-2.82,1.24-.47.15-.93.22-1.4.25-1.83.1-3.32-1.33-3.29-3.16,0-.52.07-1.02.22-1.54.2-.68.42-1.34.75-1.98l.94-1.82c.47-.9.92-1.78,1.29-2.73.61-1.59.87-2.99.48-4.67-.19-.83-.45-1.62-.82-2.39l-.54-1.12-1.14-2.18c-.43-.82-.77-1.66-1.03-2.55-.19-.66-.29-1.32-.23-2.01.13-1.56,1.33-2.73,2.87-2.84.41-.03.79,0,1.2.08.87.17,1.69.45,2.5.82l2.53,1.28c1.47.74,2.98,1.43,4.62,1.63.91.11,1.79.03,2.66-.22,1-.29,1.95-.66,2.87-1.14l2.16-1.14c.9-.47,1.78-.9,2.75-1.2,1.13-.35,2.37-.46,3.42.15,1.21.7,1.62,2.01,1.38,3.34-.26,1.42-1,2.88-1.71,4.14-.47.84-.92,1.65-1.32,2.53-.58,1.26-1.11,2.8-1.05,4.18.08,1.84.86,3.57,1.74,5.17l1.52,2.78c.57,1.05,1.12,2.63.99,3.82Z" />
+        </svg>
+    );
+}
+
+/**
+ * A compact wordmark built from the recolorable mark and product label.
+ */
+export function AppLogoWordmark({
+    animate,
+    className,
+    color,
+    label = 'Maildun',
+    mode = 'theme',
+    style,
+    ...props
+}: AppLogoWordmarkProps) {
+    return (
+        <span
+            {...props}
+            style={{ color: color ?? markColors[mode], ...style }}
+            className={cn(
+                'inline-flex items-center gap-1.5 text-sm font-semibold',
+                className,
+            )}
+        >
+            <AppLogoIcon animate={animate} className="h-[1.25em] w-auto" />
+            {label}
+        </span>
+    );
+}

@@ -1,0 +1,744 @@
+openapi: 3.1.0
+
+info:
+    title: Maildun API
+    version: 1.0.0
+    summary: Send transactional email, manage audience subscriptions, and trigger automations.
+    description: |
+        Maildun exposes a JSON API for server-to-server integrations.
+
+        The versioned `/v1` endpoints use a workspace API key. The automation trigger
+        endpoint uses the secret token belonging to that automation. API credentials
+        must be kept on a trusted server and must not be exposed in browser or mobile
+        application code.
+
+        This document describes the routes registered in `routes/api.php`. Maildun's
+        browser application, public subscription forms, signed confirmation and
+        unsubscribe links, OAuth authorization flow, and MCP transport are separate
+        protocols and are not part of this OpenAPI contract.
+
+servers:
+    - url: /api
+      description: The API on the current Maildun origin
+
+tags:
+    - name: Transactional email
+      description: Queue deliveries from published transactional email templates.
+    - name: Subscribers
+      description: Subscribe or unsubscribe an address in an audience.
+    - name: Automations
+      description: Start an active automation configured with the API trigger.
+
+paths:
+    /v1/transactional-emails/{transactionalEmail}/send:
+        post:
+            operationId: sendTransactionalEmail
+            tags:
+                - Transactional email
+            summary: Queue a transactional email
+            description: |
+                Queues a delivery using a published transactional email belonging to the
+                authenticated workspace. Values in `data` replace matching `{{ variable }}`
+                placeholders. Values rendered into HTML are escaped.
+
+                Supply an `Idempotency-Key` when a logical send may be retried. Repeating
+                an identical request with the same key returns the original delivery.
+                Reusing the key with a different template, recipient, or data returns
+                `409 Conflict`.
+            security:
+                - TeamApiKey: []
+            parameters:
+                - $ref: '#/components/parameters/TransactionalEmailSlug'
+                - $ref: '#/components/parameters/IdempotencyKey'
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SendTransactionalEmailRequest'
+                        examples:
+                            orderReceipt:
+                                summary: Send an order receipt
+                                value:
+                                    to: ada@example.com
+                                    data:
+                                        first_name: Ada
+                                        order_number: 1001
+            responses:
+                '202':
+                    description: The delivery was queued, or an earlier delivery was returned for an idempotent replay.
+                    headers:
+                        X-RateLimit-Limit:
+                            $ref: '#/components/headers/RateLimitLimit'
+                        X-RateLimit-Remaining:
+                            $ref: '#/components/headers/RateLimitRemaining'
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TransactionalEmailResponse'
+                            examples:
+                                queued:
+                                    value:
+                                        data:
+                                            id: e7a9a935-2651-4d97-a815-05de77825dbf
+                                            status: queued
+                                            transactional_email: order-receipt
+                                            to: ada@example.com
+                                            created_at: '2026-08-23T03:00:00.000000Z'
+                                        meta:
+                                            idempotent_replay: false
+                '401':
+                    $ref: '#/components/responses/Unauthenticated'
+                '404':
+                    description: The transactional email does not exist, is not published, or belongs to another workspace.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                '409':
+                    description: The Idempotency-Key was previously used with a different request.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                message: The Idempotency-Key has already been used with a different request.
+                '422':
+                    $ref: '#/components/responses/ValidationFailed'
+                '429':
+                    $ref: '#/components/responses/TooManyRequests'
+                '503':
+                    description: Email delivery is disconnected or the configured sender is not authorized.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            examples:
+                                disconnected:
+                                    value:
+                                        message: Email delivery is disconnected for this workspace.
+                                senderNotAuthorized:
+                                    value:
+                                        message: The From address for this email is not authorized for the connected email provider.
+
+    /v1/audiences/{audience}/subscribers:
+        parameters:
+            - $ref: '#/components/parameters/AudienceUuid'
+        post:
+            operationId: subscribeAudienceMember
+            tags:
+                - Subscribers
+            summary: Subscribe an address
+            description: |
+                Creates an audience membership, returns an existing subscribed membership,
+                or resubscribes an unsubscribed membership. The operation is idempotent for
+                an email address within an audience.
+
+                Custom attributes are defined per audience. Required attributes must be
+                supplied, unknown attribute keys are rejected when the audience has a
+                configured attribute schema, and null or empty-string values are not saved.
+
+                When double opt-in is enabled, Maildun queues the audience's confirmation
+                email. The response status is `subscribed`, but `subscribed_at` remains null
+                until the recipient confirms.
+            security:
+                - TeamApiKey: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SubscribeRequest'
+                        examples:
+                            checkoutConsent:
+                                summary: Subscribe a customer after checkout consent
+                                value:
+                                    email: ada@example.com
+                                    first_name: Ada
+                                    last_name: Lovelace
+                                    consent_text: Signed up during checkout
+                                    attributes:
+                                        company: Analytical Engines
+            responses:
+                '200':
+                    description: The address is subscribed or awaiting double opt-in confirmation.
+                    headers:
+                        X-RateLimit-Limit:
+                            $ref: '#/components/headers/RateLimitLimit'
+                        X-RateLimit-Remaining:
+                            $ref: '#/components/headers/RateLimitRemaining'
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SubscriberResponse'
+                            examples:
+                                subscribed:
+                                    value:
+                                        data:
+                                            id: ff55fd14-4b87-4923-b933-4912e14566f4
+                                            email: ada@example.com
+                                            first_name: Ada
+                                            last_name: Lovelace
+                                            status: subscribed
+                                            subscribed_at: '2026-08-23T03:00:00.000000Z'
+                                confirmationPending:
+                                    summary: Double opt-in confirmation is pending
+                                    value:
+                                        data:
+                                            id: ff55fd14-4b87-4923-b933-4912e14566f4
+                                            email: ada@example.com
+                                            first_name: Ada
+                                            last_name: Lovelace
+                                            status: subscribed
+                                            subscribed_at: null
+                '401':
+                    $ref: '#/components/responses/Unauthenticated'
+                '404':
+                    $ref: '#/components/responses/AudienceNotFound'
+                '422':
+                    $ref: '#/components/responses/ValidationFailed'
+                '429':
+                    $ref: '#/components/responses/TooManyRequests'
+
+        delete:
+            operationId: unsubscribeAudienceMember
+            tags:
+                - Subscribers
+            summary: Unsubscribe an address
+            description: |
+                Unsubscribes an address from the audience. The operation is deliberately
+                opaque and idempotent: an unknown address and an already unsubscribed
+                address both receive a successful response without disclosing prior
+                membership. Consequently, `id` and `unsubscribed_at` can be null.
+
+                Although this operation uses `DELETE`, its target email is supplied in a
+                JSON request body.
+            security:
+                - TeamApiKey: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UnsubscribeRequest'
+                        example:
+                            email: ada@example.com
+            responses:
+                '200':
+                    description: The opaque unsubscribe operation completed successfully.
+                    headers:
+                        X-RateLimit-Limit:
+                            $ref: '#/components/headers/RateLimitLimit'
+                        X-RateLimit-Remaining:
+                            $ref: '#/components/headers/RateLimitRemaining'
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UnsubscribeResponse'
+                            example:
+                                data:
+                                    id: ff55fd14-4b87-4923-b933-4912e14566f4
+                                    email: ada@example.com
+                                    status: unsubscribed
+                                    unsubscribed_at: '2026-08-23T03:05:00.000000Z'
+                '401':
+                    $ref: '#/components/responses/Unauthenticated'
+                '404':
+                    $ref: '#/components/responses/AudienceNotFound'
+                '422':
+                    $ref: '#/components/responses/ValidationFailed'
+                '429':
+                    $ref: '#/components/responses/TooManyRequests'
+
+    /automations/{automation}/trigger:
+        post:
+            operationId: triggerAutomation
+            tags:
+                - Automations
+            summary: Trigger an automation
+            description: |
+                Starts a run for an active automation configured with the API trigger.
+                The subscriber must already belong to the automation's workspace. When
+                the email belongs to more than one audience in that workspace, `audience`
+                is required to disambiguate the membership.
+
+                Authentication occurs before request validation. Send the automation's
+                secret in `X-Automation-Token` (preferred) or as a bearer token. A second
+                request is rejected while the subscriber has an open run for the same
+                automation.
+            security:
+                - AutomationHeaderToken: []
+                - AutomationBearerToken: []
+            parameters:
+                - $ref: '#/components/parameters/AutomationUuid'
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/TriggerAutomationRequest'
+                        examples:
+                            subscriberEvent:
+                                value:
+                                    email: ada@example.com
+                                    audience: a1946f2e-74a0-4c2e-9186-819b10ddd90f
+                                    data:
+                                        plan: pro
+                                        source: checkout
+            responses:
+                '202':
+                    description: The automation run was started.
+                    headers:
+                        X-RateLimit-Limit:
+                            $ref: '#/components/headers/RateLimitLimit'
+                        X-RateLimit-Remaining:
+                            $ref: '#/components/headers/RateLimitRemaining'
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AutomationTriggerResponse'
+                            example:
+                                run: db39d403-0375-495b-bf62-c2f79ad0c081
+                                status: pending
+                                automation: f9aef07f-0e7b-462d-8afd-b5caed677019
+                                subscriber: ff55fd14-4b87-4923-b933-4912e14566f4
+                '401':
+                    description: The automation token is missing or invalid.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                message: Invalid automation trigger token.
+                '404':
+                    description: The automation is unavailable, inactive, or not configured with the API trigger.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                '409':
+                    description: This subscriber already has an open run for the automation.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                message: This subscriber already has an open run for this automation.
+                '422':
+                    $ref: '#/components/responses/ValidationFailed'
+                '429':
+                    $ref: '#/components/responses/TooManyRequests'
+
+components:
+    securitySchemes:
+        TeamApiKey:
+            type: http
+            scheme: bearer
+            bearerFormat: maildun_live token
+            description: |
+                A workspace API key created under Settings → API. Keys begin with
+                `maildun_live_`, are displayed once, and scope every request to one workspace.
+        AutomationHeaderToken:
+            type: apiKey
+            in: header
+            name: X-Automation-Token
+            description: The secret token generated for the API-triggered automation.
+        AutomationBearerToken:
+            type: http
+            scheme: bearer
+            bearerFormat: automation token
+            description: An alternative way to send the automation's secret token.
+
+    parameters:
+        TransactionalEmailSlug:
+            name: transactionalEmail
+            in: path
+            required: true
+            description: The stable slug of a published transactional email in the authenticated workspace.
+            schema:
+                type: string
+                minLength: 1
+            example: order-receipt
+        AudienceUuid:
+            name: audience
+            in: path
+            required: true
+            description: The UUID of an audience in the authenticated workspace.
+            schema:
+                type: string
+                format: uuid
+            example: a1946f2e-74a0-4c2e-9186-819b10ddd90f
+        AutomationUuid:
+            name: automation
+            in: path
+            required: true
+            description: The UUID of an active automation configured with the API trigger.
+            schema:
+                type: string
+                format: uuid
+            example: f9aef07f-0e7b-462d-8afd-b5caed677019
+        IdempotencyKey:
+            name: Idempotency-Key
+            in: header
+            required: false
+            description: |
+                A caller-selected key for one logical transactional send. It is scoped to
+                the authenticated workspace and may contain at most 255 characters.
+            schema:
+                type: string
+                maxLength: 255
+            example: order-1001-receipt
+
+    headers:
+        RateLimitLimit:
+            description: Maximum requests allowed in the applicable rate-limit window.
+            schema:
+                type: integer
+                minimum: 0
+        RateLimitRemaining:
+            description: Requests remaining in the applicable rate-limit window.
+            schema:
+                type: integer
+                minimum: 0
+        RetryAfter:
+            description: Seconds until another request should be attempted.
+            schema:
+                type: integer
+                minimum: 0
+
+    responses:
+        Unauthenticated:
+            description: The workspace API key is missing, invalid, revoked, or belongs to a deleted workspace.
+            content:
+                application/json:
+                    schema:
+                        $ref: '#/components/schemas/Error'
+                    example:
+                        message: Unauthenticated.
+        AudienceNotFound:
+            description: The audience does not exist or belongs to another workspace.
+            content:
+                application/json:
+                    schema:
+                        $ref: '#/components/schemas/Error'
+        ValidationFailed:
+            description: The request body failed validation.
+            content:
+                application/json:
+                    schema:
+                        $ref: '#/components/schemas/ValidationError'
+                    example:
+                        message: The email field must be a valid email address.
+                        errors:
+                            email:
+                                - The email field must be a valid email address.
+        TooManyRequests:
+            description: The applicable authentication, IP, token, or API-key rate limit was exceeded.
+            headers:
+                Retry-After:
+                    $ref: '#/components/headers/RetryAfter'
+                X-RateLimit-Limit:
+                    $ref: '#/components/headers/RateLimitLimit'
+                X-RateLimit-Remaining:
+                    $ref: '#/components/headers/RateLimitRemaining'
+            content:
+                application/json:
+                    schema:
+                        $ref: '#/components/schemas/Error'
+                    example:
+                        message: Too Many Attempts.
+
+    schemas:
+        SendTransactionalEmailRequest:
+            type: object
+            additionalProperties: false
+            required:
+                - to
+            properties:
+                to:
+                    type: string
+                    format: email
+                    maxLength: 255
+                    description: Recipient address. Maildun trims and lowercases it.
+                    example: ada@example.com
+                data:
+                    type: object
+                    maxProperties: 100
+                    description: |
+                        Template variables. Names may contain letters, numbers, and underscores,
+                        may not start with a number, and values must be scalar or null.
+                    propertyNames:
+                        pattern: '^[a-zA-Z_][a-zA-Z0-9_]*$'
+                    additionalProperties:
+                        type:
+                            - string
+                            - number
+                            - boolean
+                            - 'null'
+
+        TransactionalEmailResponse:
+            type: object
+            additionalProperties: false
+            required:
+                - data
+                - meta
+            properties:
+                data:
+                    $ref: '#/components/schemas/TransactionalEmailDelivery'
+                meta:
+                    type: object
+                    additionalProperties: false
+                    required:
+                        - idempotent_replay
+                    properties:
+                        idempotent_replay:
+                            type: boolean
+                            description: True when Maildun returned the original delivery for a repeated Idempotency-Key.
+
+        TransactionalEmailDelivery:
+            type: object
+            additionalProperties: false
+            required:
+                - id
+                - status
+                - transactional_email
+                - to
+                - created_at
+            properties:
+                id:
+                    type: string
+                    format: uuid
+                status:
+                    $ref: '#/components/schemas/EmailDeliveryStatus'
+                transactional_email:
+                    type: string
+                    description: The transactional email slug.
+                to:
+                    type: string
+                    format: email
+                created_at:
+                    type:
+                        - string
+                        - 'null'
+                    format: date-time
+
+        EmailDeliveryStatus:
+            type: string
+            enum:
+                - queued
+                - sending
+                - sent
+                - delivered
+                - delayed
+                - bounced
+                - complained
+                - rejected
+                - failed
+
+        SubscribeRequest:
+            type: object
+            additionalProperties: false
+            required:
+                - email
+            properties:
+                email:
+                    type: string
+                    format: email
+                    maxLength: 255
+                    description: Subscriber address. Maildun trims and lowercases it.
+                first_name:
+                    type:
+                        - string
+                        - 'null'
+                    maxLength: 255
+                last_name:
+                    type:
+                        - string
+                        - 'null'
+                    maxLength: 255
+                consent_text:
+                    type:
+                        - string
+                        - 'null'
+                    maxLength: 1000
+                    description: Defaults to `Marketing consent confirmed via API.` when omitted.
+                attributes:
+                    type:
+                        - object
+                        - 'null'
+                    description: |
+                        Audience-specific values keyed by the configured attribute key. Text
+                        values are limited to 255 characters; number attributes must be numeric;
+                        and date attributes must be valid dates. Required keys vary by audience.
+                    additionalProperties:
+                        type:
+                            - string
+                            - number
+                            - 'null'
+
+        SubscriberResponse:
+            type: object
+            additionalProperties: false
+            required:
+                - data
+            properties:
+                data:
+                    $ref: '#/components/schemas/Subscriber'
+
+        Subscriber:
+            type: object
+            additionalProperties: false
+            required:
+                - id
+                - email
+                - first_name
+                - last_name
+                - status
+                - subscribed_at
+            properties:
+                id:
+                    type: string
+                    format: uuid
+                email:
+                    type: string
+                    format: email
+                first_name:
+                    type:
+                        - string
+                        - 'null'
+                last_name:
+                    type:
+                        - string
+                        - 'null'
+                status:
+                    type: string
+                    const: subscribed
+                subscribed_at:
+                    type:
+                        - string
+                        - 'null'
+                    format: date-time
+                    description: Null while double opt-in confirmation is pending.
+
+        UnsubscribeRequest:
+            type: object
+            additionalProperties: false
+            required:
+                - email
+            properties:
+                email:
+                    type: string
+                    format: email
+                    maxLength: 255
+                    description: Subscriber address. Maildun trims and lowercases it.
+
+        UnsubscribeResponse:
+            type: object
+            additionalProperties: false
+            required:
+                - data
+            properties:
+                data:
+                    type: object
+                    additionalProperties: false
+                    required:
+                        - id
+                        - email
+                        - status
+                        - unsubscribed_at
+                    properties:
+                        id:
+                            type:
+                                - string
+                                - 'null'
+                            format: uuid
+                            description: Null when no matching membership exists.
+                        email:
+                            type: string
+                            format: email
+                        status:
+                            type: string
+                            const: unsubscribed
+                        unsubscribed_at:
+                            type:
+                                - string
+                                - 'null'
+                            format: date-time
+
+        TriggerAutomationRequest:
+            type: object
+            additionalProperties: false
+            required:
+                - email
+            properties:
+                email:
+                    type: string
+                    format: email
+                    maxLength: 255
+                    description: Existing subscriber address. Maildun trims and lowercases it.
+                audience:
+                    type:
+                        - string
+                        - 'null'
+                    format: uuid
+                    description: Required when this email belongs to multiple audiences in the workspace.
+                data:
+                    type:
+                        - object
+                        - 'null'
+                    description: Arbitrary trigger context available to later automation steps.
+                    additionalProperties: true
+
+        AutomationTriggerResponse:
+            type: object
+            additionalProperties: false
+            required:
+                - run
+                - status
+                - automation
+                - subscriber
+            properties:
+                run:
+                    type: string
+                    format: uuid
+                status:
+                    $ref: '#/components/schemas/AutomationRunStatus'
+                automation:
+                    type: string
+                    format: uuid
+                subscriber:
+                    type: string
+                    format: uuid
+
+        AutomationRunStatus:
+            type: string
+            enum:
+                - pending
+                - running
+                - waiting
+                - completed
+                - failed
+                - cancelled
+
+        Error:
+            type: object
+            required:
+                - message
+            properties:
+                message:
+                    type: string
+            additionalProperties: true
+
+        ValidationError:
+            allOf:
+                - $ref: '#/components/schemas/Error'
+                - type: object
+                  required:
+                      - errors
+                  properties:
+                      errors:
+                          type: object
+                          additionalProperties:
+                              type: array
+                              items:
+                                  type: string
