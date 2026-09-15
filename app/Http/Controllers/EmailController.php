@@ -330,11 +330,10 @@ class EmailController extends Controller
         $canManage = Gate::allows('create', [Media::class, $team]);
 
         return [
-            'items' => $media
+            'items' => array_values($media
                 ->take(60)
                 ->map(fn (Media $item): array => $item->toInertia())
-                ->values()
-                ->all(),
+                ->all()),
             'canManage' => $canManage,
             'canUpload' => $canManage,
             'atLimit' => false,

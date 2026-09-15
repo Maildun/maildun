@@ -23,7 +23,8 @@ class AutomationEmailDeliveryFactory extends Factory
         return [
             'team_id' => fn (array $attributes): int => AutomationRun::query()
                 ->with('automation:id,team_id')
-                ->findOrFail($attributes['automation_run_id'])
+                ->whereKey($attributes['automation_run_id'])
+                ->sole()
                 ->automation
                 ->team_id,
             'automation_run_id' => AutomationRun::factory(),

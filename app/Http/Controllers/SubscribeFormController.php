@@ -128,7 +128,7 @@ class SubscribeFormController extends Controller
             $subscribeForm->fill($request->formAttributes());
 
             if ($request->boolean('publish')) {
-                $subscribeForm->published_at = now();
+                $subscribeForm->fill(['published_at' => now()]);
             }
 
             if ($request->hasFile('image')) {

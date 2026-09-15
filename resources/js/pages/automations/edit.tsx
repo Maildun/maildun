@@ -199,10 +199,7 @@ function visualTestOrder(
         }
     };
 
-    if (
-        trigger !== undefined &&
-        (outgoing.get(trigger.id) ?? []).length > 0
-    ) {
+    if (trigger !== undefined && (outgoing.get(trigger.id) ?? []).length > 0) {
         visit(trigger.id);
     }
 
