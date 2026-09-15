@@ -1,3 +1,39 @@
+/*
+ * OriginKit "hero-26" dot-matrix component — https://www.originkit.dev
+ *
+ * This file is NOT covered by Maildun's AGPL-3.0 license. It is included under
+ * OriginKit's Licensing & Usage terms (https://www.originkit.dev/docs/licensing),
+ * which allow the component to be used and modified inside this open-source
+ * application but do not allow it to be redistributed on its own or as part of
+ * a template, theme, starter kit, UI kit, or component library. OriginKit
+ * retains all rights to the component and its design. See THIRD_PARTY_NOTICES.md.
+ *
+ * The snoise(), mod289(), permute(), and taylorInvSqrt() functions in the
+ * fragment shader below are the 3D simplex noise from webgl-noise
+ * (https://github.com/ashima/webgl-noise, https://github.com/stegu/webgl-noise):
+ *
+ *   Copyright (C) 2011 Ashima Arts. All rights reserved.
+ *   Distributed under the MIT License.
+ *
+ *   Permission is hereby granted, free of charge, to any person obtaining a
+ *   copy of this software and associated documentation files (the "Software"),
+ *   to deal in the Software without restriction, including without limitation
+ *   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ *   and/or sell copies of the Software, and to permit persons to whom the
+ *   Software is furnished to do so, subject to the following conditions:
+ *
+ *   The above copyright notice and this permission notice shall be included in
+ *   all copies or substantial portions of the Software.
+ *
+ *   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ *   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ *   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ *   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ *   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ *   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ *   DEALINGS IN THE SOFTWARE.
+ */
+
 'use client';
 
 import {
