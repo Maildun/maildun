@@ -73,6 +73,29 @@ test('the editor renders a full screen xyflow canvas with workflow controls', fu
         ->toContain(": 'activate-automation-button'");
 });
 
+test('the visual test walks from the trigger along edges instead of canvas position', function () {
+    $edit = automationFile('resources/js/pages/automations/edit.tsx');
+
+    expect($edit)->toBeString()
+        ->toContain('function visualTestOrder(')
+        ->toContain("node.type === 'trigger'")
+        ->toContain('(outgoing.get(trigger.id) ?? []).length > 0')
+        ->toContain('visit(trigger.id)')
+        ->toContain("handle === 'yes'")
+        ->toContain("handle === 'no'")
+        ->toContain('const order = visualTestOrder(nodes, edges);')
+        ->toContain('Connect a step to the trigger before testing.')
+        ->not->toContain('first.position.y - second.position.y');
+});
+
+test('new automation steps are placed with more vertical separation', function () {
+    $edit = automationFile('resources/js/pages/automations/edit.tsx');
+
+    expect($edit)->toBeString()
+        ->toContain('const NEW_STEP_VERTICAL_SPACING = 220;')
+        ->toContain('y: lowest + NEW_STEP_VERTICAL_SPACING');
+});
+
 test('automation nodes use the full card composition and support test state', function () {
     $canvas = automationFile('resources/js/components/automation-canvas.tsx');
 
@@ -228,6 +251,15 @@ test('every automation form input carries a placeholder', function () {
         ->toContain('placeholder="Welcome series"')
         ->toContain('placeholder="Greets everyone who joins the newsletter."')
         ->toContain('type="submit"');
+});
+
+test('the send email action identifies the automation subscriber as the recipient', function () {
+    $panel = automationFile('resources/js/components/automation-step-panel.tsx');
+
+    expect($panel)->toBeString()
+        ->toContain('data-test="automation-email-recipient"')
+        ->toMatch('/The subscriber who triggered this\s+automation\./')
+        ->toContain('subscriber&apos;s email address.');
 });
 
 test('the activity page shows run rows with an expandable step trail', function () {

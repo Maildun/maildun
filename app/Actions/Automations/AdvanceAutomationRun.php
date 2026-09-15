@@ -2,15 +2,19 @@
 
 namespace App\Actions\Automations;
 
+use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\AutomationAction;
 use App\Enums\AutomationCondition;
 use App\Enums\AutomationDelayUnit;
 use App\Enums\AutomationRunStatus;
+use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
+use App\Exceptions\EmailTransportException;
 use App\Jobs\ProcessAutomationRun;
 use App\Mail\AutomationEmail;
+use App\Models\AutomationEmailDelivery;
 use App\Models\AutomationRun;
 use App\Models\AutomationRunStep;
 use App\Models\Subscriber;
@@ -27,6 +31,7 @@ class AdvanceAutomationRun
     public function __construct(
         private RenderTransactionalContent $renderer,
         private TeamMailer $teamMailer,
+        private RecordEmailAddressHealth $emailHealth,
     ) {}
 
     public function handle(AutomationRun $run, ?string $nodeId = null): void
@@ -178,17 +183,67 @@ class AdvanceAutomationRun
 
         $merge = $this->mergeData($subscriber, $run->context);
 
-        $this->teamMailer->send(
-            $run->automation->team,
-            $subscriber->email,
-            new AutomationEmail(
-                $email,
-                $subscriber,
-                $this->renderer->text($email->subject, $merge),
-                $this->renderer->html($email->html ?? '', $merge),
-            ),
-            $email->resolvedFromAddress(),
-        );
+        if ($this->emailHealth->isSuppressed($run->automation->team, $subscriber->email)) {
+            return [
+                'status' => 'skipped',
+                'result' => ['reason' => 'suppressed'],
+                'handle' => null,
+            ];
+        }
+
+        $transport = $this->teamMailer->resolve($run->automation->team);
+        $delivery = AutomationEmailDelivery::query()->create([
+            'team_id' => $run->automation->team_id,
+            'automation_run_id' => $run->id,
+            'transactional_email_id' => $email->id,
+            'subscriber_id' => $subscriber->id,
+            'to_address' => $subscriber->email,
+            'status' => EmailDeliveryStatus::Sending,
+            'provider' => $transport->provider,
+            'ses_configuration_set' => $transport->sesConfigurationSet,
+            'ses_sns_topic_arn_hash' => $transport->sesSnsTopicArnHash,
+            'send_attempted_at' => now(),
+        ]);
+
+        try {
+            $sentMessage = $this->teamMailer->sendResolved(
+                $transport,
+                $subscriber->email,
+                new AutomationEmail(
+                    $email,
+                    $subscriber,
+                    $this->renderer->text($email->subject, $merge),
+                    $this->renderer->html($email->html ?? '', $merge),
+                    $delivery,
+                ),
+                $email->resolvedFromAddress(),
+            );
+        } catch (Throwable $exception) {
+            $failureReason = $exception instanceof EmailTransportException
+                ? $exception->getMessage()
+                : __('Delivery failed.');
+
+            $delivery->update([
+                'status' => EmailDeliveryStatus::Failed,
+                'failure_reason' => $failureReason,
+            ]);
+            $this->emailHealth->recordFailure(
+                $run->automation->team,
+                $subscriber->email,
+                $transport->provider,
+                $failureReason,
+            );
+
+            throw $exception instanceof EmailTransportException
+                ? $exception
+                : new EmailTransportException($failureReason);
+        }
+
+        $delivery->update([
+            'status' => EmailDeliveryStatus::Sent,
+            'provider_message_id' => $sentMessage?->getMessageId(),
+            'sent_at' => now(),
+        ]);
 
         return [
             'status' => 'completed',

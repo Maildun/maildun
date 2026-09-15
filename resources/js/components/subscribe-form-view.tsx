@@ -3,7 +3,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { usePage } from '@inertiajs/react';
 import { format, parse } from 'date-fns';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { SubscribeFormArtworkVisual } from '@/components/subscribe-form-artwork';
 import { Badge } from '@/components/ui/badge';
@@ -50,14 +50,8 @@ import type {
     SubscribeFormTextAlignment,
 } from '@/types/audiences';
 
-const MotionCard = motion.create(Card);
-const MORPH_TRANSITION = {
-    type: 'spring',
-    duration: 0.65,
-    bounce: 0.12,
-} as const;
-
 const ATTRIBUTE_DATE_FORMAT = 'yyyy-MM-dd';
+const STAGE_TRANSITION = { duration: 0.2, ease: 'easeOut' } as const;
 
 export type SubscribeFormAppearance = {
     theme: TeamBrandTheme;
@@ -136,10 +130,6 @@ export function SubscribeFormView({
         style: subscribeFormThemeStyle(form.theme),
     };
     const reducedMotion = Boolean(useReducedMotion());
-    const layoutProps = {
-        layout: !reducedMotion,
-        transition: reducedMotion ? { duration: 0 } : MORPH_TRANSITION,
-    };
     const intro = {
         form,
         completed,
@@ -149,84 +139,15 @@ export function SubscribeFormView({
     };
     const fields = (
         <div className="relative" data-test="subscribe-form-morph">
-            <AnimatePresence initial={false} mode="wait">
-                {completed ? (
-                    <motion.div
-                        key="success"
-                        initial={
-                            reducedMotion ? false : { opacity: 0, scale: 0.96 }
-                        }
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: reducedMotion ? 0 : 0.22 }}
-                        className={cn(
-                            'flex py-1',
-                            successAlignmentClasses[form.text_alignment],
-                        )}
-                    >
-                        <div
-                            className="flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground"
-                            aria-hidden="true"
-                            data-test="subscribe-form-success"
-                        >
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                className="size-7"
-                            >
-                                <motion.path
-                                    d="m5 12 4 4L19 6"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    initial={
-                                        reducedMotion
-                                            ? false
-                                            : { pathLength: 0, opacity: 0 }
-                                    }
-                                    animate={{ pathLength: 1, opacity: 1 }}
-                                    transition={{
-                                        duration: reducedMotion ? 0 : 0.3,
-                                        delay: reducedMotion ? 0 : 0.12,
-                                    }}
-                                />
-                            </svg>
-                        </div>
-                    </motion.div>
-                ) : (
-                    <motion.div
-                        key="fields"
-                        initial={false}
-                        animate={{ opacity: 1 }}
-                        exit={{
-                            opacity: 0,
-                            y: reducedMotion ? 0 : -8,
-                        }}
-                        transition={{ duration: reducedMotion ? 0 : 0.18 }}
-                    >
-                        <SubscribeFormFields
-                            form={form}
-                            preview={preview}
-                            processing={processing}
-                            errors={errors}
-                            values={values}
-                            onChange={onChange}
-                            onAttributeChange={onAttributeChange}
-                        />
-                    </motion.div>
-                )}
-            </AnimatePresence>
-            <div
-                className="sr-only"
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-            >
-                {completed
-                    ? `${form.success_heading} ${successMessage || 'Thanks for subscribing!'}`
-                    : ''}
-            </div>
+            <SubscribeFormFields
+                form={form}
+                preview={preview}
+                processing={processing}
+                errors={errors}
+                values={values}
+                onChange={onChange}
+                onAttributeChange={onAttributeChange}
+            />
         </div>
     );
 
@@ -263,16 +184,24 @@ export function SubscribeFormView({
                     className,
                 )}
             >
-                <motion.div
-                    {...layoutProps}
+                <div
                     className={cn(
                         'flex w-full max-w-sm flex-col',
-                        headerSpacingClasses[form.header_spacing],
+                        stageSpacingClasses(
+                            form.header_spacing,
+                            completed,
+                            reducedMotion,
+                        ),
                     )}
                 >
                     {heading}
-                    {formContent}
-                </motion.div>
+                    <CollapsingFields
+                        open={!completed}
+                        reducedMotion={reducedMotion}
+                    >
+                        {formContent}
+                    </CollapsingFields>
+                </div>
             </div>
         );
     }
@@ -289,16 +218,24 @@ export function SubscribeFormView({
                     <FormArtPanel form={form} preview={preview} fixed />
                 ) : null}
                 <div className="flex items-center justify-center bg-background p-8">
-                    <motion.div
-                        {...layoutProps}
+                    <div
                         className={cn(
                             'flex w-full max-w-sm flex-col',
-                            headerSpacingClasses[form.header_spacing],
+                            stageSpacingClasses(
+                                form.header_spacing,
+                                completed,
+                                reducedMotion,
+                            ),
                         )}
                     >
                         {heading}
-                        {formContent}
-                    </motion.div>
+                        <CollapsingFields
+                            open={!completed}
+                            reducedMotion={reducedMotion}
+                        >
+                            {formContent}
+                        </CollapsingFields>
+                    </div>
                 </div>
                 {imageFirst ? null : (
                     <FormArtPanel form={form} preview={preview} fixed />
@@ -316,16 +253,24 @@ export function SubscribeFormView({
                     className,
                 )}
             >
-                <motion.div
-                    {...layoutProps}
+                <div
                     className={cn(
                         'flex w-full max-w-sm flex-col',
-                        headerSpacingClasses[form.header_spacing],
+                        stageSpacingClasses(
+                            form.header_spacing,
+                            completed,
+                            reducedMotion,
+                        ),
                     )}
                 >
                     <FormIntro {...intro} as="heading" />
-                    {formContent}
-                </motion.div>
+                    <CollapsingFields
+                        open={!completed}
+                        reducedMotion={reducedMotion}
+                    >
+                        {formContent}
+                    </CollapsingFields>
+                </div>
             </div>
         );
     }
@@ -357,17 +302,25 @@ export function SubscribeFormView({
                                 variant="cover"
                             />
                         ) : null}
-                        <MotionCard
-                            {...layoutProps}
+                        <Card
                             className={cn(
                                 'w-full',
-                                headerSpacingClasses[form.header_spacing],
+                                stageSpacingClasses(
+                                    form.header_spacing,
+                                    completed,
+                                    reducedMotion,
+                                ),
                                 cardPaddingClasses[form.card_padding],
                             )}
                         >
                             <FormIntro {...intro} as="card" />
-                            <CardContent>{submitContent}</CardContent>
-                        </MotionCard>
+                            <CollapsingFields
+                                open={!completed}
+                                reducedMotion={reducedMotion}
+                            >
+                                <CardContent>{submitContent}</CardContent>
+                            </CollapsingFields>
+                        </Card>
                         {poweredByAbove ? null : (
                             <PoweredByMaildun
                                 enabled={!completed}
@@ -400,17 +353,25 @@ export function SubscribeFormView({
                         outsideCard
                     />
                 ) : null}
-                <MotionCard
-                    {...layoutProps}
+                <Card
                     className={cn(
                         'w-full',
-                        headerSpacingClasses[form.header_spacing],
+                        stageSpacingClasses(
+                            form.header_spacing,
+                            completed,
+                            reducedMotion,
+                        ),
                         cardPaddingClasses[form.card_padding],
                     )}
                 >
                     <FormIntro {...intro} as="card" />
-                    <CardContent>{submitContent}</CardContent>
-                </MotionCard>
+                    <CollapsingFields
+                        open={!completed}
+                        reducedMotion={reducedMotion}
+                    >
+                        <CardContent>{submitContent}</CardContent>
+                    </CollapsingFields>
+                </Card>
                 {poweredByAbove ? null : (
                     <PoweredByMaildun
                         enabled={!completed}
@@ -526,6 +487,75 @@ const poweredByAlignmentClasses: Record<
     'bottom-right': 'justify-end',
 };
 
+function stageSpacingClasses(
+    spacing: SubscribeFormHeaderSpacing,
+    completed: boolean,
+    reducedMotion: boolean,
+): string {
+    return cn(
+        completed ? 'gap-0' : headerSpacingClasses[spacing],
+        !reducedMotion && 'transition-[gap] duration-200 ease-out',
+    );
+}
+
+function CollapsingFields({
+    open,
+    reducedMotion,
+    children,
+}: {
+    open: boolean;
+    reducedMotion: boolean;
+    children: ReactNode;
+}) {
+    return (
+        <div
+            className={cn(
+                'grid',
+                open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+                !reducedMotion &&
+                    'transition-[grid-template-rows] duration-200 ease-out',
+            )}
+        >
+            <div className="overflow-hidden" inert={!open}>
+                <motion.div
+                    animate={{ opacity: open ? 1 : 0 }}
+                    transition={
+                        reducedMotion ? { duration: 0 } : STAGE_TRANSITION
+                    }
+                >
+                    {children}
+                </motion.div>
+            </div>
+        </div>
+    );
+}
+
+function SuccessMark({ reducedMotion }: { reducedMotion: boolean }) {
+    return (
+        <div
+            className="flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground"
+            aria-hidden="true"
+            data-test="subscribe-form-success"
+        >
+            <svg viewBox="0 0 24 24" fill="none" className="size-7">
+                <motion.path
+                    d="m5 12 4 4L19 6"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    initial={reducedMotion ? false : { pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{
+                        duration: reducedMotion ? 0 : 0.35,
+                        ease: 'easeOut',
+                    }}
+                />
+            </svg>
+        </div>
+    );
+}
+
 function FormIntro({
     form,
     as,
@@ -551,14 +581,19 @@ function FormIntro({
     const copy = (
         <motion.div
             key={completed ? 'success' : 'form'}
-            initial={reducedMotion ? false : { opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={reducedMotion ? undefined : { opacity: 0, y: -6 }}
-            transition={{ duration: reducedMotion ? 0 : 0.22 }}
-            className="flex flex-col gap-1"
+            initial={reducedMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={reducedMotion ? undefined : { opacity: 0 }}
+            transition={reducedMotion ? { duration: 0 } : STAGE_TRANSITION}
+            className={cn(
+                'flex w-full flex-col',
+                completed ? 'gap-4' : 'gap-1',
+                completed && successAlignmentClasses[form.text_alignment],
+            )}
         >
+            {completed ? <SuccessMark reducedMotion={reducedMotion} /> : null}
             {as === 'card' ? (
-                <>
+                <div className="flex flex-col gap-1">
                     <CardTitle>{title}</CardTitle>
                     {description ? (
                         <CardDescription>{description}</CardDescription>
@@ -572,9 +607,9 @@ function FormIntro({
                             {redirectCountdown === 1 ? 'second' : 'seconds'}…
                         </p>
                     ) : null}
-                </>
+                </div>
             ) : (
-                <>
+                <div className="flex flex-col gap-1">
                     <h1 className="text-xl font-semibold tracking-tight">
                         {title}
                     </h1>
@@ -592,8 +627,18 @@ function FormIntro({
                             {redirectCountdown === 1 ? 'second' : 'seconds'}…
                         </p>
                     ) : null}
-                </>
+                </div>
             )}
+            {completed ? (
+                <div
+                    className="sr-only"
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                >
+                    {`${form.success_heading} ${successMessage || 'Thanks for subscribing!'}`}
+                </div>
+            ) : null}
         </motion.div>
     );
 
@@ -601,12 +646,13 @@ function FormIntro({
         return (
             <CardHeader
                 className={cn(
+                    'relative',
                     textAlignmentClasses[form.text_alignment],
                     form.logo && 'gap-3',
                 )}
             >
                 <FormLogo form={form} />
-                <AnimatePresence initial={false} mode="wait">
+                <AnimatePresence initial={false} mode="popLayout">
                     {copy}
                 </AnimatePresence>
             </CardHeader>
@@ -616,12 +662,12 @@ function FormIntro({
     return (
         <div
             className={cn(
-                'flex flex-col gap-4',
+                'relative flex flex-col gap-4',
                 textAlignmentClasses[form.text_alignment],
             )}
         >
             <FormLogo form={form} />
-            <AnimatePresence initial={false} mode="wait">
+            <AnimatePresence initial={false} mode="popLayout">
                 {copy}
             </AnimatePresence>
         </div>
@@ -928,6 +974,15 @@ function SubscribeFormFields({
                         autoComplete="off"
                     />
                 </div>
+            ) : null}
+            {errors.form ? (
+                <p
+                    className="text-sm text-destructive"
+                    role="alert"
+                    data-test="subscribe-form-submit-error"
+                >
+                    {errors.form}
+                </p>
             ) : null}
             <Button
                 type={preview ? 'button' : 'submit'}

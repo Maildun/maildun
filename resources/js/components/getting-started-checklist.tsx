@@ -1,15 +1,10 @@
-import {
-    ArrowDown01Icon,
-    MailAtSign02Icon,
-    MailSend02Icon,
-    NodeEditIcon,
-    UserAdd01Icon,
-    UserGroupIcon,
-} from '@hugeicons/core-free-icons';
+import { ArrowDown01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Link, usePage } from '@inertiajs/react';
 import { useSyncExternalStore } from 'react';
+import type { DotMatrixAnimation } from '@/components/dot-matrix';
 import { CheckmarkCircleSolidIcon } from '@/components/icons/toast-status-icons';
+import { LayeredDotMatrix } from '@/components/layered-dot-matrix';
 import { Button } from '@/components/ui/button';
 import {
     Collapsible,
@@ -35,18 +30,18 @@ type StepCopy = {
     title: string;
     description: string;
     action: string;
-    icon: typeof MailAtSign02Icon;
+    animation: DotMatrixAnimation;
     href: (teamSlug: string) => string;
 };
 
-const STEP_COPY: Record<OnboardingStepKey, StepCopy> = {
+export const STEP_COPY: Record<OnboardingStepKey, StepCopy> = {
     delivery: {
         label: 'Connect email delivery',
         title: 'Connect your email provider',
         description:
             'Add your SMTP or Amazon SES credentials and send a successful test before Maildun can deliver email.',
         action: 'Set up email delivery',
-        icon: MailSend02Icon,
+        animation: 'orbit',
         href: (teamSlug) => teamEmailProviderSettings.url(teamSlug),
     },
     sender: {
@@ -55,7 +50,7 @@ const STEP_COPY: Record<OnboardingStepKey, StepCopy> = {
         description:
             'Register and verify the From address and reply-to that your contacts will see on every email.',
         action: 'Open sender settings',
-        icon: MailAtSign02Icon,
+        animation: 'sweep',
         href: (teamSlug) => teamSenderSettings.url(teamSlug),
     },
     audience: {
@@ -64,7 +59,7 @@ const STEP_COPY: Record<OnboardingStepKey, StepCopy> = {
         description:
             'An audience holds your subscribers, the attributes you collect, and the segments you send to.',
         action: 'Go to audiences',
-        icon: UserGroupIcon,
+        animation: 'ripple',
         href: (teamSlug) => audiences.url(teamSlug),
     },
     subscribers: {
@@ -73,7 +68,7 @@ const STEP_COPY: Record<OnboardingStepKey, StepCopy> = {
         description:
             'Add or import contacts, then subscribe them to an audience so they can receive campaigns.',
         action: 'Go to contacts',
-        icon: UserAdd01Icon,
+        animation: 'wave',
         href: (teamSlug) => contacts.url(teamSlug),
     },
     campaign: {
@@ -82,7 +77,7 @@ const STEP_COPY: Record<OnboardingStepKey, StepCopy> = {
         description:
             'Design an email in the builder, pick the audience it goes to, and send it when it looks right.',
         action: 'Go to campaigns',
-        icon: MailAtSign02Icon,
+        animation: 'drift',
         href: (teamSlug) => emails.url(teamSlug),
     },
     automation: {
@@ -91,7 +86,7 @@ const STEP_COPY: Record<OnboardingStepKey, StepCopy> = {
         description:
             'Automations send on their own — when someone subscribes, joins a segment, or after a wait step.',
         action: 'Go to automations',
-        icon: NodeEditIcon,
+        animation: 'pulse',
         href: (teamSlug) => automations.url(teamSlug),
     },
 };
@@ -139,7 +134,6 @@ export function GettingStartedChecklist() {
 
     return (
         <div className="p-2 group-data-[collapsible=icon]:hidden">
-            <OrderedDitherFilter />
             <Collapsible
                 open={!isCollapsed}
                 onOpenChange={(open) => setCollapsed(!open)}
@@ -200,107 +194,6 @@ export function GettingStartedChecklist() {
     );
 }
 
-const DITHER_TILE_SIZE = 8;
-const DITHER_LEVELS = 10;
-
-/**
- * Recursive-doubling Bayer matrix: the classic ordered-dither threshold map.
- * Each cell holds its position in the 0..(size^2 - 1) threshold order.
- */
-function buildBayerMatrix(size: number): number[][] {
-    let matrix = [[0]];
-
-    while (matrix.length < size) {
-        const half = matrix.length;
-        const next = Array.from({ length: half * 2 }, () =>
-            new Array<number>(half * 2).fill(0),
-        );
-
-        for (let y = 0; y < half; y++) {
-            for (let x = 0; x < half; x++) {
-                const base = matrix[y][x] * 4;
-                next[y][x] = base;
-                next[y][x + half] = base + 2;
-                next[y + half][x] = base + 3;
-                next[y + half][x + half] = base + 1;
-            }
-        }
-
-        matrix = next;
-    }
-
-    return matrix;
-}
-
-/** The Bayer matrix as a one-pixel-per-cell greyscale SVG tile. */
-const DITHER_TILE = (() => {
-    const matrix = buildBayerMatrix(DITHER_TILE_SIZE);
-    const cells = DITHER_TILE_SIZE * DITHER_TILE_SIZE;
-    const rects = matrix
-        .flatMap((row, y) =>
-            row.map((threshold, x) => {
-                const grey = Math.round((255 * threshold) / (cells - 1));
-
-                return `<rect x="${x}" y="${y}" width="1" height="1" fill="rgb(${grey},${grey},${grey})"/>`;
-            }),
-        )
-        .join('');
-
-    return `data:image/svg+xml,${encodeURIComponent(
-        `<svg xmlns="http://www.w3.org/2000/svg" width="${DITHER_TILE_SIZE}" height="${DITHER_TILE_SIZE}" shape-rendering="crispEdges">${rects}</svg>`,
-    )}`;
-})();
-
-const DITHER_TABLE = Array.from({ length: DITHER_LEVELS }, (_, step) =>
-    (step / (DITHER_LEVELS - 1)).toFixed(4),
-).join(' ');
-
-/**
- * Consumed by the `dithered` utility in app.css. Tiles the Bayer map across the
- * surface, adds it to the source, then quantises each channel — ordered
- * dithering, so the wash bands into pixel dots. Kept at `size-0` rather than
- * `hidden` because Firefox will not resolve a filter inside `display:none`.
- */
-function OrderedDitherFilter() {
-    return (
-        <svg aria-hidden="true" focusable="false" className="absolute size-0">
-            <filter
-                id="ordered-dither"
-                x="0"
-                y="0"
-                width="100%"
-                height="100%"
-                colorInterpolationFilters="sRGB"
-            >
-                <feImage
-                    href={DITHER_TILE}
-                    x="0"
-                    y="0"
-                    width={DITHER_TILE_SIZE}
-                    height={DITHER_TILE_SIZE}
-                    result="tile"
-                />
-                <feTile in="tile" result="threshold" />
-                <feComposite
-                    in="SourceGraphic"
-                    in2="threshold"
-                    operator="arithmetic"
-                    k1={0}
-                    k2={1}
-                    k3={0.24}
-                    k4={-0.12}
-                    result="thresholded"
-                />
-                <feComponentTransfer in="thresholded">
-                    <feFuncR type="discrete" tableValues={DITHER_TABLE} />
-                    <feFuncG type="discrete" tableValues={DITHER_TABLE} />
-                    <feFuncB type="discrete" tableValues={DITHER_TABLE} />
-                </feComponentTransfer>
-            </filter>
-        </svg>
-    );
-}
-
 function ChecklistStep({
     stepKey,
     completed,
@@ -350,11 +243,11 @@ function ChecklistStep({
                     sideOffset={12}
                     className="w-72 overflow-hidden rounded-xl p-2"
                 >
-                    <div className="dithered relative flex aspect-video soft-wash items-center justify-center overflow-hidden rounded-lg">
-                        <HugeiconsIcon
-                            icon={copy.icon}
-                            strokeWidth={1.5}
-                            className="size-14 text-white drop-shadow-sm"
+                    <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-lg">
+                        <LayeredDotMatrix
+                            className="absolute inset-0"
+                            cellSize={3}
+                            animation={copy.animation}
                         />
                     </div>
                     <div className="flex flex-col gap-1 p-2">

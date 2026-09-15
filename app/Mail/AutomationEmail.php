@@ -2,6 +2,8 @@
 
 namespace App\Mail;
 
+use App\Enums\EmailProvider;
+use App\Models\AutomationEmailDelivery;
 use App\Models\Subscriber;
 use App\Models\TransactionalEmail;
 use Illuminate\Mail\Mailable;
@@ -21,6 +23,7 @@ class AutomationEmail extends Mailable
         public Subscriber $subscriber,
         public string $subjectLine,
         public string $htmlBody,
+        public ?AutomationEmailDelivery $delivery = null,
     ) {}
 
     public function envelope(): Envelope
@@ -31,6 +34,7 @@ class AutomationEmail extends Mailable
             from: new Address($this->email->resolvedFromAddress(), $this->email->resolvedFromName()),
             replyTo: $replyTo === null ? [] : [new Address($replyTo)],
             subject: $this->subjectLine,
+            metadata: $this->sesMessageTags(),
         );
     }
 
@@ -44,12 +48,22 @@ class AutomationEmail extends Mailable
     public function headers(): Headers
     {
         // Automation mail is marketing mail, so it needs the same RFC 8058
-        // treatment as a campaign. It has no EmailDelivery row to key the
-        // opt-out to, so the signed route names the subscriber instead.
+        // treatment as a campaign. Its delivery record is not a campaign
+        // EmailDelivery route key, so the signed route names the subscriber.
         return new Headers(text: [
             'List-Unsubscribe' => '<'.self::oneClickUrl($this->subscriber).'>',
             'List-Unsubscribe-Post' => 'List-Unsubscribe=One-Click',
         ]);
+    }
+
+    /** @return array<string, string> */
+    private function sesMessageTags(): array
+    {
+        if ($this->delivery === null || $this->delivery->provider !== EmailProvider::AmazonSes) {
+            return [];
+        }
+
+        return ['automation_delivery_uuid' => $this->delivery->uuid];
     }
 
     /**

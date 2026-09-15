@@ -6,12 +6,15 @@ use App\Enums\AutomationAction;
 use App\Enums\AutomationCondition;
 use App\Enums\AutomationDelayUnit;
 use App\Enums\AutomationRunStatus;
+use App\Enums\EmailAddressHealthReason;
 use App\Enums\SubscriberSource;
 use App\Jobs\ProcessAutomationRun;
 use App\Mail\AutomationEmail;
 use App\Models\Audience;
 use App\Models\Automation;
+use App\Models\AutomationEmailDelivery;
 use App\Models\AutomationRun;
+use App\Models\EmailAddressHealth;
 use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\TeamEmailIntegration;
@@ -221,6 +224,37 @@ test('an unsubscribed subscriber skips the send but keeps walking the graph', fu
 
     expect($run->refresh()->current_node_id)->toBe('after')
         ->and($run->steps()->where('node_id', 'send')->value('result'))->toBe(['reason' => 'unsubscribed']);
+});
+
+test('a suppressed subscriber skips an automation email', function () {
+    Mail::fake();
+
+    $automation = Automation::factory()->active()->create();
+    $email = TransactionalEmail::factory()->for($automation->team)->create();
+    $subscriber = Subscriber::factory()
+        ->for(Audience::factory()->for($automation->team))
+        ->create();
+    EmailAddressHealth::factory()->for($automation->team)->suppressed()->create([
+        'email' => $subscriber->email,
+        'reason' => EmailAddressHealthReason::PermanentBounce,
+    ]);
+
+    $run = automationRun(
+        nodes: [['id' => 'send', 'type' => 'action', 'data' => [
+            'kind' => AutomationAction::SendEmail->value,
+            'transactional_email_uuid' => $email->uuid,
+        ]]],
+        edges: [['source' => 'trigger', 'target' => 'send']],
+        subscriber: $subscriber,
+        automation: $automation,
+    );
+
+    app(AdvanceAutomationRun::class)->handle($run);
+
+    Mail::assertNothingSent();
+    expect($run->refresh()->steps()->where('node_id', 'send')->value('status'))->toBe('skipped')
+        ->and($run->steps()->where('node_id', 'send')->value('result'))->toBe(['reason' => 'suppressed'])
+        ->and(AutomationEmailDelivery::query()->count())->toBe(0);
 });
 
 test('a delay parks the run until its scheduled time', function () {

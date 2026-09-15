@@ -7,16 +7,20 @@ use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailProvider;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
+use App\Models\AutomationEmailDelivery;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
 use App\Models\EmailProviderEvent;
 use App\Models\Subscriber;
+use App\Models\Team;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class ProcessSesEvent
 {
+    public function __construct(private RecordEmailAddressHealth $emailHealth) {}
+
     /** @param array<string, mixed> $payload */
     public function handle(string $eventId, array $payload, string $topicArn): void
     {
@@ -28,7 +32,10 @@ class ProcessSesEvent
             $type = (string) ($payload['eventType'] ?? $payload['notificationType'] ?? 'Unknown');
             $mail = is_array($payload['mail'] ?? null) ? $payload['mail'] : [];
             $attempt = $this->findAttempt($mail, $topicArnHash);
-            $legacyDelivery = $attempt === null
+            $automationDelivery = $attempt === null
+                ? $this->findAutomationDelivery($mail, $topicArnHash)
+                : null;
+            $legacyDelivery = $attempt === null && $automationDelivery === null
                 ? $this->findLegacyPlatformDelivery($mail, $topicArnHash)
                 : null;
             $deliveryId = $attempt instanceof EmailDeliveryAttempt
@@ -42,6 +49,7 @@ class ProcessSesEvent
                     'ses_sns_topic_arn_hash' => $topicArnHash,
                     'email_delivery_id' => $deliveryId,
                     'email_delivery_attempt_id' => $attempt?->id,
+                    'automation_email_delivery_id' => $automationDelivery?->id,
                     'type' => $type,
                     'payload' => $payload,
                     'occurred_at' => $this->eventTimestamp($payload, $type),
@@ -71,8 +79,37 @@ class ProcessSesEvent
                     $this->applyFeedback($delivery, $type, $payload, $occurredAt);
                 }
 
+                $delivery->loadMissing('email.team');
+                $this->recordHealth(
+                    $delivery->email->team,
+                    $delivery->email_address,
+                    $attempt->provider,
+                    $type,
+                    $payload,
+                    $occurredAt,
+                );
+
                 if ($this->shouldUnsubscribe($type, $payload)) {
                     $unsubscribed = $this->unsubscribeSubscriber($delivery);
+                }
+
+                return;
+            }
+
+            if ($automationDelivery instanceof AutomationEmailDelivery) {
+                $this->applyFeedback($automationDelivery, $type, $payload, $occurredAt);
+                $automationDelivery->loadMissing('team');
+                $this->recordHealth(
+                    $automationDelivery->team,
+                    $automationDelivery->to_address,
+                    $automationDelivery->provider,
+                    $type,
+                    $payload,
+                    $occurredAt,
+                );
+
+                if ($this->shouldUnsubscribe($type, $payload)) {
+                    $unsubscribed = $this->unsubscribeAutomationSubscriber($automationDelivery);
                 }
 
                 return;
@@ -89,6 +126,16 @@ class ProcessSesEvent
             if (! $hasNewerAttempt && $legacyDelivery->provider === EmailProvider::AmazonSes->value) {
                 $this->applyFeedback($legacyDelivery, $type, $payload, $occurredAt);
             }
+
+            $legacyDelivery->loadMissing('email.team');
+            $this->recordHealth(
+                $legacyDelivery->email->team,
+                $legacyDelivery->email_address,
+                EmailProvider::AmazonSes,
+                $type,
+                $payload,
+                $occurredAt,
+            );
 
             if ($this->shouldUnsubscribe($type, $payload)) {
                 $unsubscribed = $this->unsubscribeSubscriber($legacyDelivery);
@@ -126,6 +173,36 @@ class ProcessSesEvent
         }
 
         return EmailDeliveryAttempt::query()
+            ->where('provider', EmailProvider::AmazonSes)
+            ->where('provider_message_id', $messageId)
+            ->where('ses_sns_topic_arn_hash', $topicArnHash)
+            ->latest('id')
+            ->lockForUpdate()
+            ->first();
+    }
+
+    /** @param array<string, mixed> $mail */
+    private function findAutomationDelivery(array $mail, string $topicArnHash): ?AutomationEmailDelivery
+    {
+        $tags = is_array($mail['tags'] ?? null) ? $mail['tags'] : [];
+        $deliveryUuid = $this->firstTag($tags, 'automation_delivery_uuid');
+
+        if ($deliveryUuid !== null) {
+            $delivery = AutomationEmailDelivery::query()
+                ->where('uuid', $deliveryUuid)
+                ->where('provider', EmailProvider::AmazonSes)
+                ->where('ses_sns_topic_arn_hash', $topicArnHash)
+                ->lockForUpdate()
+                ->first();
+
+            if ($delivery !== null) {
+                return $delivery;
+            }
+        }
+
+        $messageId = is_string($mail['messageId'] ?? null) ? $mail['messageId'] : null;
+
+        return $messageId === null ? null : AutomationEmailDelivery::query()
             ->where('provider', EmailProvider::AmazonSes)
             ->where('provider_message_id', $messageId)
             ->where('ses_sns_topic_arn_hash', $topicArnHash)
@@ -192,7 +269,7 @@ class ProcessSesEvent
 
     /** @param array<string, mixed> $payload */
     private function applyFeedback(
-        EmailDelivery|EmailDeliveryAttempt $subject,
+        EmailDelivery|EmailDeliveryAttempt|AutomationEmailDelivery $subject,
         string $type,
         array $payload,
         CarbonInterface $occurredAt,
@@ -210,7 +287,7 @@ class ProcessSesEvent
     }
 
     /** @return array<string, mixed> */
-    private function deliveryAttributes(EmailDelivery|EmailDeliveryAttempt $subject, CarbonInterface $occurredAt): array
+    private function deliveryAttributes(EmailDelivery|EmailDeliveryAttempt|AutomationEmailDelivery $subject, CarbonInterface $occurredAt): array
     {
         if (in_array($subject->status, [EmailDeliveryStatus::Bounced, EmailDeliveryStatus::Complained], true)) {
             return [];
@@ -227,7 +304,7 @@ class ProcessSesEvent
      * @return array<string, mixed>
      */
     private function bounceAttributes(
-        EmailDelivery|EmailDeliveryAttempt $subject,
+        EmailDelivery|EmailDeliveryAttempt|AutomationEmailDelivery $subject,
         array $payload,
         CarbonInterface $occurredAt,
     ): array {
@@ -262,7 +339,7 @@ class ProcessSesEvent
     }
 
     /** @return array<string, mixed> */
-    private function complaintAttributes(EmailDelivery|EmailDeliveryAttempt $subject, CarbonInterface $occurredAt): array
+    private function complaintAttributes(EmailDelivery|EmailDeliveryAttempt|AutomationEmailDelivery $subject, CarbonInterface $occurredAt): array
     {
         return [
             'status' => EmailDeliveryStatus::Complained,
@@ -307,5 +384,66 @@ class ProcessSesEvent
         ]);
 
         return $subscriber;
+    }
+
+    private function unsubscribeAutomationSubscriber(AutomationEmailDelivery $delivery): ?Subscriber
+    {
+        if ($delivery->subscriber_id === null) {
+            return null;
+        }
+
+        $subscriber = Subscriber::query()
+            ->whereKey($delivery->subscriber_id)
+            ->where('status', SubscriberStatus::Subscribed)
+            ->lockForUpdate()
+            ->first();
+
+        if ($subscriber === null) {
+            return null;
+        }
+
+        $subscriber->update([
+            'status' => SubscriberStatus::Unsubscribed,
+            'unsubscribed_at' => now(),
+        ]);
+
+        return $subscriber;
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function recordHealth(
+        Team $team,
+        string $email,
+        EmailProvider $provider,
+        string $type,
+        array $payload,
+        CarbonInterface $occurredAt,
+    ): void {
+        if ($type === 'Delivery') {
+            $this->emailHealth->recordDelivered($team, $email, $provider, $occurredAt);
+
+            return;
+        }
+
+        if ($type === 'Complaint') {
+            $this->emailHealth->recordComplaint($team, $email, $provider, $occurredAt);
+
+            return;
+        }
+
+        if ($type !== 'Bounce') {
+            return;
+        }
+
+        $detail = data_get($payload, 'bounce.bounceSubType') ?? data_get($payload, 'bounce.bounceType');
+        $detail = is_string($detail) ? $detail : null;
+
+        if (data_get($payload, 'bounce.bounceType') === 'Permanent') {
+            $this->emailHealth->recordPermanentBounce($team, $email, $provider, $occurredAt, $detail);
+
+            return;
+        }
+
+        $this->emailHealth->recordTransientBounce($team, $email, $provider, $occurredAt, $detail);
     }
 }

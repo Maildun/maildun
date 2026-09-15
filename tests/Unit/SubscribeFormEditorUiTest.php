@@ -4,6 +4,7 @@ test('subscribe form editor uses a right inspector and style picker', function (
     $edit = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/subscribe-forms/edit.tsx');
     $view = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/subscribe-form-view.tsx');
     $artwork = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/subscribe-form-artwork.tsx');
+    $originKitDotMatrix = file_get_contents(dirname(__DIR__, 2).'/components/originkit/ui/hero-26/dotmatrix.tsx');
     $public = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/subscribe-forms/public.tsx');
 
     expect($edit)->toBeString()
@@ -193,7 +194,7 @@ test('subscribe form editor uses a right inspector and style picker', function (
         ->not->toContain('logoAlign')
         ->toContain('textAlignmentClasses[form.text_alignment]')
         ->toContain('logoPositionClasses[form.logo_position]')
-        ->toContain('headerSpacingClasses[form.header_spacing]')
+        ->toContain('headerSpacingClasses[spacing]')
         ->toContain('cardPaddingClasses[form.card_padding]')
         ->toContain('fieldSpacingClasses[form.card_padding]')
         ->toContain("compact: 'gap-4'")
@@ -205,6 +206,15 @@ test('subscribe form editor uses a right inspector and style picker', function (
         ->toContain('? form.success_heading')
         ->toContain("key={completed ? 'success' : 'form'}")
         ->toContain('successAlignmentClasses[form.text_alignment]')
+        ->toContain('function SuccessMark(')
+        ->toContain('completed && successAlignmentClasses[form.text_alignment]')
+        ->toContain('function CollapsingFields(')
+        ->toContain('grid-rows-[0fr]')
+        ->toContain('grid-rows-[1fr]')
+        ->toContain('<AnimatePresence initial={false} mode="popLayout">')
+        ->not->toContain('MORPH_TRANSITION')
+        ->not->toContain('MotionCard')
+        ->not->toContain('mode="wait"')
         ->toContain('data-test="subscribe-form-morph"')
         ->toContain('data-test="subscribe-form-success"')
         ->toContain('data-test="subscribe-form-powered-by"')
@@ -220,12 +230,16 @@ test('subscribe form editor uses a right inspector and style picker', function (
         ->not->toContain('layoutId=')
         ->not->toContain('CheckmarkCircle02Icon')
         ->toContain('text-xl font-semibold tracking-tight')
-        ->toContain('placeholder="email@example.com"');
+        ->toContain('placeholder="email@example.com"')
+        ->toContain('data-test="subscribe-form-submit-error"');
 
     expect($public)->toBeString()
         ->toContain('SubscribeFormView')
         ->toContain('setRedirectCountdown(5)')
-        ->toContain('window.location.assign(subscribeForm.redirect_url)');
+        ->toContain('window.location.assign(subscribeForm.redirect_url)')
+        ->toContain('onHttpException')
+        ->toContain('Too many attempts. Please try again later.')
+        ->toContain('submitError ? { form: submitError }');
 
     expect($edit)->toBeString()
         ->toContain('testId="subscribe-form-section-powered-by"')
@@ -234,6 +248,7 @@ test('subscribe form editor uses a right inspector and style picker', function (
         ->not->toContain('subscribe-form-powered-by-success-position');
 
     expect($artwork)->toBeString()
+        ->toContain('../../../components/originkit/ui/hero-26/dotmatrix')
         ->toContain('brandArtworkColors[theme.color]')
         ->toContain("'image-aurora'")
         ->toContain("'image-drift'")
@@ -244,11 +259,16 @@ test('subscribe form editor uses a right inspector and style picker', function (
         ->toContain("preset === 'background-orbit'")
         ->toContain("preset === 'background-glow'")
         ->toContain('data-artwork-animation="originkit-hero-26"')
-        ->not->toContain('<DottedBackground')
+        ->toContain('<DottedBackground')
         ->toContain('createArtworkPalette(primary)')
         ->toContain('linear-gradient(145deg,')
         ->toContain('linear-gradient(to bottom,')
-        ->toContain('radial-gradient(circle at 1px 1px')
+        ->toContain('bgColor="transparent"')
         ->toContain('palette.highlight')
         ->toContain('data-artwork-preset={preset}');
+
+    expect($originKitDotMatrix)->toBeString()
+        ->toContain("from 'ogl'")
+        ->toContain("matchMedia('(prefers-reduced-motion: reduce)')")
+        ->toContain('requestAnimationFrame(update)');
 });

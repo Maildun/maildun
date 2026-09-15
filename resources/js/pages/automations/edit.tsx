@@ -125,6 +125,8 @@ const NEW_STEPS: {
     },
 ];
 
+const NEW_STEP_VERTICAL_SPACING = 220;
+
 function toLabelMap(options: { value: string; label: string }[]) {
     return Object.fromEntries(
         options.map((option) => [option.value, option.label]),
@@ -147,6 +149,64 @@ function toGraphPayload(nodes: AutomationNode[], edges: AutomationEdge[]) {
             targetHandle: edge.targetHandle ?? null,
         })),
     };
+}
+
+function visualTestOrder(
+    nodes: AutomationNode[],
+    edges: AutomationEdge[],
+): AutomationNode[] {
+    const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    const outgoing = new Map<string, AutomationEdge[]>();
+
+    for (const edge of edges) {
+        const current = outgoing.get(edge.source) ?? [];
+        current.push(edge);
+        outgoing.set(edge.source, current);
+    }
+
+    for (const [source, sourceEdges] of outgoing) {
+        outgoing.set(
+            source,
+            [...sourceEdges].sort((first, second) => {
+                const rank = (handle: string | null | undefined) =>
+                    handle === 'yes' ? 0 : handle === 'no' ? 1 : 2;
+
+                return rank(first.sourceHandle) - rank(second.sourceHandle);
+            }),
+        );
+    }
+
+    const trigger = nodes.find((node) => node.type === 'trigger');
+    const ordered: AutomationNode[] = [];
+    const seen = new Set<string>();
+
+    const visit = (id: string) => {
+        if (seen.has(id)) {
+            return;
+        }
+
+        seen.add(id);
+        const node = nodesById.get(id);
+
+        if (node === undefined) {
+            return;
+        }
+
+        ordered.push(node);
+
+        for (const edge of outgoing.get(id) ?? []) {
+            visit(edge.target);
+        }
+    };
+
+    if (
+        trigger !== undefined &&
+        (outgoing.get(trigger.id) ?? []).length > 0
+    ) {
+        visit(trigger.id);
+    }
+
+    return ordered;
 }
 
 export default function AutomationEdit({
@@ -270,7 +330,10 @@ export default function AutomationEdit({
             {
                 id,
                 type: step.type,
-                position: { x: 320, y: lowest + 140 },
+                position: {
+                    x: 320,
+                    y: lowest + NEW_STEP_VERTICAL_SPACING,
+                },
                 data: { ...step.data },
                 selected: true,
             },
@@ -329,15 +392,24 @@ export default function AutomationEdit({
         );
 
     const testWorkflow = async () => {
-        if (testing || nodes.length === 0) {
+        if (testing) {
+            return;
+        }
+
+        const order = visualTestOrder(nodes, edges);
+
+        if (order.length === 0) {
+            toast.add({
+                type: 'error',
+                title: 'Connect a step to the trigger before testing.',
+            });
+
             return;
         }
 
         setTesting(true);
 
-        for (const node of [...nodes].sort(
-            (first, second) => first.position.y - second.position.y,
-        )) {
+        for (const node of order) {
             setTestingNodeId(node.id);
             await new Promise((resolve) => window.setTimeout(resolve, 450));
         }

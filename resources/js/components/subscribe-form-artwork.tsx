@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 import { cn } from '@/lib/utils';
 import type { SubscribeFormArtworkPreset } from '@/types/audiences';
 import type { TeamBrandColor, TeamBrandTheme } from '@/types/teams';
+import DottedBackground from '../../../components/originkit/ui/hero-26/dotmatrix';
 
 const imagePresetStyles: Record<string, CSSProperties> = {
     'image-aurora': {
@@ -179,12 +180,16 @@ export function SubscribeFormArtworkVisual({
                     backgroundImage: baseGradient,
                 }}
             >
-                <div
-                    className="absolute inset-0 opacity-40"
-                    style={{
-                        backgroundImage: `radial-gradient(circle at 1px 1px, ${palette.highlight} 0.6px, transparent 0.8px)`,
-                        backgroundSize: `${options.cellSize + 4}px ${options.cellSize + 4}px`,
-                    }}
+                <DottedBackground
+                    bgColor="transparent"
+                    colors={[
+                        palette.deep,
+                        palette.dark,
+                        palette.light,
+                        palette.highlight,
+                    ]}
+                    style={{ position: 'absolute', inset: 0 }}
+                    {...options}
                 />
                 <div
                     className="absolute inset-0"

@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'event_id',
     'email_delivery_id',
     'email_delivery_attempt_id',
+    'transactional_email_delivery_id',
+    'automation_email_delivery_id',
     'type',
     'payload',
     'occurred_at',
@@ -36,6 +38,18 @@ class EmailProviderEvent extends Model
     public function attempt(): BelongsTo
     {
         return $this->belongsTo(EmailDeliveryAttempt::class, 'email_delivery_attempt_id');
+    }
+
+    /** @return BelongsTo<TransactionalEmailDelivery, $this> */
+    public function transactionalDelivery(): BelongsTo
+    {
+        return $this->belongsTo(TransactionalEmailDelivery::class);
+    }
+
+    /** @return BelongsTo<AutomationEmailDelivery, $this> */
+    public function automationDelivery(): BelongsTo
+    {
+        return $this->belongsTo(AutomationEmailDelivery::class);
     }
 
     protected function casts(): array

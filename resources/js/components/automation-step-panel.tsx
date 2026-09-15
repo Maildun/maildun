@@ -267,48 +267,62 @@ export default function AutomationStepPanel({
                             </Field>
 
                             {data.kind === 'send_email' && (
-                                <Field>
-                                    <FieldLabel htmlFor={`${node.id}-email`}>
-                                        Transactional email
-                                    </FieldLabel>
-                                    <Select
-                                        value={
-                                            (data.transactional_email_uuid as string) ??
-                                            ''
-                                        }
-                                        onValueChange={(value) =>
-                                            patch({
-                                                transactional_email_uuid: value,
-                                            })
-                                        }
-                                        disabled={readOnly}
-                                    >
-                                        <SelectTrigger
-                                            id={`${node.id}-email`}
-                                            className="w-full"
-                                            data-test="automation-email-select"
+                                <>
+                                    <Field>
+                                        <FieldLabel>Recipient</FieldLabel>
+                                        <FieldDescription data-test="automation-email-recipient">
+                                            The subscriber who triggered this
+                                            automation. The step sends to that
+                                            subscriber&apos;s email address.
+                                        </FieldDescription>
+                                    </Field>
+
+                                    <Field>
+                                        <FieldLabel
+                                            htmlFor={`${node.id}-email`}
                                         >
-                                            <SelectValue placeholder="Choose an email" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectGroup>
-                                                {emails.map((email) => (
-                                                    <SelectItem
-                                                        key={email.uuid}
-                                                        value={email.uuid}
-                                                    >
-                                                        {email.name}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectGroup>
-                                        </SelectContent>
-                                    </Select>
-                                    <FieldDescription>
-                                        {emails.length === 0
-                                            ? 'Only published transactional emails can be sent from an automation.'
-                                            : 'Merge tags resolve against the subscriber when the step runs.'}
-                                    </FieldDescription>
-                                </Field>
+                                            Transactional email
+                                        </FieldLabel>
+                                        <Select
+                                            value={
+                                                (data.transactional_email_uuid as string) ??
+                                                ''
+                                            }
+                                            onValueChange={(value) =>
+                                                patch({
+                                                    transactional_email_uuid:
+                                                        value,
+                                                })
+                                            }
+                                            disabled={readOnly}
+                                        >
+                                            <SelectTrigger
+                                                id={`${node.id}-email`}
+                                                className="w-full"
+                                                data-test="automation-email-select"
+                                            >
+                                                <SelectValue placeholder="Choose an email" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectGroup>
+                                                    {emails.map((email) => (
+                                                        <SelectItem
+                                                            key={email.uuid}
+                                                            value={email.uuid}
+                                                        >
+                                                            {email.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectGroup>
+                                            </SelectContent>
+                                        </Select>
+                                        <FieldDescription>
+                                            {emails.length === 0
+                                                ? 'Only published transactional emails can be sent from an automation.'
+                                                : 'Merge tags resolve against the subscriber when the step runs.'}
+                                        </FieldDescription>
+                                    </Field>
+                                </>
                             )}
 
                             {(data.kind === 'add_tag' ||

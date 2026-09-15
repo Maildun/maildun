@@ -54,8 +54,15 @@ type Props = {
     embed: boolean;
 };
 
+function submitFailureMessage(status?: number): string {
+    return status === 429
+        ? 'Too many attempts. Please try again later.'
+        : 'Something went wrong. Please try again.';
+}
+
 export default function PublicSubscribeForm({ subscribeForm }: Props) {
     const [completed, setCompleted] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
     const [redirectCountdown, setRedirectCountdown] = useState<number | null>(
         null,
     );
@@ -104,18 +111,28 @@ export default function PublicSubscribeForm({ subscribeForm }: Props) {
 
     const submit = (event: React.FormEvent) => {
         event.preventDefault();
-        form.post(store.url(subscribeForm.uuid), {
-            onSuccess: () => {
-                setCompleted(true);
+        setSubmitError(null);
+        void form
+            .post(store.url(subscribeForm.uuid), {
+                onSuccess: () => {
+                    setCompleted(true);
 
-                if (
-                    subscribeForm.redirect_enabled &&
-                    subscribeForm.redirect_url
-                ) {
-                    setRedirectCountdown(5);
-                }
-            },
-        });
+                    if (
+                        subscribeForm.redirect_enabled &&
+                        subscribeForm.redirect_url
+                    ) {
+                        setRedirectCountdown(5);
+                    }
+                },
+                onError: () => setSubmitError(null),
+                onHttpException: (response) => {
+                    setSubmitError(submitFailureMessage(response.status));
+                },
+                onNetworkError: () => {
+                    setSubmitError(submitFailureMessage());
+                },
+            })
+            .catch(() => {});
     };
 
     return (
@@ -130,7 +147,10 @@ export default function PublicSubscribeForm({ subscribeForm }: Props) {
                     }
                     redirectCountdown={redirectCountdown}
                     processing={form.processing}
-                    errors={form.errors}
+                    errors={{
+                        ...form.errors,
+                        ...(submitError ? { form: submitError } : {}),
+                    }}
                     values={form.data}
                     onChange={(key, value) =>
                         form.setData({

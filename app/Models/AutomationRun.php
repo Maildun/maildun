@@ -32,6 +32,7 @@ use Illuminate\Support\Str;
  * @property-read Automation $automation
  * @property-read Subscriber $subscriber
  * @property-read Collection<int, AutomationRunStep> $steps
+ * @property-read Collection<int, AutomationEmailDelivery> $emailDeliveries
  */
 #[Fillable([
     'automation_id',
@@ -83,6 +84,12 @@ class AutomationRun extends Model
     public function steps(): HasMany
     {
         return $this->hasMany(AutomationRunStep::class);
+    }
+
+    /** @return HasMany<AutomationEmailDelivery, $this> */
+    public function emailDeliveries(): HasMany
+    {
+        return $this->hasMany(AutomationEmailDelivery::class);
     }
 
     /**
