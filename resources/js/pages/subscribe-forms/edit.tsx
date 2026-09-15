@@ -1377,13 +1377,18 @@ export default function SubscribeFormEdit({
                                                     >
                                                         Upload
                                                     </TabsTrigger>
-                                                    <TabsTrigger
-                                                        className="flex-1"
-                                                        value="image-preset"
-                                                        disabled={!canManage}
-                                                    >
-                                                        Images
-                                                    </TabsTrigger>
+                                                    {imageArtworkPresets.length >
+                                                        0 && (
+                                                        <TabsTrigger
+                                                            className="flex-1"
+                                                            value="image-preset"
+                                                            disabled={
+                                                                !canManage
+                                                            }
+                                                        >
+                                                            Images
+                                                        </TabsTrigger>
+                                                    )}
                                                     <TabsTrigger
                                                         className="flex-1"
                                                         value="background-preset"

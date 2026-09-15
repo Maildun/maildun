@@ -10,12 +10,6 @@ export type SubscribeFormImageSide = 'left' | 'right';
 export type SubscribeFormArtworkType =
     'upload' | 'image-preset' | 'background-preset';
 export type SubscribeFormArtworkPreset =
-    | 'image-aurora'
-    | 'image-horizon'
-    | 'image-prism'
-    | 'image-nocturne'
-    | 'image-drift'
-    | 'image-flare'
     | 'background-matrix'
     | 'background-grid'
     | 'background-orbit'

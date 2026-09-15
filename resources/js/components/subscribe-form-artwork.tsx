@@ -4,38 +4,8 @@ import type { SubscribeFormArtworkPreset } from '@/types/audiences';
 import type { TeamBrandColor, TeamBrandTheme } from '@/types/teams';
 import DottedBackground from '../../../components/originkit/ui/hero-26/dotmatrix';
 
-const imagePresetStyles: Record<string, CSSProperties> = {
-    'image-aurora': {
-        backgroundColor: '#050505',
-        backgroundImage:
-            "url('/assets/img/subscribe-form-presets/halo.webp')",
-    },
-    'image-horizon': {
-        backgroundColor: '#050505',
-        backgroundImage:
-            "url('/assets/img/subscribe-form-presets/eclipse.webp')",
-    },
-    'image-prism': {
-        backgroundColor: '#050505',
-        backgroundImage:
-            "url('/assets/img/subscribe-form-presets/veil.webp')",
-    },
-    'image-nocturne': {
-        backgroundColor: '#050505',
-        backgroundImage:
-            "url('/assets/img/subscribe-form-presets/orbit.webp')",
-    },
-    'image-drift': {
-        backgroundColor: '#050505',
-        backgroundImage:
-            "url('/assets/img/subscribe-form-presets/drift.webp')",
-    },
-    'image-flare': {
-        backgroundColor: '#050505',
-        backgroundImage:
-            "url('/assets/img/subscribe-form-presets/flare.webp')",
-    },
-};
+/** Fixed artwork keyed by image preset value; none ship at the moment. */
+const imagePresetStyles: Record<string, CSSProperties> = {};
 
 const brandArtworkColors: Record<TeamBrandColor, string> = {
     blue: '#3b82f6',
