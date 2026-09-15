@@ -15,7 +15,7 @@ import { AppLogoWordmark } from '@/components/app-logo-icon';
 import { cn } from '@/lib/utils';
 
 const PRODUCT_NAME = 'Maildun';
-const FALLBACK_SOURCE_URL = 'https://github.com/abduns/maildun';
+const FALLBACK_SOURCE_URL = 'https://github.com/Maildun/maildun';
 
 type Props = {
     className?: string;

@@ -15,6 +15,6 @@ return [
     |
     */
 
-    'source_url' => env('APP_SOURCE_URL', 'https://github.com/abduns/maildun'),
+    'source_url' => env('APP_SOURCE_URL', 'https://github.com/Maildun/maildun'),
 
 ];

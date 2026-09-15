@@ -3,7 +3,7 @@
 use App\Models\User;
 
 test('the source url defaults to the upstream repository', function () {
-    expect(config('attribution.source_url'))->toBe('https://github.com/abduns/maildun');
+    expect(config('attribution.source_url'))->toBe('https://github.com/Maildun/maildun');
 });
 
 test('operators can point the attribution notice at their own source', function () {

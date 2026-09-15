@@ -7,7 +7,7 @@ return [
         'enabled' => (bool) env('APP_UPDATE_CHECK_ENABLED', true),
         'manifest_url' => env(
             'APP_UPDATE_MANIFEST_URL',
-            'https://raw.githubusercontent.com/abduns/maildun/main/release-manifest.json',
+            'https://raw.githubusercontent.com/Maildun/maildun/main/release-manifest.json',
         ),
     ],
 ];

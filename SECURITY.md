@@ -6,7 +6,7 @@ Do not disclose suspected vulnerabilities in a public issue, discussion, pull re
 
 Use GitHub's private vulnerability reporting for this repository:
 
-https://github.com/abduns/maildun/security/advisories/new
+https://github.com/Maildun/maildun/security/advisories/new
 
 Include the affected commit or release, deployment details that matter, reproduction steps, impact, and any proposed mitigation. Remove real credentials, subscriber data, message content, and other personal data from the report.
 

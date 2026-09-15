@@ -32,9 +32,9 @@ import { logout } from '@/routes';
 import { edit } from '@/routes/profile';
 import type { User } from '@/types';
 
-const DOCUMENTATION_URL = 'https://github.com/abduns/maildun/tree/main/docs';
-const REPOSITORY_URL = 'https://github.com/abduns/maildun';
-const ISSUES_URL = 'https://github.com/abduns/maildun/issues';
+const DOCUMENTATION_URL = 'https://github.com/Maildun/maildun/tree/main/docs';
+const REPOSITORY_URL = 'https://github.com/Maildun/maildun';
+const ISSUES_URL = 'https://github.com/Maildun/maildun/issues';
 
 const THEME_OPTIONS: {
     value: Appearance;

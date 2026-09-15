@@ -45,7 +45,7 @@ After installation, sign in and configure every sending workspace separately. Co
 ## Automatic setup
 
 ```bash
-git clone https://github.com/abduns/maildun.git
+git clone https://github.com/Maildun/maildun.git
 cd maildun
 cp .env.example .env
 # Review the database, Redis, storage, and system MAIL_* values in .env.

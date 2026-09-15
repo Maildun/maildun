@@ -400,7 +400,7 @@ function PoweredByMaildun({
 }) {
     const sourceUrl =
         usePage().props.attribution?.sourceUrl ??
-        'https://github.com/abduns/maildun';
+        'https://github.com/Maildun/maildun';
 
     if (!enabled) {
         return null;

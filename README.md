@@ -4,7 +4,7 @@
 
 # Maildun
 
-[![Tests](https://github.com/abduns/maildun/actions/workflows/tests.yml/badge.svg)](https://github.com/abduns/maildun/actions/workflows/tests.yml)
+[![Tests](https://github.com/Maildun/maildun/actions/workflows/tests.yml/badge.svg)](https://github.com/Maildun/maildun/actions/workflows/tests.yml)
 
 Maildun is a self-hosted email platform for teams that need audience management, campaigns, transactional email, automations, and first-party engagement tracking in one application.
 
@@ -43,7 +43,7 @@ Adding a sender or provider in workspace settings does not configure system emai
 You need PHP 8.4 or newer, Composer 2, Node.js 22, pnpm 11, Redis, and a database supported by Laravel. SQLite is the default for local development.
 
 ```bash
-git clone https://github.com/abduns/maildun.git
+git clone https://github.com/Maildun/maildun.git
 cd maildun
 cp .env.example .env
 # Review the database, Redis, storage, and system MAIL_* values in .env.

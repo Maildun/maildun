@@ -153,9 +153,9 @@ test('the user dropdown provides theme and product resource links', function () 
     );
 
     expect($userMenu)->toBeString()
-        ->toContain('const DOCUMENTATION_URL = \'https://github.com/abduns/maildun/tree/main/docs\';')
-        ->toContain('const REPOSITORY_URL = \'https://github.com/abduns/maildun\';')
-        ->toContain('const ISSUES_URL = \'https://github.com/abduns/maildun/issues\';')
+        ->toContain('const DOCUMENTATION_URL = \'https://github.com/Maildun/maildun/tree/main/docs\';')
+        ->toContain('const REPOSITORY_URL = \'https://github.com/Maildun/maildun\';')
+        ->toContain('const ISSUES_URL = \'https://github.com/Maildun/maildun/issues\';')
         ->toContain('data-test="theme-menu-trigger"')
         ->toContain('data-test={`theme-${value}-item`}')
         ->toContain('ArrowUpRight01Icon')

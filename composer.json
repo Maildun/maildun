@@ -1,6 +1,6 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "abduns/maildun",
+    "name": "maildun/maildun",
     "type": "project",
     "description": "A self-hosted email platform for audiences, campaigns, transactional delivery, and automations.",
     "keywords": [
@@ -12,12 +12,12 @@
         "self-hosted",
         "transactional-email"
     ],
-    "homepage": "https://github.com/abduns/maildun",
+    "homepage": "https://github.com/Maildun/maildun",
     "license": "AGPL-3.0-only",
     "support": {
-        "issues": "https://github.com/abduns/maildun/issues",
-        "security": "https://github.com/abduns/maildun/security/advisories/new",
-        "source": "https://github.com/abduns/maildun"
+        "issues": "https://github.com/Maildun/maildun/issues",
+        "security": "https://github.com/Maildun/maildun/security/advisories/new",
+        "source": "https://github.com/Maildun/maildun"
     },
     "require": {
         "php": "^8.4",
