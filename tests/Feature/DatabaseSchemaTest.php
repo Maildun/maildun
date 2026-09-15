@@ -44,12 +44,21 @@ test('fresh migrations preserve the consolidated application schema', function (
         ->and(Schema::hasColumns('subscribe_forms', [
             'style',
             'image_side',
+            'artwork_type',
+            'artwork_preset',
             'image_url',
             'image_path',
             'image_upload_path',
             'logo_path',
             'logo_shape',
             'logo_size',
+            'logo_position',
+            'header_spacing',
+            'card_padding',
+            'redirect_enabled',
+            'redirect_url',
+            'powered_by_enabled',
+            'powered_by_form_position',
         ]))->toBeTrue()
         ->and(Schema::hasColumn('subscribe_forms', 'first_name_mode'))->toBeFalse()
         ->and(Schema::hasColumns('email_templates', ['subject', 'preheader']))->toBeTrue()

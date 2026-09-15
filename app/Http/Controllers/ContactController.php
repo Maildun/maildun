@@ -13,6 +13,7 @@ use App\Models\AutomationRun;
 use App\Models\Company;
 use App\Models\Contact;
 use App\Models\EmailDelivery;
+use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\Team;
@@ -196,6 +197,7 @@ class ContactController extends Controller
                 ...$this->summary($contact),
                 'company_assignment_mode' => $contact->company_assignment_mode->value,
                 'memberships' => $memberships
+                    ->toBase()
                     ->map(fn (Subscriber $subscriber): array => [
                         'uuid' => $subscriber->uuid,
                         'audience' => [
@@ -216,6 +218,7 @@ class ContactController extends Controller
                         'consent_ip' => $subscriber->consent_ip,
                         'attributes' => $subscriber->audience->audienceAttributes
                             ->sortBy('position')
+                            ->toBase()
                             ->map(fn (AudienceAttribute $attribute): array => [
                                 'uuid' => $attribute->uuid,
                                 'name' => $attribute->name,
@@ -226,7 +229,8 @@ class ContactController extends Controller
                             ->all(),
                         'segments' => $subscriber->segments
                             ->sortBy('name')
-                            ->map(fn ($segment): array => [
+                            ->toBase()
+                            ->map(fn (Segment $segment): array => [
                                 'uuid' => $segment->uuid,
                                 'name' => $segment->name,
                             ])

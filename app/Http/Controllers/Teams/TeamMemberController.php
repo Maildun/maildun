@@ -10,6 +10,7 @@ use App\Models\TeamInvitation;
 use App\Models\User;
 use App\Models\WorkspaceRole;
 use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Auth\Passwords\PasswordBroker;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -133,7 +134,9 @@ class TeamMemberController extends Controller
             'remember_token' => Str::random(60),
         ])->save();
 
-        Password::broker(config('fortify.passwords'))->deleteToken($user);
+        $broker = Password::broker(config('fortify.passwords'));
+        assert($broker instanceof PasswordBroker);
+        $broker->deleteToken($user);
 
         event(new PasswordReset($user));
 

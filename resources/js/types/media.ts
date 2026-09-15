@@ -30,3 +30,12 @@ export type MediaFilters = {
     category: string;
     tag: string;
 };
+
+export type MediaLibraryData = {
+    items: MediaItem[];
+    canManage: boolean;
+    canUpload: boolean;
+    atLimit: boolean;
+    convertUploadsToWebp: boolean;
+    hasMore: boolean;
+};

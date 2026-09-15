@@ -1,7 +1,13 @@
 <?php
 
+use App\Enums\SubscribeFormArtworkPreset;
+use App\Enums\SubscribeFormArtworkType;
+use App\Enums\SubscribeFormCardPadding;
+use App\Enums\SubscribeFormHeaderSpacing;
+use App\Enums\SubscribeFormLogoPosition;
 use App\Enums\SubscribeFormLogoShape;
 use App\Enums\SubscribeFormLogoSize;
+use App\Enums\SubscribeFormPoweredByPosition;
 use App\Enums\TeamBrandColor;
 use App\Enums\TeamBrandFont;
 use App\Enums\TeamBrandInputStyle;
@@ -31,6 +37,42 @@ function subscribeFormPayload(array $overrides = []): array
         ...$overrides,
     ];
 }
+
+test('subscribe forms created without a success heading use the default heading', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $payload = subscribeFormPayload();
+    unset($payload['success_heading']);
+
+    $this->actingAs($user)
+        ->post(route('audiences.subscribe_forms.store', [$team, $audience]), $payload)
+        ->assertSessionHasNoErrors();
+
+    expect($audience->subscribeForms()->firstOrFail()->success_heading)->toBe('You’re subscribed!');
+
+    $subscribeForm = $audience->subscribeForms()->firstOrFail();
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribe_forms.update', [$team, $audience, $subscribeForm]), subscribeFormPayload(['success_heading' => '']))
+        ->assertSessionHasErrors('success_heading');
+});
+
+test('enabled subscribe form redirects require an http or https destination', function (?string $redirectUrl) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('audiences.subscribe_forms.store', [$team, $audience]), subscribeFormPayload([
+            'redirect_enabled' => true,
+            'redirect_url' => $redirectUrl,
+        ]))
+        ->assertSessionHasErrors('redirect_url');
+})->with([
+    'missing destination' => null,
+    'unsupported protocol' => 'javascript:alert(1)',
+]);
 
 test('owners can create edit publish unpublish and soft delete subscribe forms', function () {
     $user = User::factory()->create();
@@ -65,18 +107,28 @@ test('owners can create edit publish unpublish and soft delete subscribe forms',
             ->where('subscribeForm.embed_code', fn (string $code) => str_contains($code, '?embed=1'))
             ->where('subscribeForm.style', 'card')
             ->where('subscribeForm.image_side', 'right')
+            ->where('subscribeForm.artwork_type', 'upload')
+            ->where('subscribeForm.artwork_preset', null)
             ->where('subscribeForm.text_alignment', 'center')
             ->where('subscribeForm.image_url', null)
             ->where('subscribeForm.logo', null)
             ->where('subscribeForm.logo_shape', 'default')
             ->where('subscribeForm.logo_size', 'medium')
+            ->where('subscribeForm.logo_position', 'center')
+            ->where('subscribeForm.header_spacing', 'default')
+            ->where('subscribeForm.card_padding', 'default')
             ->where('subscribeForm.theme.color', 'fuchsia')
             ->where('subscribeForm.theme.font', 'instrument-sans')
             ->where('subscribeForm.theme.inputStyle', 'soft')
             ->where('subscribeForm.success_heading', 'You’re subscribed!')
+            ->where('subscribeForm.redirect_enabled', false)
+            ->where('subscribeForm.redirect_url', null)
+            ->where('subscribeForm.powered_by_enabled', true)
+            ->where('subscribeForm.powered_by_form_position', 'bottom-center')
             ->where('attributes.0.uuid', $attribute->uuid)
             ->where('attributes.0.key', 'company')
             ->has('styles', 4)
+            ->has('artworkPresets', 10)
             ->has('brandColors', 15)
             ->has('brandFonts', 8)
             ->has('brandInputStyles', 3));
@@ -86,6 +138,10 @@ test('owners can create edit publish unpublish and soft delete subscribe forms',
             'headline' => 'Updated headline',
             'text_alignment' => 'left',
             'success_heading' => 'Welcome aboard!',
+            'redirect_enabled' => true,
+            'redirect_url' => 'https://example.com/thank-you',
+            'powered_by_enabled' => true,
+            'powered_by_form_position' => 'top-left',
             'brand_color' => 'orange',
             'brand_font' => 'mono',
             'brand_input_style' => 'underline',
@@ -96,6 +152,10 @@ test('owners can create edit publish unpublish and soft delete subscribe forms',
         ->headline->toBe('Updated headline')
         ->text_alignment->value->toBe('left')
         ->success_heading->toBe('Welcome aboard!')
+        ->redirect_enabled->toBeTrue()
+        ->redirect_url->toBe('https://example.com/thank-you')
+        ->powered_by_enabled->toBeTrue()
+        ->powered_by_form_position->toBe(SubscribeFormPoweredByPosition::TopLeft)
         ->brand_color->toBe(TeamBrandColor::Orange)
         ->brand_font->toBe(TeamBrandFont::Mono)
         ->brand_input_style->toBe(TeamBrandInputStyle::Underline);
@@ -118,6 +178,9 @@ test('owners can create edit publish unpublish and soft delete subscribe forms',
             'brand_color' => 'magenta',
             'brand_font' => 'comic-sans',
             'brand_input_style' => 'pill',
+            'redirect_enabled' => true,
+            'powered_by_form_position' => 'middle-left',
+            'publish' => 'eventually',
         ]))
         ->assertInvalid([
             'style',
@@ -125,6 +188,9 @@ test('owners can create edit publish unpublish and soft delete subscribe forms',
             'brand_color',
             'brand_font',
             'brand_input_style',
+            'redirect_url',
+            'powered_by_form_position',
+            'publish',
         ]);
 
     $this->actingAs($user)
@@ -142,6 +208,29 @@ test('owners can create edit publish unpublish and soft delete subscribe forms',
         ->assertRedirect(route('audiences.show', [$team, $audience]));
 
     $this->assertSoftDeleted($subscribeForm);
+});
+
+test('owners can save changes and publish a subscribe form atomically', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscribeForm = SubscribeForm::factory()->for($audience)->create([
+        'headline' => 'Old headline',
+    ]);
+
+    $this->actingAs($user)
+        ->patch(
+            route('audiences.subscribe_forms.update', [$team, $audience, $subscribeForm]),
+            subscribeFormPayload([
+                'headline' => 'Published headline',
+                'publish' => true,
+            ]),
+        )
+        ->assertRedirect();
+
+    expect($subscribeForm->fresh())
+        ->headline->toBe('Published headline')
+        ->published_at->not->toBeNull();
 });
 
 test('owners can upload replace and remove subscribe form logos', function () {
@@ -210,6 +299,39 @@ test('owners can upload replace and remove subscribe form logos', function () {
     Storage::disk('public')->assertMissing($replacedLogoPath);
 });
 
+test('owners can save logo shape position header spacing and card padding', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscribeForm = SubscribeForm::factory()->for($audience)->create();
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribe_forms.update', [$team, $audience, $subscribeForm]), subscribeFormPayload([
+            'logo_shape' => SubscribeFormLogoShape::RoundedFull->value,
+            'logo_size' => SubscribeFormLogoSize::Large->value,
+            'logo_position' => SubscribeFormLogoPosition::Left->value,
+            'header_spacing' => SubscribeFormHeaderSpacing::Spacious->value,
+            'card_padding' => SubscribeFormCardPadding::Compact->value,
+        ]))
+        ->assertRedirect();
+
+    expect($subscribeForm->fresh())
+        ->logo_shape->toBe(SubscribeFormLogoShape::RoundedFull)
+        ->logo_size->toBe(SubscribeFormLogoSize::Large)
+        ->logo_position->toBe(SubscribeFormLogoPosition::Left)
+        ->header_spacing->toBe(SubscribeFormHeaderSpacing::Spacious)
+        ->card_padding->toBe(SubscribeFormCardPadding::Compact);
+
+    $this->actingAs($user)
+        ->get(route('audiences.subscribe_forms.edit', [$team, $audience, $subscribeForm]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('subscribeForm.logo_shape', 'rounded-full')
+            ->where('subscribeForm.logo_position', 'left')
+            ->where('subscribeForm.header_spacing', 'spacious')
+            ->where('subscribeForm.card_padding', 'compact'));
+});
+
 test('owners can upload subscribe form artwork that is converted to webp in the background', function () {
     Queue::fake();
     Storage::fake('local');
@@ -220,6 +342,8 @@ test('owners can upload subscribe form artwork that is converted to webp in the 
     $audience = Audience::factory()->for($team)->create();
     $subscribeForm = SubscribeForm::factory()->for($audience)->create([
         'image_url' => 'https://example.com/legacy-image.jpg',
+        'artwork_type' => SubscribeFormArtworkType::BackgroundPreset,
+        'artwork_preset' => SubscribeFormArtworkPreset::BackgroundMatrix,
     ]);
 
     $this->actingAs($user)
@@ -235,7 +359,8 @@ test('owners can upload subscribe form artwork that is converted to webp in the 
 
     expect($sourcePath)->toStartWith('subscribe-form-images/pending/')
         ->and($subscribeForm->image_path)->toBeNull()
-        ->and($subscribeForm->image)->toBe('https://example.com/legacy-image.jpg');
+        ->and($subscribeForm->image)->toBe('https://example.com/legacy-image.jpg')
+        ->and($subscribeForm->artwork_type)->toBe(SubscribeFormArtworkType::Upload);
     Storage::disk('local')->assertExists($sourcePath);
 
     Queue::assertPushed(ProcessSubscribeFormImage::class, function (ProcessSubscribeFormImage $job) use ($subscribeForm, $sourcePath): bool {
@@ -254,6 +379,85 @@ test('owners can upload subscribe form artwork that is converted to webp in the 
     Storage::disk('local')->assertMissing($sourcePath);
     Storage::disk('public')->assertExists($subscribeForm->image_path);
     expect(Storage::disk('public')->mimeType($subscribeForm->image_path))->toBe('image/webp');
+});
+
+test('owners can choose artwork presets without deleting an uploaded image', function () {
+    Storage::fake('public');
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscribeForm = SubscribeForm::factory()->for($audience)->create([
+        'image_path' => 'subscribe-form-images/hero.webp',
+    ]);
+    Storage::disk('public')->put($subscribeForm->image_path, 'image');
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribe_forms.update', [$team, $audience, $subscribeForm]), subscribeFormPayload([
+            'style' => 'cover',
+            'artwork_type' => SubscribeFormArtworkType::ImagePreset->value,
+            'artwork_preset' => SubscribeFormArtworkPreset::ImageFlare->value,
+        ]))
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect($subscribeForm->fresh())
+        ->artwork_type->toBe(SubscribeFormArtworkType::ImagePreset)
+        ->artwork_preset->toBe(SubscribeFormArtworkPreset::ImageFlare)
+        ->image_path->toBe('subscribe-form-images/hero.webp');
+    Storage::disk('public')->assertExists('subscribe-form-images/hero.webp');
+
+    $this->actingAs($user)
+        ->get(route('audiences.subscribe_forms.edit', [$team, $audience, $subscribeForm]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('subscribeForm.artwork_type', 'image-preset')
+            ->where('subscribeForm.artwork_preset', 'image-flare')
+            ->has('artworkPresets', 10)
+            ->where('artworkPresets.0', [
+                'value' => 'image-aurora',
+                'label' => 'Halo',
+                'artwork_type' => 'image-preset',
+            ])
+            ->where('artworkPresets.4', [
+                'value' => 'image-drift',
+                'label' => 'Drift',
+                'artwork_type' => 'image-preset',
+            ])
+            ->where('artworkPresets.5', [
+                'value' => 'image-flare',
+                'label' => 'Flare',
+                'artwork_type' => 'image-preset',
+            ]));
+});
+
+test('artwork presets must match the selected artwork type', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscribeForm = SubscribeForm::factory()->for($audience)->create();
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribe_forms.update', [$team, $audience, $subscribeForm]), subscribeFormPayload([
+            'artwork_type' => SubscribeFormArtworkType::ImagePreset->value,
+            'artwork_preset' => SubscribeFormArtworkPreset::BackgroundGrid->value,
+        ]))
+        ->assertSessionHasErrors([
+            'artwork_preset' => 'The selected artwork preset does not match its type.',
+        ]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribe_forms.update', [$team, $audience, $subscribeForm]), subscribeFormPayload([
+            'artwork_type' => SubscribeFormArtworkType::BackgroundPreset->value,
+            'artwork_preset' => null,
+        ]))
+        ->assertSessionHasErrors([
+            'artwork_preset' => 'Choose an artwork preset.',
+        ]);
+
+    expect($subscribeForm->fresh())
+        ->artwork_type->toBe(SubscribeFormArtworkType::Upload)
+        ->artwork_preset->toBeNull();
 });
 
 test('subscribe form artwork conversion carries its s3 compatible source disk to the queue', function () {
@@ -388,8 +592,11 @@ test('subscribe form logo uploads reject invalid files and values', function () 
         ->patch(route('audiences.subscribe_forms.update', [$team, $audience, $subscribeForm]), subscribeFormPayload([
             'logo_shape' => 'wide',
             'logo_size' => 'huge',
+            'logo_position' => 'middle',
+            'header_spacing' => 'huge',
+            'card_padding' => 'huge',
         ]))
-        ->assertInvalid(['logo_shape', 'logo_size']);
+        ->assertInvalid(['logo_shape', 'logo_size', 'logo_position', 'header_spacing', 'card_padding']);
 });
 
 test('subscribe form artwork and logos reject files larger than two megabytes', function () {

@@ -355,6 +355,56 @@
     font-family: var(--font-sans);
 }
 
+[data-subscribe-form-theme]
+    :is(
+        [data-slot='input'],
+        [data-slot='textarea'],
+        [data-slot='select-trigger'],
+        [data-slot='combobox-trigger'],
+        [data-slot='input-group'],
+        [data-slot='code-editor'],
+        [data-subscribe-date-trigger]
+    ) {
+    transition-property:
+        color, background-color, border-color, box-shadow, outline-color;
+    transition-duration: 150ms;
+}
+
+[data-subscribe-form-theme]
+    :is([data-slot='input'], [data-slot='textarea']):not(
+        :placeholder-shown
+    ):not(:focus-visible),
+[data-subscribe-form-theme]
+    :is([data-slot='select-trigger'], [data-slot='combobox-trigger']):not(
+        [data-placeholder]
+    ):not(:focus-visible),
+[data-subscribe-form-theme]
+    [data-subscribe-date-trigger][data-has-value]:not(:focus-visible),
+[data-subscribe-form-theme]
+    [data-slot='input-group']:has(
+        [data-slot='input-group-control']:not(:placeholder-shown)
+    ):not(:focus-within) {
+    border-color: color-mix(in oklch, var(--ring) 42%, var(--input));
+    background-color: color-mix(in oklch, var(--ring) 4%, var(--background));
+}
+
+[data-subscribe-form-theme]
+    :is(
+        [data-slot='input'],
+        [data-slot='textarea'],
+        [data-slot='select-trigger'],
+        [data-slot='combobox-trigger'],
+        [data-subscribe-date-trigger]
+    ):focus-visible,
+[data-subscribe-form-theme]
+    [data-slot='input-group']:has(
+        [data-slot='input-group-control']:focus-visible
+    ),
+[data-subscribe-form-theme] [data-slot='code-editor']:focus-within {
+    border-color: var(--ring);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 24%, transparent);
+}
+
 [data-subscribe-form-theme][data-team-input-style='soft']
     :is(
         [data-slot='input'],
@@ -366,8 +416,56 @@
         [data-slot='input-otp'],
         [data-subscribe-date-trigger]
     ) {
-    background-color: color-mix(in oklch, var(--muted) 65%, var(--background));
+    background-color: color-mix(
+        in oklch,
+        var(--foreground) 7%,
+        var(--background)
+    );
     border-color: transparent;
+    box-shadow: none;
+}
+
+[data-subscribe-form-theme][data-team-input-style='soft']
+    :is([data-slot='input'], [data-slot='textarea']):not(
+        :placeholder-shown
+    ):not(:focus-visible),
+[data-subscribe-form-theme][data-team-input-style='soft']
+    :is([data-slot='select-trigger'], [data-slot='combobox-trigger']):not(
+        [data-placeholder]
+    ):not(:focus-visible),
+[data-subscribe-form-theme][data-team-input-style='soft']
+    [data-subscribe-date-trigger][data-has-value]:not(:focus-visible),
+[data-subscribe-form-theme][data-team-input-style='soft']
+    [data-slot='input-group']:has(
+        [data-slot='input-group-control']:not(:placeholder-shown)
+    ):not(:focus-within) {
+    background-color: color-mix(
+        in oklch,
+        var(--foreground) 7%,
+        var(--background)
+    );
+    border-color: transparent;
+}
+
+[data-subscribe-form-theme][data-team-input-style='soft']
+    :is(
+        [data-slot='input'],
+        [data-slot='textarea'],
+        [data-slot='select-trigger'],
+        [data-slot='combobox-trigger'],
+        [data-subscribe-date-trigger]
+    ):focus-visible,
+[data-subscribe-form-theme][data-team-input-style='soft']
+    [data-slot='input-group']:has(
+        [data-slot='input-group-control']:focus-visible
+    ),
+[data-subscribe-form-theme][data-team-input-style='soft']
+    [data-slot='code-editor']:focus-within {
+    border-color: color-mix(in oklch, var(--foreground) 25%, transparent);
+    background-color: var(--background);
+    box-shadow: 0 0 0 3px
+        color-mix(in oklch, var(--foreground) 10%, transparent);
+    outline: none;
 }
 
 [data-subscribe-form-theme][data-team-input-style='underline']
@@ -389,18 +487,23 @@
     box-shadow: none;
 }
 
-[data-subscribe-form-theme][data-team-input-style='soft']
-    :is(
-        [data-slot='input'],
-        [data-slot='textarea'],
-        [data-slot='select-trigger'],
-        [data-slot='input-group'],
-        [data-slot='combobox-trigger'],
-        [data-slot='code-editor'],
-        [data-slot='input-otp'],
-        [data-subscribe-date-trigger]
-    ):focus-visible {
-    border-color: var(--ring);
+[data-subscribe-form-theme][data-team-input-style='underline']
+    :is([data-slot='input'], [data-slot='textarea']):not(
+        :placeholder-shown
+    ):not(:focus-visible),
+[data-subscribe-form-theme][data-team-input-style='underline']
+    :is([data-slot='select-trigger'], [data-slot='combobox-trigger']):not(
+        [data-placeholder]
+    ):not(:focus-visible),
+[data-subscribe-form-theme][data-team-input-style='underline']
+    [data-subscribe-date-trigger][data-has-value]:not(:focus-visible),
+[data-subscribe-form-theme][data-team-input-style='underline']
+    [data-slot='input-group']:has(
+        [data-slot='input-group-control']:not(:placeholder-shown)
+    ):not(:focus-within) {
+    border-color: transparent;
+    border-bottom-color: color-mix(in oklch, var(--ring) 58%, var(--input));
+    background-color: transparent;
 }
 
 [data-subscribe-form-theme][data-team-input-style='underline']
@@ -408,27 +511,17 @@
         [data-slot='input'],
         [data-slot='textarea'],
         [data-slot='select-trigger'],
-        [data-slot='input-group'],
         [data-slot='combobox-trigger'],
-        [data-slot='code-editor'],
-        [data-slot='input-otp'],
         [data-subscribe-date-trigger]
-    ):focus-visible {
-    border-color: transparent;
-    border-bottom-color: var(--ring);
-}
-
-[data-subscribe-form-theme][data-team-input-style='soft']
-    [data-slot='input-group']:has(
-        [data-slot='input-group-control']:focus-visible
-    ) {
-    border-color: var(--ring);
-}
-
+    ):focus-visible,
 [data-subscribe-form-theme][data-team-input-style='underline']
     [data-slot='input-group']:has(
         [data-slot='input-group-control']:focus-visible
-    ) {
+    ),
+[data-subscribe-form-theme][data-team-input-style='underline']
+    [data-slot='code-editor']:focus-within {
     border-color: transparent;
     border-bottom-color: var(--ring);
+    border-bottom-width: 2px;
+    box-shadow: none;
 }

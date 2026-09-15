@@ -38,7 +38,6 @@ test('the attribution badge renders on every public page', function () {
     $root = dirname(__DIR__, 2);
 
     $surfaces = [
-        'resources/js/components/subscribe-form-view.tsx',
         'resources/js/pages/unsubscribe/show.tsx',
         'resources/js/pages/subscribe-forms/confirmed.tsx',
     ];
@@ -49,6 +48,14 @@ test('the attribution badge renders on every public page', function () {
             ->toContain("import { AttributionBadge } from '@/components/attribution-badge';")
             ->toContain('<AttributionBadge');
     }
+
+    expect(file_get_contents($root.'/resources/js/components/subscribe-form-view.tsx'))
+        ->toBeString()
+        ->toContain('data-test="subscribe-form-powered-by"')
+        ->toContain('Powered by')
+        ->toContain('Maildun')
+        ->toContain('usePage().props.attribution?.sourceUrl')
+        ->toContain('enabled={!completed}');
 });
 
 test('the license keeps the AGPL section 7 additional terms above a verbatim AGPL', function () {

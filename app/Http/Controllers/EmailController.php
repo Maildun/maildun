@@ -24,6 +24,7 @@ use App\Models\EmailLink;
 use App\Models\EmailLinkTrackingAggregate;
 use App\Models\EmailTemplate;
 use App\Models\EmailTrackingAggregate;
+use App\Models\Media;
 use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Team;
@@ -301,7 +302,45 @@ class EmailController extends Controller
                 'reply_to' => $currentTeam->email_reply_to,
             ],
             'canManage' => Gate::allows('update', $email),
+            'mediaLibrary' => fn (): ?array => $currentTeam->email_editor === EmailEditor::Builder
+                ? $this->mediaLibraryFor($currentTeam)
+                : null,
         ]);
+    }
+
+    /**
+     * @return array{
+     *     items: list<array<string, mixed>>,
+     *     canManage: bool,
+     *     canUpload: bool,
+     *     atLimit: bool,
+     *     convertUploadsToWebp: bool,
+     *     hasMore: bool
+     * }
+     */
+    private function mediaLibraryFor(Team $team): array
+    {
+        Gate::authorize('viewAny', [Media::class, $team]);
+
+        $media = $team->media()
+            ->with(['category', 'tags'])
+            ->latest()
+            ->limit(61)
+            ->get();
+        $canManage = Gate::allows('create', [Media::class, $team]);
+
+        return [
+            'items' => $media
+                ->take(60)
+                ->map(fn (Media $item): array => $item->toInertia())
+                ->values()
+                ->all(),
+            'canManage' => $canManage,
+            'canUpload' => $canManage,
+            'atLimit' => false,
+            'convertUploadsToWebp' => $team->convert_uploads_to_webp,
+            'hasMore' => $media->count() > 60,
+        ];
     }
 
     public function update(UpdateEmailRequest $request, Team $currentTeam, Email $email): RedirectResponse

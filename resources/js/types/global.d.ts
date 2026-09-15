@@ -1,3 +1,4 @@
+import '@inertiajs/core';
 import type { AppUpdateStatus } from '@/types/app-update';
 import type { Auth } from '@/types/auth';
 import type { RecentCampaign } from '@/types/emails';

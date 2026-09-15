@@ -114,6 +114,8 @@ test('campaign design view fills leftover height and hub dialogs use the default
         ->toContain("'campaign-design-shell'")
         ->toContain('data-test="campaign-design-navbar"')
         ->toContain('data-test="campaign-design-back"')
+        ->toContain('data-test="open-media-library"')
+        ->toContain('Open media')
         ->toContain('relative flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-background')
         ->toContain('fill')
         ->toContain('<DialogContent>')
@@ -125,6 +127,19 @@ test('campaign design view fills leftover height and hub dialogs use the default
         ->toContain('text-success')
         ->and($css)->toContain('.email-builder-js[data-fill]')
         ->toContain('flex: 1 1 0%');
+});
+
+test('campaign media dialog supports upload search and copy link', function () {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/media-library-dialog.tsx');
+
+    expect($source)->toBeString()
+        ->toContain('data-test="builder-media-dialog"')
+        ->toContain('data-test="upload-builder-media"')
+        ->toContain('data-test="builder-media-file-input"')
+        ->toContain('data-test="copy-builder-media-link"')
+        ->toContain("only: ['mediaLibrary']")
+        ->toContain('Search recent media')
+        ->toContain('EmailBuilder.js');
 });
 
 test('campaign draft saves each section and keeps template creation in campaign actions', function () {

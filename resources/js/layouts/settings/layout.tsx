@@ -52,7 +52,6 @@ import { edit as teamEmailProviderSettings } from '@/routes/teams/email-provider
 import { index as teamMembers } from '@/routes/teams/members';
 import { index as teamRoles } from '@/routes/teams/roles';
 import { edit as teamSenderSettings } from '@/routes/teams/sender';
-import { edit as teamThemeSettings } from '@/routes/teams/theme';
 import type { NavItem } from '@/types';
 
 type NavGroup = {
@@ -157,13 +156,6 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                                                 currentTeam.slug,
                                             ),
                                             icon: Key01Icon,
-                                        },
-                                        {
-                                            title: 'Form theme defaults',
-                                            href: teamThemeSettings(
-                                                currentTeam.slug,
-                                            ),
-                                            icon: DashboardSquareSettingIcon,
                                         },
                                     ]
                                   : []),

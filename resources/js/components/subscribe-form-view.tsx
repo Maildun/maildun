@@ -1,14 +1,11 @@
-/**
- * Renders the attribution notice required by the additional terms in LICENSE,
- * added under section 7(b) of the GNU Affero General Public License. Removing
- * or hiding it terminates the rights granted by that license.
- */
 import { Calendar02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
+import { usePage } from '@inertiajs/react';
 import { format, parse } from 'date-fns';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { FormEvent } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
-import { AttributionBadge } from '@/components/attribution-badge';
+import { SubscribeFormArtworkVisual } from '@/components/subscribe-form-artwork';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -39,13 +36,26 @@ import { cn } from '@/lib/utils';
 import type { TeamBrandTheme } from '@/types';
 import type {
     AudienceAttribute,
+    SubscribeFormArtworkPreset,
+    SubscribeFormArtworkType,
+    SubscribeFormCardPadding,
     SubscribeFormFieldMode,
+    SubscribeFormHeaderSpacing,
     SubscribeFormImageSide,
+    SubscribeFormLogoPosition,
     SubscribeFormLogoShape,
     SubscribeFormLogoSize,
+    SubscribeFormPoweredByPosition,
     SubscribeFormStyle,
     SubscribeFormTextAlignment,
 } from '@/types/audiences';
+
+const MotionCard = motion.create(Card);
+const MORPH_TRANSITION = {
+    type: 'spring',
+    duration: 0.65,
+    bounce: 0.12,
+} as const;
 
 const ATTRIBUTE_DATE_FORMAT = 'yyyy-MM-dd';
 
@@ -56,13 +66,20 @@ export type SubscribeFormAppearance = {
     text_alignment: SubscribeFormTextAlignment;
     button_label: string;
     success_heading: string;
+    powered_by_enabled: boolean;
+    powered_by_form_position: SubscribeFormPoweredByPosition;
     consent_text: string;
     style: SubscribeFormStyle;
     image_side: SubscribeFormImageSide;
+    artwork_type: SubscribeFormArtworkType;
+    artwork_preset: SubscribeFormArtworkPreset | null;
     image_url: string | null;
     logo: string | null;
     logo_shape: SubscribeFormLogoShape;
     logo_size: SubscribeFormLogoSize;
+    logo_position: SubscribeFormLogoPosition;
+    header_spacing: SubscribeFormHeaderSpacing;
+    card_padding: SubscribeFormCardPadding;
     first_name_mode: SubscribeFormFieldMode;
     last_name_mode: SubscribeFormFieldMode;
     attributes: AudienceAttribute[];
@@ -80,8 +97,10 @@ export type SubscribeFormValues = {
 type Props = {
     form: SubscribeFormAppearance;
     preview?: boolean;
+    previewViewport?: 'responsive' | 'mobile';
     completed?: boolean;
     successMessage?: string;
+    redirectCountdown?: number | null;
     processing?: boolean;
     errors?: Record<string, string | undefined>;
     values?: SubscribeFormValues;
@@ -97,8 +116,10 @@ type Props = {
 export function SubscribeFormView({
     form,
     preview = false,
+    previewViewport = 'responsive',
     completed = false,
     successMessage,
+    redirectCountdown,
     processing = false,
     errors = {},
     values,
@@ -114,31 +135,147 @@ export function SubscribeFormView({
         'data-team-input-style': form.theme.inputStyle,
         style: subscribeFormThemeStyle(form.theme),
     };
-    const fields = completed ? (
-        <div
-            className={cn(
-                'rounded-lg bg-muted p-4 motion-safe:animate-in motion-safe:duration-300 motion-safe:fade-in-0 motion-safe:zoom-in-95',
-                textAlignmentClasses[form.text_alignment],
-            )}
-        >
-            <p className="font-medium">{form.success_heading}</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-                {successMessage || 'Thanks for subscribing!'}
-            </p>
+    const reducedMotion = Boolean(useReducedMotion());
+    const layoutProps = {
+        layout: !reducedMotion,
+        transition: reducedMotion ? { duration: 0 } : MORPH_TRANSITION,
+    };
+    const intro = {
+        form,
+        completed,
+        successMessage,
+        redirectCountdown,
+        reducedMotion,
+    };
+    const fields = (
+        <div className="relative" data-test="subscribe-form-morph">
+            <AnimatePresence initial={false} mode="wait">
+                {completed ? (
+                    <motion.div
+                        key="success"
+                        initial={
+                            reducedMotion ? false : { opacity: 0, scale: 0.96 }
+                        }
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: reducedMotion ? 0 : 0.22 }}
+                        className={cn(
+                            'flex py-1',
+                            successAlignmentClasses[form.text_alignment],
+                        )}
+                    >
+                        <div
+                            className="flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground"
+                            aria-hidden="true"
+                            data-test="subscribe-form-success"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                className="size-7"
+                            >
+                                <motion.path
+                                    d="m5 12 4 4L19 6"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    initial={
+                                        reducedMotion
+                                            ? false
+                                            : { pathLength: 0, opacity: 0 }
+                                    }
+                                    animate={{ pathLength: 1, opacity: 1 }}
+                                    transition={{
+                                        duration: reducedMotion ? 0 : 0.3,
+                                        delay: reducedMotion ? 0 : 0.12,
+                                    }}
+                                />
+                            </svg>
+                        </div>
+                    </motion.div>
+                ) : (
+                    <motion.div
+                        key="fields"
+                        initial={false}
+                        animate={{ opacity: 1 }}
+                        exit={{
+                            opacity: 0,
+                            y: reducedMotion ? 0 : -8,
+                        }}
+                        transition={{ duration: reducedMotion ? 0 : 0.18 }}
+                    >
+                        <SubscribeFormFields
+                            form={form}
+                            preview={preview}
+                            processing={processing}
+                            errors={errors}
+                            values={values}
+                            onChange={onChange}
+                            onAttributeChange={onAttributeChange}
+                        />
+                    </motion.div>
+                )}
+            </AnimatePresence>
+            <div
+                className="sr-only"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+            >
+                {completed
+                    ? `${form.success_heading} ${successMessage || 'Thanks for subscribing!'}`
+                    : ''}
+            </div>
         </div>
-    ) : (
-        <SubscribeFormFields
-            form={form}
-            preview={preview}
-            processing={processing}
-            errors={errors}
-            values={values}
-            onChange={onChange}
-            onAttributeChange={onAttributeChange}
-        />
     );
 
-    const heading = <FormIntro form={form} logoAlign="start" as="heading" />;
+    const heading = <FormIntro {...intro} as="heading" />;
+    const poweredByPosition = form.powered_by_form_position;
+    const poweredByAbove = poweredByPosition.startsWith('top-');
+    const submitContent =
+        onSubmit && !preview ? (
+            <form onSubmit={onSubmit}>{fields}</form>
+        ) : (
+            fields
+        );
+    const inlinePoweredBy = (
+        <PoweredByMaildun
+            enabled={!completed}
+            position={poweredByPosition}
+            preview={preview}
+        />
+    );
+    const formContent = (
+        <div className="flex flex-col gap-4">
+            {poweredByAbove ? inlinePoweredBy : null}
+            {submitContent}
+            {poweredByAbove ? null : inlinePoweredBy}
+        </div>
+    );
+
+    if (form.style === 'split' && previewViewport === 'mobile') {
+        return (
+            <div
+                {...themeAttributes}
+                className={cn(
+                    'flex min-h-full items-center justify-center bg-background p-6',
+                    className,
+                )}
+            >
+                <motion.div
+                    {...layoutProps}
+                    className={cn(
+                        'flex w-full max-w-sm flex-col',
+                        headerSpacingClasses[form.header_spacing],
+                    )}
+                >
+                    {heading}
+                    {formContent}
+                </motion.div>
+            </div>
+        );
+    }
 
     if (form.style === 'split') {
         const imageFirst = form.image_side === 'left';
@@ -148,18 +285,24 @@ export function SubscribeFormView({
                 {...themeAttributes}
                 className={cn('grid min-h-full lg:grid-cols-2', className)}
             >
-                {imageFirst ? <FormArtPanel form={form} /> : null}
+                {imageFirst ? (
+                    <FormArtPanel form={form} preview={preview} fixed />
+                ) : null}
                 <div className="flex items-center justify-center bg-background p-8">
-                    <div className="flex w-full max-w-sm flex-col gap-6">
-                        {heading}
-                        {onSubmit && !preview ? (
-                            <form onSubmit={onSubmit}>{fields}</form>
-                        ) : (
-                            fields
+                    <motion.div
+                        {...layoutProps}
+                        className={cn(
+                            'flex w-full max-w-sm flex-col',
+                            headerSpacingClasses[form.header_spacing],
                         )}
-                    </div>
+                    >
+                        {heading}
+                        {formContent}
+                    </motion.div>
                 </div>
-                {imageFirst ? null : <FormArtPanel form={form} />}
+                {imageFirst ? null : (
+                    <FormArtPanel form={form} preview={preview} fixed />
+                )}
             </div>
         );
     }
@@ -173,14 +316,16 @@ export function SubscribeFormView({
                     className,
                 )}
             >
-                <div className="flex w-full max-w-sm flex-col gap-6">
-                    <FormIntro form={form} logoAlign="center" as="heading" />
-                    {onSubmit && !preview ? (
-                        <form onSubmit={onSubmit}>{fields}</form>
-                    ) : (
-                        fields
+                <motion.div
+                    {...layoutProps}
+                    className={cn(
+                        'flex w-full max-w-sm flex-col',
+                        headerSpacingClasses[form.header_spacing],
                     )}
-                </div>
+                >
+                    <FormIntro {...intro} as="heading" />
+                    {formContent}
+                </motion.div>
             </div>
         );
     }
@@ -190,25 +335,50 @@ export function SubscribeFormView({
             <div
                 {...themeAttributes}
                 className={cn(
-                    'relative flex min-h-full items-center justify-center overflow-hidden p-6',
+                    'relative grid min-h-full grid-cols-1 items-start',
                     className,
                 )}
             >
                 <FormArtPanel
                     form={form}
                     always
-                    className="pointer-events-none absolute inset-0 z-0 min-h-full"
+                    preview={preview}
+                    fixed
+                    className="pointer-events-none sticky top-0 z-0 col-start-1 row-start-1 w-full"
                 />
-                <Card className="relative z-10 w-full max-w-md">
-                    <FormIntro form={form} logoAlign="center" as="card" />
-                    <CardContent>
-                        {onSubmit && !preview ? (
-                            <form onSubmit={onSubmit}>{fields}</form>
-                        ) : (
-                            fields
+                <div className="relative z-10 col-start-1 row-start-1 flex min-h-full items-center justify-center p-6">
+                    <div className="flex w-full max-w-md flex-col">
+                        {poweredByAbove ? (
+                            <PoweredByMaildun
+                                enabled={!completed}
+                                position={poweredByPosition}
+                                preview={preview}
+                                outsideCard
+                                variant="cover"
+                            />
+                        ) : null}
+                        <MotionCard
+                            {...layoutProps}
+                            className={cn(
+                                'w-full',
+                                headerSpacingClasses[form.header_spacing],
+                                cardPaddingClasses[form.card_padding],
+                            )}
+                        >
+                            <FormIntro {...intro} as="card" />
+                            <CardContent>{submitContent}</CardContent>
+                        </MotionCard>
+                        {poweredByAbove ? null : (
+                            <PoweredByMaildun
+                                enabled={!completed}
+                                position={poweredByPosition}
+                                preview={preview}
+                                outsideCard
+                                variant="cover"
+                            />
                         )}
-                    </CardContent>
-                </Card>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -221,30 +391,211 @@ export function SubscribeFormView({
                 className,
             )}
         >
-            <Card className="w-full max-w-md">
-                <FormIntro form={form} logoAlign="center" as="card" />
-                <CardContent>
-                    {onSubmit && !preview ? (
-                        <form onSubmit={onSubmit}>{fields}</form>
-                    ) : (
-                        fields
+            <div className="flex w-full max-w-md flex-col">
+                {poweredByAbove ? (
+                    <PoweredByMaildun
+                        enabled={!completed}
+                        position={poweredByPosition}
+                        preview={preview}
+                        outsideCard
+                    />
+                ) : null}
+                <MotionCard
+                    {...layoutProps}
+                    className={cn(
+                        'w-full',
+                        headerSpacingClasses[form.header_spacing],
+                        cardPaddingClasses[form.card_padding],
                     )}
-                </CardContent>
-            </Card>
+                >
+                    <FormIntro {...intro} as="card" />
+                    <CardContent>{submitContent}</CardContent>
+                </MotionCard>
+                {poweredByAbove ? null : (
+                    <PoweredByMaildun
+                        enabled={!completed}
+                        position={poweredByPosition}
+                        preview={preview}
+                        outsideCard
+                    />
+                )}
+            </div>
         </div>
     );
 }
 
+function PoweredByMaildun({
+    enabled,
+    position,
+    preview,
+    outsideCard = false,
+    variant = 'default',
+}: {
+    enabled: boolean;
+    position: SubscribeFormPoweredByPosition;
+    preview: boolean;
+    outsideCard?: boolean;
+    variant?: 'default' | 'cover';
+}) {
+    const sourceUrl =
+        usePage().props.attribution?.sourceUrl ??
+        'https://github.com/abduns/maildun';
+
+    if (!enabled) {
+        return null;
+    }
+
+    const content = (
+        <>
+            <span
+                className={cn(
+                    'flex size-6 items-center justify-center rounded-md shadow-xs transition-transform group-hover:scale-105',
+                    variant === 'cover'
+                        ? 'bg-white/15 text-white ring-1 ring-white/20'
+                        : 'bg-foreground text-background',
+                )}
+            >
+                <AppLogoIcon className="h-3.5 w-auto" />
+            </span>
+            <span
+                className={cn(
+                    variant === 'cover'
+                        ? 'text-white/75'
+                        : 'text-muted-foreground',
+                )}
+            >
+                Powered by
+            </span>
+            <span
+                className={cn(
+                    'font-semibold',
+                    variant === 'cover' ? 'text-white' : 'text-foreground',
+                )}
+            >
+                Maildun
+            </span>
+        </>
+    );
+    const className = cn(
+        'group inline-flex items-center gap-1.5 rounded-lg border py-1 pr-2.5 pl-1 text-[11px] font-medium backdrop-blur-xl transition-all hover:-translate-y-px hover:shadow-md',
+        variant === 'cover'
+            ? 'border-white/25 bg-white/10 text-white shadow-lg shadow-black/10 hover:border-white/35 hover:bg-white/15'
+            : 'border-border/60 bg-background/90 shadow-sm hover:border-border',
+    );
+
+    return (
+        <div
+            className={cn(
+                'flex',
+                position.startsWith('top-')
+                    ? outsideCard
+                        ? 'mb-6'
+                        : 'mb-2'
+                    : outsideCard
+                      ? 'mt-6'
+                      : 'mt-2',
+                poweredByAlignmentClasses[position],
+            )}
+            data-test="subscribe-form-powered-by"
+        >
+            {preview ? (
+                <span className={className}>{content}</span>
+            ) : (
+                <a
+                    href={sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={className}
+                >
+                    {content}
+                </a>
+            )}
+        </div>
+    );
+}
+
+const poweredByAlignmentClasses: Record<
+    SubscribeFormPoweredByPosition,
+    string
+> = {
+    'top-left': 'justify-start',
+    'top-center': 'justify-center',
+    'top-right': 'justify-end',
+    'bottom-left': 'justify-start',
+    'bottom-center': 'justify-center',
+    'bottom-right': 'justify-end',
+};
+
 function FormIntro({
     form,
-    logoAlign,
     as,
+    completed,
+    successMessage,
+    redirectCountdown,
+    reducedMotion,
 }: {
     form: SubscribeFormAppearance;
-    logoAlign: 'start' | 'center';
     as: 'heading' | 'card';
+    completed: boolean;
+    successMessage?: string;
+    redirectCountdown?: number | null;
+    reducedMotion: boolean;
 }) {
-    const headline = form.headline || 'Join our newsletter';
+    const title = completed
+        ? form.success_heading
+        : form.headline || 'Join our newsletter';
+    const description = completed
+        ? successMessage || 'Thanks for subscribing!'
+        : form.description;
+
+    const copy = (
+        <motion.div
+            key={completed ? 'success' : 'form'}
+            initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reducedMotion ? undefined : { opacity: 0, y: -6 }}
+            transition={{ duration: reducedMotion ? 0 : 0.22 }}
+            className="flex flex-col gap-1"
+        >
+            {as === 'card' ? (
+                <>
+                    <CardTitle>{title}</CardTitle>
+                    {description ? (
+                        <CardDescription>{description}</CardDescription>
+                    ) : null}
+                    {completed && redirectCountdown != null ? (
+                        <p
+                            className="text-xs text-muted-foreground"
+                            aria-live="polite"
+                        >
+                            Redirecting in {redirectCountdown}{' '}
+                            {redirectCountdown === 1 ? 'second' : 'seconds'}…
+                        </p>
+                    ) : null}
+                </>
+            ) : (
+                <>
+                    <h1 className="text-xl font-semibold tracking-tight">
+                        {title}
+                    </h1>
+                    {description ? (
+                        <p className="text-sm text-muted-foreground">
+                            {description}
+                        </p>
+                    ) : null}
+                    {completed && redirectCountdown != null ? (
+                        <p
+                            className="text-xs text-muted-foreground"
+                            aria-live="polite"
+                        >
+                            Redirecting in {redirectCountdown}{' '}
+                            {redirectCountdown === 1 ? 'second' : 'seconds'}…
+                        </p>
+                    ) : null}
+                </>
+            )}
+        </motion.div>
+    );
 
     if (as === 'card') {
         return (
@@ -254,11 +605,10 @@ function FormIntro({
                     form.logo && 'gap-3',
                 )}
             >
-                <FormLogo form={form} align={logoAlign} />
-                <CardTitle>{headline}</CardTitle>
-                {form.description ? (
-                    <CardDescription>{form.description}</CardDescription>
-                ) : null}
+                <FormLogo form={form} />
+                <AnimatePresence initial={false} mode="wait">
+                    {copy}
+                </AnimatePresence>
             </CardHeader>
         );
     }
@@ -270,17 +620,10 @@ function FormIntro({
                 textAlignmentClasses[form.text_alignment],
             )}
         >
-            <FormLogo form={form} align={logoAlign} />
-            <div className="flex flex-col gap-1">
-                <h1 className="text-xl font-semibold tracking-tight">
-                    {headline}
-                </h1>
-                {form.description ? (
-                    <p className="text-sm text-muted-foreground">
-                        {form.description}
-                    </p>
-                ) : null}
-            </div>
+            <FormLogo form={form} />
+            <AnimatePresence initial={false} mode="wait">
+                {copy}
+            </AnimatePresence>
         </div>
     );
 }
@@ -291,49 +634,76 @@ const textAlignmentClasses: Record<SubscribeFormTextAlignment, string> = {
     right: 'text-right',
 };
 
-const logoSizeClasses: Record<
-    SubscribeFormLogoShape,
-    Record<SubscribeFormLogoSize, string>
-> = {
-    square: {
-        small: 'size-8',
-        medium: 'size-12',
-        large: 'size-16',
-    },
-    default: {
-        small: 'h-6 max-w-28',
-        medium: 'h-8 max-w-40',
-        large: 'h-12 max-w-56',
-    },
+const successAlignmentClasses: Record<SubscribeFormTextAlignment, string> = {
+    left: 'items-start text-left',
+    center: 'items-center text-center',
+    right: 'items-end text-right',
 };
 
-function FormLogo({
-    form,
-    align,
-}: {
-    form: SubscribeFormAppearance;
-    align: 'start' | 'center';
-}) {
+const headerSpacingClasses: Record<SubscribeFormHeaderSpacing, string> = {
+    compact: 'gap-3',
+    default: 'gap-6',
+    relaxed: 'gap-10',
+    spacious: 'gap-16',
+};
+
+const cardPaddingClasses: Record<SubscribeFormCardPadding, string> = {
+    compact: '[--card-spacing:--spacing(3)]',
+    default: '[--card-spacing:--spacing(4)]',
+    spacious: '[--card-spacing:--spacing(6)]',
+};
+
+const fieldSpacingClasses: Record<SubscribeFormCardPadding, string> = {
+    compact: 'gap-4',
+    default: 'gap-5',
+    spacious: 'gap-7',
+};
+
+const logoPositionClasses: Record<SubscribeFormLogoPosition, string> = {
+    left: 'justify-start',
+    center: 'justify-center',
+    right: 'justify-end',
+};
+
+const tiledLogoSizeClasses: Record<SubscribeFormLogoSize, string> = {
+    small: 'size-8',
+    medium: 'size-12',
+    large: 'size-16',
+};
+
+const originalLogoSizeClasses: Record<SubscribeFormLogoSize, string> = {
+    small: 'h-6 max-w-28',
+    medium: 'h-8 max-w-40',
+    large: 'h-12 max-w-56',
+};
+
+const logoShapeClasses: Record<SubscribeFormLogoShape, string> = {
+    default: 'w-auto object-contain',
+    square: 'rounded-none object-cover',
+    'rounded-lg': 'rounded-lg object-cover',
+    'rounded-xl': 'rounded-xl object-cover',
+    'rounded-full': 'rounded-full object-cover',
+};
+
+function FormLogo({ form }: { form: SubscribeFormAppearance }) {
     if (!form.logo) {
         return null;
     }
 
+    const tiled = form.logo_shape !== 'default';
+
     return (
-        <div
-            className={cn(
-                'flex',
-                align === 'center' ? 'justify-center' : 'justify-start',
-            )}
-        >
+        <div className={cn('flex', logoPositionClasses[form.logo_position])}>
             <img
                 src={form.logo}
                 alt=""
                 data-test="subscribe-form-logo"
                 className={cn(
-                    logoSizeClasses[form.logo_shape][form.logo_size],
-                    form.logo_shape === 'square'
-                        ? 'rounded-md object-cover'
-                        : 'w-auto object-contain',
+                    tiled && 'overflow-hidden',
+                    tiled
+                        ? tiledLogoSizeClasses[form.logo_size]
+                        : originalLogoSizeClasses[form.logo_size],
+                    logoShapeClasses[form.logo_shape],
                 )}
             />
         </div>
@@ -343,10 +713,14 @@ function FormLogo({
 function FormArtPanel({
     form,
     always = false,
+    preview = false,
+    fixed = false,
     className,
 }: {
     form: SubscribeFormAppearance;
     always?: boolean;
+    preview?: boolean;
+    fixed?: boolean;
     className?: string;
 }) {
     return (
@@ -354,10 +728,19 @@ function FormArtPanel({
             className={cn(
                 'relative min-h-64 overflow-hidden bg-zinc-900 text-white',
                 !always && 'hidden lg:block',
+                fixed &&
+                    (preview
+                        ? 'sticky top-0 h-[calc(100dvh-7rem)] self-start xl:h-[calc(100dvh-3.5rem)]'
+                        : 'sticky top-0 h-svh self-start'),
                 className,
             )}
         >
-            {form.image_url ? (
+            {form.artwork_type !== 'upload' && form.artwork_preset ? (
+                <SubscribeFormArtworkVisual
+                    preset={form.artwork_preset}
+                    theme={form.theme}
+                />
+            ) : form.image_url ? (
                 <img
                     src={form.image_url}
                     alt=""
@@ -401,7 +784,7 @@ function SubscribeFormFields({
     const disabled = preview;
 
     return (
-        <FieldGroup>
+        <FieldGroup className={fieldSpacingClasses[form.card_padding]}>
             {form.first_name_mode !== 'hidden' && (
                 <Field data-invalid={Boolean(errors.first_name)}>
                     <FieldLabel htmlFor="first_name">
@@ -553,7 +936,6 @@ function SubscribeFormFields({
                 {processing && <Spinner data-icon="inline-start" />}
                 {form.button_label || 'Subscribe'}
             </Button>
-            <AttributionBadge />
         </FieldGroup>
     );
 }
@@ -591,6 +973,7 @@ function AttributeDatePicker({
                         variant="outline"
                         disabled={disabled}
                         data-subscribe-date-trigger
+                        data-has-value={selectedDate ? '' : undefined}
                         aria-label="Pick a date"
                         aria-invalid={invalid}
                         aria-required={required}

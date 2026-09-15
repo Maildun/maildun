@@ -7,6 +7,7 @@ use App\Jobs\SendCampaignTestEmail;
 use App\Models\Audience;
 use App\Models\Email;
 use App\Models\EmailTemplate;
+use App\Models\Media;
 use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Team;
@@ -180,6 +181,8 @@ test('the compose page exposes the draft, audiences, and sender defaults', funct
         'audience_id' => $audience->id,
         'segment_id' => $segment->id,
     ]);
+    Media::factory()->for($team)->create(['name' => 'campaign-hero.png']);
+    Media::factory()->for(Team::factory()->create())->create(['name' => 'private.png']);
 
     $this->actingAs($user)
         ->get(route('emails.edit', [$team, $email]))
@@ -194,6 +197,11 @@ test('the compose page exposes the draft, audiences, and sender defaults', funct
             ->where('defaults.from_name', 'Maildun HQ')
             ->where('defaults.from_address', 'hq@example.com')
             ->where('selectedSenderUuid', 'audience-default')
+            ->where('mediaLibrary.canManage', true)
+            ->where('mediaLibrary.canUpload', true)
+            ->where('mediaLibrary.atLimit', false)
+            ->where('mediaLibrary.items.0.name', 'campaign-hero.png')
+            ->has('mediaLibrary.items', 1)
             ->has('audiences', 1)
             ->where('audiences.0.from_name', 'Readers Desk')
             ->where('audiences.0.from_address', 'readers@example.com')

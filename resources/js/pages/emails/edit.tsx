@@ -7,6 +7,7 @@ import {
     Delete02Icon,
     Edit03Icon,
     File01Icon,
+    FolderLibraryIcon,
     Link01Icon,
     MoreHorizontalIcon,
     TagsIcon,
@@ -29,6 +30,7 @@ import DeleteEmailModal from '@/components/delete-email-modal';
 import { EmailBuilderEditor } from '@/components/email-builder-editor';
 import { EmailHtmlEditor } from '@/components/email-html-editor';
 import { EmailSourceEditor } from '@/components/email-source-editor';
+import MediaLibraryDialog from '@/components/media-library-dialog';
 import SaveEmailAsTemplateDialog from '@/components/save-email-as-template-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -101,6 +103,7 @@ import type {
     EmailEditorMode,
     EmailSenderDefaults,
     EmailSenderOption,
+    MediaLibraryData,
 } from '@/types';
 
 type Props = {
@@ -111,6 +114,7 @@ type Props = {
     selectedSenderUuid: string | null;
     canManage: boolean;
     currentTeam: { slug: string };
+    mediaLibrary: MediaLibraryData | null;
 };
 
 /** The Select primitive has no "empty" value, so absence gets its own key. */
@@ -226,10 +230,12 @@ export default function EmailEdit({
     selectedSenderUuid,
     canManage,
     currentTeam,
+    mediaLibrary,
 }: Props) {
     const [view, setView] = useState<'hub' | 'design'>('hub');
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
     const [deleteOpen, setDeleteOpen] = useState(false);
+    const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
     const [uploadingAttachments, setUploadingAttachments] = useState(false);
     const [linkCheckResult, setLinkCheckResult] =
         useState<LinkCheckResponse | null>(null);
@@ -611,6 +617,24 @@ export default function EmailEdit({
                                 <Badge variant="secondary">Draft</Badge>
                             </div>
                             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                                {email.editor === 'builder' ? (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        aria-label="Open media library"
+                                        data-test="open-media-library"
+                                        onClick={() => setMediaDialogOpen(true)}
+                                    >
+                                        <HugeiconsIcon
+                                            icon={FolderLibraryIcon}
+                                            data-icon="inline-start"
+                                        />
+                                        <span className="hidden lg:inline">
+                                            Open media
+                                        </span>
+                                    </Button>
+                                ) : null}
                                 <DropdownMenu>
                                     <DropdownMenuTrigger
                                         render={
@@ -977,6 +1001,15 @@ export default function EmailEdit({
                     </div>
                 )}
             </form>
+
+            {mediaLibrary ? (
+                <MediaLibraryDialog
+                    teamSlug={currentTeam.slug}
+                    library={mediaLibrary}
+                    open={mediaDialogOpen}
+                    onOpenChange={setMediaDialogOpen}
+                />
+            ) : null}
 
             <Dialog
                 open={openSection === 'name'}

@@ -19,7 +19,10 @@ export function imageFilesFrom(list: FileList | File[]): File[] {
 
 export function useMediaUpload(
     teamSlug: string,
-    options: { convertUploadsToWebp?: boolean } = {},
+    options: {
+        convertUploadsToWebp?: boolean;
+        only?: string[];
+    } = {},
 ) {
     const [uploading, setUploading] = useState(false);
     const uploadToast = useUploadToast();
@@ -73,6 +76,8 @@ export function useMediaUpload(
             {
                 forceFormData: true,
                 preserveScroll: true,
+                preserveState: true,
+                only: options.only,
                 onStart: () => {
                     setUploading(true);
                     uploadToast.begin({

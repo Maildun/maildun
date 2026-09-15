@@ -12,8 +12,9 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, router, useForm, usePoll } from '@inertiajs/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
+import { SubscribeFormArtworkVisual } from '@/components/subscribe-form-artwork';
 import { SubscribeFormView } from '@/components/subscribe-form-view';
 import {
     AlertDialog,
@@ -49,6 +50,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
     Field,
+    FieldContent,
     FieldDescription,
     FieldError,
     FieldGroup,
@@ -67,8 +69,14 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useAppearance } from '@/hooks/use-appearance';
 import {
     firstUploadErrorMessage,
@@ -77,6 +85,7 @@ import {
 import { teamBrandFonts, teamBrandPalettes } from '@/lib/team-brand-theme';
 import { cn } from '@/lib/utils';
 import { show as showAudience } from '@/routes/audiences';
+import { attributes as audienceAttributes } from '@/routes/audiences/settings';
 import {
     destroy,
     publish,
@@ -85,11 +94,18 @@ import {
 } from '@/routes/audiences/subscribe_forms';
 import type {
     AudienceAttribute,
+    SubscribeFormArtworkPreset,
+    SubscribeFormArtworkPresetOption,
+    SubscribeFormArtworkType,
+    SubscribeFormCardPadding,
     SubscribeForm,
     SubscribeFormFieldMode,
+    SubscribeFormHeaderSpacing,
     SubscribeFormImageSide,
+    SubscribeFormLogoPosition,
     SubscribeFormLogoShape,
     SubscribeFormLogoSize,
+    SubscribeFormPoweredByPosition,
     SubscribeFormStyle,
     SubscribeFormTextAlignment,
 } from '@/types/audiences';
@@ -97,6 +113,7 @@ import type {
     TeamBrandColor,
     TeamBrandFont,
     TeamBrandInputStyle,
+    TeamBrandTheme,
 } from '@/types/teams';
 
 type StyleOption = {
@@ -110,6 +127,9 @@ type BrandOption = {
     label: string;
 };
 
+type PreviewViewport = 'desktop' | 'mobile';
+type PreviewState = 'form' | 'success' | 'error';
+
 type Props = {
     audience: {
         uuid: string;
@@ -119,6 +139,7 @@ type Props = {
     };
     subscribeForm: SubscribeForm;
     styles: StyleOption[];
+    artworkPresets: SubscribeFormArtworkPresetOption[];
     brandColors: BrandOption[];
     brandFonts: BrandOption[];
     brandInputStyles: BrandOption[];
@@ -129,10 +150,55 @@ type Props = {
 
 const SUBSCRIBE_FORM_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 
+const poweredByPositionOptions: {
+    value: SubscribeFormPoweredByPosition;
+    label: string;
+}[] = [
+    { value: 'top-left', label: 'Above · Left' },
+    { value: 'top-center', label: 'Above · Center' },
+    { value: 'top-right', label: 'Above · Right' },
+    { value: 'bottom-left', label: 'Below · Left' },
+    { value: 'bottom-center', label: 'Below · Center' },
+    { value: 'bottom-right', label: 'Below · Right' },
+];
+
+const logoShapeOptions: {
+    value: SubscribeFormLogoShape;
+    label: string;
+    preview: string;
+}[] = [
+    { value: 'default', label: 'Original', preview: 'h-5 w-7 rounded-sm' },
+    { value: 'square', label: 'Square', preview: 'size-5 rounded-none' },
+    {
+        value: 'rounded-lg',
+        label: 'Rounded lg',
+        preview: 'size-5 rounded-lg',
+    },
+    {
+        value: 'rounded-xl',
+        label: 'Rounded xl',
+        preview: 'size-5 rounded-xl',
+    },
+    {
+        value: 'rounded-full',
+        label: 'Full rounded',
+        preview: 'size-5 rounded-full',
+    },
+];
+
+const logoThumbnailShapeClasses: Record<SubscribeFormLogoShape, string> = {
+    default: 'h-10 w-16 rounded-md',
+    square: 'size-12 rounded-none',
+    'rounded-lg': 'size-12 rounded-lg',
+    'rounded-xl': 'size-12 rounded-xl',
+    'rounded-full': 'size-12 rounded-full',
+};
+
 export default function SubscribeFormEdit({
     audience,
     subscribeForm,
     styles,
+    artworkPresets,
     brandColors,
     brandFonts,
     brandInputStyles,
@@ -140,10 +206,16 @@ export default function SubscribeFormEdit({
     canManage,
     currentTeam,
 }: Props) {
+    const logoInput = useRef<HTMLInputElement>(null);
+    const imageInput = useRef<HTMLInputElement>(null);
     const [shareOpen, setShareOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [imagePreview, setImagePreview] = useState<string | undefined>();
     const [logoPreview, setLogoPreview] = useState<string | undefined>();
+    const [previewViewport, setPreviewViewport] =
+        useState<PreviewViewport>('desktop');
+    const [previewState, setPreviewState] = useState<PreviewState>('form');
+    const [publishing, setPublishing] = useState(false);
     const { resolvedAppearance } = useAppearance();
     const uploadToast = useUploadToast();
     const form = useForm({
@@ -154,18 +226,28 @@ export default function SubscribeFormEdit({
         button_label: subscribeForm.button_label,
         success_heading: subscribeForm.success_heading,
         success_message: subscribeForm.success_message,
+        redirect_enabled: subscribeForm.redirect_enabled,
+        redirect_url: subscribeForm.redirect_url || '',
+        powered_by_enabled: true,
+        powered_by_form_position: subscribeForm.powered_by_form_position,
         consent_text: subscribeForm.consent_text,
         style: subscribeForm.style,
         image_side: subscribeForm.image_side,
+        artwork_type: subscribeForm.artwork_type,
+        artwork_preset: subscribeForm.artwork_preset,
         image: null as File | null,
         remove_image: false,
         logo: null as File | null,
         logo_shape: subscribeForm.logo_shape,
         logo_size: subscribeForm.logo_size,
+        logo_position: subscribeForm.logo_position,
+        header_spacing: subscribeForm.header_spacing,
+        card_padding: subscribeForm.card_padding,
         remove_logo: false,
         brand_color: subscribeForm.theme.color,
         brand_font: subscribeForm.theme.font,
         brand_input_style: subscribeForm.theme.inputStyle,
+        publish: false,
     });
     const displayedLogo = form.data.remove_logo
         ? null
@@ -177,6 +259,17 @@ export default function SubscribeFormEdit({
           : subscribeForm.image_url;
     const usesArtwork =
         form.data.style === 'split' || form.data.style === 'cover';
+    const imageArtworkPresets = artworkPresets.filter(
+        (preset) => preset.artwork_type === 'image-preset',
+    );
+    const backgroundArtworkPresets = artworkPresets.filter(
+        (preset) => preset.artwork_type === 'background-preset',
+    );
+    const previewTheme: TeamBrandTheme = {
+        color: form.data.brand_color,
+        font: form.data.brand_font,
+        inputStyle: form.data.brand_input_style,
+    };
     const routeArgs = [currentTeam.slug, audience.uuid, subscribeForm.uuid] as [
         string,
         string,
@@ -200,9 +293,26 @@ export default function SubscribeFormEdit({
         return stop;
     }, [start, stop, subscribeForm.image_processing]);
 
-    const save = (event: React.FormEvent) => {
-        event.preventDefault();
-        const hasImageUpload = usesArtwork && form.data.image !== null;
+    useEffect(() => {
+        const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+            if (!form.isDirty) {
+                return;
+            }
+
+            event.preventDefault();
+        };
+
+        window.addEventListener('beforeunload', warnBeforeUnload);
+
+        return () =>
+            window.removeEventListener('beforeunload', warnBeforeUnload);
+    }, [form.isDirty]);
+
+    const submitForm = (publishAfterSave = false) => {
+        const hasImageUpload =
+            usesArtwork &&
+            form.data.artwork_type === 'upload' &&
+            form.data.image !== null;
         const hasLogoUpload = form.data.logo !== null;
         const hasUpload = hasImageUpload || hasLogoUpload;
         const savedData = {
@@ -212,11 +322,20 @@ export default function SubscribeFormEdit({
             logo: null,
             remove_logo: false,
         };
+
+        if (publishAfterSave) {
+            setPublishing(true);
+        }
+
         form.transform((data) => ({
             ...data,
-            image: usesArtwork ? (data.image ?? undefined) : undefined,
+            image:
+                usesArtwork && data.artwork_type === 'upload'
+                    ? (data.image ?? undefined)
+                    : undefined,
             remove_image: usesArtwork && data.remove_image,
             logo: data.logo ?? undefined,
+            publish: publishAfterSave,
         }));
         form.post(update.form(routeArgs).action, {
             preserveScroll: true,
@@ -246,27 +365,66 @@ export default function SubscribeFormEdit({
 
                 form.setData(savedData);
                 form.setDefaults(savedData);
+                setPublishing(false);
             },
-            onError: (errors) =>
+            onError: (errors) => {
+                setPublishing(false);
                 uploadToast.fail({
                     title: firstUploadErrorMessage(
                         errors,
                         'Failed to upload subscribe form images.',
                         hasImageUpload ? 'image' : 'logo',
                     ),
-                }),
+                });
+            },
             onHttpException: () => {
+                setPublishing(false);
                 uploadToast.fail({
                     title: 'Failed to upload subscribe form images.',
                 });
             },
             onNetworkError: () => {
+                setPublishing(false);
                 uploadToast.fail({
                     title: 'Failed to upload subscribe form images.',
                 });
             },
-            onCancel: () => uploadToast.fail({ title: 'Upload cancelled.' }),
+            onCancel: () => {
+                setPublishing(false);
+                uploadToast.fail({ title: 'Upload cancelled.' });
+            },
         });
+    };
+
+    const save = (event: React.FormEvent) => {
+        event.preventDefault();
+        submitForm();
+    };
+
+    const togglePublished = () => {
+        if (!subscribeForm.published && form.isDirty) {
+            submitForm(true);
+
+            return;
+        }
+
+        setPublishing(true);
+        router.patch(
+            subscribeForm.published
+                ? unpublish.url(routeArgs)
+                : publish.url(routeArgs),
+            {},
+            { onFinish: () => setPublishing(false) },
+        );
+    };
+
+    const confirmDiscardChanges = (event: React.MouseEvent) => {
+        if (
+            form.isDirty &&
+            !window.confirm('Discard your unsaved form changes?')
+        ) {
+            event.preventDefault();
+        }
     };
 
     const handleLogoChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -313,6 +471,7 @@ export default function SubscribeFormEdit({
             ...data,
             image: file,
             remove_image: false,
+            artwork_type: 'upload',
         }));
         setImagePreview(URL.createObjectURL(file));
     };
@@ -335,6 +494,34 @@ export default function SubscribeFormEdit({
         setLogoPreview(undefined);
     };
 
+    const handleArtworkTypeChange = (artworkType: SubscribeFormArtworkType) => {
+        if (artworkType === 'upload') {
+            form.setData((data) => ({
+                ...data,
+                artwork_type: artworkType,
+                artwork_preset: null,
+            }));
+
+            return;
+        }
+
+        const availablePresets =
+            artworkType === 'image-preset'
+                ? imageArtworkPresets
+                : backgroundArtworkPresets;
+        const currentPresetMatches = availablePresets.some(
+            (preset) => preset.value === form.data.artwork_preset,
+        );
+
+        form.setData((data) => ({
+            ...data,
+            artwork_type: artworkType,
+            artwork_preset: currentPresetMatches
+                ? data.artwork_preset
+                : (availablePresets[0]?.value ?? null),
+        }));
+    };
+
     const handleStyleChange = (style: SubscribeFormStyle) => {
         if (style === 'split' || style === 'cover') {
             form.setData('style', style);
@@ -355,14 +542,15 @@ export default function SubscribeFormEdit({
     return (
         <>
             <Head title={`Edit ${subscribeForm.name}`} />
-            <div className="flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-muted/30">
-                <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b bg-background px-3 sm:px-4">
+            <div className="fixed inset-0 flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-muted/30">
+                <header className="grid min-h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-b bg-background px-3 py-2 sm:px-4 xl:h-14 xl:py-0">
                     <div className="flex min-w-0 items-center gap-3">
                         <Link
                             href={showAudience([
                                 currentTeam.slug,
                                 audience.uuid,
                             ])}
+                            onClick={confirmDiscardChanges}
                             aria-label={`Back to ${audience.name}`}
                             className={buttonVariants({
                                 variant: 'ghost',
@@ -393,104 +581,172 @@ export default function SubscribeFormEdit({
                         >
                             {subscribeForm.published ? 'Published' : 'Draft'}
                         </Badge>
+                        {form.isDirty && (
+                            <Badge
+                                variant="outline"
+                                data-test="unsaved-changes"
+                            >
+                                Unsaved changes
+                            </Badge>
+                        )}
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-2">
-                        {canManage && (
-                            <>
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant={
-                                        subscribeForm.published
-                                            ? 'outline'
-                                            : 'default'
+                    <div className="col-span-2 row-start-2 flex max-w-full items-center gap-2 justify-self-end overflow-x-auto xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:overflow-visible">
+                        <div
+                            className="flex shrink-0 items-center gap-2"
+                            data-test="subscribe-form-preview-toolbar"
+                        >
+                            <Tabs
+                                value={previewViewport}
+                                onValueChange={(value) => {
+                                    if (value) {
+                                        setPreviewViewport(
+                                            value as PreviewViewport,
+                                        );
                                     }
-                                    onClick={() =>
-                                        router.patch(
-                                            subscribeForm.published
-                                                ? unpublish.url(routeArgs)
-                                                : publish.url(routeArgs),
-                                        )
+                                }}
+                            >
+                                <TabsList
+                                    variant="sliding"
+                                    aria-label="Preview width"
+                                >
+                                    <TabsTrigger value="desktop">
+                                        Desktop
+                                    </TabsTrigger>
+                                    <TabsTrigger value="mobile">
+                                        Mobile
+                                    </TabsTrigger>
+                                </TabsList>
+                            </Tabs>
+                            <Separator orientation="vertical" className="h-6" />
+                            <Tabs
+                                value={previewState}
+                                onValueChange={(value) => {
+                                    if (value) {
+                                        setPreviewState(value as PreviewState);
                                     }
+                                }}
+                            >
+                                <TabsList
+                                    variant="sliding"
+                                    aria-label="Preview state"
                                 >
-                                    {subscribeForm.published
-                                        ? 'Unpublish'
-                                        : 'Publish'}
-                                </Button>
-                                <Button
-                                    form="subscribe-form-editor"
-                                    type="submit"
-                                    size="sm"
-                                    data-test="save-subscribe-form"
-                                    disabled={form.processing || !form.isDirty}
-                                >
-                                    {form.processing && (
-                                        <Spinner data-icon="inline-start" />
-                                    )}
-                                    Save changes
-                                </Button>
-                            </>
-                        )}
-                        <DropdownMenu>
-                            <DropdownMenuTrigger
-                                render={
+                                    <TabsTrigger value="form">Form</TabsTrigger>
+                                    <TabsTrigger value="success">
+                                        Success
+                                    </TabsTrigger>
+                                    <TabsTrigger value="error">
+                                        Error
+                                    </TabsTrigger>
+                                </TabsList>
+                            </Tabs>
+                        </div>
+                        <Separator orientation="vertical" className="h-6" />
+
+                        <div className="flex shrink-0 items-center gap-2">
+                            {canManage && (
+                                <>
                                     <Button
                                         type="button"
-                                        size="icon"
-                                        variant="outline"
-                                        aria-label="Form actions"
-                                        data-test="subscribe-form-actions"
-                                    />
-                                }
-                            >
-                                <HugeiconsIcon icon={MoreHorizontalIcon} />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-56">
-                                <DropdownMenuGroup>
-                                    {subscribeForm.published && (
-                                        <DropdownMenuItem
-                                            render={
-                                                <a
-                                                    href={
-                                                        subscribeForm.public_url
-                                                    }
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                />
-                                            }
-                                        >
-                                            <HugeiconsIcon
-                                                icon={LinkSquare02Icon}
-                                            />
-                                            Open form
-                                        </DropdownMenuItem>
-                                    )}
-                                    <DropdownMenuItem
-                                        onClick={() => setShareOpen(true)}
+                                        size="sm"
+                                        variant={
+                                            subscribeForm.published
+                                                ? 'outline'
+                                                : 'default'
+                                        }
+                                        onClick={togglePublished}
+                                        disabled={form.processing || publishing}
                                     >
-                                        <HugeiconsIcon icon={Share08Icon} />
-                                        Share &amp; embed
-                                    </DropdownMenuItem>
-                                    {canManage && (
-                                        <>
-                                            <DropdownMenuSeparator />
+                                        {publishing && (
+                                            <Spinner data-icon="inline-start" />
+                                        )}
+                                        {subscribeForm.published
+                                            ? 'Unpublish'
+                                            : form.isDirty
+                                              ? 'Save & publish'
+                                              : 'Publish'}
+                                    </Button>
+                                    <Button
+                                        form="subscribe-form-editor"
+                                        type="submit"
+                                        size="sm"
+                                        data-test="save-subscribe-form"
+                                        disabled={
+                                            form.processing ||
+                                            publishing ||
+                                            !form.isDirty
+                                        }
+                                    >
+                                        {form.processing && (
+                                            <Spinner data-icon="inline-start" />
+                                        )}
+                                        Save changes
+                                    </Button>
+                                </>
+                            )}
+                            <DropdownMenu>
+                                <DropdownMenuTrigger
+                                    render={
+                                        <Button
+                                            type="button"
+                                            size="icon"
+                                            variant="outline"
+                                            aria-label="Form actions"
+                                            data-test="subscribe-form-actions"
+                                        />
+                                    }
+                                >
+                                    <HugeiconsIcon icon={MoreHorizontalIcon} />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                    align="end"
+                                    className="w-56"
+                                >
+                                    <DropdownMenuGroup>
+                                        {subscribeForm.published && (
                                             <DropdownMenuItem
-                                                variant="destructive"
-                                                onClick={() =>
-                                                    setDeleteOpen(true)
+                                                render={
+                                                    <a
+                                                        href={
+                                                            subscribeForm.public_url
+                                                        }
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                    />
                                                 }
                                             >
                                                 <HugeiconsIcon
-                                                    icon={Delete02Icon}
+                                                    icon={LinkSquare02Icon}
                                                 />
-                                                Delete
+                                                Open form
                                             </DropdownMenuItem>
-                                        </>
-                                    )}
-                                </DropdownMenuGroup>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                                        )}
+                                        <DropdownMenuItem
+                                            onClick={() => setShareOpen(true)}
+                                        >
+                                            <HugeiconsIcon icon={Share08Icon} />
+                                            Share &amp; embed
+                                        </DropdownMenuItem>
+                                        {canManage && (
+                                            <>
+                                                <DropdownMenuSeparator />
+                                                <DropdownMenuItem
+                                                    variant="destructive"
+                                                    onClick={() =>
+                                                        setDeleteOpen(true)
+                                                    }
+                                                >
+                                                    <HugeiconsIcon
+                                                        icon={Delete02Icon}
+                                                    />
+                                                    Delete
+                                                </DropdownMenuItem>
+                                            </>
+                                        )}
+                                    </DropdownMenuGroup>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
                     </div>
                 </header>
 
@@ -498,22 +754,27 @@ export default function SubscribeFormEdit({
                     <div className="flex min-h-[28rem] min-w-0 flex-1 items-center justify-center overflow-hidden p-4 sm:p-6 lg:h-full lg:min-h-0 lg:p-0">
                         <div
                             className={cn(
-                                'min-h-[36rem] overflow-x-hidden rounded-xl border bg-background shadow-sm lg:h-full lg:min-h-0 lg:max-w-none lg:overflow-y-auto lg:rounded-none lg:border-0 lg:shadow-none',
-                                usesArtwork
-                                    ? 'w-full max-w-5xl'
-                                    : 'w-full max-w-md',
+                                'min-h-[36rem] overflow-x-hidden overflow-y-auto rounded-xl border bg-background shadow-sm transition-[width] duration-200',
+                                previewViewport === 'mobile'
+                                    ? 'h-[min(46rem,calc(100%_-_2rem))] w-[24rem] max-w-full'
+                                    : cn(
+                                          'lg:h-full lg:min-h-0 lg:max-w-none lg:overflow-y-auto lg:rounded-none lg:border-0 lg:shadow-none',
+                                          usesArtwork
+                                              ? 'w-full max-w-5xl'
+                                              : 'w-full max-w-md',
+                                      ),
                             )}
                             data-test="subscribe-form-preview"
+                            data-preview-viewport={previewViewport}
+                            data-preview-state={previewState}
                         >
                             <SubscribeFormView
                                 form={{
                                     ...form.data,
-                                    theme: {
-                                        color: form.data.brand_color,
-                                        font: form.data.brand_font,
-                                        inputStyle: form.data.brand_input_style,
-                                    },
+                                    theme: previewTheme,
                                     description: form.data.description || null,
+                                    artwork_type: form.data.artwork_type,
+                                    artwork_preset: form.data.artwork_preset,
                                     image_url: displayedImage,
                                     logo: displayedLogo,
                                     first_name_mode: audience.first_name_mode,
@@ -521,6 +782,29 @@ export default function SubscribeFormEdit({
                                     attributes,
                                 }}
                                 preview
+                                previewViewport={
+                                    previewViewport === 'mobile'
+                                        ? 'mobile'
+                                        : 'responsive'
+                                }
+                                completed={previewState === 'success'}
+                                successMessage={form.data.success_message}
+                                redirectCountdown={
+                                    previewState === 'success' &&
+                                    form.data.redirect_enabled &&
+                                    form.data.redirect_url
+                                        ? 5
+                                        : undefined
+                                }
+                                errors={
+                                    previewState === 'error'
+                                        ? {
+                                              email: 'Enter a valid email address.',
+                                              consent:
+                                                  'You must agree before subscribing.',
+                                          }
+                                        : undefined
+                                }
                                 className="min-h-[36rem] lg:min-h-full"
                             />
                         </div>
@@ -672,16 +956,130 @@ export default function SubscribeFormEdit({
                                             </Tabs>
                                             <FieldDescription>
                                                 Applies to the form copy and
-                                                confirmation message. Logo
-                                                placement follows the selected
-                                                layout.
+                                                confirmation message.
                                             </FieldDescription>
                                         </Field>
+                                        <Field>
+                                            <FieldLabel>
+                                                Space after title
+                                            </FieldLabel>
+                                            <Tabs
+                                                className="w-full"
+                                                value={form.data.header_spacing}
+                                                onValueChange={(value) => {
+                                                    if (value) {
+                                                        form.setData(
+                                                            'header_spacing',
+                                                            value as SubscribeFormHeaderSpacing,
+                                                        );
+                                                    }
+                                                }}
+                                            >
+                                                <TabsList
+                                                    className="w-full"
+                                                    variant="sliding"
+                                                    data-test="subscribe-form-header-spacing"
+                                                >
+                                                    <TabsTrigger
+                                                        className="flex-1"
+                                                        disabled={!canManage}
+                                                        value="compact"
+                                                    >
+                                                        Compact
+                                                    </TabsTrigger>
+                                                    <TabsTrigger
+                                                        className="flex-1"
+                                                        disabled={!canManage}
+                                                        value="default"
+                                                    >
+                                                        Default
+                                                    </TabsTrigger>
+                                                    <TabsTrigger
+                                                        className="flex-1"
+                                                        disabled={!canManage}
+                                                        value="relaxed"
+                                                    >
+                                                        Relaxed
+                                                    </TabsTrigger>
+                                                    <TabsTrigger
+                                                        className="flex-1"
+                                                        disabled={!canManage}
+                                                        value="spacious"
+                                                    >
+                                                        Spacious
+                                                    </TabsTrigger>
+                                                </TabsList>
+                                            </Tabs>
+                                            <FieldDescription>
+                                                Gap between the logo/title and
+                                                the form fields.
+                                            </FieldDescription>
+                                        </Field>
+                                        {(form.data.style === 'card' ||
+                                            form.data.style === 'cover') && (
+                                            <Field>
+                                                <FieldLabel>
+                                                    Card padding
+                                                </FieldLabel>
+                                                <Tabs
+                                                    className="w-full"
+                                                    value={
+                                                        form.data.card_padding
+                                                    }
+                                                    onValueChange={(value) => {
+                                                        if (value) {
+                                                            form.setData(
+                                                                'card_padding',
+                                                                value as SubscribeFormCardPadding,
+                                                            );
+                                                        }
+                                                    }}
+                                                >
+                                                    <TabsList
+                                                        className="w-full"
+                                                        variant="sliding"
+                                                        data-test="subscribe-form-card-padding"
+                                                    >
+                                                        <TabsTrigger
+                                                            className="flex-1"
+                                                            disabled={
+                                                                !canManage
+                                                            }
+                                                            value="compact"
+                                                        >
+                                                            Compact
+                                                        </TabsTrigger>
+                                                        <TabsTrigger
+                                                            className="flex-1"
+                                                            disabled={
+                                                                !canManage
+                                                            }
+                                                            value="default"
+                                                        >
+                                                            Default
+                                                        </TabsTrigger>
+                                                        <TabsTrigger
+                                                            className="flex-1"
+                                                            disabled={
+                                                                !canManage
+                                                            }
+                                                            value="spacious"
+                                                        >
+                                                            Spacious
+                                                        </TabsTrigger>
+                                                    </TabsList>
+                                                </Tabs>
+                                                <FieldDescription>
+                                                    Controls the card padding
+                                                    and space between fields.
+                                                </FieldDescription>
+                                            </Field>
+                                        )}
                                     </InspectorSection>
 
                                     <InspectorSection
                                         title="Brand theme"
-                                        description="Customize the color, typography, and fields for this form."
+                                        description="Customize the color and typography for this form."
                                         testId="subscribe-form-section-brand-theme"
                                     >
                                         <Field
@@ -891,95 +1289,329 @@ export default function SubscribeFormEdit({
                                         </Field>
                                     </InspectorSection>
 
+                                    <InspectorSection
+                                        title="Fields"
+                                        description="Review the fields inherited from this audience."
+                                        testId="subscribe-form-section-fields"
+                                    >
+                                        <div className="flex flex-col gap-2">
+                                            <AudienceFieldRow
+                                                label="First name"
+                                                mode={audience.first_name_mode}
+                                            />
+                                            <AudienceFieldRow
+                                                label="Last name"
+                                                mode={audience.last_name_mode}
+                                            />
+                                            {attributes.map((attribute) => (
+                                                <AudienceFieldRow
+                                                    key={attribute.uuid}
+                                                    label={attribute.name}
+                                                    mode={
+                                                        attribute.required
+                                                            ? 'required'
+                                                            : 'optional'
+                                                    }
+                                                />
+                                            ))}
+                                            <AudienceFieldRow
+                                                label="Email"
+                                                mode="required"
+                                            />
+                                            <AudienceFieldRow
+                                                label="Consent"
+                                                mode="required"
+                                            />
+                                        </div>
+                                        <FieldDescription>
+                                            Visibility, requirements, and order
+                                            are shared by every form in this
+                                            audience.
+                                        </FieldDescription>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={(event) => {
+                                                confirmDiscardChanges(event);
+
+                                                if (!event.defaultPrevented) {
+                                                    router.visit(
+                                                        audienceAttributes([
+                                                            currentTeam.slug,
+                                                            audience.uuid,
+                                                        ]),
+                                                    );
+                                                }
+                                            }}
+                                        >
+                                            Manage audience fields
+                                        </Button>
+                                    </InspectorSection>
+
                                     {usesArtwork && (
                                         <InspectorSection
                                             title="Artwork"
-                                            description="JPG, PNG, or WEBP up to 2 MB. We optimize uploads to WebP in the background."
+                                            description="Upload an image or choose a ready-made visual."
                                             testId="subscribe-form-section-artwork"
                                         >
-                                            <Field
-                                                data-invalid={Boolean(
-                                                    form.errors.image,
-                                                )}
+                                            <Tabs
+                                                value={form.data.artwork_type}
+                                                onValueChange={(value) => {
+                                                    if (value) {
+                                                        handleArtworkTypeChange(
+                                                            value as SubscribeFormArtworkType,
+                                                        );
+                                                    }
+                                                }}
                                             >
-                                                <div className="flex items-center gap-3">
-                                                    <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
-                                                        {displayedImage ? (
-                                                            <img
-                                                                src={
-                                                                    displayedImage
-                                                                }
-                                                                alt=""
-                                                                className="size-full object-cover"
-                                                            />
-                                                        ) : (
-                                                            <HugeiconsIcon
-                                                                icon={
-                                                                    Image01Icon
-                                                                }
-                                                                className="size-4 text-muted-foreground"
-                                                            />
-                                                        )}
-                                                    </div>
-                                                    <input
-                                                        id="image"
-                                                        type="file"
-                                                        accept="image/jpeg,image/png,image/webp"
-                                                        className="sr-only"
-                                                        onChange={
-                                                            handleImageChange
-                                                        }
-                                                        data-test="subscribe-form-image-input"
+                                                <TabsList
+                                                    className="w-full"
+                                                    variant="sliding"
+                                                    data-test="subscribe-form-artwork-type"
+                                                >
+                                                    <TabsTrigger
+                                                        className="flex-1"
+                                                        value="upload"
                                                         disabled={!canManage}
-                                                    />
-                                                    {canManage && (
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            nativeButton={false}
-                                                            render={
-                                                                <label
-                                                                    htmlFor="image"
-                                                                    className="cursor-pointer"
-                                                                />
-                                                            }
-                                                        >
-                                                            {displayedImage
-                                                                ? 'Replace image'
-                                                                : 'Choose image'}
-                                                        </Button>
+                                                    >
+                                                        Upload
+                                                    </TabsTrigger>
+                                                    <TabsTrigger
+                                                        className="flex-1"
+                                                        value="image-preset"
+                                                        disabled={!canManage}
+                                                    >
+                                                        Images
+                                                    </TabsTrigger>
+                                                    <TabsTrigger
+                                                        className="flex-1"
+                                                        value="background-preset"
+                                                        disabled={!canManage}
+                                                    >
+                                                        Backgrounds
+                                                    </TabsTrigger>
+                                                </TabsList>
+                                            </Tabs>
+
+                                            {form.data.artwork_type ===
+                                                'upload' && (
+                                                <Field
+                                                    data-invalid={Boolean(
+                                                        form.errors.image,
                                                     )}
-                                                    {canManage &&
-                                                        displayedImage && (
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
+                                                            {displayedImage ? (
+                                                                <img
+                                                                    src={
+                                                                        displayedImage
+                                                                    }
+                                                                    alt=""
+                                                                    className="size-full object-cover"
+                                                                />
+                                                            ) : (
+                                                                <HugeiconsIcon
+                                                                    icon={
+                                                                        Image01Icon
+                                                                    }
+                                                                    className="size-4 text-muted-foreground"
+                                                                />
+                                                            )}
+                                                        </div>
+                                                        <input
+                                                            id="image"
+                                                            ref={imageInput}
+                                                            type="file"
+                                                            accept="image/jpeg,image/png,image/webp"
+                                                            hidden
+                                                            onChange={
+                                                                handleImageChange
+                                                            }
+                                                            data-test="subscribe-form-image-input"
+                                                            disabled={
+                                                                !canManage
+                                                            }
+                                                        />
+                                                        {canManage && (
                                                             <Button
-                                                                type="button"
-                                                                variant="ghost"
+                                                                variant="outline"
                                                                 size="sm"
-                                                                onClick={
-                                                                    removeImage
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    imageInput.current?.click()
                                                                 }
-                                                                data-test="subscribe-form-remove-image"
                                                             >
-                                                                Remove
+                                                                {displayedImage
+                                                                    ? 'Replace image'
+                                                                    : 'Choose image'}
                                                             </Button>
                                                         )}
-                                                </div>
-                                                {subscribeForm.image_processing && (
-                                                    <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                                                        <Spinner className="size-3" />
-                                                        Optimizing image…
-                                                    </p>
-                                                )}
-                                                <FieldError>
-                                                    {form.errors.image}
-                                                </FieldError>
-                                            </Field>
+                                                        {canManage &&
+                                                            displayedImage && (
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={
+                                                                        removeImage
+                                                                    }
+                                                                    data-test="subscribe-form-remove-image"
+                                                                >
+                                                                    Remove
+                                                                </Button>
+                                                            )}
+                                                    </div>
+                                                    {subscribeForm.image_processing && (
+                                                        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                            <Spinner className="size-3" />
+                                                            Optimizing image…
+                                                        </p>
+                                                    )}
+                                                    <FieldDescription>
+                                                        JPG, PNG, or WEBP up to
+                                                        2 MB. Uploads are
+                                                        optimized to WebP.
+                                                    </FieldDescription>
+                                                    <FieldError>
+                                                        {form.errors.image}
+                                                    </FieldError>
+                                                </Field>
+                                            )}
+
+                                            {form.data.artwork_type ===
+                                                'image-preset' && (
+                                                <Field
+                                                    data-invalid={Boolean(
+                                                        form.errors
+                                                            .artwork_preset,
+                                                    )}
+                                                >
+                                                    <FieldLabel>
+                                                        Image preset
+                                                    </FieldLabel>
+                                                    <RadioGroup
+                                                        className="grid grid-cols-2 gap-2"
+                                                        name="artwork_preset"
+                                                        value={
+                                                            form.data
+                                                                .artwork_preset ??
+                                                            undefined
+                                                        }
+                                                        onValueChange={(
+                                                            value,
+                                                        ) => {
+                                                            if (value) {
+                                                                form.setData(
+                                                                    'artwork_preset',
+                                                                    value as SubscribeFormArtworkPreset,
+                                                                );
+                                                            }
+                                                        }}
+                                                        disabled={!canManage}
+                                                        aria-label="Image preset"
+                                                        data-test="subscribe-form-image-presets"
+                                                    >
+                                                        {imageArtworkPresets.map(
+                                                            (preset) => (
+                                                                <ArtworkPresetOption
+                                                                    key={
+                                                                        preset.value
+                                                                    }
+                                                                    preset={
+                                                                        preset
+                                                                    }
+                                                                    theme={
+                                                                        previewTheme
+                                                                    }
+                                                                />
+                                                            ),
+                                                        )}
+                                                    </RadioGroup>
+                                                    <FieldDescription>
+                                                        Fixed artwork made to
+                                                        work across every brand
+                                                        theme.
+                                                    </FieldDescription>
+                                                    <FieldError>
+                                                        {
+                                                            form.errors
+                                                                .artwork_preset
+                                                        }
+                                                    </FieldError>
+                                                </Field>
+                                            )}
+
+                                            {form.data.artwork_type ===
+                                                'background-preset' && (
+                                                <Field
+                                                    data-invalid={Boolean(
+                                                        form.errors
+                                                            .artwork_preset,
+                                                    )}
+                                                >
+                                                    <FieldLabel>
+                                                        Background preset
+                                                    </FieldLabel>
+                                                    <RadioGroup
+                                                        className="grid grid-cols-4 gap-2"
+                                                        name="artwork_preset"
+                                                        value={
+                                                            form.data
+                                                                .artwork_preset ??
+                                                            undefined
+                                                        }
+                                                        onValueChange={(
+                                                            value,
+                                                        ) => {
+                                                            if (value) {
+                                                                form.setData(
+                                                                    'artwork_preset',
+                                                                    value as SubscribeFormArtworkPreset,
+                                                                );
+                                                            }
+                                                        }}
+                                                        disabled={!canManage}
+                                                        aria-label="Background preset"
+                                                        data-test="subscribe-form-background-presets"
+                                                    >
+                                                        {backgroundArtworkPresets.map(
+                                                            (preset) => (
+                                                                <ArtworkPresetOption
+                                                                    key={
+                                                                        preset.value
+                                                                    }
+                                                                    preset={
+                                                                        preset
+                                                                    }
+                                                                    theme={
+                                                                        previewTheme
+                                                                    }
+                                                                    dense
+                                                                />
+                                                            ),
+                                                        )}
+                                                    </RadioGroup>
+                                                    <FieldDescription>
+                                                        Dense patterns adapt to
+                                                        the selected brand
+                                                        color.
+                                                    </FieldDescription>
+                                                    <FieldError>
+                                                        {
+                                                            form.errors
+                                                                .artwork_preset
+                                                        }
+                                                    </FieldError>
+                                                </Field>
+                                            )}
                                         </InspectorSection>
                                     )}
 
                                     <InspectorSection
                                         title="Logo"
-                                        description="Optional. Placement follows the selected layout."
+                                        description="Optional. Shape, size, and placement apply on the hosted form."
                                         testId="subscribe-form-section-logo"
                                     >
                                         <Field
@@ -990,11 +1622,10 @@ export default function SubscribeFormEdit({
                                             <div className="flex items-center gap-3">
                                                 <div
                                                     className={cn(
-                                                        'flex shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted',
-                                                        form.data.logo_shape ===
-                                                            'square'
-                                                            ? 'size-12'
-                                                            : 'h-10 w-16',
+                                                        'flex shrink-0 items-center justify-center overflow-hidden border bg-muted',
+                                                        logoThumbnailShapeClasses[
+                                                            form.data.logo_shape
+                                                        ],
                                                     )}
                                                 >
                                                     {displayedLogo ? (
@@ -1005,9 +1636,9 @@ export default function SubscribeFormEdit({
                                                                 'max-h-full max-w-full',
                                                                 form.data
                                                                     .logo_shape ===
-                                                                    'square'
-                                                                    ? 'size-full object-cover'
-                                                                    : 'object-contain',
+                                                                    'default'
+                                                                    ? 'object-contain'
+                                                                    : 'size-full object-cover',
                                                             )}
                                                         />
                                                     ) : (
@@ -1019,9 +1650,10 @@ export default function SubscribeFormEdit({
                                                 </div>
                                                 <input
                                                     id="logo"
+                                                    ref={logoInput}
                                                     type="file"
                                                     accept="image/jpeg,image/png,image/webp"
-                                                    className="sr-only"
+                                                    hidden
                                                     disabled={!canManage}
                                                     onChange={handleLogoChange}
                                                     data-test="subscribe-form-logo-input"
@@ -1030,12 +1662,9 @@ export default function SubscribeFormEdit({
                                                     <Button
                                                         variant="outline"
                                                         size="sm"
-                                                        nativeButton={false}
-                                                        render={
-                                                            <label
-                                                                htmlFor="logo"
-                                                                className="cursor-pointer"
-                                                            />
+                                                        type="button"
+                                                        onClick={() =>
+                                                            logoInput.current?.click()
                                                         }
                                                     >
                                                         {displayedLogo
@@ -1064,8 +1693,9 @@ export default function SubscribeFormEdit({
                                         </Field>
                                         <Field>
                                             <FieldLabel>Shape</FieldLabel>
-                                            <Tabs
-                                                className="w-full"
+                                            <RadioGroup
+                                                className="grid grid-cols-5 gap-2"
+                                                name="logo_shape"
                                                 value={form.data.logo_shape}
                                                 onValueChange={(value) => {
                                                     if (value) {
@@ -1075,32 +1705,96 @@ export default function SubscribeFormEdit({
                                                         );
                                                     }
                                                 }}
+                                                disabled={!canManage}
+                                                aria-label="Logo shape"
+                                                data-test="subscribe-form-logo-shape"
+                                            >
+                                                {logoShapeOptions.map(
+                                                    (option) => (
+                                                        <Tooltip
+                                                            key={option.value}
+                                                        >
+                                                            <TooltipTrigger
+                                                                render={
+                                                                    <Radio.Root
+                                                                        value={
+                                                                            option.value
+                                                                        }
+                                                                        aria-label={
+                                                                            option.label
+                                                                        }
+                                                                        data-test={`subscribe-form-logo-shape-${option.value}`}
+                                                                        className="flex h-11 min-w-0 cursor-pointer items-center justify-center rounded-lg border p-2 transition-colors outline-none hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/50 data-[checked]:border-foreground data-[checked]:bg-muted data-[checked]:ring-1 data-[checked]:ring-foreground data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
+                                                                    />
+                                                                }
+                                                            >
+                                                                <span
+                                                                    aria-hidden="true"
+                                                                    className={cn(
+                                                                        'bg-muted-foreground/40',
+                                                                        option.preview,
+                                                                    )}
+                                                                />
+                                                            </TooltipTrigger>
+                                                            <TooltipContent>
+                                                                <p>
+                                                                    {
+                                                                        option.label
+                                                                    }
+                                                                </p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    ),
+                                                )}
+                                            </RadioGroup>
+                                            <FieldDescription>
+                                                Original keeps the original
+                                                orientation. The other shapes
+                                                crop to a tile.
+                                            </FieldDescription>
+                                        </Field>
+                                        <Field>
+                                            <FieldLabel>Position</FieldLabel>
+                                            <Tabs
+                                                className="w-full"
+                                                value={form.data.logo_position}
+                                                onValueChange={(value) => {
+                                                    if (value) {
+                                                        form.setData(
+                                                            'logo_position',
+                                                            value as SubscribeFormLogoPosition,
+                                                        );
+                                                    }
+                                                }}
                                             >
                                                 <TabsList
                                                     className="w-full"
                                                     variant="sliding"
-                                                    data-test="subscribe-form-logo-shape"
+                                                    data-test="subscribe-form-logo-position"
                                                 >
                                                     <TabsTrigger
                                                         className="flex-1"
                                                         disabled={!canManage}
-                                                        value="default"
+                                                        value="left"
                                                     >
-                                                        Default
+                                                        Left
                                                     </TabsTrigger>
                                                     <TabsTrigger
                                                         className="flex-1"
                                                         disabled={!canManage}
-                                                        value="square"
+                                                        value="center"
                                                     >
-                                                        Square
+                                                        Center
+                                                    </TabsTrigger>
+                                                    <TabsTrigger
+                                                        className="flex-1"
+                                                        disabled={!canManage}
+                                                        value="right"
+                                                    >
+                                                        Right
                                                     </TabsTrigger>
                                                 </TabsList>
                                             </Tabs>
-                                            <FieldDescription>
-                                                Square crops to a tile. Default
-                                                keeps the original orientation.
-                                            </FieldDescription>
                                         </Field>
                                         <Field>
                                             <FieldLabel>Size</FieldLabel>
@@ -1322,6 +2016,108 @@ export default function SubscribeFormEdit({
                                             />
                                         </Field>
                                     </InspectorSection>
+
+                                    <InspectorSection
+                                        title="Redirect"
+                                        description="Send subscribers to another page after a successful signup."
+                                        testId="subscribe-form-section-redirect"
+                                    >
+                                        <Field orientation="horizontal">
+                                            <FieldContent>
+                                                <FieldLabel htmlFor="redirect-enabled">
+                                                    Redirect after subscribe
+                                                </FieldLabel>
+                                                <FieldDescription>
+                                                    Wait five seconds so the
+                                                    subscriber can read the
+                                                    confirmation first.
+                                                </FieldDescription>
+                                            </FieldContent>
+                                            <Switch
+                                                id="redirect-enabled"
+                                                name="redirect_enabled"
+                                                checked={
+                                                    form.data.redirect_enabled
+                                                }
+                                                onCheckedChange={(checked) =>
+                                                    form.setData(
+                                                        'redirect_enabled',
+                                                        checked,
+                                                    )
+                                                }
+                                                disabled={!canManage}
+                                                data-test="subscribe-form-redirect-enabled"
+                                                aria-invalid={Boolean(
+                                                    form.errors
+                                                        .redirect_enabled,
+                                                )}
+                                            />
+                                        </Field>
+
+                                        {form.data.redirect_enabled ? (
+                                            <Field
+                                                data-invalid={Boolean(
+                                                    form.errors.redirect_url,
+                                                )}
+                                            >
+                                                <FieldLabel htmlFor="redirect-url">
+                                                    Redirect URL
+                                                </FieldLabel>
+                                                <Input
+                                                    id="redirect-url"
+                                                    name="redirect_url"
+                                                    type="url"
+                                                    value={
+                                                        form.data.redirect_url
+                                                    }
+                                                    onChange={(event) =>
+                                                        form.setData(
+                                                            'redirect_url',
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                    disabled={!canManage}
+                                                    placeholder="https://example.com/thank-you"
+                                                    autoComplete="url"
+                                                    aria-invalid={Boolean(
+                                                        form.errors
+                                                            .redirect_url,
+                                                    )}
+                                                    data-test="subscribe-form-redirect-url"
+                                                />
+                                                <FieldError>
+                                                    {form.errors.redirect_url}
+                                                </FieldError>
+                                            </Field>
+                                        ) : null}
+                                    </InspectorSection>
+
+                                    <InspectorSection
+                                        title="Maildun badge"
+                                        description="Attribution is required on hosted signup forms."
+                                        testId="subscribe-form-section-powered-by"
+                                    >
+                                        <PoweredByPositionField
+                                            id="powered-by-form-position"
+                                            label="Form position"
+                                            value={
+                                                form.data
+                                                    .powered_by_form_position
+                                            }
+                                            error={
+                                                form.errors
+                                                    .powered_by_form_position
+                                            }
+                                            disabled={!canManage}
+                                            testId="subscribe-form-powered-by-form-position"
+                                            onChange={(value) =>
+                                                form.setData(
+                                                    'powered_by_form_position',
+                                                    value,
+                                                )
+                                            }
+                                        />
+                                    </InspectorSection>
                                 </FieldGroup>
                             </div>
                         </form>
@@ -1361,6 +2157,127 @@ export default function SubscribeFormEdit({
     );
 }
 
+function AudienceFieldRow({
+    label,
+    mode,
+}: {
+    label: string;
+    mode: SubscribeFormFieldMode;
+}) {
+    const modeLabel =
+        mode === 'required'
+            ? 'Required'
+            : mode === 'optional'
+              ? 'Optional'
+              : 'Hidden';
+
+    return (
+        <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+            <span
+                className={cn(
+                    'truncate text-sm font-medium',
+                    mode === 'hidden' && 'text-muted-foreground',
+                )}
+            >
+                {label}
+            </span>
+            <Badge variant={mode === 'required' ? 'outline' : 'default'}>
+                {modeLabel}
+            </Badge>
+        </div>
+    );
+}
+
+function ArtworkPresetOption({
+    preset,
+    theme,
+    dense = false,
+}: {
+    preset: SubscribeFormArtworkPresetOption;
+    theme: TeamBrandTheme;
+    dense?: boolean;
+}) {
+    return (
+        <Tooltip>
+            <TooltipTrigger
+                render={
+                    <Radio.Root
+                        value={preset.value}
+                        aria-label={preset.label}
+                        data-test={`subscribe-form-artwork-preset-${preset.value}`}
+                        className={cn(
+                            'group relative min-w-0 cursor-pointer overflow-hidden rounded-lg border p-1 transition-[border-color,box-shadow,transform] outline-none hover:border-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring/50 data-[checked]:border-foreground data-[checked]:ring-1 data-[checked]:ring-foreground data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
+                            dense ? 'aspect-square' : 'aspect-video',
+                        )}
+                    />
+                }
+            >
+                <SubscribeFormArtworkVisual
+                    preset={preset.value}
+                    theme={theme}
+                    className="rounded-md"
+                />
+                {!dense && (
+                    <span className="absolute right-1.5 bottom-1.5 left-1.5 truncate rounded bg-background/85 px-1.5 py-0.5 text-left text-[10px] font-medium backdrop-blur-sm">
+                        {preset.label}
+                    </span>
+                )}
+            </TooltipTrigger>
+            <TooltipContent>
+                <p>{preset.label}</p>
+            </TooltipContent>
+        </Tooltip>
+    );
+}
+
+function PoweredByPositionField({
+    id,
+    label,
+    value,
+    error,
+    disabled,
+    testId,
+    onChange,
+}: {
+    id: string;
+    label: string;
+    value: SubscribeFormPoweredByPosition;
+    error?: string;
+    disabled: boolean;
+    testId: string;
+    onChange: (value: SubscribeFormPoweredByPosition) => void;
+}) {
+    return (
+        <Field data-invalid={Boolean(error)}>
+            <FieldLabel htmlFor={id}>{label}</FieldLabel>
+            <Select
+                items={poweredByPositionOptions}
+                value={value}
+                disabled={disabled}
+                onValueChange={(nextValue) => {
+                    if (nextValue !== null) {
+                        onChange(nextValue as SubscribeFormPoweredByPosition);
+                    }
+                }}
+            >
+                <SelectTrigger id={id} className="w-full" data-test={testId}>
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectGroup>
+                        {poweredByPositionOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                            </SelectItem>
+                        ))}
+                    </SelectGroup>
+                </SelectContent>
+            </Select>
+            <FieldError>{error}</FieldError>
+        </Field>
+    );
+}
+
 function InspectorSection({
     title,
     description,
@@ -1388,7 +2305,12 @@ function InspectorSection({
                             <Button
                                 type="button"
                                 variant="ghost"
-                                className="h-auto w-full items-start justify-between rounded-xl px-3 py-3 text-left whitespace-normal"
+                                className={cn(
+                                    'h-auto w-full items-start justify-between px-3 py-3 text-left whitespace-normal',
+                                    open
+                                        ? 'rounded-t-xl rounded-b-none'
+                                        : 'rounded-xl',
+                                )}
                             />
                         }
                     >

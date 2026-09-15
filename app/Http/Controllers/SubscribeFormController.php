@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Enums\StorageBackend;
+use App\Enums\SubscribeFormArtworkPreset;
+use App\Enums\SubscribeFormArtworkType;
 use App\Enums\SubscribeFormStyle;
 use App\Enums\TeamBrandColor;
 use App\Enums\TeamBrandFont;
@@ -64,14 +66,23 @@ class SubscribeFormController extends Controller
                 'button_label' => $subscribeForm->button_label,
                 'success_heading' => $subscribeForm->success_heading,
                 'success_message' => $subscribeForm->success_message,
+                'redirect_enabled' => $subscribeForm->redirect_enabled,
+                'redirect_url' => $subscribeForm->redirect_url,
+                'powered_by_enabled' => true,
+                'powered_by_form_position' => $subscribeForm->powered_by_form_position->value,
                 'consent_text' => $subscribeForm->consent_text,
                 'style' => $subscribeForm->style->value,
                 'image_side' => $subscribeForm->image_side->value,
+                'artwork_type' => $subscribeForm->artwork_type->value,
+                'artwork_preset' => $subscribeForm->artwork_preset?->value,
                 'image_url' => $subscribeForm->image,
                 'image_processing' => filled($subscribeForm->image_upload_path),
                 'logo' => $subscribeForm->logo,
                 'logo_shape' => $subscribeForm->logo_shape->value,
                 'logo_size' => $subscribeForm->logo_size->value,
+                'logo_position' => $subscribeForm->logo_position->value,
+                'header_spacing' => $subscribeForm->header_spacing->value,
+                'card_padding' => $subscribeForm->card_padding->value,
                 'theme' => [
                     'color' => $subscribeForm->brand_color->value,
                     'font' => $subscribeForm->brand_font->value,
@@ -82,6 +93,7 @@ class SubscribeFormController extends Controller
                 'embed_code' => sprintf('<iframe src="%s?embed=1" width="100%%" height="560" frameborder="0" title="%s"></iframe>', $publicUrl, e($subscribeForm->headline)),
             ],
             'styles' => SubscribeFormStyle::options(),
+            'artworkPresets' => SubscribeFormArtworkPreset::options(),
             'brandColors' => TeamBrandColor::options(),
             'brandFonts' => TeamBrandFont::options(),
             'brandInputStyles' => TeamBrandInputStyle::options(),
@@ -115,6 +127,10 @@ class SubscribeFormController extends Controller
             $subscribeForm = SubscribeForm::whereKey($subscribeForm->id)->lockForUpdate()->firstOrFail();
             $subscribeForm->fill($request->formAttributes());
 
+            if ($request->boolean('publish')) {
+                $subscribeForm->published_at = now();
+            }
+
             if ($request->hasFile('image')) {
                 $storedImageUploadPath = $request->file('image')->store('subscribe-form-images/pending', $sourceDisk);
 
@@ -126,6 +142,7 @@ class SubscribeFormController extends Controller
                 $oldImageUploadDisk = $subscribeForm->image_upload_disk;
                 $subscribeForm->image_upload_path = $storedImageUploadPath;
                 $subscribeForm->image_upload_disk = $sourceDisk;
+                $subscribeForm->artwork_type = SubscribeFormArtworkType::Upload;
             } elseif ($request->boolean('remove_image')) {
                 $oldImagePath = $subscribeForm->image_path;
                 $oldImageUploadPath = $subscribeForm->image_upload_path;
@@ -173,7 +190,12 @@ class SubscribeFormController extends Controller
             ProcessSubscribeFormImage::dispatch($subscribeForm->id, $storedImageUploadPath, $sourceDisk);
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscribe form updated.')]);
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => $request->boolean('publish')
+                ? __('Subscribe form saved and published.')
+                : __('Subscribe form updated.'),
+        ]);
 
         return back();
     }

@@ -7,9 +7,39 @@ export type SegmentMatchType = 'all' | 'any';
 export type SubscribeFormFieldMode = 'hidden' | 'optional' | 'required';
 export type SubscribeFormStyle = 'card' | 'split' | 'minimal' | 'cover';
 export type SubscribeFormImageSide = 'left' | 'right';
-export type SubscribeFormLogoShape = 'default' | 'square';
+export type SubscribeFormArtworkType =
+    'upload' | 'image-preset' | 'background-preset';
+export type SubscribeFormArtworkPreset =
+    | 'image-aurora'
+    | 'image-horizon'
+    | 'image-prism'
+    | 'image-nocturne'
+    | 'image-drift'
+    | 'image-flare'
+    | 'background-matrix'
+    | 'background-grid'
+    | 'background-orbit'
+    | 'background-glow';
+export type SubscribeFormArtworkPresetOption = {
+    value: SubscribeFormArtworkPreset;
+    label: string;
+    artwork_type: Exclude<SubscribeFormArtworkType, 'upload'>;
+};
+export type SubscribeFormLogoShape =
+    'default' | 'square' | 'rounded-lg' | 'rounded-xl' | 'rounded-full';
 export type SubscribeFormLogoSize = 'small' | 'medium' | 'large';
+export type SubscribeFormLogoPosition = 'left' | 'center' | 'right';
+export type SubscribeFormHeaderSpacing =
+    'compact' | 'default' | 'relaxed' | 'spacious';
+export type SubscribeFormCardPadding = 'compact' | 'default' | 'spacious';
 export type SubscribeFormTextAlignment = 'left' | 'center' | 'right';
+export type SubscribeFormPoweredByPosition =
+    | 'top-left'
+    | 'top-center'
+    | 'top-right'
+    | 'bottom-left'
+    | 'bottom-center'
+    | 'bottom-right';
 export type SegmentRuleField =
     | 'email'
     | 'first_name'
@@ -276,14 +306,23 @@ export type SubscribeForm = {
     button_label: string;
     success_heading: string;
     success_message: string;
+    redirect_enabled: boolean;
+    redirect_url: string | null;
+    powered_by_enabled: boolean;
+    powered_by_form_position: SubscribeFormPoweredByPosition;
     consent_text: string;
     style: SubscribeFormStyle;
     image_side: SubscribeFormImageSide;
+    artwork_type: SubscribeFormArtworkType;
+    artwork_preset: SubscribeFormArtworkPreset | null;
     image_url: string | null;
     image_processing: boolean;
     logo: string | null;
     logo_shape: SubscribeFormLogoShape;
     logo_size: SubscribeFormLogoSize;
+    logo_position: SubscribeFormLogoPosition;
+    header_spacing: SubscribeFormHeaderSpacing;
+    card_padding: SubscribeFormCardPadding;
     theme: TeamBrandTheme;
     attributes: AudienceAttribute[];
     published: boolean;

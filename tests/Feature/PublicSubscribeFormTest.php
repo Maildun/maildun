@@ -2,6 +2,11 @@
 
 use App\Enums\AudienceAttributeType;
 use App\Enums\AutomationTrigger;
+use App\Enums\SubscribeFormArtworkPreset;
+use App\Enums\SubscribeFormArtworkType;
+use App\Enums\SubscribeFormCardPadding;
+use App\Enums\SubscribeFormHeaderSpacing;
+use App\Enums\SubscribeFormLogoPosition;
 use App\Enums\SubscribeFormLogoShape;
 use App\Enums\SubscribeFormLogoSize;
 use App\Enums\SubscribeFormTextAlignment;
@@ -50,25 +55,54 @@ test('only published subscribe forms are public', function () {
             ->where('subscribeForm.theme.inputStyle', TeamBrandInputStyle::Soft->value)
             ->where('subscribeForm.style', 'card')
             ->where('subscribeForm.image_side', 'right')
+            ->where('subscribeForm.artwork_type', 'upload')
+            ->where('subscribeForm.artwork_preset', null)
             ->where('subscribeForm.text_alignment', SubscribeFormTextAlignment::Center->value)
             ->where('subscribeForm.image_url', null)
             ->where('subscribeForm.logo', null)
             ->where('subscribeForm.logo_shape', 'default')
             ->where('subscribeForm.logo_size', 'medium')
-            ->where('subscribeForm.success_heading', 'You’re subscribed!'));
+            ->where('subscribeForm.logo_position', 'center')
+            ->where('subscribeForm.header_spacing', 'default')
+            ->where('subscribeForm.card_padding', 'default')
+            ->where('subscribeForm.success_heading', 'You’re subscribed!')
+            ->where('subscribeForm.redirect_enabled', false)
+            ->where('subscribeForm.redirect_url', null)
+            ->where('subscribeForm.powered_by_enabled', true)
+            ->where('subscribeForm.powered_by_form_position', 'bottom-center'));
 });
 
 test('published forms expose their content controls on the hosted page', function () {
     $published = SubscribeForm::factory()->published()->create([
         'text_alignment' => SubscribeFormTextAlignment::Right,
         'success_heading' => 'You are on the list!',
+        'redirect_enabled' => true,
+        'redirect_url' => 'https://example.com/welcome',
+        'powered_by_form_position' => 'top-right',
     ]);
 
     $this->get(route('public.subscribe_forms.show', $published))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('subscribeForm.text_alignment', 'right')
-            ->where('subscribeForm.success_heading', 'You are on the list!'));
+            ->where('subscribeForm.success_heading', 'You are on the list!')
+            ->where('subscribeForm.redirect_enabled', true)
+            ->where('subscribeForm.redirect_url', 'https://example.com/welcome')
+            ->where('subscribeForm.powered_by_enabled', true)
+            ->where('subscribeForm.powered_by_form_position', 'top-right'));
+});
+
+test('disabled redirects do not expose their saved destination publicly', function () {
+    $published = SubscribeForm::factory()->published()->create([
+        'redirect_enabled' => false,
+        'redirect_url' => 'https://example.com/private-destination',
+    ]);
+
+    $this->get(route('public.subscribe_forms.show', $published))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('subscribeForm.redirect_enabled', false)
+            ->where('subscribeForm.redirect_url', null));
 });
 
 test('published forms expose their logo on the hosted page', function () {
@@ -76,6 +110,9 @@ test('published forms expose their logo on the hosted page', function () {
         'logo_path' => 'subscribe-form-logos/brand.png',
         'logo_shape' => SubscribeFormLogoShape::Square,
         'logo_size' => SubscribeFormLogoSize::Large,
+        'logo_position' => SubscribeFormLogoPosition::Right,
+        'header_spacing' => SubscribeFormHeaderSpacing::Relaxed,
+        'card_padding' => SubscribeFormCardPadding::Compact,
     ]);
 
     $this->get(route('public.subscribe_forms.show', $published))
@@ -83,7 +120,25 @@ test('published forms expose their logo on the hosted page', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->where('subscribeForm.logo', '/storage/subscribe-form-logos/brand.png')
             ->where('subscribeForm.logo_shape', 'square')
-            ->where('subscribeForm.logo_size', 'large'));
+            ->where('subscribeForm.logo_size', 'large')
+            ->where('subscribeForm.logo_position', 'right')
+            ->where('subscribeForm.header_spacing', 'relaxed')
+            ->where('subscribeForm.card_padding', 'compact'));
+});
+
+test('published forms expose rounded logo shapes on the hosted page', function () {
+    $published = SubscribeForm::factory()->published()->create([
+        'logo_shape' => SubscribeFormLogoShape::RoundedXl,
+        'logo_position' => SubscribeFormLogoPosition::Left,
+        'header_spacing' => SubscribeFormHeaderSpacing::Spacious,
+    ]);
+
+    $this->get(route('public.subscribe_forms.show', $published))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('subscribeForm.logo_shape', 'rounded-xl')
+            ->where('subscribeForm.logo_position', 'left')
+            ->where('subscribeForm.header_spacing', 'spacious'));
 });
 
 test('published forms expose optimized artwork on the hosted page', function () {
@@ -95,6 +150,21 @@ test('published forms expose optimized artwork on the hosted page', function () 
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('subscribeForm.image_url', '/storage/subscribe-form-images/hero.webp'));
+});
+
+test('published forms expose brand-aware artwork presets on the hosted page', function () {
+    $published = SubscribeForm::factory()->published()->create([
+        'artwork_type' => SubscribeFormArtworkType::BackgroundPreset,
+        'artwork_preset' => SubscribeFormArtworkPreset::BackgroundGlow,
+        'brand_color' => TeamBrandColor::Emerald,
+    ]);
+
+    $this->get(route('public.subscribe_forms.show', $published))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('subscribeForm.artwork_type', 'background-preset')
+            ->where('subscribeForm.artwork_preset', 'background-glow')
+            ->where('subscribeForm.theme.color', 'emerald'));
 });
 
 test('public forms validate configured fields consent and honeypot', function () {
