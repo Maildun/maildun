@@ -135,6 +135,12 @@ const PERSONALIZATION_TAGS = [
     { label: 'Four digit year', tag: '{{ year }}' },
 ] as const;
 
+/** Filled in per delivery when the campaign is sent. */
+const LINK_TAGS = [
+    { label: 'View in browser', tag: '{{ web_view_url }}' },
+    { label: 'Unsubscribe', tag: '{{ unsubscribe_url }}' },
+] as const;
+
 type LinkCheckResponse = {
     checked: number;
     broken: { url: string; status: number | null; reason: string }[];
@@ -681,6 +687,30 @@ export default function EmailEdit({
                                                     </DropdownMenuItem>
                                                 ),
                                             )}
+                                        </DropdownMenuGroup>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuGroup>
+                                            <DropdownMenuLabel>
+                                                Links
+                                            </DropdownMenuLabel>
+                                            {LINK_TAGS.map((item) => (
+                                                <DropdownMenuItem
+                                                    key={item.tag}
+                                                    onClick={() =>
+                                                        copyTag(item.tag)
+                                                    }
+                                                >
+                                                    <HugeiconsIcon
+                                                        icon={Copy01Icon}
+                                                    />
+                                                    <span className="flex-1">
+                                                        {item.label}
+                                                    </span>
+                                                    <code className="text-xs text-muted-foreground">
+                                                        {item.tag}
+                                                    </code>
+                                                </DropdownMenuItem>
+                                            ))}
                                         </DropdownMenuGroup>
                                         {selectedAudience?.attributes.length ? (
                                             <>

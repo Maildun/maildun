@@ -13,6 +13,8 @@ use App\Services\TeamMailer;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 
 class QueueTransactionalEmail
 {
@@ -118,10 +120,18 @@ class QueueTransactionalEmail
         ?string $idempotencyKey = null,
         ?string $requestHash = null,
     ): TransactionalEmailDelivery {
-        /** @var array<string, mixed> $data */
-        $data = $payload['data'] ?? [];
+        // The stored body is what goes on the wire, so the browser copy link
+        // has to be known before rendering; that means fixing the uuid first.
+        $uuid = (string) Str::uuid();
 
-        $delivery = $team->transactionalEmailDeliveries()->create([
+        /** @var array<string, mixed> $data */
+        $data = [
+            ...($payload['data'] ?? []),
+            // Last so a caller-supplied key cannot shadow the link.
+            'web_view_url' => URL::signedRoute('public.web_view.transactional.show', ['delivery' => $uuid]),
+        ];
+
+        $delivery = $team->transactionalEmailDeliveries()->make([
             'transactional_email_id' => $email->id,
             'team_api_key_id' => $apiKey?->id,
             'idempotency_key' => $idempotencyKey,
@@ -135,6 +145,8 @@ class QueueTransactionalEmail
             'provider' => $transport->provider->value,
             'uses_team_email_integration' => $transport->usesTeamEmailIntegration(),
         ]);
+        $delivery->uuid = $uuid;
+        $delivery->save();
 
         SendTransactionalEmailDelivery::dispatch($delivery->id)->afterCommit();
 

@@ -18,6 +18,7 @@ use App\Http\Controllers\EmailController;
 use App\Http\Controllers\EmailLinkCheckController;
 use App\Http\Controllers\EmailTemplateController;
 use App\Http\Controllers\EmailTrackingController;
+use App\Http\Controllers\EmailWebViewController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\InstallationController;
 use App\Http\Controllers\ListHygieneController;
@@ -112,6 +113,19 @@ Route::get('unsubscribe/s/{subscriber}', [UnsubscribeController::class, 'showFor
 Route::post('unsubscribe/s/{subscriber}', [UnsubscribeController::class, 'storeForSubscriber'])
     ->middleware(['signed', 'throttle:public-unsubscribe'])
     ->name('public.unsubscribe.subscriber.store');
+
+// The hosted copy behind {{ web_view_url }}. Campaign deliveries take one
+// segment and the other kinds two, so a uuid can never land on the wrong
+// route: the same split as unsubscribe/{delivery} and unsubscribe/s/*.
+Route::get('view/{delivery}', [EmailWebViewController::class, 'campaign'])
+    ->middleware('signed')
+    ->name('public.web_view.show');
+Route::get('view/t/{delivery}', [EmailWebViewController::class, 'transactional'])
+    ->middleware('signed')
+    ->name('public.web_view.transactional.show');
+Route::get('view/a/{delivery}', [EmailWebViewController::class, 'automation'])
+    ->middleware('signed')
+    ->name('public.web_view.automation.show');
 
 Route::post('webhooks/aws/ses', AwsSesWebhookController::class)
     ->name('webhooks.aws.ses');

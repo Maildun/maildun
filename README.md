@@ -1,33 +1,43 @@
 <p align="center">
-  <img src="public/assets/img/logo.svg" alt="Maildun" width="88">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/assets/img/logo-white.svg">
+    <img src="public/assets/img/logo.svg" alt="Maildun" width="88">
+  </picture>
 </p>
 
-# Maildun
+<h1 align="center">Maildun</h1>
 
-[![Tests](https://github.com/Maildun/maildun/actions/workflows/tests.yml/badge.svg)](https://github.com/Maildun/maildun/actions/workflows/tests.yml)
+<p align="center">
+  Self-hosted email marketing, transactional email, and automations for teams — on your own infrastructure.
+</p>
 
-Maildun is a self-hosted email platform for teams that need audience management, campaigns, transactional email, automations, and first-party engagement tracking in one application.
+<p align="center">
+  <a href="https://github.com/Maildun/maildun/actions/workflows/tests.yml"><img src="https://github.com/Maildun/maildun/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0"></a>
+  <a href="#requirements"><img src="https://img.shields.io/badge/PHP-8.4%2B-777BB4" alt="PHP 8.4+"></a>
+</p>
+
+Maildun is a single application for the whole outbound email lifecycle: audiences and subscribe forms, campaigns built in a visual editor, transactional email behind a JSON API, event-driven automations, and first-party open and click tracking. It runs on your servers, sends through your Amazon SES or SMTP account, and keeps subscriber data out of third-party hands.
+
+It is built for teams that have outgrown a hosted newsletter tool, or that cannot hand a customer list to one in the first place.
 
 > [!IMPORTANT]
-> Maildun is under active development. Review the deployment and security guidance before using it with production data or sending email at scale.
+> Maildun is under active development and currently in beta. Review the [production deployment guide](docs/production.md) and [security policy](SECURITY.md) before using it with production data or sending email at scale.
 
 ## Features
 
-- Team workspaces, invitations, roles, two-factor authentication, and passkeys
-- Audiences, custom attributes, tags, segments, list hygiene, and double opt-in
-- Hosted subscribe forms with configurable branding
-- Visual email templates, campaign scheduling, attachments, and test sends
-- Transactional templates and a team-scoped JSON API
-- Event-based automations with durable recovery jobs
-- Amazon SES and SMTP delivery configured per workspace
-- First-party open and click tracking with optional local geolocation databases
-- Local or S3-compatible media storage
-- Redis-backed queues and Laravel Horizon monitoring
-- A local Laravel MCP server for supported workspace operations
+- **Audiences** — custom attributes, tags, segments, list hygiene, double opt-in, CSV imports, and hosted subscribe forms with configurable branding
+- **Campaigns** — visual email builder, reusable templates, scheduling, attachments, test sends, and per-campaign engagement insights
+- **Transactional email** — reusable templates published behind a team-scoped, versioned JSON API
+- **Automations** — event-based flows with timers, driven by durable jobs that resume after a restart
+- **Delivery** — Amazon SES or SMTP, configured and verified per workspace, with bounce and complaint processing for SES
+- **Tracking** — first-party open and click tracking with optional local geolocation databases; no third-party pixels
+- **Teams** — workspaces, invitations, roles, two-factor authentication, and passkeys
+- **Operations** — local or S3-compatible media storage, Redis-backed queues with Laravel Horizon, and a built-in [MCP server](docs/mcp.md) for AI-assisted workspace operations
 
 ## Technology
 
-Maildun is built with Laravel 13, Inertia 3, React 19, TypeScript, Tailwind CSS 4, Redis, Laravel Horizon, and Pest.
+Laravel 13 · Inertia 3 · React 19 · TypeScript · Tailwind CSS 4 · Redis · Laravel Horizon · Pest
 
 ## Email delivery
 
@@ -38,9 +48,18 @@ Maildun deliberately separates two kinds of outbound email:
 
 Adding a sender or provider in workspace settings does not configure system email. A self-hosted installation must configure a working application-wide mailer before enabling registration or inviting other users, then configure each workspace provider before sending to its audience.
 
-## Quick start
+## Requirements
 
-You need PHP 8.4 or newer, Composer 2, Node.js 22, pnpm 11, Redis, and a database supported by Laravel. SQLite is the default for local development.
+| Component | Version                                                   |
+| --------- | --------------------------------------------------------- |
+| PHP       | 8.4 or newer                                              |
+| Composer  | 2                                                         |
+| Node.js   | 22                                                        |
+| pnpm      | 11                                                        |
+| Redis     | any supported release                                     |
+| Database  | any database supported by Laravel; SQLite is the default for local development |
+
+## Quick start
 
 ```bash
 git clone https://github.com/Maildun/maildun.git
@@ -54,7 +73,7 @@ composer dev
 
 Start Redis before running the installer. The example environment expects a local SMTP relay at `127.0.0.1:2525`; start one for local development or set `MAIL_MAILER=log`. For a public installation, replace the example `MAIL_*` values with a real system mail relay before running the installer.
 
-`composer setup` installs dependencies, runs the interactive `app:install` command, and builds the frontend. The development command starts the web server, Vite, Horizon, and the log viewer.
+`composer setup` installs dependencies, runs the interactive `app:install` command, and builds the frontend. `composer dev` starts the web server, Vite, Horizon, and the log viewer. Open <http://localhost:8000> and sign in with the administrator account the installer created.
 
 For automation timers, segment synchronization, tracking recovery, and cleanup tasks, also run:
 
@@ -62,10 +81,11 @@ For automation timers, segment synchronization, tracking recovery, and cleanup t
 php artisan schedule:work
 ```
 
+To explore with sample audiences and campaigns, pass `--demo` to the installer. It never adds demo data unless asked, and refuses to on production without `--force`.
+
 ### With Docker
 
-`Dockerfile` and `docker-compose.yml` bring up the web server, Horizon, the
-scheduler, PostgreSQL, and Redis together:
+`Dockerfile` and `docker-compose.yml` bring up the web server, Horizon, the scheduler, PostgreSQL, and Redis together:
 
 ```bash
 cp .env.example .env
@@ -90,17 +110,17 @@ php artisan app:install --registration=closed
 
 ## Documentation
 
-- [Installation](docs/installation.md)
-- [Configuration](docs/configuration.md)
-- [MCP](docs/mcp.md)
-- [Production deployment](docs/production.md)
-- [JSON API](API.md)
-- [Amazon SES delivery](docs/email-delivery/amazon-ses.md)
-- [SMTP delivery](docs/email-delivery/smtp.md)
-- [Security policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md)
+| Guide                                                      | Covers                                                          |
+| ---------------------------------------------------------- | --------------------------------------------------------------- |
+| [Installation](docs/installation.md)                       | Requirements, automatic and manual setup, Docker, demo data     |
+| [Configuration](docs/configuration.md)                     | Environment variables and their defaults                        |
+| [Production deployment](docs/production.md)                | Process supervision, scheduling, backups, hardening             |
+| [Amazon SES delivery](docs/email-delivery/amazon-ses.md)   | Connecting a workspace to SES, feedback notifications           |
+| [SMTP delivery](docs/email-delivery/smtp.md)               | Connecting a workspace to an SMTP provider                      |
+| [JSON API](API.md) · [OpenAPI spec](openapi.yaml)          | Authentication, transactional sends, subscription management    |
+| [MCP](docs/mcp.md)                                         | Operating a workspace from an AI assistant                      |
 
-## Development checks
+## Development
 
 Run the same checks used by continuous integration:
 
@@ -110,6 +130,14 @@ composer ci:check
 composer audit --locked
 pnpm audit --audit-level=high
 ```
+
+`composer ci:check` runs ESLint, Prettier, PHPStan, Pint, and the Pest suite. See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch workflow, test expectations, and licensing of contributions. Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Support
+
+- **Bugs and feature requests** — open a [GitHub issue](https://github.com/Maildun/maildun/issues/new/choose).
+- **Security vulnerabilities** — use [private vulnerability reporting](https://github.com/Maildun/maildun/security/advisories/new), never a public issue. See [SECURITY.md](SECURITY.md).
+- **Commercial licensing** — see [Removing the attribution](#removing-the-attribution) below.
 
 ## Responsible use
 

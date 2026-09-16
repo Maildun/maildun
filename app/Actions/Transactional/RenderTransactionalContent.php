@@ -10,6 +10,14 @@ class RenderTransactionalContent
     public const string PATTERN = '/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/';
 
     /**
+     * Tags Maildun fills in itself on every send, so they are never variables
+     * a caller has to supply.
+     *
+     * @var list<string>
+     */
+    public const array SYSTEM_KEYS = ['web_view_url'];
+
+    /**
      * Replace merge tags in HTML, escaping values so caller-supplied data cannot
      * inject markup.
      *
@@ -47,7 +55,7 @@ class RenderTransactionalContent
             preg_match_all(self::PATTERN, $content, $matches);
 
             foreach ($matches[1] as $key) {
-                if (! in_array($key, $keys, true)) {
+                if (! in_array($key, $keys, true) && ! in_array($key, self::SYSTEM_KEYS, true)) {
                     $keys[] = $key;
                 }
             }
@@ -71,7 +79,7 @@ class RenderTransactionalContent
         foreach ($declared as $variable) {
             $key = is_string($variable['key'] ?? null) ? $variable['key'] : '';
 
-            if ($key === '' || isset($seen[$key])) {
+            if ($key === '' || isset($seen[$key]) || in_array($key, self::SYSTEM_KEYS, true)) {
                 continue;
             }
 

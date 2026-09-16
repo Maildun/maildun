@@ -17,7 +17,6 @@ use App\Mail\AutomationEmail;
 use App\Models\AutomationEmailDelivery;
 use App\Models\AutomationRun;
 use App\Models\AutomationRunStep;
-use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\TransactionalEmail;
 use App\Services\TeamMailer;
@@ -32,6 +31,7 @@ class AdvanceAutomationRun
         private RenderTransactionalContent $renderer,
         private TeamMailer $teamMailer,
         private RecordEmailAddressHealth $emailHealth,
+        private BuildAutomationMergeData $mergeData,
     ) {}
 
     public function handle(AutomationRun $run, ?string $nodeId = null): void
@@ -181,8 +181,6 @@ class AdvanceAutomationRun
             throw new \RuntimeException(__('The transactional email is no longer available.'));
         }
 
-        $merge = $this->mergeData($subscriber, $run->context);
-
         if ($this->emailHealth->isSuppressed($run->automation->team, $subscriber->email)) {
             return [
                 'status' => 'skipped',
@@ -204,6 +202,9 @@ class AdvanceAutomationRun
             'ses_sns_topic_arn_hash' => $transport->sesSnsTopicArnHash,
             'send_attempted_at' => now(),
         ]);
+
+        // After the delivery exists: the browser copy link is keyed to it.
+        $merge = $this->mergeData->handle($subscriber, $run->context, $delivery);
 
         try {
             $sentMessage = $this->teamMailer->sendResolved(
@@ -449,26 +450,6 @@ class AdvanceAutomationRun
             'current_node_id' => $openSteps->count() === 1 ? $openSteps->first()->node_id : null,
             'scheduled_at' => $scheduledAt,
         ]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $context
-     * @return array<string, mixed>
-     */
-    protected function mergeData(Subscriber $subscriber, array $context): array
-    {
-        $payload = is_array($context['data'] ?? null) ? $context['data'] : [];
-
-        return [
-            'email' => $subscriber->email,
-            'first_name' => $subscriber->first_name ?? '',
-            'last_name' => $subscriber->last_name ?? '',
-            ...($subscriber->attribute_values ?? []),
-            ...$payload,
-            // Last so neither a custom attribute nor trigger context can shadow
-            // the opt-out link with a value of its own.
-            'unsubscribe_url' => AutomationEmail::unsubscribeUrl($subscriber),
-        ];
     }
 
     protected function fail(AutomationRun $run, AutomationRunStep $step, string $reason): void

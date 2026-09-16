@@ -4,6 +4,7 @@ namespace App\Actions\Emails;
 
 use App\Models\EmailDelivery;
 use App\Models\EmailLink;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\URL;
 
 class BuildTrackedEmailHtml
@@ -12,6 +13,19 @@ class BuildTrackedEmailHtml
      * Authors can place the opt-out themselves with {{ unsubscribe_url }}.
      */
     public const string UNSUBSCRIBE_TAG = '/\{\{\s*unsubscribe_url\s*\}\}/';
+
+    /**
+     * Authors can offer a hosted copy of the email with {{ web_view_url }}.
+     */
+    public const string WEB_VIEW_TAG = '/\{\{\s*web_view_url\s*\}\}/';
+
+    /**
+     * Merge keys that resolve to delivery links below, so no snapshotted
+     * subscriber field may shadow them.
+     *
+     * @var list<string>
+     */
+    private const array LINK_KEYS = ['unsubscribe_url', 'web_view_url'];
 
     public function __construct(private readonly RenderCampaignContent $renderer) {}
 
@@ -34,7 +48,8 @@ class BuildTrackedEmailHtml
         $delivery->loadMissing('email.links');
         $email = $delivery->email;
         $links = $email->links->keyBy('url_hash');
-        $html = $this->renderer->html($email->html ?? '', $delivery->merge_data ?? []);
+        $mergeData = Arr::except($delivery->merge_data ?? [], self::LINK_KEYS);
+        $html = $this->renderer->html($email->html ?? '', $mergeData);
         $html = $this->appendQueryString($html, $email->query_string);
 
         if ($email->track_clicks) {
@@ -69,6 +84,12 @@ class BuildTrackedEmailHtml
             $placed,
         ) ?? $html;
 
+        $html = preg_replace(
+            self::WEB_VIEW_TAG,
+            htmlspecialchars(self::webViewUrl($delivery), ENT_QUOTES | ENT_HTML5),
+            $html,
+        ) ?? $html;
+
         $appended = '';
 
         if ($email->track_opens) {
@@ -87,6 +108,14 @@ class BuildTrackedEmailHtml
         }
 
         return $html.$appended;
+    }
+
+    /**
+     * The signed page that serves this delivery's rendered body in a browser.
+     */
+    public static function webViewUrl(EmailDelivery $delivery): string
+    {
+        return URL::signedRoute('public.web_view.show', ['delivery' => $delivery]);
     }
 
     public function appendQueryString(string $html, ?string $queryString): string

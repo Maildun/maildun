@@ -100,6 +100,15 @@ const SECTIONS: { value: SectionValue; fields: string[] }[] = [
 
 const VARIABLE_KEY = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
+/** Filled in on every send, so it is never a variable the sender supplies. */
+const BUILT_IN_TAGS = [
+    {
+        key: 'web_view_url',
+        label: 'View in browser',
+        description: 'Opens a hosted copy of the email that was sent.',
+    },
+] as const;
+
 function TransactionalDesignPreview({
     editor,
     design,
@@ -311,7 +320,10 @@ export default function TransactionalEdit({
             return;
         }
 
-        if (form.data.variables.some((variable) => variable.key === key)) {
+        if (
+            form.data.variables.some((variable) => variable.key === key) ||
+            BUILT_IN_TAGS.some((tag) => tag.key === key)
+        ) {
             setNewVariableKey('');
 
             return;
@@ -914,6 +926,39 @@ export default function TransactionalEdit({
                         </DialogDescription>
                     </DialogHeader>
                     <FieldGroup className="gap-5">
+                        {BUILT_IN_TAGS.map((tag) => (
+                            <Field
+                                key={tag.key}
+                                data-test={`transactional-built-in-${tag.key}`}
+                            >
+                                <FieldLabel htmlFor={`built-in-tag-${tag.key}`}>
+                                    {tag.label}
+                                </FieldLabel>
+                                <div className="flex gap-2">
+                                    <Input
+                                        id={`built-in-tag-${tag.key}`}
+                                        readOnly
+                                        value={`{{ ${tag.key} }}`}
+                                        placeholder={`{{ ${tag.key} }}`}
+                                        className="font-mono text-xs"
+                                    />
+                                    <Button
+                                        type="button"
+                                        size="icon"
+                                        variant="outline"
+                                        aria-label={`Copy {{ ${tag.key} }}`}
+                                        onClick={() => copy(`{{ ${tag.key} }}`)}
+                                    >
+                                        <HugeiconsIcon icon={Copy01Icon} />
+                                    </Button>
+                                </div>
+                                <FieldDescription>
+                                    {tag.description} Filled in automatically,
+                                    so it needs no value.
+                                </FieldDescription>
+                            </Field>
+                        ))}
+
                         {form.data.variables.length === 0 ? (
                             <p className="text-sm text-muted-foreground">
                                 No variables yet. Add one below or write a merge
