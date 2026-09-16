@@ -131,7 +131,7 @@ composer audit --locked
 pnpm audit --audit-level=high
 ```
 
-`composer ci:check` runs ESLint, Prettier, PHPStan, Pint, and the Pest suite. See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch workflow, test expectations, and licensing of contributions. Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+`composer ci:check` runs ESLint, Prettier, PHPStan, Pint, and the Pest suite. Maildun is maintained hands-on right now: contributions come in as issues, and pull requests are accepted by prior agreement only. See [CONTRIBUTING.md](CONTRIBUTING.md) for how that works, test expectations, and licensing of contributions. Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Support
 

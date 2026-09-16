@@ -1,3 +1,13 @@
+<!--
+Pull requests are accepted only when the maintainer asked for one in an issue
+thread. See CONTRIBUTING.md. Unsolicited pull requests are closed with thanks
+and the issue is kept open.
+-->
+
+## Issue
+
+Link the issue where this change was agreed.
+
 ## Summary
 
 Describe the problem and the solution.
