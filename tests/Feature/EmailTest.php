@@ -4,6 +4,7 @@ use App\Enums\EmailEditor;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Jobs\SendCampaignTestEmail;
+use App\Mail\ComposedEmailTest;
 use App\Models\Audience;
 use App\Models\Email;
 use App\Models\EmailTemplate;
@@ -570,7 +571,7 @@ test('a plain text campaign uses its source as the text alternative', function (
         ->and($email->plain_text)->toBe("Hello there\nSecond line");
 });
 
-test('a source-based editor requires editable source', function (EmailEditor $editor) {
+test('a source-based draft saves before its body is written', function (EmailEditor $editor) {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $team->update(['email_editor' => $editor]);
@@ -578,11 +579,20 @@ test('a source-based editor requires editable source', function (EmailEditor $ed
 
     $this->actingAs($user)
         ->patch(route('emails.update', [$team, $email]), [
-            'name' => $email->name,
+            'name' => 'Renamed draft',
             'subject' => $email->subject,
+            'source' => '',
             'html' => '<p>Rendered</p>',
         ])
-        ->assertInvalid('source');
+        ->assertValid('source')
+        ->assertRedirect();
+
+    $email->refresh();
+
+    expect($email->name)->toBe('Renamed draft')
+        ->and($email->editor)->toBe($editor)
+        ->and($email->source)->toBeNull()
+        ->and($email->plain_text)->toBeNull();
 })->with([
     'plain text' => EmailEditor::PlainText,
     'markdown' => EmailEditor::Markdown,
@@ -675,7 +685,7 @@ test('a test send uses the audience sender when the draft and team leave it blan
         ->post(route('emails.test', [$team, $email]), ['to' => 'reviewer@example.com'])
         ->assertRedirect();
 
-    Queue::assertPushed(SendCampaignTestEmail::class, fn (SendCampaignTestEmail $job): bool => $job->recipient === 'reviewer@example.com');
+    Queue::assertPushedOn('transactional', SendCampaignTestEmail::class, fn (SendCampaignTestEmail $job): bool => $job->recipient === 'reviewer@example.com');
 });
 
 test('a test send queues the resolved sender identity', function () {
@@ -690,7 +700,7 @@ test('a test send queues the resolved sender identity', function () {
         ->post(route('emails.test', [$team, $email]), ['to' => 'reviewer@example.com'])
         ->assertRedirect();
 
-    Queue::assertPushed(SendCampaignTestEmail::class, fn (SendCampaignTestEmail $job): bool => $job->emailId === $email->id
+    Queue::assertPushedOn('transactional', SendCampaignTestEmail::class, fn (SendCampaignTestEmail $job): bool => $job->emailId === $email->id
         && $job->recipient === 'reviewer@example.com'
         && $job->subject === $email->subject);
 
@@ -721,8 +731,32 @@ test('a campaign test send queues before the delivery worker resolves its provid
         ->post(route('emails.test', [$team, $email]), ['to' => 'reviewer@example.com'])
         ->assertRedirect();
 
-    Queue::assertPushed(SendCampaignTestEmail::class);
+    Queue::assertPushedOn('transactional', SendCampaignTestEmail::class);
     expect($email->fresh()->last_tested_at)->toBeNull();
+});
+
+test('a queued campaign test send delivers one copy through the workspace mailer', function () {
+    Mail::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->ses()->create();
+    $email = Email::factory()->for($team)->create([
+        'subject' => 'Hello Ada',
+        'html' => '<p>Welcome</p>',
+    ]);
+
+    app()->call([new SendCampaignTestEmail(
+        $email->id,
+        'reviewer@example.com',
+        'Hello Ada',
+        '<p>Welcome</p>',
+        'Welcome',
+    ), 'handle']);
+
+    Mail::assertSent(ComposedEmailTest::class, fn (ComposedEmailTest $mail): bool => $mail->hasTo('reviewer@example.com')
+        && $mail->envelope()->subject === '[Test] Hello Ada');
+    expect($email->fresh()->last_tested_at)->not->toBeNull();
 });
 
 test('an email can be deleted', function () {

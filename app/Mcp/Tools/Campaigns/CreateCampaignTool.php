@@ -108,7 +108,7 @@ class CreateCampaignTool extends Tool
             'from_address' => $schema->string()->description('Authorized sender email.')->format('email')->max(255),
             'reply_to' => $schema->string()->description('Reply-to email.')->format('email')->max(255),
             'html' => $schema->string()->description('Rendered HTML email content.')->max(2000000),
-            'source' => $schema->string()->description('Editable Markdown or plain-text source for source-based workspace editors.')->max(2000000),
+            'source' => $schema->string()->description('Editable Markdown or plain-text source for source-based workspace editors; optional while drafting.')->max(2000000),
             'plain_text' => $schema->string()->description('Optional plain-text content.')->max(2000000),
             'query_string' => $schema->string()->description('Tracking query string without a leading question mark.')->max(2048),
             'track_clicks' => $schema->boolean()->description('Whether click tracking is enabled.'),

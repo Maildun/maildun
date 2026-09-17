@@ -110,3 +110,50 @@ test('keeps plain text source when campaigns are managed through MCP', function 
         ->where('campaign.plain_text', "Hello there\nSecond line")
         ->etc());
 });
+
+test('drafts a source-based campaign through MCP before its body is written', function () {
+    $team = Team::factory()->create([
+        'slug' => 'plain-drafts',
+        'email_editor' => EmailEditor::PlainText,
+    ]);
+
+    MaildunServer::tool(CreateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'name' => 'Empty draft',
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('campaign.editor', EmailEditor::PlainText->value)
+        ->where('campaign.status', 'draft')
+        ->where('campaign.source', '')
+        ->where('campaign.plain_text', null)
+        ->etc());
+
+    $campaign = Email::query()->whereBelongsTo($team)->where('name', 'Empty draft')->firstOrFail();
+
+    MaildunServer::tool(UpdateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $campaign->uuid,
+        'source' => 'Hello there',
+        'html' => '<div>Hello there</div>',
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('campaign.source', 'Hello there')
+        ->where('campaign.plain_text', 'Hello there')
+        ->etc());
+
+    MaildunServer::tool(UpdateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $campaign->uuid,
+        'subject' => 'Renamed while empty',
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('campaign.subject', 'Renamed while empty')
+        ->where('campaign.source', 'Hello there')
+        ->etc());
+
+    MaildunServer::tool(UpdateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $campaign->uuid,
+        'source' => '',
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('campaign.source', null)
+        ->where('campaign.plain_text', null)
+        ->etc());
+});

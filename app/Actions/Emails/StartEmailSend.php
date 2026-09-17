@@ -30,7 +30,12 @@ class StartEmailSend
                 throw ValidationException::withMessages(['email' => __('This campaign has already been queued.')]);
             }
 
-            if ($lockedEmail->audience_id === null || blank($lockedEmail->html) || blank($lockedEmail->subject)) {
+            // Source editors render an empty body to a non-blank layout, so
+            // the author's source is what proves the campaign has content.
+            $missingContent = blank($lockedEmail->html)
+                || ($lockedEmail->editor->usesSource() && blank($lockedEmail->source));
+
+            if ($lockedEmail->audience_id === null || $missingContent || blank($lockedEmail->subject)) {
                 throw ValidationException::withMessages(['email' => __('Choose recipients and complete the subject and content before sending.')]);
             }
 

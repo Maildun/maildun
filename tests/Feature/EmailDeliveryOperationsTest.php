@@ -3,6 +3,7 @@
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailStatus;
 use App\Jobs\PrepareEmailSendChunk;
+use App\Jobs\SendCampaignTestEmail;
 use App\Jobs\SendEmailDelivery;
 use App\Jobs\SendTransactionalEmailDelivery;
 use App\Models\Email;
@@ -31,10 +32,12 @@ test('campaign and transactional sends run on separate queues so neither starves
     PrepareEmailSendChunk::dispatch(1);
     SendEmailDelivery::dispatch(1);
     SendTransactionalEmailDelivery::dispatch(2);
+    SendCampaignTestEmail::dispatch(1, 'reviewer@example.com', 'Subject', '<p>Hi</p>', 'Hi');
 
     Queue::assertPushedOn('campaigns', PrepareEmailSendChunk::class);
     Queue::assertPushedOn('campaigns', SendEmailDelivery::class);
     Queue::assertPushedOn('transactional', SendTransactionalEmailDelivery::class);
+    Queue::assertPushedOn('transactional', SendCampaignTestEmail::class);
 });
 
 test('email jobs time out before horizon and redis can retry them', function () {
@@ -76,9 +79,11 @@ test('an operator can collapse delivery onto a single queue', function () {
 
     SendEmailDelivery::dispatch(1);
     SendTransactionalEmailDelivery::dispatch(2);
+    SendCampaignTestEmail::dispatch(1, 'reviewer@example.com', 'Subject', '<p>Hi</p>', 'Hi');
 
     Queue::assertPushedOn('default', SendEmailDelivery::class);
     Queue::assertPushedOn('default', SendTransactionalEmailDelivery::class);
+    Queue::assertPushedOn('default', SendCampaignTestEmail::class);
 });
 
 /*

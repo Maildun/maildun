@@ -6,6 +6,7 @@ use App\Actions\Emails\RebuildEmailTrackingAggregates;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\RetryEmailDeliveries;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailEditor;
 use App\Enums\EmailProvider;
 use App\Enums\EmailStatus;
 use App\Enums\TeamRole;
@@ -128,6 +129,31 @@ test('a campaign cannot be queued twice', function () {
     $this->actingAs($user)
         ->post(route('emails.send', [$user->currentTeam, $email]))
         ->assertSessionHasErrors('email');
+});
+
+test('a source-based campaign cannot be queued before its body is written', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $team->update(['email_editor' => EmailEditor::PlainText]);
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'editor' => EmailEditor::PlainText,
+        'html' => '<div></div>',
+        'source' => null,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.send', [$team, $email]))
+        ->assertSessionHasErrors('email');
+
+    Bus::assertNothingBatched();
+
+    expect($email->fresh()->status)->toBe(EmailStatus::Draft);
 });
 
 test('members cannot queue a campaign', function () {

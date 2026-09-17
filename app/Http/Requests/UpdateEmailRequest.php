@@ -81,7 +81,9 @@ class UpdateEmailRequest extends FormRequest
             // The block editor renders its document to HTML client-side, so
             // every editor ends up submitting the markup that gets sent.
             'html' => ['required', 'string', 'max:2000000'],
-            'source' => [$team->email_editor->usesSource() ? 'required' : 'nullable', 'string', 'max:2000000'],
+            // A source-based draft may be saved before its body is written;
+            // StartEmailSend refuses to queue it while the source is blank.
+            'source' => ['nullable', 'string', 'max:2000000'],
             'plain_text' => ['nullable', 'string', 'max:2000000'],
             'query_string' => ['nullable', 'string', 'max:2048', 'regex:/^[^\s?#]+$/'],
             'track_clicks' => ['sometimes', 'boolean'],

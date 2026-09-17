@@ -63,7 +63,7 @@ class UpdateCampaignTool extends Tool
             'from_address' => ['sometimes', 'nullable', 'email:rfc', 'max:255', new AuthorizedSenderAddress($team)],
             'reply_to' => ['sometimes', 'nullable', 'email:rfc', 'max:255'],
             'html' => ['sometimes', 'required', 'string', 'max:2000000'],
-            'source' => ['sometimes', 'required', 'string', 'max:2000000'],
+            'source' => ['sometimes', 'nullable', 'string', 'max:2000000'],
             'plain_text' => ['sometimes', 'nullable', 'string', 'max:2000000'],
             'query_string' => ['sometimes', 'nullable', 'string', 'max:2048', 'regex:/^[^\s?#]+$/'],
             'track_clicks' => ['sometimes', 'boolean'],
@@ -76,7 +76,7 @@ class UpdateCampaignTool extends Tool
 
         $changes = $this->context->changes($validated, self::FIELDS);
         $changes = $this->context->blankStringsToNull($changes, [
-            'preheader', 'from_name', 'from_address', 'reply_to', 'plain_text', 'query_string',
+            'preheader', 'from_name', 'from_address', 'reply_to', 'source', 'plain_text', 'query_string',
         ]);
         [$audienceId, $segmentId] = $this->recipientSelection($team, $campaign, $changes);
 
@@ -86,8 +86,9 @@ class UpdateCampaignTool extends Tool
             $changes['design'] = null;
         }
 
+        // A draft body may be cleared, so only an omitted source keeps the current one.
         $changes['source'] = $team->email_editor->usesSource()
-            ? ($changes['source'] ?? $campaign->source)
+            ? (array_key_exists('source', $changes) ? $changes['source'] : $campaign->source)
             : null;
 
         if ($team->email_editor === EmailEditor::PlainText) {
@@ -125,7 +126,7 @@ class UpdateCampaignTool extends Tool
             'from_address' => $schema->string()->description('Authorized sender email.')->format('email')->max(255)->nullable(),
             'reply_to' => $schema->string()->description('Reply-to email.')->format('email')->max(255)->nullable(),
             'html' => $schema->string()->description('Rendered HTML content.')->max(2000000),
-            'source' => $schema->string()->description('Editable Markdown or plain-text source for source-based workspace editors.')->max(2000000),
+            'source' => $schema->string()->description('Editable Markdown or plain-text source for source-based workspace editors; null clears the draft body.')->max(2000000)->nullable(),
             'plain_text' => $schema->string()->description('Plain-text content.')->max(2000000)->nullable(),
             'query_string' => $schema->string()->description('Tracking query string without a leading question mark.')->max(2048)->nullable(),
             'track_clicks' => $schema->boolean()->description('Whether click tracking is enabled.'),

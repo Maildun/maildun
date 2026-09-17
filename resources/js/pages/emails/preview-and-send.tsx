@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SyntheticEvent } from 'react';
 import PreviewWidthTabs from '@/components/preview-width-tabs';
 import type { PreviewWidth } from '@/components/preview-width-tabs';
+import SendTestEmailDialog from '@/components/send-test-email-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -93,14 +94,21 @@ function measurePreviewDocumentHeight(frame: HTMLIFrameElement): number {
     const body = doc.body;
 
     html.style.height = 'auto';
+    html.style.minHeight = '0';
     html.style.overflow = 'visible';
 
     if (body) {
         body.style.height = 'auto';
+        body.style.minHeight = '0';
         body.style.overflow = 'visible';
     }
 
-    return Math.max(html.scrollHeight, body?.scrollHeight ?? 0);
+    return Math.max(
+        html.scrollHeight,
+        html.offsetHeight,
+        body?.scrollHeight ?? 0,
+        body?.offsetHeight ?? 0,
+    );
 }
 
 export default function PreviewAndSend({
@@ -108,7 +116,7 @@ export default function PreviewAndSend({
     recipientCount,
     preview: initialPreview,
 }: Props) {
-    const { currentTeam } = usePage().props;
+    const { auth, currentTeam } = usePage().props;
     const [preview, setPreview] = useState(initialPreview);
     const [previewWidth, setPreviewWidth] = useState<PreviewWidth>('desktop');
     const [zoom, setZoom] = useState<ZoomLevel>('100');
@@ -118,6 +126,7 @@ export default function PreviewAndSend({
     const [previewError, setPreviewError] = useState<string | null>(null);
     const [sendError, setSendError] = useState<string | null>(null);
     const [sending, setSending] = useState(false);
+    const [testOpen, setTestOpen] = useState(false);
     const [previewDocumentHeight, setPreviewDocumentHeight] = useState(0);
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const latestRequest = useRef(0);
@@ -326,32 +335,43 @@ export default function PreviewAndSend({
                         <Badge variant="secondary">Draft</Badge>
                     </div>
 
-                    <Button
-                        type="button"
-                        disabled={
-                            sending ||
-                            previewRequest.processing ||
-                            Boolean(previewError)
-                        }
-                        onClick={handleSend}
-                        data-test="confirm-send-campaign"
-                    >
-                        {sending ? (
-                            <Spinner data-icon="inline-start" />
-                        ) : (
-                            <HugeiconsIcon
-                                icon={MailSend01Icon}
-                                data-icon="inline-start"
-                            />
-                        )}
-                        {sending
-                            ? 'Queueing campaign…'
-                            : `Send to ${recipientCount} ${recipientCount === 1 ? 'recipient' : 'recipients'}`}
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={sending}
+                            onClick={() => setTestOpen(true)}
+                            data-test="send-test-button"
+                        >
+                            Send test
+                        </Button>
+                        <Button
+                            type="button"
+                            disabled={
+                                sending ||
+                                previewRequest.processing ||
+                                Boolean(previewError)
+                            }
+                            onClick={handleSend}
+                            data-test="confirm-send-campaign"
+                        >
+                            {sending ? (
+                                <Spinner data-icon="inline-start" />
+                            ) : (
+                                <HugeiconsIcon
+                                    icon={MailSend01Icon}
+                                    data-icon="inline-start"
+                                />
+                            )}
+                            {sending
+                                ? 'Queueing campaign…'
+                                : `Send to ${recipientCount} ${recipientCount === 1 ? 'recipient' : 'recipients'}`}
+                        </Button>
+                    </div>
                 </header>
 
                 <div
-                    className="flex h-14 shrink-0 items-center justify-between gap-6 overflow-x-auto border-b px-3 sm:px-4"
+                    className="flex h-14 shrink-0 items-center gap-3 overflow-x-auto overflow-y-hidden border-b px-3 sm:px-4"
                     data-test="campaign-preview-toolbar"
                 >
                     <div className="flex shrink-0 items-center gap-3">
@@ -390,7 +410,7 @@ export default function PreviewAndSend({
                         </Select>
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-3">
+                    <div className="ml-auto flex min-w-0 shrink-0 items-center gap-3">
                         <span className="text-sm text-muted-foreground tabular-nums">
                             {preview.navigation.position} of {recipientCount}
                         </span>
@@ -470,12 +490,15 @@ export default function PreviewAndSend({
                                 onValueChange={handleRecipientChange}
                             >
                                 <ComboboxInput
-                                    className="w-72"
+                                    className="w-80 lg:w-96"
                                     placeholder="Search recipients"
                                     aria-label="Preview as recipient"
                                     data-test="campaign-preview-recipient"
                                 />
-                                <ComboboxContent>
+                                <ComboboxContent
+                                    align="end"
+                                    className="w-96"
+                                >
                                     <ComboboxEmpty>
                                         {previewRequest.processing
                                             ? 'Searching recipients…'
@@ -493,12 +516,13 @@ export default function PreviewAndSend({
                                                 <ComboboxItem
                                                     key={label}
                                                     value={label}
+                                                    className="items-start py-1.5"
                                                 >
-                                                    <span className="min-w-0">
-                                                        <span className="block truncate">
+                                                    <span className="flex min-w-0 flex-1 flex-col gap-0.5 pr-2">
+                                                        <span className="leading-5">
                                                             {recipient?.name}
                                                         </span>
-                                                        <span className="block truncate text-xs text-muted-foreground">
+                                                        <span className="break-all text-xs leading-4 text-muted-foreground">
                                                             {recipient?.email}
                                                         </span>
                                                     </span>
@@ -554,20 +578,17 @@ export default function PreviewAndSend({
                     ) : null}
 
                     <div
-                        className="mx-auto min-h-0 flex-1 overflow-auto rounded-lg border bg-background shadow-sm transition-[width] duration-200"
+                        className="mx-auto min-h-0 w-fit max-w-full flex-1 overflow-auto rounded-lg border bg-background shadow-sm"
                         data-test="campaign-preview-canvas"
-                        style={{
-                            width: previewFrameWidth * previewScale,
-                        }}
                     >
                         <div
+                            className="overflow-hidden"
                             style={{
                                 width: previewFrameWidth * previewScale,
                                 height:
                                     previewDocumentHeight > 0
                                         ? previewDocumentHeight * previewScale
                                         : undefined,
-                                minHeight: '100%',
                             }}
                         >
                             <iframe
@@ -575,14 +596,15 @@ export default function PreviewAndSend({
                                 title={`Campaign preview for ${preview.recipient.email}`}
                                 srcDoc={preview.html}
                                 sandbox="allow-same-origin"
+                                scrolling="no"
                                 onLoad={handlePreviewLoad}
-                                className="pointer-events-none block origin-top-left border-0 bg-background"
+                                className="pointer-events-none block origin-top-left overflow-hidden border-0 bg-background"
                                 style={{
                                     width: previewFrameWidth,
                                     height:
                                         previewDocumentHeight > 0
                                             ? previewDocumentHeight
-                                            : '100%',
+                                            : 'auto',
                                     transform: `scale(${previewScale})`,
                                 }}
                                 data-test="campaign-recipient-preview"
@@ -591,6 +613,14 @@ export default function PreviewAndSend({
                     </div>
                 </main>
             </div>
+
+            <SendTestEmailDialog
+                teamSlug={currentTeam.slug}
+                emailUuid={campaign.uuid}
+                defaultAddress={auth.user.email}
+                open={testOpen}
+                onOpenChange={setTestOpen}
+            />
         </>
     );
 }
