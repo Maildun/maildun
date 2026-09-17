@@ -17,6 +17,30 @@ use Inertia\Response;
 class UnsubscribeController extends Controller
 {
     /**
+     * Test copies have no delivery to sign, so this page explains the link
+     * without opting anyone out.
+     */
+    public function showTest(): HttpResponse
+    {
+        $notice = '<div data-test="attribution-badge" style="margin:24px 0 0;padding:16px;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:#6b7280">'
+            .__('Powered by')
+            .' <a href="'.htmlspecialchars((string) config('attribution.source_url'), ENT_QUOTES | ENT_HTML5).'" style="color:#6b7280;text-decoration:underline">Maildun</a>'
+            .'</div>';
+
+        return response(
+            '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>'
+            .e(__('Test unsubscribe link'))
+            .'</title></head><body style="font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111;text-align:center">'
+            .'<h1>'.e(__('This is a test email')).'</h1>'
+            .'<p>'.e(__('Opening this link does not unsubscribe anyone. The real campaign uses a live opt-out link for each recipient.')).'</p>'
+            .$notice
+            .'</body></html>'
+        )
+            ->header('Content-Type', 'text/html; charset=UTF-8')
+            ->header('X-Robots-Tag', 'noindex, nofollow');
+    }
+
+    /**
      * Show the opt-out confirmation for a delivered campaign.
      */
     public function show(EmailDelivery $delivery): Response

@@ -19,6 +19,21 @@ use Illuminate\Http\Response;
 class EmailWebViewController extends Controller
 {
     /**
+     * Test copies have no delivery to host, so this page stands in for
+     * {{ web_view_url }} without signing a live copy.
+     */
+    public function test(): Response
+    {
+        return $this->page(
+            '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>'
+            .e(__('Test copy'))
+            .'</title></head><body style="font-family:Arial,Helvetica,sans-serif;padding:24px;color:#111">'
+            .'<p>'.e(__('This is a test email. The real campaign hosts a personalized copy of this message in the browser.')).'</p>'
+            .'</body></html>',
+        );
+    }
+
+    /**
      * A campaign delivery renders the same tracked body it was sent with, so
      * links and the open pixel keep reporting against the delivery.
      */

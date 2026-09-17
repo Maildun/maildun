@@ -85,7 +85,7 @@ Route::post('forms/{subscribeForm}/subscribe', [PublicSubscribeFormController::c
     ->middleware('throttle:public-subscribe')
     ->name('public.subscribe_forms.store');
 Route::get('confirm/{subscriber}', [SubscriptionConfirmationController::class, 'confirm'])
-    ->middleware(['signed', 'throttle:10,1'])
+    ->middleware(['inbox-signed', 'throttle:10,1'])
     ->name('public.subscribe.confirm');
 Route::get('sender-verifications/{teamSender}', TeamSenderVerificationController::class)
     ->whereUuid('teamSender')
@@ -93,38 +93,42 @@ Route::get('sender-verifications/{teamSender}', TeamSenderVerificationController
     ->name('team-senders.verify');
 
 Route::get('track/emails/{delivery}/open.gif', [EmailTrackingController::class, 'open'])
-    ->middleware('signed')
+    ->middleware('inbox-signed')
     ->name('emails.track.open');
 Route::get('track/emails/{delivery}/links/{link}', [EmailTrackingController::class, 'click'])
-    ->middleware('signed')
+    ->middleware('inbox-signed')
     ->name('emails.track.click');
+Route::get('unsubscribe/test', [UnsubscribeController::class, 'showTest'])
+    ->name('public.unsubscribe.test');
+Route::get('view/test', [EmailWebViewController::class, 'test'])
+    ->name('public.web_view.test');
 Route::get('unsubscribe/{delivery}', [UnsubscribeController::class, 'show'])
-    ->middleware('signed')
+    ->middleware('inbox-signed')
     ->name('public.unsubscribe.show');
 Route::post('unsubscribe/{delivery}', [UnsubscribeController::class, 'store'])
-    ->middleware(['signed', 'throttle:public-unsubscribe'])
+    ->middleware(['inbox-signed', 'throttle:public-unsubscribe'])
     ->name('public.unsubscribe.store');
 // Automation mail has no delivery row to key an opt-out to, so it links the
 // subscriber instead. Two segments, so it cannot collide with the delivery
 // routes above. unsubscribe/* is already CSRF exempt in bootstrap/app.php.
 Route::get('unsubscribe/s/{subscriber}', [UnsubscribeController::class, 'showForSubscriber'])
-    ->middleware('signed')
+    ->middleware('inbox-signed')
     ->name('public.unsubscribe.subscriber.show');
 Route::post('unsubscribe/s/{subscriber}', [UnsubscribeController::class, 'storeForSubscriber'])
-    ->middleware(['signed', 'throttle:public-unsubscribe'])
+    ->middleware(['inbox-signed', 'throttle:public-unsubscribe'])
     ->name('public.unsubscribe.subscriber.store');
 
 // The hosted copy behind {{ web_view_url }}. Campaign deliveries take one
 // segment and the other kinds two, so a uuid can never land on the wrong
 // route: the same split as unsubscribe/{delivery} and unsubscribe/s/*.
 Route::get('view/{delivery}', [EmailWebViewController::class, 'campaign'])
-    ->middleware('signed')
+    ->middleware('inbox-signed')
     ->name('public.web_view.show');
 Route::get('view/t/{delivery}', [EmailWebViewController::class, 'transactional'])
-    ->middleware('signed')
+    ->middleware('inbox-signed')
     ->name('public.web_view.transactional.show');
 Route::get('view/a/{delivery}', [EmailWebViewController::class, 'automation'])
-    ->middleware('signed')
+    ->middleware('inbox-signed')
     ->name('public.web_view.automation.show');
 
 Route::post('webhooks/aws/ses', AwsSesWebhookController::class)

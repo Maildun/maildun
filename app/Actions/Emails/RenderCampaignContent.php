@@ -43,9 +43,6 @@ class RenderCampaignContent
             'month' => $date->format('m'),
             'month_name' => $date->format('F'),
             'year' => $date->format('Y'),
-            'unsubscribe_url' => '#unsubscribe',
-            'web_view_url' => '#web-view',
-            'subscribe_url' => '#subscribe',
         ];
     }
 
@@ -91,6 +88,7 @@ class RenderCampaignContent
     private function replace(string $content, array $data, bool $escape): string
     {
         $content = $this->decodeEncodedTags($content);
+        $content = $this->hydrateMarkdownMergeLinks($content);
 
         return (string) preg_replace_callback(self::PATTERN, function (array $matches) use ($data, $escape): string {
             $key = $matches[1];
@@ -104,6 +102,20 @@ class RenderCampaignContent
 
             return $escape ? e($string) : $string;
         }, $content);
+    }
+
+    /**
+     * EmailBuilder markdown often leaves `[Unsubscribe]({{ unsubscribe_url }})`
+     * as text when marked cannot parse the merge tag as a URL. Turn those into
+     * anchors before replacement so inboxes see a real link.
+     */
+    private function hydrateMarkdownMergeLinks(string $content): string
+    {
+        return (string) preg_replace_callback(
+            '/\[([^\]]+)\]\((\{\{\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\}\})\)/',
+            fn (array $matches): string => '<a href="'.$matches[2].'">'.e($matches[1]).'</a>',
+            $content,
+        );
     }
 
     /**

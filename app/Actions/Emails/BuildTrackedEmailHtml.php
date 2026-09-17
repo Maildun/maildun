@@ -175,6 +175,21 @@ class BuildTrackedEmailHtml
     }
 
     /**
+     * Test copies go to a real inbox, so hash placeholders like #unsubscribe
+     * are shown as raw text. Use https URLs that do not opt anyone out.
+     */
+    public function prepareTestHtml(Email $email, string $html): string
+    {
+        return $this->preparePreviewHtml(
+            $html,
+            route('public.unsubscribe.test'),
+            route('public.web_view.test'),
+            $email->query_string,
+            $this->subscribeFormUrl($email) ?? route('public.web_view.test'),
+        );
+    }
+
+    /**
      * Draft preview uses the same query string, merge-tag links, and footer as
      * a send, but with placeholder hrefs instead of signed delivery URLs.
      */

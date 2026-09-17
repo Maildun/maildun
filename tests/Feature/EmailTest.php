@@ -455,6 +455,31 @@ test('the compose preview keeps an html unsubscribe anchor clickable', function 
     expect(substr_count((string) $html, 'href="#unsubscribe"'))->toBe(1);
 });
 
+test('the compose preview hydrates leftover markdown unsubscribe tags', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>[An Internal Link]({{ unsubscribe_url }})</p>',
+    ]);
+
+    $html = $this->actingAs($user)
+        ->getJson(route('emails.compose-preview', [
+            $team,
+            $email,
+            'recipient' => $subscriber->uuid,
+        ]))
+        ->assertOk()
+        ->json('html');
+
+    expect($html)
+        ->toContain('href="#unsubscribe"')
+        ->toContain('An Internal Link')
+        ->not->toContain('[An Internal Link]');
+});
+
 test('the compose preview keeps a markdown-rendered unsubscribe link clickable', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
@@ -898,6 +923,29 @@ test('a test send uses the audience sender when the draft and team leave it blan
         ->assertRedirect();
 
     Queue::assertPushedOn('transactional', SendCampaignTestEmail::class, fn (SendCampaignTestEmail $job): bool => $job->recipient === 'reviewer@example.com');
+});
+
+test('a test send turns leftover markdown unsubscribe tags into https links', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->create([
+        'html' => '<p>You get this email because you subscribe to dibma updates. [An Internal Link]({{ unsubscribe_url }})</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.test', [$team, $email]), ['to' => 'reviewer@example.com'])
+        ->assertRedirect();
+
+    Queue::assertPushedOn('transactional', SendCampaignTestEmail::class, function (SendCampaignTestEmail $job): bool {
+        $unsubscribe = route('public.unsubscribe.test');
+
+        return str_contains($job->html, 'href="'.$unsubscribe.'"')
+            && str_contains($job->html, 'An Internal Link')
+            && ! str_contains($job->html, '#unsubscribe')
+            && ! str_contains($job->html, '[An Internal Link]');
+    });
 });
 
 test('a test send queues the resolved sender identity', function () {

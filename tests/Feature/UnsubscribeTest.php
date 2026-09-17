@@ -32,6 +32,14 @@ function unsubscribeDelivery(array $audienceAttributes = []): EmailDelivery
     ]);
 }
 
+test('a test unsubscribe link explains that nobody is opted out', function () {
+    $this->get(route('public.unsubscribe.test'))
+        ->assertOk()
+        ->assertSee('This is a test email', false)
+        ->assertSee('does not unsubscribe anyone', false)
+        ->assertSee('Powered by', false);
+});
+
 test('an unsigned unsubscribe link is rejected', function () {
     $delivery = unsubscribeDelivery();
 
@@ -52,6 +60,48 @@ test('a signed unsubscribe link shows the confirmation page', function () {
             ->where('audience', 'Weekly digest')
             ->where('unsubscribed', false)
             ->has('action'));
+});
+
+test('a signed unsubscribe link still works when a mail client appends tracking parameters', function () {
+    $delivery = unsubscribeDelivery();
+
+    $url = URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]);
+
+    $this->get($url.'&utm_source=gmail&fbclid=IwAR0')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->component('unsubscribe/show'));
+});
+
+test('a signed unsubscribe link is rejected when an unexpected query parameter is added', function () {
+    $delivery = unsubscribeDelivery();
+
+    $url = URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]);
+
+    $this->get($url.'&foo=bar')->assertForbidden();
+});
+
+test('a signed unsubscribe link still works when the request scheme does not match APP_URL', function () {
+    $delivery = unsubscribeDelivery();
+    $originalUrl = config('app.url');
+
+    try {
+        config(['app.url' => 'http://app.maildun.com']);
+        URL::useOrigin('http://app.maildun.com');
+        URL::forceScheme('http');
+
+        $url = URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]);
+
+        URL::useOrigin(null);
+        URL::forceScheme(null);
+
+        $this->get('https://app.maildun.com/unsubscribe/'.$delivery->uuid.'?'.parse_url($url, PHP_URL_QUERY))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->component('unsubscribe/show'));
+    } finally {
+        URL::useOrigin(null);
+        URL::forceScheme(null);
+        config(['app.url' => $originalUrl]);
+    }
 });
 
 test('confirming unsubscribes the recipient and announces it', function () {

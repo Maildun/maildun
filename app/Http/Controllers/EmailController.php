@@ -513,7 +513,10 @@ class EmailController extends Controller
             $email->id,
             $request->string('to')->value(),
             $renderer->text($email->subject, $mergeData),
-            $trackedHtml->appendQueryString($renderer->html($email->html ?? '', $mergeData), $email->query_string),
+            $trackedHtml->prepareTestHtml(
+                $email,
+                $renderer->html($email->html ?? '', $mergeData),
+            ),
             $renderer->plainText($email, $mergeData),
         )->afterCommit();
 
