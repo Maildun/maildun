@@ -8,7 +8,14 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { IconSvgElement } from '@hugeicons/react';
-import { Head, Link, router, usePage, usePoll } from '@inertiajs/react';
+import {
+    Head,
+    Link,
+    router,
+    setLayoutProps,
+    usePage,
+    usePoll,
+} from '@inertiajs/react';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -188,6 +195,22 @@ export function EmailReportLayout({
     const { currentTeam } = usePage().props;
     const [retryOpen, setRetryOpen] = useState(false);
     const [retrying, setRetrying] = useState(false);
+
+    setLayoutProps({
+        fullscreen: false,
+        breadcrumbs: currentTeam
+            ? [
+                  {
+                      title: 'Campaigns',
+                      href: index.url(currentTeam.slug),
+                  },
+                  {
+                      title: campaign.name,
+                      href: show.url([currentTeam.slug, campaign.uuid]),
+                  },
+              ]
+            : [],
+    });
     const isActive =
         campaign.status === 'queued' || campaign.status === 'sending';
     const providerLabel = campaign.provider
