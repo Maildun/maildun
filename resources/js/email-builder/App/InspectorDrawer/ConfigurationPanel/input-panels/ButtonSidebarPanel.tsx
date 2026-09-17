@@ -45,6 +45,8 @@ export default function ButtonSidebarPanel({ data, setData }: ButtonSidebarPanel
       <TextInput
         label="Url"
         defaultValue={url}
+        placeholder="https://example.com or {{ unsubscribe_url }}"
+        helperText="Paste a personalization tag from the toolbar for a per-recipient link."
         onChange={(url) => updateData({ ...data, props: { ...data.props, url } })}
       />
       <RadioGroupInput

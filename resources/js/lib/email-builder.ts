@@ -5,6 +5,7 @@ import type {
     EmailEditorMode,
     EmailLayoutBlock,
     EmailSourceMode,
+    TextBlock,
 } from '@/types/emails';
 
 export function isSourceEditor(
@@ -39,15 +40,86 @@ export function toReaderDocument(
 }
 
 /**
+ * EmailBuilder.js markdown (marked + insane) only keeps http(s)/mailto hrefs
+ * and will not parse `{{ unsubscribe_url }}` as a link destination. Swap those
+ * tags for a valid https placeholder before render, then put the tags back.
+ */
+const MERGE_URL_PREFIX = 'https://maildun.merge/';
+
+function protectMergeTagsInValue(value: string): string {
+    return value.replace(
+        /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g,
+        (_tag, key: string) => `${MERGE_URL_PREFIX}${key}`,
+    );
+}
+
+function protectMarkdownMergeUrls(text: string): string {
+    const withMarkdownLinks = text.replace(
+        /(!?\[[^\]]*]\()([^)]*)(\))/g,
+        (_match, open: string, inner: string, close: string) => {
+            const titleMatch = inner.match(/^(.*?)(\s+(?:"[^"]*"|'[^']*'))$/);
+            const destination = (titleMatch ? titleMatch[1] : inner).trim();
+            const title = titleMatch ? titleMatch[2] : '';
+
+            return `${open}${protectMergeTagsInValue(destination)}${title}${close}`;
+        },
+    );
+
+    return withMarkdownLinks.replace(
+        /\b(href|src)\s*=\s*(["'])([^"']*)\2/gi,
+        (_match, attr: string, quote: string, value: string) =>
+            `${attr}=${quote}${protectMergeTagsInValue(value)}${quote}`,
+    );
+}
+
+function restoreMarkdownMergeUrls(html: string): string {
+    return html.replace(
+        /https:\/\/maildun\.merge\/([a-zA-Z_][a-zA-Z0-9_]*)/g,
+        '{{ $1 }}',
+    );
+}
+
+function withProtectedMarkdownMergeUrls(
+    document: EmailBuilderDocument,
+): EmailBuilderDocument {
+    const clone = structuredClone(document);
+
+    for (const block of Object.values(clone)) {
+        if (block.type !== 'Text') {
+            continue;
+        }
+
+        const textBlock = block as TextBlock;
+        const text = textBlock.data.props?.text;
+
+        if (!textBlock.data.props?.markdown || typeof text !== 'string') {
+            continue;
+        }
+
+        textBlock.data.props = {
+            ...textBlock.data.props,
+            text: protectMarkdownMergeUrls(text),
+        };
+    }
+
+    return clone;
+}
+
+/**
  * Render a document to the email-safe HTML that gets stored and sent.
  *
  * This pulls in react-dom/server, so only ever call it from an event handler —
  * never during a render pass, which would nest one renderer inside another.
  */
 export function renderBuilderHtml(document: EmailBuilderDocument): string {
-    return renderToStaticMarkup(toReaderDocument(document), {
-        rootBlockId: ROOT_BLOCK_ID,
-    });
+    return restoreMarkdownMergeUrls(
+        renderToStaticMarkup(
+            toReaderDocument(withProtectedMarkdownMergeUrls(document)),
+            {
+                rootBlockId: ROOT_BLOCK_ID,
+            },
+        ),
+    );
 }
 
 export function emptyBuilderDocument(): EmailBuilderDocument {

@@ -1,8 +1,12 @@
 import {
+    Alert02Icon,
     ArrowLeft01Icon,
     ArrowRight01Icon,
     InformationCircleIcon,
+    Link01Icon,
+    MailRemove01Icon,
     MailSend01Icon,
+    UserAdd01Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
@@ -31,6 +35,13 @@ import {
     ComboboxList,
 } from '@/components/ui/combobox';
 import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import {
     Popover,
     PopoverContent,
     PopoverDescription,
@@ -47,6 +58,14 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import {
+    Sheet,
+    SheetContent,
+    SheetDescription,
+    SheetHeader,
+    SheetTitle,
+    SheetTrigger,
+} from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { composePreview, edit as editCampaign, send } from '@/routes/emails';
@@ -77,11 +96,178 @@ type Props = {
         name: string;
     };
     recipientCount: number;
+    missingUnsubscribe: boolean;
     preview: CampaignPreview;
 };
 
 const ZOOM_LEVELS = ['75', '100', '125'] as const;
 type ZoomLevel = (typeof ZOOM_LEVELS)[number];
+
+const PREVIEW_UNSUBSCRIBE_HREF = '#unsubscribe';
+const PREVIEW_WEB_VIEW_HREF = '#web-view';
+const PREVIEW_SUBSCRIBE_HREF = '#subscribe';
+
+type PreviewLinkKind = 'unsubscribe' | 'web-view' | 'subscribe' | 'http';
+
+type PreviewLink = {
+    href: string;
+    label: string;
+    kind: PreviewLinkKind;
+};
+
+function classifyPreviewHref(href: string): PreviewLinkKind | null {
+    const trimmed = href.trim();
+
+    if (
+        trimmed === PREVIEW_UNSUBSCRIBE_HREF ||
+        trimmed.endsWith(PREVIEW_UNSUBSCRIBE_HREF)
+    ) {
+        return 'unsubscribe';
+    }
+
+    if (
+        trimmed === PREVIEW_WEB_VIEW_HREF ||
+        trimmed.endsWith(PREVIEW_WEB_VIEW_HREF)
+    ) {
+        return 'web-view';
+    }
+
+    if (
+        trimmed === PREVIEW_SUBSCRIBE_HREF ||
+        trimmed.endsWith(PREVIEW_SUBSCRIBE_HREF)
+    ) {
+        return 'subscribe';
+    }
+
+    if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith('mailto:')) {
+        return 'http';
+    }
+
+    return null;
+}
+
+function previewLinkKindLabel(kind: PreviewLinkKind): string {
+    if (kind === 'unsubscribe') {
+        return 'Unsubscribe';
+    }
+
+    if (kind === 'web-view') {
+        return 'View in browser';
+    }
+
+    if (kind === 'subscribe') {
+        return 'Subscribe';
+    }
+
+    return 'Link';
+}
+
+function collectPreviewLinks(doc: Document): PreviewLink[] {
+    const links: PreviewLink[] = [];
+    const seen = new Set<string>();
+
+    doc.querySelectorAll('a[href]').forEach((node) => {
+        const href = node.getAttribute('href')?.trim() ?? '';
+        const kind = classifyPreviewHref(href);
+
+        if (kind === null || seen.has(href)) {
+            return;
+        }
+
+        seen.add(href);
+        links.push({
+            href,
+            kind,
+            label: node.textContent?.replace(/\s+/g, ' ').trim() || href,
+        });
+    });
+
+    return links;
+}
+
+function findPreviewAnchor(
+    frame: HTMLIFrameElement,
+    clientX: number,
+    clientY: number,
+    scale: number,
+): HTMLAnchorElement | null {
+    const doc = frame.contentDocument;
+    const wrapper = frame.parentElement;
+
+    if (!doc?.defaultView || !wrapper) {
+        return null;
+    }
+
+    const rect = wrapper.getBoundingClientRect();
+    const x = (clientX - rect.left) / scale;
+    const y = (clientY - rect.top) / scale;
+    let node: Element | null = doc.elementFromPoint(x, y);
+
+    while (node && node !== doc.documentElement) {
+        if (node instanceof doc.defaultView.HTMLAnchorElement) {
+            return node;
+        }
+
+        node = node.parentElement;
+    }
+
+    return null;
+}
+
+function MissingUnsubscribeCallout({ className }: { className?: string }) {
+    return (
+        <Alert
+            variant="warning"
+            className={className}
+            data-test="campaign-preview-missing-unsubscribe"
+        >
+            <HugeiconsIcon icon={Alert02Icon} />
+            <AlertTitle>Warning</AlertTitle>
+            <AlertDescription>
+                This campaign has no unsubscribe link. Add{' '}
+                <code className="font-mono">{'{{ unsubscribe_url }}'}</code> to
+                the body — missing one can lower delivery rates.
+            </AlertDescription>
+        </Alert>
+    );
+}
+
+function PreviewLinksList({
+    links,
+    onOpen,
+}: {
+    links: PreviewLink[];
+    onOpen: (href: string) => void;
+}) {
+    if (links.length === 0) {
+        return (
+            <p className="text-sm text-muted-foreground">
+                No clickable links in this preview.
+            </p>
+        );
+    }
+
+    return (
+        <ul className="flex flex-col gap-1">
+            {links.map((link) => (
+                <li key={link.href}>
+                    <button
+                        type="button"
+                        className="flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+                        data-test="campaign-preview-link"
+                        onClick={() => onOpen(link.href)}
+                    >
+                        <span className="font-medium">{link.label}</span>
+                        <span className="text-xs break-all text-muted-foreground">
+                            {previewLinkKindLabel(link.kind)}
+                            {link.kind === 'http' ? ` · ${link.href}` : ''}
+                        </span>
+                    </button>
+                </li>
+            ))}
+        </ul>
+    );
+}
 
 function measurePreviewDocumentHeight(frame: HTMLIFrameElement): number {
     const doc = frame.contentDocument;
@@ -114,6 +300,7 @@ function measurePreviewDocumentHeight(frame: HTMLIFrameElement): number {
 export default function PreviewAndSend({
     campaign,
     recipientCount,
+    missingUnsubscribe,
     preview: initialPreview,
 }: Props) {
     const { auth, currentTeam } = usePage().props;
@@ -128,9 +315,15 @@ export default function PreviewAndSend({
     const [sending, setSending] = useState(false);
     const [testOpen, setTestOpen] = useState(false);
     const [previewDocumentHeight, setPreviewDocumentHeight] = useState(0);
+    const [previewLinks, setPreviewLinks] = useState<PreviewLink[]>([]);
+    const [hoveringLink, setHoveringLink] = useState(false);
+    const [openedLink, setOpenedLink] = useState<PreviewLinkKind | null>(null);
+    const [linksSheetOpen, setLinksSheetOpen] = useState(false);
     const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const latestRequest = useRef(0);
     const previewHeightObserver = useRef<ResizeObserver | null>(null);
+    const canvasRef = useRef<HTMLDivElement>(null);
+    const iframeRef = useRef<HTMLIFrameElement>(null);
     const previewRequest = useHttp<Record<string, never>, CampaignPreview>({});
 
     setLayoutProps({ fullscreen: true });
@@ -258,6 +451,8 @@ export default function PreviewAndSend({
 
         previewHeightObserver.current?.disconnect();
         syncPreviewDocumentHeight(frame);
+        setPreviewLinks(doc ? collectPreviewLinks(doc) : []);
+        setHoveringLink(false);
 
         if (!doc?.documentElement) {
             return;
@@ -274,6 +469,37 @@ export default function PreviewAndSend({
         }
 
         previewHeightObserver.current = observer;
+    };
+
+    const openPreviewLink = (href: string) => {
+        const kind = classifyPreviewHref(href);
+
+        if (
+            kind === 'unsubscribe' ||
+            kind === 'web-view' ||
+            kind === 'subscribe'
+        ) {
+            setOpenedLink(kind);
+
+            return;
+        }
+
+        if (kind === 'http') {
+            window.open(href, '_blank', 'noopener,noreferrer');
+        }
+    };
+
+    const previewAnchorFromPointer = (
+        clientX: number,
+        clientY: number,
+    ): HTMLAnchorElement | null => {
+        const frame = iframeRef.current;
+
+        if (!frame) {
+            return null;
+        }
+
+        return findPreviewAnchor(frame, clientX, clientY, previewScale);
     };
 
     const handleSend = () => {
@@ -300,6 +526,10 @@ export default function PreviewAndSend({
     );
     const previewFrameWidth = previewWidth === 'desktop' ? 600 : 375;
     const previewScale = Number(zoom) / 100;
+    const scaledPreviewHeight =
+        previewDocumentHeight > 0
+            ? previewDocumentHeight * previewScale
+            : undefined;
 
     return (
         <>
@@ -414,6 +644,55 @@ export default function PreviewAndSend({
                         <span className="text-sm text-muted-foreground tabular-nums">
                             {preview.navigation.position} of {recipientCount}
                         </span>
+                        <Sheet
+                            open={linksSheetOpen}
+                            onOpenChange={setLinksSheetOpen}
+                        >
+                            <SheetTrigger
+                                render={
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="lg:hidden"
+                                        aria-label="Check preview links"
+                                        data-test="campaign-preview-open-links"
+                                    />
+                                }
+                            >
+                                <HugeiconsIcon
+                                    icon={Link01Icon}
+                                    data-icon="inline-start"
+                                />
+                                {previewLinks.length}{' '}
+                                {previewLinks.length === 1 ? 'link' : 'links'}
+                            </SheetTrigger>
+                            <SheetContent side="right" className="w-80">
+                                <SheetHeader>
+                                    <SheetTitle>Links</SheetTitle>
+                                    <SheetDescription>
+                                        Click a button or link in the preview,
+                                        or open it from this list. Unsubscribe
+                                        and view-in-browser stay in this page so
+                                        nobody is opted out.
+                                    </SheetDescription>
+                                </SheetHeader>
+                                <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+                                    <div className="flex flex-col gap-4">
+                                        {missingUnsubscribe ? (
+                                            <MissingUnsubscribeCallout />
+                                        ) : null}
+                                        <PreviewLinksList
+                                            links={previewLinks}
+                                            onOpen={(href) => {
+                                                setLinksSheetOpen(false);
+                                                openPreviewLink(href);
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            </SheetContent>
+                        </Sheet>
                         <Popover>
                             <PopoverTrigger
                                 render={
@@ -495,10 +774,7 @@ export default function PreviewAndSend({
                                     aria-label="Preview as recipient"
                                     data-test="campaign-preview-recipient"
                                 />
-                                <ComboboxContent
-                                    align="end"
-                                    className="w-96"
-                                >
+                                <ComboboxContent align="end" className="w-96">
                                     <ComboboxEmpty>
                                         {previewRequest.processing
                                             ? 'Searching recipients…'
@@ -522,7 +798,7 @@ export default function PreviewAndSend({
                                                         <span className="leading-5">
                                                             {recipient?.name}
                                                         </span>
-                                                        <span className="break-all text-xs leading-4 text-muted-foreground">
+                                                        <span className="text-xs leading-4 break-all text-muted-foreground">
                                                             {recipient?.email}
                                                         </span>
                                                     </span>
@@ -555,63 +831,135 @@ export default function PreviewAndSend({
                     </div>
                 </div>
 
-                <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden bg-muted/40 p-4 sm:p-8">
-                    {previewError || sendError ? (
-                        <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-3">
-                            {previewError ? (
-                                <Alert variant="destructive">
-                                    <AlertTitle>Preview unavailable</AlertTitle>
-                                    <AlertDescription>
-                                        {previewError}
-                                    </AlertDescription>
-                                </Alert>
-                            ) : null}
-                            {sendError ? (
-                                <Alert variant="destructive">
-                                    <AlertTitle>Campaign not queued</AlertTitle>
-                                    <AlertDescription>
-                                        {sendError}
-                                    </AlertDescription>
-                                </Alert>
-                            ) : null}
-                        </div>
-                    ) : null}
+                <div className="flex min-h-0 flex-1 overflow-hidden">
+                    <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden bg-muted/40 p-4 sm:p-8">
+                        {missingUnsubscribe ? (
+                            <MissingUnsubscribeCallout className="shrink-0 lg:hidden" />
+                        ) : null}
+                        {previewError || sendError ? (
+                            <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-3">
+                                {previewError ? (
+                                    <Alert variant="destructive">
+                                        <AlertTitle>
+                                            Preview unavailable
+                                        </AlertTitle>
+                                        <AlertDescription>
+                                            {previewError}
+                                        </AlertDescription>
+                                    </Alert>
+                                ) : null}
+                                {sendError ? (
+                                    <Alert variant="destructive">
+                                        <AlertTitle>
+                                            Campaign not queued
+                                        </AlertTitle>
+                                        <AlertDescription>
+                                            {sendError}
+                                        </AlertDescription>
+                                    </Alert>
+                                ) : null}
+                            </div>
+                        ) : null}
 
-                    <div
-                        className="mx-auto min-h-0 w-fit max-w-full flex-1 overflow-auto rounded-lg border bg-background shadow-sm"
-                        data-test="campaign-preview-canvas"
-                    >
                         <div
-                            className="overflow-hidden"
-                            style={{
-                                width: previewFrameWidth * previewScale,
-                                height:
-                                    previewDocumentHeight > 0
-                                        ? previewDocumentHeight * previewScale
-                                        : undefined,
-                            }}
+                            ref={canvasRef}
+                            className="mx-auto min-h-0 w-fit max-w-full flex-1 overflow-auto rounded-lg border bg-background shadow-sm"
+                            data-test="campaign-preview-canvas"
                         >
-                            <iframe
-                                key={`${preview.recipient.uuid}-${previewWidth}`}
-                                title={`Campaign preview for ${preview.recipient.email}`}
-                                srcDoc={preview.html}
-                                sandbox="allow-same-origin"
-                                scrolling="no"
-                                onLoad={handlePreviewLoad}
-                                className="pointer-events-none block origin-top-left overflow-hidden border-0 bg-background"
+                            <div
+                                className="relative overflow-hidden"
                                 style={{
-                                    width: previewFrameWidth,
-                                    height:
-                                        previewDocumentHeight > 0
-                                            ? previewDocumentHeight
-                                            : 'auto',
-                                    transform: `scale(${previewScale})`,
+                                    width: previewFrameWidth * previewScale,
+                                    height: scaledPreviewHeight,
                                 }}
-                                data-test="campaign-recipient-preview"
-                            />
+                            >
+                                <iframe
+                                    ref={iframeRef}
+                                    key={`${preview.recipient.uuid}-${previewWidth}`}
+                                    title={`Campaign preview for ${preview.recipient.email}`}
+                                    srcDoc={preview.html}
+                                    sandbox="allow-same-origin"
+                                    scrolling="no"
+                                    onLoad={handlePreviewLoad}
+                                    className="pointer-events-none block origin-top-left overflow-hidden border-0 bg-background"
+                                    style={{
+                                        width: previewFrameWidth,
+                                        height:
+                                            previewDocumentHeight > 0
+                                                ? previewDocumentHeight
+                                                : 'auto',
+                                        transform: `scale(${previewScale})`,
+                                    }}
+                                    data-test="campaign-recipient-preview"
+                                />
+                                <div
+                                    className="absolute inset-0"
+                                    data-test="campaign-preview-hit-layer"
+                                    style={{
+                                        cursor: hoveringLink
+                                            ? 'pointer'
+                                            : 'default',
+                                    }}
+                                    onWheel={(event) => {
+                                        event.preventDefault();
+                                        canvasRef.current?.scrollBy({
+                                            top: event.deltaY,
+                                            left: event.deltaX,
+                                        });
+                                    }}
+                                    onMouseMove={(event) => {
+                                        setHoveringLink(
+                                            Boolean(
+                                                previewAnchorFromPointer(
+                                                    event.clientX,
+                                                    event.clientY,
+                                                ),
+                                            ),
+                                        );
+                                    }}
+                                    onMouseLeave={() => setHoveringLink(false)}
+                                    onClick={(event) => {
+                                        const anchor = previewAnchorFromPointer(
+                                            event.clientX,
+                                            event.clientY,
+                                        );
+                                        const href =
+                                            anchor?.getAttribute('href');
+
+                                        if (href) {
+                                            openPreviewLink(href);
+                                        }
+                                    }}
+                                />
+                            </div>
                         </div>
-                    </div>
-                </main>
+                    </main>
+                    <aside
+                        className="hidden min-h-0 w-80 shrink-0 flex-col border-l bg-background lg:flex"
+                        data-test="campaign-preview-links"
+                    >
+                        <div className="flex flex-col gap-1.5 border-b px-4 py-3">
+                            <p className="font-heading font-medium">Links</p>
+                            <p className="text-sm text-muted-foreground">
+                                Click a button or link in the preview, or open
+                                it from this list. Unsubscribe and
+                                view-in-browser stay in this page so nobody is
+                                opted out.
+                            </p>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                            <div className="flex flex-col gap-4">
+                                {missingUnsubscribe ? (
+                                    <MissingUnsubscribeCallout />
+                                ) : null}
+                                <PreviewLinksList
+                                    links={previewLinks}
+                                    onOpen={openPreviewLink}
+                                />
+                            </div>
+                        </div>
+                    </aside>
+                </div>
             </div>
 
             <SendTestEmailDialog
@@ -621,6 +969,101 @@ export default function PreviewAndSend({
                 open={testOpen}
                 onOpenChange={setTestOpen}
             />
+
+            <Dialog
+                open={openedLink === 'unsubscribe'}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setOpenedLink(null);
+                    }
+                }}
+            >
+                <DialogContent data-test="campaign-preview-unsubscribe">
+                    <DialogHeader>
+                        <DialogTitle>Unsubscribe preview</DialogTitle>
+                        <DialogDescription>
+                            Recipients who click Unsubscribe see a confirmation
+                            like this. This preview does not opt anyone out.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col items-center gap-3 rounded-lg border bg-muted/40 p-6 text-center">
+                        <div className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                            <HugeiconsIcon icon={MailRemove01Icon} />
+                        </div>
+                        <p className="font-medium">Unsubscribe</p>
+                        <p className="text-sm text-muted-foreground">
+                            Stop sending this audience to{' '}
+                            {preview.recipient.email}?
+                        </p>
+                        <Button type="button" disabled>
+                            Confirm unsubscribe
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog
+                open={openedLink === 'subscribe'}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setOpenedLink(null);
+                    }
+                }}
+            >
+                <DialogContent data-test="campaign-preview-subscribe">
+                    <DialogHeader>
+                        <DialogTitle>Subscribe preview</DialogTitle>
+                        <DialogDescription>
+                            Recipients who click Subscribe would open this
+                            audience&apos;s public form. Publish a subscribe
+                            form to open the real page from preview. Nobody is
+                            subscribed here.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col items-center gap-3 rounded-lg border bg-muted/40 p-6 text-center">
+                        <div className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                            <HugeiconsIcon icon={UserAdd01Icon} />
+                        </div>
+                        <p className="font-medium">Subscribe</p>
+                        <p className="text-sm text-muted-foreground">
+                            Join this audience from the public subscribe form.
+                        </p>
+                        <Button type="button" disabled>
+                            Subscribe
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog
+                open={openedLink === 'web-view'}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setOpenedLink(null);
+                    }
+                }}
+            >
+                <DialogContent
+                    className="flex max-h-[calc(100svh-2rem)] w-lg flex-col overflow-hidden"
+                    data-test="campaign-preview-web-view"
+                >
+                    <DialogHeader>
+                        <DialogTitle>View in browser</DialogTitle>
+                        <DialogDescription>
+                            Recipients who open the hosted copy see this
+                            personalized email in their browser.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="min-h-0 flex-1 overflow-auto rounded-md border bg-background">
+                        <iframe
+                            title="Hosted copy preview"
+                            srcDoc={preview.html}
+                            sandbox="allow-same-origin"
+                            className="block min-h-96 w-full border-0"
+                        />
+                    </div>
+                </DialogContent>
+            </Dialog>
         </>
     );
 }

@@ -64,8 +64,20 @@ test('campaign delivery opens one dedicated recipient-personalized preview page'
         ->toContain('mx-auto min-h-0 w-fit max-w-full flex-1 overflow-auto rounded-lg border bg-background shadow-sm')
         ->toContain('className="w-80 lg:w-96"')
         ->toContain('className="w-96"')
-        ->toContain('break-all text-xs leading-4 text-muted-foreground')
+        ->toContain('text-xs leading-4 break-all text-muted-foreground')
         ->toContain('sandbox="allow-same-origin"')
+        ->toContain('data-test="campaign-preview-hit-layer"')
+        ->toContain('data-test="campaign-preview-links"')
+        ->toContain('data-test="campaign-preview-open-links"')
+        ->toContain('<aside')
+        ->toContain('hidden min-h-0 w-80 shrink-0 flex-col border-l bg-background lg:flex')
+        ->toContain('<Sheet')
+        ->toContain('side="right"')
+        ->toContain('data-test="campaign-preview-subscribe"')
+        ->toContain('data-test="campaign-preview-missing-unsubscribe"')
+        ->toContain('variant="warning"')
+        ->toContain('This campaign has no unsubscribe link')
+        ->toContain("{'{{ unsubscribe_url }}'}")
         ->toContain('pointer-events-none block origin-top-left overflow-hidden border-0 bg-background')
         ->toContain('previewDocumentHeight * previewScale')
         ->toContain('measurePreviewDocumentHeight')
@@ -119,7 +131,11 @@ test('campaign design view fills leftover height and hub dialogs use the default
         ->toContain("'campaign-design-shell'")
         ->toContain('data-test="campaign-design-navbar"')
         ->toContain('data-test="campaign-design-back"')
+        ->toContain('data-test="personalization-tags"')
+        ->toContain('<PersonalizationTagsDialog')
         ->toContain('data-test="open-media-library"')
+        ->toContain('setMediaDialogOpen(true)')
+        ->toContain('<MediaLibraryDialog')
         ->toContain('Open media')
         ->toContain('relative flex h-dvh min-h-0 w-full flex-col overflow-hidden bg-background')
         ->toContain('fill')
@@ -132,6 +148,32 @@ test('campaign design view fills leftover height and hub dialogs use the default
         ->toContain('text-success')
         ->and($css)->toContain('.email-builder-js[data-fill]')
         ->toContain('flex: 1 1 0%');
+});
+
+test('campaign personalization tags open a dialog with sample values', function () {
+    $editor = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/edit.tsx');
+    $dialog = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/personalization-tags-dialog.tsx');
+    $buttonPanel = file_get_contents(dirname(__DIR__, 2).'/resources/js/email-builder/App/InspectorDrawer/ConfigurationPanel/input-panels/ButtonSidebarPanel.tsx');
+
+    expect($editor)->toBeString()
+        ->toContain('data-test="personalization-tags"')
+        ->toContain('<PersonalizationTagsDialog')
+        ->toContain('setTagsDialogOpen(true)');
+
+    expect($dialog)->toBeString()
+        ->toContain('data-test="personalization-tags-dialog"')
+        ->toContain("tag: '{{ first_name }}'")
+        ->toContain("tag: '{{ last_name }}'")
+        ->toContain("tag: '{{ unsubscribe_url }}'")
+        ->toContain("tag: '{{ subscribe_url }}'")
+        ->toContain('[Unsubscribe]({{ unsubscribe_url }})')
+        ->toContain('<a href="{{ unsubscribe_url }}">Unsubscribe here</a>')
+        ->toContain('data-test="copy-personalization-tag"')
+        ->toContain('className="flex max-h-[calc(100svh-2rem)] w-lg flex-col overflow-hidden"');
+
+    expect($buttonPanel)->toBeString()
+        ->toContain('https://example.com or {{ unsubscribe_url }}')
+        ->toContain('Paste a personalization tag from the toolbar');
 });
 
 test('campaign media dialog supports upload search and copy link', function () {

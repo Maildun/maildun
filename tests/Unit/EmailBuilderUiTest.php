@@ -11,6 +11,12 @@ test('email builder helpers render html from the stock document format', functio
         ->toContain('export function sourceToBuilderDocument')
         ->toContain('export function renderSourceHtml')
         ->toContain('export function getChildrenIds')
+        ->toContain("const MERGE_URL_PREFIX = 'https://maildun.merge/'")
+        ->toContain('function protectMergeTagsInValue')
+        ->toContain('function protectMarkdownMergeUrls')
+        ->toContain("\\b(href|src)\\s*=\\s*([\"'])([^\"']*)\\2")
+        ->toContain('function restoreMarkdownMergeUrls')
+        ->toContain('function withProtectedMarkdownMergeUrls')
         ->not->toContain('export function duplicateBlock')
         ->not->toContain('BUILDER_BLOCK_LABELS');
 });

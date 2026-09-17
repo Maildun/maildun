@@ -10,6 +10,7 @@ use App\Models\Email;
 use App\Models\EmailTemplate;
 use App\Models\Media;
 use App\Models\Segment;
+use App\Models\SubscribeForm;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
@@ -395,6 +396,194 @@ test('the compose preview renders merge tags with the selected recipient data', 
         ->not->toContain('{{');
 });
 
+test('the compose preview fills personalization and delivery link tags', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create([
+        'email' => 'ada@example.com',
+        'first_name' => 'Ada',
+        'last_name' => 'Lovelace',
+    ]);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hi {{ first_name }}</p><a href="{{ unsubscribe_url }}">Unsubscribe</a><a href="{{ web_view_url }}">View</a>',
+    ]);
+
+    $html = $this->actingAs($user)
+        ->getJson(route('emails.compose-preview', [
+            $team,
+            $email,
+            'recipient' => $subscriber->uuid,
+        ]))
+        ->assertOk()
+        ->json('html');
+
+    expect($html)
+        ->toContain('Hi Ada')
+        ->toContain('href="#unsubscribe"')
+        ->toContain('href="#web-view"')
+        ->not->toContain('{{');
+
+    expect(substr_count((string) $html, 'href="#unsubscribe"'))->toBe(1);
+});
+
+test('the compose preview keeps an html unsubscribe anchor clickable', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p><a href="{{ unsubscribe_url }}">Unsubscribe here</a></p>',
+    ]);
+
+    $html = $this->actingAs($user)
+        ->getJson(route('emails.compose-preview', [
+            $team,
+            $email,
+            'recipient' => $subscriber->uuid,
+        ]))
+        ->assertOk()
+        ->json('html');
+
+    expect($html)
+        ->toContain('href="#unsubscribe"')
+        ->toContain('Unsubscribe here')
+        ->not->toContain('{{');
+
+    expect(substr_count((string) $html, 'href="#unsubscribe"'))->toBe(1);
+});
+
+test('the compose preview keeps a markdown-rendered unsubscribe link clickable', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p><a href="{{ unsubscribe_url }}" target="_blank">Unsubscribe</a></p>',
+    ]);
+
+    $html = $this->actingAs($user)
+        ->getJson(route('emails.compose-preview', [
+            $team,
+            $email,
+            'recipient' => $subscriber->uuid,
+        ]))
+        ->assertOk()
+        ->json('html');
+
+    expect($html)
+        ->toContain('href="#unsubscribe"')
+        ->toContain('Unsubscribe')
+        ->not->toContain('{{');
+});
+
+test('the compose preview shows a subscribe link even without a published form', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p><a href="{{ subscribe_url }}">Subscribe here</a></p>',
+    ]);
+
+    $html = $this->actingAs($user)
+        ->getJson(route('emails.compose-preview', [
+            $team,
+            $email,
+            'recipient' => $subscriber->uuid,
+        ]))
+        ->assertOk()
+        ->json('html');
+
+    expect($html)
+        ->toContain('href="#subscribe"')
+        ->toContain('Subscribe here')
+        ->not->toContain('{{');
+});
+
+test('the compose preview opens the published subscribe form from the tag', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $form = SubscribeForm::factory()->for($audience)->published()->create();
+    $subscriber = Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p><a href="{{ subscribe_url }}">Subscribe here</a></p>',
+    ]);
+
+    $html = $this->actingAs($user)
+        ->getJson(route('emails.compose-preview', [
+            $team,
+            $email,
+            'recipient' => $subscriber->uuid,
+        ]))
+        ->assertOk()
+        ->json('html');
+
+    expect($html)
+        ->toContain('href="'.route('public.subscribe_forms.show', $form).'"')
+        ->toContain('Subscribe here')
+        ->not->toContain('{{');
+});
+
+test('the compose preview appends an unsubscribe footer when the author did not place one', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello {{ first_name }}</p>',
+    ]);
+
+    $html = $this->actingAs($user)
+        ->getJson(route('emails.compose-preview', [
+            $team,
+            $email,
+            'recipient' => $subscriber->uuid,
+        ]))
+        ->assertOk()
+        ->json('html');
+
+    expect($html)
+        ->toContain('href="#unsubscribe"')
+        ->toContain('Unsubscribe')
+        ->not->toContain('{{');
+});
+
+test('the compose preview restores markdown-encoded merge tags in links', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create([
+        'first_name' => 'Ada',
+    ]);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p><a href="%7B%7B%20unsubscribe_url%20%7D%7D">Unsubscribe</a> {{ first_name }}</p>',
+    ]);
+
+    $html = $this->actingAs($user)
+        ->getJson(route('emails.compose-preview', [
+            $team,
+            $email,
+            'recipient' => $subscriber->uuid,
+        ]))
+        ->assertOk()
+        ->json('html');
+
+    expect($html)
+        ->toContain('href="#unsubscribe"')
+        ->toContain('Ada')
+        ->not->toContain('%7B%7B')
+        ->not->toContain('{{');
+});
+
 test('the preview and send page opens with the first personalized recipient', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
@@ -428,8 +617,31 @@ test('the preview and send page opens with the first personalized recipient', fu
             ->where('preview.subject', 'Hello Ada')
             ->where('preview.navigation.previous', null)
             ->where('preview.navigation.next', $second->uuid)
-            ->where('preview.navigation.position', 1));
+            ->where('preview.navigation.position', 1)
+            ->where('missingUnsubscribe', true));
 });
+
+test('the preview and send page flags a missing unsubscribe tag', function (string $html, bool $missing) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => $html,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('emails.preview-and-send', [$team, $email]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('emails/preview-and-send')
+            ->where('missingUnsubscribe', $missing));
+})->with([
+    'plain body' => ['<p>Hello</p>', true],
+    'author placed tag' => ['<p><a href="{{ unsubscribe_url }}">Unsubscribe</a></p>', false],
+    'percent-encoded tag' => ['<p><a href="%7B%7B%20unsubscribe_url%20%7D%7D">Unsubscribe</a></p>', false],
+]);
 
 test('the preview and send page returns to setup when no subscribed recipients exist', function () {
     $user = User::factory()->create();

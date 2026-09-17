@@ -444,6 +444,7 @@ class EmailController extends Controller
                 'name' => $email->name,
             ],
             'recipientCount' => (clone $recipientQuery)->count(),
+            'missingUnsubscribe' => ! $trackedHtml->authorPlacedUnsubscribe($email->html ?? ''),
             'preview' => $this->composePreviewPayload(
                 $email,
                 $recipient,
@@ -955,9 +956,12 @@ class EmailController extends Controller
             'preheader' => filled($email->preheader)
                 ? $renderer->text((string) $email->preheader, $mergeData)
                 : null,
-            'html' => $trackedHtml->appendQueryString(
+            'html' => $trackedHtml->preparePreviewHtml(
                 $renderer->html($email->html ?? '', $mergeData),
+                '#unsubscribe',
+                '#web-view',
                 $email->query_string,
+                $trackedHtml->subscribeFormUrl($email) ?? '#subscribe',
             ),
         ];
     }

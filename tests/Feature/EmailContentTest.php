@@ -10,6 +10,7 @@ use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Email;
 use App\Models\EmailDelivery;
+use App\Models\SubscribeForm;
 use App\Models\Subscriber;
 use App\Models\TeamEmailIntegration;
 use App\Models\User;
@@ -251,4 +252,21 @@ test('the link checker reports broken links without requesting private hosts', f
         ->assertJsonPath('broken.1.status', null);
 
     Http::assertSentCount(2);
+});
+
+test('a send replaces the subscribe tag with the published form url', function () {
+    $audience = Audience::factory()->create();
+    $form = SubscribeForm::factory()->for($audience)->published()->create();
+    $email = Email::factory()->for($audience->team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p><a href="{{ subscribe_url }}">Subscribe here</a></p>',
+    ]);
+    $delivery = EmailDelivery::factory()->for($email)->create();
+
+    $html = app(BuildTrackedEmailHtml::class)->build($delivery);
+
+    expect($html)
+        ->toContain(route('public.subscribe_forms.show', $form))
+        ->toContain('Subscribe here')
+        ->not->toContain('{{ subscribe_url }}');
 });

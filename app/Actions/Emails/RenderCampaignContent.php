@@ -43,6 +43,25 @@ class RenderCampaignContent
             'month' => $date->format('m'),
             'month_name' => $date->format('F'),
             'year' => $date->format('Y'),
+            'unsubscribe_url' => '#unsubscribe',
+            'web_view_url' => '#web-view',
+            'subscribe_url' => '#subscribe',
+        ];
+    }
+
+    /**
+     * Preview fills delivery-only link tags so {{ unsubscribe_url }} and
+     * {{ web_view_url }} render as hrefs before a send creates those URLs.
+     *
+     * @return array<string, mixed>
+     */
+    public function previewData(Subscriber $subscriber, CarbonInterface $date): array
+    {
+        return [
+            ...$this->mergeData($subscriber, $date),
+            'unsubscribe_url' => '#unsubscribe',
+            'web_view_url' => '#web-view',
+            'subscribe_url' => '#subscribe',
         ];
     }
 
@@ -71,6 +90,8 @@ class RenderCampaignContent
     /** @param array<string, mixed> $data */
     private function replace(string $content, array $data, bool $escape): string
     {
+        $content = $this->decodeEncodedTags($content);
+
         return (string) preg_replace_callback(self::PATTERN, function (array $matches) use ($data, $escape): string {
             $key = $matches[1];
 
@@ -83,6 +104,19 @@ class RenderCampaignContent
 
             return $escape ? e($string) : $string;
         }, $content);
+    }
+
+    /**
+     * Markdown URL encoding can turn {{ unsubscribe_url }} into
+     * %7B%7B%20unsubscribe_url%20%7D%7D. Restore those before replacement.
+     */
+    private function decodeEncodedTags(string $content): string
+    {
+        return (string) preg_replace(
+            '/%7B%7B(?:\s|%20)*([a-zA-Z_][a-zA-Z0-9_]*)(?:\s|%20)*%7D%7D/i',
+            '{{ $1 }}',
+            $content,
+        );
     }
 
     private function htmlToText(string $html): string

@@ -51,6 +51,8 @@ export default function ImageSidebarPanel({ data, setData }: ImageSidebarPanelPr
       <TextInput
         label="Click through URL"
         defaultValue={data.props?.linkHref ?? ''}
+        placeholder="https://example.com or {{ unsubscribe_url }}"
+        helperText="Paste a personalization tag from the toolbar for a per-recipient link."
         onChange={(v) => {
           const linkHref = v.trim().length === 0 ? null : v.trim();
           updateData({ ...data, props: { ...data.props, linkHref } });

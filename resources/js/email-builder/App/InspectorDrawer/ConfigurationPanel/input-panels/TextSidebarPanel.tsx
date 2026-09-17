@@ -31,6 +31,8 @@ export default function TextSidebarPanel({ data, setData }: TextSidebarPanelProp
         label="Content"
         rows={5}
         defaultValue={data.props?.text ?? ''}
+        placeholder="[Unsubscribe]({{ unsubscribe_url }})"
+        helperText="Turn Markdown on for [Unsubscribe]({{ unsubscribe_url }}), or paste <a href=&quot;{{ unsubscribe_url }}&quot;>Unsubscribe here</a>."
         onChange={(text) => updateData({ ...data, props: { ...data.props, text } })}
       />
       <BooleanInput

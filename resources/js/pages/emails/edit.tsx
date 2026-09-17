@@ -3,7 +3,6 @@ import {
     ArrowLeft01Icon,
     Attachment01Icon,
     CheckmarkCircle02Icon,
-    Copy01Icon,
     Delete02Icon,
     Edit03Icon,
     File01Icon,
@@ -31,6 +30,7 @@ import { EmailBuilderEditor } from '@/components/email-builder-editor';
 import { EmailHtmlEditor } from '@/components/email-html-editor';
 import { EmailSourceEditor } from '@/components/email-source-editor';
 import MediaLibraryDialog from '@/components/media-library-dialog';
+import PersonalizationTagsDialog from '@/components/personalization-tags-dialog';
 import SaveEmailAsTemplateDialog from '@/components/save-email-as-template-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -48,8 +48,6 @@ import {
     DropdownMenuContent,
     DropdownMenuGroup,
     DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -124,22 +122,6 @@ const CURRENT_SENDER = 'current-sender';
 
 const ATTACHMENT_ACCEPT =
     'image/jpeg,image/gif,image/png,application/pdf,application/zip,.jpeg,.jpg,.gif,.png,.pdf,.zip';
-
-const PERSONALIZATION_TAGS = [
-    { label: 'Name', tag: '{{ name }}' },
-    { label: 'Email', tag: '{{ email }}' },
-    { label: 'Two digit day', tag: '{{ day }}' },
-    { label: 'Full day name', tag: '{{ day_name }}' },
-    { label: 'Two digit month', tag: '{{ month }}' },
-    { label: 'Full month name', tag: '{{ month_name }}' },
-    { label: 'Four digit year', tag: '{{ year }}' },
-] as const;
-
-/** Filled in per delivery when the campaign is sent. */
-const LINK_TAGS = [
-    { label: 'View in browser', tag: '{{ web_view_url }}' },
-    { label: 'Unsubscribe', tag: '{{ unsubscribe_url }}' },
-] as const;
 
 type LinkCheckResponse = {
     checked: number;
@@ -242,6 +224,7 @@ export default function EmailEdit({
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
+    const [tagsDialogOpen, setTagsDialogOpen] = useState(false);
     const [uploadingAttachments, setUploadingAttachments] = useState(false);
     const [linkCheckResult, setLinkCheckResult] =
         useState<LinkCheckResponse | null>(null);
@@ -297,11 +280,6 @@ export default function EmailEdit({
     const selectedSegment = selectedAudience?.segments.find(
         (segment) => segment.uuid === form.data.segment,
     );
-
-    const copyTag = (tag: string) => {
-        void navigator.clipboard.writeText(tag);
-        toast.add({ type: 'success', title: `${tag} copied.` });
-    };
 
     const uploadAttachments = (files: FileList) => {
         if (files.length === 0 || uploadingAttachments) {
@@ -641,122 +619,20 @@ export default function EmailEdit({
                                         </span>
                                     </Button>
                                 ) : null}
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger
-                                        render={
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                disabled={!canManage}
-                                                data-test="personalization-tags"
-                                            />
-                                        }
-                                    >
-                                        <HugeiconsIcon
-                                            icon={TagsIcon}
-                                            data-icon="inline-start"
-                                        />
-                                        Personalization tags
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent
-                                        align="end"
-                                        className="w-72"
-                                    >
-                                        <DropdownMenuGroup>
-                                            <DropdownMenuLabel>
-                                                Subscriber and date
-                                            </DropdownMenuLabel>
-                                            {PERSONALIZATION_TAGS.map(
-                                                (item) => (
-                                                    <DropdownMenuItem
-                                                        key={item.tag}
-                                                        onClick={() =>
-                                                            copyTag(item.tag)
-                                                        }
-                                                    >
-                                                        <HugeiconsIcon
-                                                            icon={Copy01Icon}
-                                                        />
-                                                        <span className="flex-1">
-                                                            {item.label}
-                                                        </span>
-                                                        <code className="text-xs text-muted-foreground">
-                                                            {item.tag}
-                                                        </code>
-                                                    </DropdownMenuItem>
-                                                ),
-                                            )}
-                                        </DropdownMenuGroup>
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuGroup>
-                                            <DropdownMenuLabel>
-                                                Links
-                                            </DropdownMenuLabel>
-                                            {LINK_TAGS.map((item) => (
-                                                <DropdownMenuItem
-                                                    key={item.tag}
-                                                    onClick={() =>
-                                                        copyTag(item.tag)
-                                                    }
-                                                >
-                                                    <HugeiconsIcon
-                                                        icon={Copy01Icon}
-                                                    />
-                                                    <span className="flex-1">
-                                                        {item.label}
-                                                    </span>
-                                                    <code className="text-xs text-muted-foreground">
-                                                        {item.tag}
-                                                    </code>
-                                                </DropdownMenuItem>
-                                            ))}
-                                        </DropdownMenuGroup>
-                                        {selectedAudience?.attributes.length ? (
-                                            <>
-                                                <DropdownMenuSeparator />
-                                                <DropdownMenuGroup>
-                                                    <DropdownMenuLabel>
-                                                        {selectedAudience.name}{' '}
-                                                        custom fields
-                                                    </DropdownMenuLabel>
-                                                    {selectedAudience.attributes.map(
-                                                        (attribute) => {
-                                                            const tag = `{{ ${attribute.key} }}`;
-
-                                                            return (
-                                                                <DropdownMenuItem
-                                                                    key={
-                                                                        attribute.key
-                                                                    }
-                                                                    onClick={() =>
-                                                                        copyTag(
-                                                                            tag,
-                                                                        )
-                                                                    }
-                                                                >
-                                                                    <HugeiconsIcon
-                                                                        icon={
-                                                                            Copy01Icon
-                                                                        }
-                                                                    />
-                                                                    <span className="flex-1">
-                                                                        {
-                                                                            attribute.name
-                                                                        }
-                                                                    </span>
-                                                                    <code className="text-xs text-muted-foreground">
-                                                                        {tag}
-                                                                    </code>
-                                                                </DropdownMenuItem>
-                                                            );
-                                                        },
-                                                    )}
-                                                </DropdownMenuGroup>
-                                            </>
-                                        ) : null}
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={!canManage}
+                                    data-test="personalization-tags"
+                                    onClick={() => setTagsDialogOpen(true)}
+                                >
+                                    <HugeiconsIcon
+                                        icon={TagsIcon}
+                                        data-icon="inline-start"
+                                    />
+                                    Personalization tags
+                                </Button>
                                 {canManage ? (
                                     <Button
                                         type="submit"
@@ -1040,6 +916,13 @@ export default function EmailEdit({
                     onOpenChange={setMediaDialogOpen}
                 />
             ) : null}
+
+            <PersonalizationTagsDialog
+                attributes={selectedAudience?.attributes ?? []}
+                audienceName={selectedAudience?.name ?? null}
+                open={tagsDialogOpen}
+                onOpenChange={setTagsDialogOpen}
+            />
 
             <Dialog
                 open={openSection === 'name'}

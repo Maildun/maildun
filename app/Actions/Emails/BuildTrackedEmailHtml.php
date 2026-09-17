@@ -2,8 +2,10 @@
 
 namespace App\Actions\Emails;
 
+use App\Models\Email;
 use App\Models\EmailDelivery;
 use App\Models\EmailLink;
+use App\Models\SubscribeForm;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\URL;
 
@@ -20,12 +22,17 @@ class BuildTrackedEmailHtml
     public const string WEB_VIEW_TAG = '/\{\{\s*web_view_url\s*\}\}/';
 
     /**
+     * Authors can link the audience subscribe form with {{ subscribe_url }}.
+     */
+    public const string SUBSCRIBE_TAG = '/\{\{\s*subscribe_url\s*\}\}/';
+
+    /**
      * Merge keys that resolve to delivery links below, so no snapshotted
      * subscriber field may shadow them.
      *
      * @var list<string>
      */
-    private const array LINK_KEYS = ['unsubscribe_url', 'web_view_url'];
+    private const array LINK_KEYS = ['unsubscribe_url', 'web_view_url', 'subscribe_url'];
 
     public function __construct(private readonly RenderCampaignContent $renderer) {}
 
@@ -90,6 +97,16 @@ class BuildTrackedEmailHtml
             $html,
         ) ?? $html;
 
+        $subscribeUrl = $this->subscribeFormUrl($email);
+
+        if ($subscribeUrl !== null) {
+            $html = preg_replace(
+                self::SUBSCRIBE_TAG,
+                htmlspecialchars($subscribeUrl, ENT_QUOTES | ENT_HTML5),
+                $html,
+            ) ?? $html;
+        }
+
         $appended = '';
 
         if ($email->track_opens) {
@@ -116,6 +133,97 @@ class BuildTrackedEmailHtml
     public static function webViewUrl(EmailDelivery $delivery): string
     {
         return URL::signedRoute('public.web_view.show', ['delivery' => $delivery]);
+    }
+
+    /**
+     * The public subscribe form for this campaign's audience, if one is published.
+     */
+    public function subscribeFormUrl(Email $email): ?string
+    {
+        if ($email->audience_id === null) {
+            return null;
+        }
+
+        $form = SubscribeForm::query()
+            ->where('audience_id', $email->audience_id)
+            ->whereNotNull('published_at')
+            ->orderByDesc('published_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $form instanceof SubscribeForm) {
+            return null;
+        }
+
+        return route('public.subscribe_forms.show', $form);
+    }
+
+    /**
+     * Authors who omit {{ unsubscribe_url }} still get a footer, but a
+     * generic opt-out is weaker for inbox placement than one they placed.
+     */
+    public function authorPlacedUnsubscribe(string $html): bool
+    {
+        if (preg_match(self::UNSUBSCRIBE_TAG, $html) === 1) {
+            return true;
+        }
+
+        return preg_match(
+            '/%7B%7B(?:\s|%20)*unsubscribe_url(?:\s|%20)*%7D%7D/i',
+            $html,
+        ) === 1;
+    }
+
+    /**
+     * Draft preview uses the same query string, merge-tag links, and footer as
+     * a send, but with placeholder hrefs instead of signed delivery URLs.
+     */
+    public function preparePreviewHtml(
+        string $html,
+        string $unsubscribeUrl,
+        string $webViewUrl,
+        ?string $queryString,
+        string $subscribeUrl = '#subscribe',
+    ): string {
+        $html = $this->appendQueryString($html, $queryString);
+
+        $placed = 0;
+        $html = preg_replace(
+            self::UNSUBSCRIBE_TAG,
+            htmlspecialchars($unsubscribeUrl, ENT_QUOTES | ENT_HTML5),
+            $html,
+            -1,
+            $placed,
+        ) ?? $html;
+
+        $html = preg_replace(
+            self::WEB_VIEW_TAG,
+            htmlspecialchars($webViewUrl, ENT_QUOTES | ENT_HTML5),
+            $html,
+        ) ?? $html;
+
+        $html = preg_replace(
+            self::SUBSCRIBE_TAG,
+            htmlspecialchars($subscribeUrl, ENT_QUOTES | ENT_HTML5),
+            $html,
+        ) ?? $html;
+
+        if ($placed === 0) {
+            $footer = $this->unsubscribeFooter($unsubscribeUrl);
+
+            if (preg_match('/<\/body>/i', $html) === 1) {
+                return preg_replace_callback(
+                    '/<\/body>/i',
+                    fn (): string => $footer.'</body>',
+                    $html,
+                    1,
+                ) ?? ($html.$footer);
+            }
+
+            return $html.$footer;
+        }
+
+        return $html;
     }
 
     public function appendQueryString(string $html, ?string $queryString): string
