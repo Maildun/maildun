@@ -7,6 +7,7 @@ use App\Mcp\Tools\TransactionalEmails\DeleteTransactionalEmailTool;
 use App\Mcp\Tools\TransactionalEmails\GetTransactionalEmailTool;
 use App\Mcp\Tools\TransactionalEmails\ListTransactionalEmailsTool;
 use App\Mcp\Tools\TransactionalEmails\UpdateTransactionalEmailTool;
+use App\Models\Audience;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use Illuminate\Testing\Fluent\AssertableJson;
@@ -75,6 +76,24 @@ test('manages a transactional email through its MCP lifecycle', function () {
     ])->assertOk();
 
     expect($email->refresh()->trashed())->toBeTrue();
+});
+
+test('refuses to delete a transactional email an audience confirms signups with', function () {
+    $team = Team::factory()->create(['slug' => 'confirmations']);
+    $email = TransactionalEmail::factory()->for($team)->published()->create();
+    Audience::factory()->for($team)->create([
+        'name' => 'Newsletter',
+        'double_opt_in' => true,
+        'double_opt_in_email_id' => $email->id,
+    ]);
+
+    MaildunServer::tool(DeleteTransactionalEmailTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $email->uuid,
+        'confirm_name' => $email->name,
+    ])->assertHasErrors(['Newsletter uses this as its double opt-in confirmation email.']);
+
+    $this->assertNotSoftDeleted($email);
 });
 
 test('keeps markdown source when transactional email is managed through MCP', function () {

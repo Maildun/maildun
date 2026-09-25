@@ -132,7 +132,7 @@ class EmailDelivery extends Model
 
     /**
      * Deliveries a deliberate retry may queue again: a retryable outcome, a
-     * subscriber who is still subscribed (or was deleted), and an address the
+     * subscriber who is still subscribed and confirmed (or was deleted), and an address the
      * workspace has not suppressed after a permanent bounce or complaint.
      *
      * @param  Builder<$this>  $query
@@ -146,7 +146,9 @@ class EmailDelivery extends Model
                     ->whereNull('subscriber_id')
                     ->orWhereHas(
                         'subscriber',
-                        fn (Builder $subscriber) => $subscriber->where('status', SubscriberStatus::Subscribed),
+                        fn (Builder $subscriber) => $subscriber
+                            ->where('status', SubscriberStatus::Subscribed)
+                            ->whereNotNull('subscribed_at'),
                     );
             })
             ->whereNotExists(

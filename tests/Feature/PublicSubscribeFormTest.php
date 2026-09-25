@@ -316,6 +316,51 @@ test('a signed double opt-in link confirms a pending subscriber', function () {
     );
 });
 
+test('a pending subscriber who submits again gets a fresh confirmation email at most once per cooldown', function () {
+    $audience = Audience::factory()->create();
+    TeamEmailIntegration::factory()->for($audience->team)->ses()->create();
+    $transactionalEmail = TransactionalEmail::factory()->for($audience->team)->published()->create();
+    $audience->update([
+        'double_opt_in' => true,
+        'double_opt_in_email_id' => $transactionalEmail->id,
+    ]);
+    $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
+    $subscriber = Subscriber::factory()->for($audience)->pendingConfirmation()->create(['email' => 'person@example.com']);
+    Queue::fake([SendTransactionalEmailDelivery::class]);
+    $payload = ['email' => 'person@example.com', 'consent' => true, 'website' => ''];
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), $payload)
+        ->assertOk()
+        ->assertExactJson(['message' => $subscribeForm->success_message]);
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), $payload)
+        ->assertOk()
+        ->assertExactJson(['message' => $subscribeForm->success_message]);
+
+    expect($transactionalEmail->deliveries()->sole()->to_address)->toBe('person@example.com')
+        ->and($subscriber->fresh()->subscribed_at)->toBeNull();
+    Queue::assertPushed(SendTransactionalEmailDelivery::class, 1);
+});
+
+test('a pending subscriber is confirmed on a new submission after double opt-in is turned off', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => false]);
+    $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
+    $subscriber = Subscriber::factory()->for($audience)->pendingConfirmation()->create(['email' => 'person@example.com']);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+        'website' => '',
+    ])->assertOk()->assertExactJson(['message' => $subscribeForm->success_message]);
+
+    expect($subscriber->fresh()->subscribed_at)->not->toBeNull();
+    Event::assertDispatched(
+        SubscriberLifecycleOccurred::class,
+        fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Subscribed
+            && $event->subscriber->is($subscriber),
+    );
+});
+
 test('published forms display and store their audience attributes', function () {
     $audience = Audience::factory()->create();
     AudienceAttribute::factory()->for($audience)->create([

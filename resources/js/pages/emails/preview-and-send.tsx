@@ -97,6 +97,7 @@ type Props = {
     };
     recipientCount: number;
     suppressedRecipients: SuppressedRecipients;
+    unconfirmedRecipients: number;
     missingUnsubscribe: boolean;
     preview: CampaignPreview;
 };
@@ -269,6 +270,26 @@ function SuppressedRecipientsCallout({
     );
 }
 
+function UnconfirmedRecipientsCallout({ count }: { count: number }) {
+    return (
+        <Alert
+            className="mx-auto w-full max-w-3xl shrink-0"
+            data-test="campaign-preview-unconfirmed"
+        >
+            <HugeiconsIcon icon={InformationCircleIcon} />
+            <AlertTitle>
+                Skipping {count} unconfirmed{' '}
+                {count === 1 ? 'recipient' : 'recipients'}
+            </AlertTitle>
+            <AlertDescription>
+                {count === 1
+                    ? "This person signed up but hasn't clicked the double opt-in confirmation link yet."
+                    : "These people signed up but haven't clicked the double opt-in confirmation link yet."}
+            </AlertDescription>
+        </Alert>
+    );
+}
+
 function PreviewLinksList({
     links,
     onOpen,
@@ -338,6 +359,7 @@ export default function PreviewAndSend({
     campaign,
     recipientCount,
     suppressedRecipients,
+    unconfirmedRecipients,
     missingUnsubscribe,
     preview: initialPreview,
 }: Props) {
@@ -877,6 +899,11 @@ export default function PreviewAndSend({
                         {suppressedRecipients.count > 0 ? (
                             <SuppressedRecipientsCallout
                                 suppressed={suppressedRecipients}
+                            />
+                        ) : null}
+                        {unconfirmedRecipients > 0 ? (
+                            <UnconfirmedRecipientsCallout
+                                count={unconfirmedRecipients}
                             />
                         ) : null}
                         {previewError || sendError ? (

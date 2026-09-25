@@ -89,6 +89,30 @@ test('the api uses an audience double opt-in transactional email', function () {
     Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
 });
 
+test('the api sends a pending subscriber a fresh confirmation email', function () {
+    $audience = Audience::factory()->create();
+    TeamEmailIntegration::factory()->for($audience->team)->ses()->create();
+    $transactionalEmail = TransactionalEmail::factory()->for($audience->team)->published()->create();
+    $audience->update([
+        'double_opt_in' => true,
+        'double_opt_in_email_id' => $transactionalEmail->id,
+    ]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingConfirmation()->create(['email' => 'ada@example.com']);
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+    Queue::fake([SendTransactionalEmailDelivery::class]);
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'ada@example.com',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.subscribed_at', null);
+
+    expect($transactionalEmail->deliveries()->sole()->to_address)->toBe('ada@example.com')
+        ->and($audience->subscribers()->sole()->is($subscriber))->toBeTrue();
+    Queue::assertPushed(SendTransactionalEmailDelivery::class, 1);
+});
+
 test('an api double opt-in signup is kept when the workspace cannot send', function () {
     $audience = Audience::factory()->create();
     $transactionalEmail = TransactionalEmail::factory()->for($audience->team)->published()->create();

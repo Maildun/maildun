@@ -7,6 +7,7 @@ use App\Mcp\Support\WorkspaceContext;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -39,6 +40,12 @@ class DeleteTransactionalEmailTool extends Tool
         ], [
             'confirm_name.in' => 'The confirmation name must exactly match the transactional email name.',
         ]);
+
+        $blockReason = $email->doubleOptInBlockReason();
+
+        if ($blockReason !== null) {
+            throw ValidationException::withMessages(['uuid' => $blockReason]);
+        }
 
         $deleted = ['uuid' => $email->uuid, 'name' => $email->name, 'slug' => $email->slug];
         $email->delete();

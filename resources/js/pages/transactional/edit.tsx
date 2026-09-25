@@ -47,6 +47,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
+import { toast } from '@/components/ui/toast';
 import { useClipboard } from '@/hooks/use-clipboard';
 import {
     EMPTY_BUILDER_DOCUMENT,
@@ -562,6 +563,15 @@ export default function TransactionalEdit({
                                                                 setPublishing(
                                                                     false,
                                                                 ),
+                                                            onError: (errors) =>
+                                                                toast.add({
+                                                                    type: 'error',
+                                                                    title: published
+                                                                        ? 'Could not unpublish the transactional email.'
+                                                                        : 'Could not publish the transactional email.',
+                                                                    description:
+                                                                        errors.email,
+                                                                }),
                                                         },
                                                     )
                                                 }

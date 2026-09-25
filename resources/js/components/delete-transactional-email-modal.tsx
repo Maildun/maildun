@@ -38,10 +38,11 @@ export default function DeleteTransactionalEmailModal({
             onStart: () => setProcessing(true),
             onFinish: () => setProcessing(false),
             onSuccess: () => onOpenChange(false),
-            onError: () =>
+            onError: (errors) =>
                 toast.add({
                     type: 'error',
                     title: 'Failed to delete the transactional email.',
+                    description: errors.email,
                 }),
         });
     };

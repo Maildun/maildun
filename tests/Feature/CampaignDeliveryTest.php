@@ -98,6 +98,31 @@ test('a campaign skips addresses its workspace has suppressed', function () {
         ->toBe(['other-workspace@example.com', 'reader@example.com']);
 });
 
+test('a campaign skips double opt-in signups who never confirmed', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    Subscriber::factory()->for($audience)->create(['email' => 'confirmed@example.com']);
+    Subscriber::factory()->for($audience)->pendingConfirmation()->create(['email' => 'pending@example.com']);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.send', [$team, $email]))
+        ->assertRedirect(route('emails.show', [$team, $email]));
+
+    [$loader] = (new PrepareEmailSendChunk($email->id))->withFakeBatch();
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    expect($email->fresh()->recipient_count)->toBe(1);
+    expect($email->deliveries()->pluck('email_address')->all())->toBe(['confirmed@example.com']);
+});
+
 test('a campaign whose only subscribers are suppressed cannot be queued', function () {
     Bus::fake();
 
@@ -670,6 +695,33 @@ test('a retry leaves deliveries to suppressed addresses alone', function () {
 
     expect($failed->fresh()->status)->toBe(EmailDeliveryStatus::Queued)
         ->and($suppressed->fresh()->status)->toBe(EmailDeliveryStatus::Failed);
+});
+
+test('a retry leaves deliveries to subscribers pending confirmation alone', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 2,
+    ]);
+    $confirmed = EmailDelivery::factory()->for($email)->create([
+        'subscriber_id' => Subscriber::factory()->for($audience)->create()->id,
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+    $pending = EmailDelivery::factory()->for($email)->create([
+        'subscriber_id' => Subscriber::factory()->for($audience)->pendingConfirmation()->create()->id,
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+
+    app(RetryEmailDeliveries::class)->handle($email);
+
+    expect($confirmed->fresh()->status)->toBe(EmailDeliveryStatus::Queued)
+        ->and($pending->fresh()->status)->toBe(EmailDeliveryStatus::Failed);
 });
 
 test('a bulk retry leaves unconfirmed deliveries alone unless asked to include them', function (bool $includeUnconfirmed, EmailDeliveryStatus $unconfirmedStatus) {

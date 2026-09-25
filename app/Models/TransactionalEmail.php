@@ -90,6 +90,37 @@ class TransactionalEmail extends Model
         return $this->hasMany(TransactionalEmailDelivery::class);
     }
 
+    /**
+     * Audiences that send this email as their double opt-in confirmation.
+     *
+     * @return HasMany<Audience, $this>
+     */
+    public function doubleOptInAudiences(): HasMany
+    {
+        return $this->hasMany(Audience::class, 'double_opt_in_email_id')
+            ->where('double_opt_in', true);
+    }
+
+    /**
+     * Why this email cannot be unpublished or deleted: an audience still
+     * needs it to confirm new signups, which would otherwise stay pending
+     * without ever receiving a link. Null when nothing depends on it.
+     */
+    public function doubleOptInBlockReason(): ?string
+    {
+        $audienceNames = $this->doubleOptInAudiences()->orderBy('name')->pluck('name');
+
+        if ($audienceNames->isEmpty()) {
+            return null;
+        }
+
+        return trans_choice(
+            ':audiences uses this as its double opt-in confirmation email. Choose another confirmation email or turn off double opt-in first.|:audiences use this as their double opt-in confirmation email. Choose another confirmation email or turn off double opt-in first.',
+            $audienceNames->count(),
+            ['audiences' => $audienceNames->join(', ', ' and ')],
+        );
+    }
+
     public function isPublished(): bool
     {
         return $this->status === TransactionalEmailStatus::Published;

@@ -222,6 +222,7 @@ class TransactionalEmailController extends Controller
     public function unpublish(Team $currentTeam, TransactionalEmail $transactionalEmail): RedirectResponse
     {
         Gate::authorize('publish', $transactionalEmail);
+        $this->ensureNotDoubleOptInEmail($transactionalEmail);
 
         $transactionalEmail->update([
             'status' => TransactionalEmailStatus::Draft,
@@ -262,11 +263,21 @@ class TransactionalEmailController extends Controller
     public function destroy(Team $currentTeam, TransactionalEmail $transactionalEmail): RedirectResponse
     {
         Gate::authorize('delete', $transactionalEmail);
+        $this->ensureNotDoubleOptInEmail($transactionalEmail);
         $transactionalEmail->delete();
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Transactional email deleted.')]);
 
         return to_route('transactional_emails.index', ['current_team' => $currentTeam]);
+    }
+
+    private function ensureNotDoubleOptInEmail(TransactionalEmail $transactionalEmail): void
+    {
+        $reason = $transactionalEmail->doubleOptInBlockReason();
+
+        if ($reason !== null) {
+            throw ValidationException::withMessages(['email' => $reason]);
+        }
     }
 
     /**

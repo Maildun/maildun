@@ -447,6 +447,10 @@ class EmailController extends Controller
             ],
             'recipientCount' => (clone $recipientQuery)->count(),
             'suppressedRecipients' => $this->suppressedRecipients($email),
+            'unconfirmedRecipients' => $this->campaignSubscribers($email)
+                ->where('subscribers.status', SubscriberStatus::Subscribed)
+                ->whereNull('subscribers.subscribed_at')
+                ->count(),
             'missingUnsubscribe' => ! $trackedHtml->authorPlacedUnsubscribe($email->html ?? ''),
             'preview' => $this->composePreviewPayload(
                 $email,
@@ -746,7 +750,7 @@ class EmailController extends Controller
     private function recipientsPaginator(Email $email, ?string $recipientFilter, bool $canManage): LengthAwarePaginator
     {
         $recipients = $email->deliveries()
-            ->with(['subscriber:id,uuid,status'])
+            ->with(['subscriber:id,uuid,status,subscribed_at'])
             ->tap(fn (Builder $query) => $this->applyRecipientFilter($query, $recipientFilter, $email->team))
             ->latest()
             ->paginate(25)
@@ -802,6 +806,7 @@ class EmailController extends Controller
             $email->status->isActive() => __('Wait until this campaign finishes sending.'),
             $delivery->subscriber !== null
                 && $delivery->subscriber->status !== SubscriberStatus::Subscribed => __('This recipient has unsubscribed.'),
+            $delivery->subscriber?->isPendingConfirmation() === true => __('This recipient has not confirmed their subscription yet.'),
             in_array($delivery->email_address, $suppressedAddresses, true) => __('This address is suppressed after a permanent bounce or spam complaint.'),
             default => __('This delivery cannot be retried.'),
         };
@@ -914,7 +919,7 @@ class EmailController extends Controller
     }
 
     /**
-     * Subscribed recipients the send will skip because the workspace
+     * Confirmed recipients the send will skip because the workspace
      * suppressed their address, grouped by why it was suppressed.
      *
      * @return array{count: int, reasons: list<array{label: string, count: int}>}
@@ -927,6 +932,7 @@ class EmailController extends Controller
                 'email_address_healths.email',
                 $this->campaignSubscribers($email)
                     ->where('subscribers.status', SubscriberStatus::Subscribed)
+                    ->whereNotNull('subscribers.subscribed_at')
                     ->select('subscribers.email'),
             )
             ->toBase()

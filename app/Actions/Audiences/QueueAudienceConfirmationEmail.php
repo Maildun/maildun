@@ -9,10 +9,18 @@ use App\Models\Audience;
 use App\Models\Subscriber;
 use App\Models\TransactionalEmailDelivery;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 
 class QueueAudienceConfirmationEmail
 {
+    /**
+     * A pending subscriber who submits again gets a fresh confirmation link,
+     * but at most once per this many seconds so a form cannot be used to
+     * flood an inbox.
+     */
+    public const RESEND_COOLDOWN_SECONDS = 600;
+
     public function __construct(private QueueTransactionalEmail $queueTransactionalEmail) {}
 
     /**
@@ -24,6 +32,12 @@ class QueueAudienceConfirmationEmail
      */
     public function handle(Audience $audience, Subscriber $subscriber): ?TransactionalEmailDelivery
     {
+        $cooldownKey = 'audience-confirmation:'.$subscriber->id;
+
+        if (RateLimiter::tooManyAttempts($cooldownKey, 1)) {
+            return null;
+        }
+
         $transactionalEmail = $audience->team->transactionalEmails()
             ->whereKey($audience->double_opt_in_email_id)
             ->where('status', TransactionalEmailStatus::Published->value)
@@ -42,7 +56,7 @@ class QueueAudienceConfirmationEmail
         );
 
         try {
-            return $this->queueTransactionalEmail->handleForTeam(
+            $delivery = $this->queueTransactionalEmail->handleForTeam(
                 $audience->team,
                 $transactionalEmail,
                 [
@@ -60,6 +74,10 @@ class QueueAudienceConfirmationEmail
 
             return null;
         }
+
+        RateLimiter::hit($cooldownKey, self::RESEND_COOLDOWN_SECONDS);
+
+        return $delivery;
     }
 
     private function warn(Audience $audience, Subscriber $subscriber, string $reason): void

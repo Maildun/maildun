@@ -703,6 +703,24 @@ test('the preview and send page skips suppressed recipients and says why', funct
             ]));
 });
 
+test('the preview and send page counts unconfirmed double opt-in signups separately', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    Subscriber::factory()->for($audience)->create();
+    Subscriber::factory()->for($audience)->pendingConfirmation()->count(2)->create();
+    Subscriber::factory()->for($audience)->pendingConfirmation()->create(['email' => 'pending-bounced@example.com']);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => 'pending-bounced@example.com']);
+    $email = Email::factory()->for($team)->create(['audience_id' => $audience->id]);
+
+    $this->actingAs($user)
+        ->get(route('emails.preview-and-send', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('recipientCount', 1)
+            ->where('unconfirmedRecipients', 3)
+            ->where('suppressedRecipients.count', 0));
+});
+
 test('the preview and send page flags a missing unsubscribe tag', function (string $html, bool $missing) {
     $user = User::factory()->create();
     $team = $user->currentTeam;
