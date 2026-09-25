@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailEditor;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
@@ -7,6 +8,7 @@ use App\Jobs\SendCampaignTestEmail;
 use App\Mail\ComposedEmailTest;
 use App\Models\Audience;
 use App\Models\Email;
+use App\Models\EmailAddressHealth;
 use App\Models\EmailTemplate;
 use App\Models\Media;
 use App\Models\Segment;
@@ -356,6 +358,24 @@ test('the compose page counts the subscribed people behind each audience and seg
             ->where('audiences.0.segments.0.subscribed_count', 2));
 });
 
+test('the compose page leaves suppressed addresses out of recipient counts', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $segment = Segment::factory()->for($audience)->create();
+    $reader = Subscriber::factory()->for($audience)->create(['email' => 'reader@example.com']);
+    $bounced = Subscriber::factory()->for($audience)->create(['email' => 'bounced@example.com']);
+    $segment->subscribers()->attach([$reader->id, $bounced->id]);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => 'bounced@example.com']);
+    $email = Email::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->get(route('emails.edit', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('audiences.0.subscribed_count', 1)
+            ->where('audiences.0.segments.0.subscribed_count', 1));
+});
+
 test('the compose preview renders merge tags with the selected recipient data', function () {
     $this->travelTo('2026-08-29 10:00:00');
 
@@ -644,6 +664,43 @@ test('the preview and send page opens with the first personalized recipient', fu
             ->where('preview.navigation.next', $second->uuid)
             ->where('preview.navigation.position', 1)
             ->where('missingUnsubscribe', true));
+});
+
+test('the preview and send page skips suppressed recipients and says why', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $reader = Subscriber::factory()->for($audience)->create(['email' => 'reader@example.com']);
+    Subscriber::factory()->for($audience)->create(['email' => 'bounced@example.com']);
+    Subscriber::factory()->for($audience)->create(['email' => 'gone@example.com']);
+    Subscriber::factory()->for($audience)->create(['email' => 'complained@example.com']);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create([
+        'email' => 'bounced@example.com',
+        'reason' => EmailAddressHealthReason::PermanentBounce,
+    ]);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create([
+        'email' => 'gone@example.com',
+        'reason' => EmailAddressHealthReason::PermanentBounce,
+    ]);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create([
+        'email' => 'complained@example.com',
+        'reason' => EmailAddressHealthReason::Complaint,
+    ]);
+    $email = Email::factory()->for($team)->create(['audience_id' => $audience->id]);
+
+    $this->actingAs($user)
+        ->get(route('emails.preview-and-send', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('recipientCount', 1)
+            ->where('preview.recipient.uuid', $reader->uuid)
+            ->where('preview.navigation.next', null)
+            ->where('suppressedRecipients', [
+                'count' => 3,
+                'reasons' => [
+                    ['label' => 'Permanent bounce', 'count' => 2],
+                    ['label' => 'Spam complaint', 'count' => 1],
+                ],
+            ]));
 });
 
 test('the preview and send page flags a missing unsubscribe tag', function (string $html, bool $missing) {

@@ -9,6 +9,7 @@ use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailStatus;
 use App\Exceptions\EmailTransportException;
 use App\Mail\CampaignEmail;
+use App\Models\Email;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
 use App\Services\ResolvedEmailTransport;
@@ -57,8 +58,6 @@ class SendEmailDelivery implements ShouldQueue
         $subject = $renderer->text($delivery->email->subject, $mergeData);
         $plainText = $renderer->plainText($delivery->email, $mergeData);
 
-        $delivery->email->update(['status' => EmailStatus::Sending]);
-
         /** @var array{ResolvedEmailTransport, EmailDeliveryAttempt}|null $claimedAttempt */
         $claimedAttempt = DB::transaction(function () use ($delivery, $teamMailer): ?array {
             if (! $this->claim($delivery)) {
@@ -88,6 +87,8 @@ class SendEmailDelivery implements ShouldQueue
         if ($claimedAttempt === null) {
             return;
         }
+
+        $this->markCampaignSending($delivery);
 
         [$transport, $attempt] = $claimedAttempt;
 
@@ -182,6 +183,23 @@ class SendEmailDelivery implements ShouldQueue
                 'send_attempted_at' => now(),
                 'failure_reason' => null,
             ]) === 1;
+    }
+
+    /**
+     * Move a queued campaign to Sending once a delivery wins its claim. The
+     * write is conditional so a late or duplicate job, which loses the claim
+     * or lands after FinalizeEmailSend, never reopens a finished campaign.
+     */
+    private function markCampaignSending(EmailDelivery $delivery): void
+    {
+        if ($delivery->email->status !== EmailStatus::Queued) {
+            return;
+        }
+
+        Email::query()
+            ->whereKey($delivery->email_id)
+            ->where('status', EmailStatus::Queued)
+            ->update(['status' => EmailStatus::Sending]);
     }
 
     /**

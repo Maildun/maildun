@@ -4,7 +4,6 @@ namespace App\Actions\Emails;
 
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailStatus;
-use App\Enums\SubscriberStatus;
 use App\Exceptions\EmailTransportException;
 use App\Jobs\SendEmailDelivery;
 use App\Models\Email;
@@ -21,11 +20,15 @@ class RetryEmailDeliveries
     public function __construct(private TeamMailer $teamMailer) {}
 
     /**
+     * Unconfirmed deliveries (claimed, handed to the transport, never
+     * confirmed) are skipped unless the caller opts in, because the provider
+     * may already have delivered them.
+     *
      * @param  list<int>|null  $deliveryIds
      */
-    public function handle(Email $email, ?array $deliveryIds = null): Batch
+    public function handle(Email $email, ?array $deliveryIds = null, bool $includeUnconfirmed = false): Batch
     {
-        $deliveries = DB::transaction(function () use ($email, $deliveryIds) {
+        $deliveries = DB::transaction(function () use ($email, $deliveryIds, $includeUnconfirmed) {
             $lockedEmail = Email::query()->with('team')->lockForUpdate()->findOrFail($email->id);
 
             if ($lockedEmail->status === EmailStatus::Draft) {
@@ -36,25 +39,24 @@ class RetryEmailDeliveries
                 throw ValidationException::withMessages(['email' => __('Wait until this campaign finishes sending before retrying.')]);
             }
 
-            $query = $lockedEmail->deliveries()
-                ->whereIn('status', EmailDeliveryStatus::retryable())
-                ->where(function (Builder $deliveries): void {
-                    $deliveries
-                        ->whereNull('subscriber_id')
-                        ->orWhereHas(
-                            'subscriber',
-                            fn (Builder $subscriber) => $subscriber->where('status', SubscriberStatus::Subscribed),
-                        );
-                });
+            $query = $lockedEmail->deliveries()->retryableFor($lockedEmail->team);
 
             if ($deliveryIds !== null) {
                 $query->whereIn('id', $deliveryIds);
             }
 
-            $deliveries = $query->lockForUpdate()->get();
+            $deliveries = (clone $query)
+                ->when(
+                    ! $includeUnconfirmed,
+                    fn (Builder $deliveries) => $deliveries->whereNot(fn (Builder $unconfirmed) => $unconfirmed->unconfirmed()),
+                )
+                ->lockForUpdate()
+                ->get();
 
             if ($deliveries->isEmpty()) {
-                throw ValidationException::withMessages(['email' => __('There are no failed deliveries that can be retried.')]);
+                throw ValidationException::withMessages(['email' => ! $includeUnconfirmed && $query->unconfirmed()->exists()
+                    ? __('These deliveries may already have reached their recipients. Confirm that you want to send them again.')
+                    : __('There are no failed deliveries that can be retried.')]);
             }
 
             try {

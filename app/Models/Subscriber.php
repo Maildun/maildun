@@ -7,6 +7,7 @@ use App\Enums\SubscriberStatus;
 use App\Services\DiceBearAvatarGenerator;
 use Database\Factories\SubscriberFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -129,6 +130,23 @@ class Subscriber extends Model
     public function segments(): BelongsToMany
     {
         return $this->belongsToMany(Segment::class)->withTimestamps();
+    }
+
+    /**
+     * The subscribed people a campaign may actually mail. Anyone the
+     * workspace suppressed after a permanent bounce or complaint is skipped.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeSendableFor(Builder $query, Team $team): void
+    {
+        $query
+            ->where('subscribers.status', SubscriberStatus::Subscribed)
+            ->whereNotExists(
+                EmailAddressHealth::query()
+                    ->suppressedFor($team)
+                    ->whereColumn('email_address_healths.email', 'subscribers.email'),
+            );
     }
 
     /** @return Attribute<string, string> */

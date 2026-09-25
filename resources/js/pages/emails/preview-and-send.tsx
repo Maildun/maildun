@@ -96,8 +96,14 @@ type Props = {
         name: string;
     };
     recipientCount: number;
+    suppressedRecipients: SuppressedRecipients;
     missingUnsubscribe: boolean;
     preview: CampaignPreview;
+};
+
+type SuppressedRecipients = {
+    count: number;
+    reasons: { label: string; count: number }[];
 };
 
 const ZOOM_LEVELS = ['75', '100', '125'] as const;
@@ -232,6 +238,37 @@ function MissingUnsubscribeCallout({ className }: { className?: string }) {
     );
 }
 
+function SuppressedRecipientsCallout({
+    suppressed,
+}: {
+    suppressed: SuppressedRecipients;
+}) {
+    return (
+        <Alert
+            className="mx-auto w-full max-w-3xl shrink-0"
+            data-test="campaign-preview-suppressed"
+        >
+            <HugeiconsIcon icon={InformationCircleIcon} />
+            <AlertTitle>
+                Skipping {suppressed.count} suppressed{' '}
+                {suppressed.count === 1 ? 'recipient' : 'recipients'}
+            </AlertTitle>
+            <AlertDescription>
+                <p>
+                    {suppressed.count === 1
+                        ? "This address bounced permanently or reported spam before, so Maildun won't email it again."
+                        : "These addresses bounced permanently or reported spam before, so Maildun won't email them again."}
+                </p>
+                <p className="tabular-nums">
+                    {suppressed.reasons
+                        .map((reason) => `${reason.label}: ${reason.count}`)
+                        .join(' · ')}
+                </p>
+            </AlertDescription>
+        </Alert>
+    );
+}
+
 function PreviewLinksList({
     links,
     onOpen,
@@ -300,6 +337,7 @@ function measurePreviewDocumentHeight(frame: HTMLIFrameElement): number {
 export default function PreviewAndSend({
     campaign,
     recipientCount,
+    suppressedRecipients,
     missingUnsubscribe,
     preview: initialPreview,
 }: Props) {
@@ -835,6 +873,11 @@ export default function PreviewAndSend({
                     <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden bg-muted/40 p-4 sm:p-8">
                         {missingUnsubscribe ? (
                             <MissingUnsubscribeCallout className="shrink-0 lg:hidden" />
+                        ) : null}
+                        {suppressedRecipients.count > 0 ? (
+                            <SuppressedRecipientsCallout
+                                suppressed={suppressedRecipients}
+                            />
                         ) : null}
                         {previewError || sendError ? (
                             <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-3">

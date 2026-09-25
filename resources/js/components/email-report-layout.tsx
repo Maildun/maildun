@@ -44,6 +44,8 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
 import { formatRelativeTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -86,6 +88,8 @@ export type CampaignReportMetrics = {
     complained: number;
     failed: number;
     retryable: number;
+    /** Retryable deliveries that were handed to the provider but never confirmed. */
+    unconfirmed: number;
     delivery_feedback: 'available' | 'partial' | 'unavailable';
     feedback_recipient_count: number;
     delivery_rate: number | null;
@@ -104,6 +108,9 @@ export type CampaignReportRecipient = {
     failure_reason: string | null;
     sent_at: string | null;
     can_retry: boolean;
+    /** Why this row cannot be retried; null when there is nothing to retry. */
+    retry_blocked_reason: string | null;
+    unconfirmed: boolean;
 };
 
 export type CampaignRecipientStatus =
@@ -195,6 +202,7 @@ export function EmailReportLayout({
     const { currentTeam } = usePage().props;
     const [retryOpen, setRetryOpen] = useState(false);
     const [retrying, setRetrying] = useState(false);
+    const [includeUnconfirmed, setIncludeUnconfirmed] = useState(false);
 
     setLayoutProps({
         fullscreen: false,
@@ -230,6 +238,13 @@ export function EmailReportLayout({
     }
 
     const canRetryFailed = canManage && !isActive && metrics.retryable > 0;
+    const retryCount = includeUnconfirmed
+        ? metrics.retryable
+        : metrics.retryable - metrics.unconfirmed;
+    const openRetry = () => {
+        setIncludeUnconfirmed(false);
+        setRetryOpen(true);
+    };
 
     return (
         <>
@@ -288,7 +303,7 @@ export function EmailReportLayout({
                                 type="button"
                                 variant="outline"
                                 data-test="retry-failed-button"
-                                onClick={() => setRetryOpen(true)}
+                                onClick={openRetry}
                             >
                                 <HugeiconsIcon
                                     icon={Refresh03Icon}
@@ -332,6 +347,8 @@ export function EmailReportLayout({
                             {metrics.retryable === 1
                                 ? 'recipient can be retried'
                                 : 'recipients can be retried'}
+                            {metrics.unconfirmed > 0 &&
+                                `, including ${metrics.unconfirmed.toLocaleString()} unconfirmed that may already have arrived`}
                             . Permanent bounces and complaints are not retried.
                         </AlertDescription>
                         <AlertAction>
@@ -340,7 +357,7 @@ export function EmailReportLayout({
                                 size="sm"
                                 variant="outline"
                                 data-test="retry-failed-alert-button"
-                                onClick={() => setRetryOpen(true)}
+                                onClick={openRetry}
                             >
                                 Retry
                             </Button>
@@ -395,29 +412,58 @@ export function EmailReportLayout({
                             Retry failed deliveries?
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                            {metrics.retryable}{' '}
-                            {metrics.retryable === 1
-                                ? 'recipient'
-                                : 'recipients'}{' '}
-                            with a failed, rejected, or delayed send will be
-                            queued again. Permanent bounces and complaints are
-                            left unsubscribed.
+                            {retryCount}{' '}
+                            {retryCount === 1 ? 'recipient' : 'recipients'} with
+                            a failed, rejected, or delayed send will be queued
+                            again. Permanent bounces and complaints are left
+                            unsubscribed.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    {metrics.unconfirmed > 0 && (
+                        <Field orientation="horizontal">
+                            <Checkbox
+                                id="retry-include-unconfirmed"
+                                data-test="retry-include-unconfirmed"
+                                checked={includeUnconfirmed}
+                                disabled={retrying}
+                                onCheckedChange={(checked) =>
+                                    setIncludeUnconfirmed(checked === true)
+                                }
+                            />
+                            <div className="flex flex-col gap-1">
+                                <FieldLabel htmlFor="retry-include-unconfirmed">
+                                    Also retry {metrics.unconfirmed} unconfirmed{' '}
+                                    {metrics.unconfirmed === 1
+                                        ? 'delivery'
+                                        : 'deliveries'}
+                                </FieldLabel>
+                                <FieldDescription>
+                                    Sending stopped after{' '}
+                                    {metrics.unconfirmed === 1
+                                        ? 'this message was'
+                                        : 'these messages were'}{' '}
+                                    handed to your email provider, so{' '}
+                                    {metrics.unconfirmed === 1 ? 'it' : 'they'}{' '}
+                                    may already have arrived. Retrying can send
+                                    a second copy.
+                                </FieldDescription>
+                            </div>
+                        </Field>
+                    )}
                     <AlertDialogFooter>
                         <AlertDialogCancel disabled={retrying}>
                             Cancel
                         </AlertDialogCancel>
                         <AlertDialogAction
                             data-test="confirm-retry-failed"
-                            disabled={retrying}
+                            disabled={retrying || retryCount === 0}
                             onClick={() =>
                                 router.post(
                                     retry.url([
                                         currentTeam.slug,
                                         campaign.uuid,
                                     ]),
-                                    {},
+                                    { include_unconfirmed: includeUnconfirmed },
                                     {
                                         onStart: () => setRetrying(true),
                                         onFinish: () => {

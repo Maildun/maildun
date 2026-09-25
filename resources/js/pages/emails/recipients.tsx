@@ -9,6 +9,16 @@ import type {
     CampaignReportRecipient,
 } from '@/components/email-report-layout';
 import { Paginator } from '@/components/paginator';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +29,7 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { Spinner } from '@/components/ui/spinner';
 import {
     Table,
     TableBody,
@@ -28,6 +39,11 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { formatRelativeTime } from '@/lib/format';
 import { recipients as recipientsRoute } from '@/routes/emails';
 import { retry as retryDelivery } from '@/routes/emails/deliveries';
@@ -73,10 +89,33 @@ export default function EmailRecipients({
 }: Props) {
     const { currentTeam } = usePage().props;
     const [retrying, setRetrying] = useState(false);
+    const [confirmingRetry, setConfirmingRetry] =
+        useState<CampaignReportRecipient | null>(null);
 
     if (!currentTeam) {
         return null;
     }
+
+    const retryRecipient = (
+        recipient: CampaignReportRecipient,
+        includeUnconfirmed: boolean,
+    ) =>
+        router.post(
+            retryDelivery.url([
+                currentTeam.slug,
+                campaign.uuid,
+                recipient.uuid,
+            ]),
+            { include_unconfirmed: includeUnconfirmed },
+            {
+                preserveScroll: true,
+                onStart: () => setRetrying(true),
+                onFinish: () => {
+                    setRetrying(false);
+                    setConfirmingRetry(null);
+                },
+            },
+        );
 
     return (
         <EmailReportLayout
@@ -159,24 +198,56 @@ export default function EmailRecipients({
                                         </div>
                                     </TableCell>
                                     <TableCell>
-                                        <Badge
-                                            variant={
-                                                recipient.status === 'delivered'
-                                                    ? 'success'
-                                                    : [
-                                                            'bounced',
-                                                            'complained',
-                                                            'rejected',
-                                                            'failed',
-                                                        ].includes(
-                                                            recipient.status,
-                                                        )
-                                                      ? 'destructive'
-                                                      : 'secondary'
-                                            }
-                                        >
-                                            {DELIVERY_LABELS[recipient.status]}
-                                        </Badge>
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                            <Badge
+                                                variant={
+                                                    recipient.status ===
+                                                    'delivered'
+                                                        ? 'success'
+                                                        : [
+                                                                'bounced',
+                                                                'complained',
+                                                                'rejected',
+                                                                'failed',
+                                                            ].includes(
+                                                                recipient.status,
+                                                            )
+                                                          ? 'destructive'
+                                                          : 'secondary'
+                                                }
+                                            >
+                                                {
+                                                    DELIVERY_LABELS[
+                                                        recipient.status
+                                                    ]
+                                                }
+                                            </Badge>
+                                            {recipient.unconfirmed && (
+                                                <Tooltip>
+                                                    <TooltipTrigger
+                                                        render={
+                                                            <Badge
+                                                                variant="amber"
+                                                                tabIndex={0}
+                                                                data-test="recipient-unconfirmed-badge"
+                                                            />
+                                                        }
+                                                    >
+                                                        Unconfirmed
+                                                    </TooltipTrigger>
+                                                    <TooltipContent className="max-w-64">
+                                                        <p>
+                                                            Sending stopped
+                                                            after this message
+                                                            was handed to your
+                                                            email provider, so
+                                                            it may already have
+                                                            arrived.
+                                                        </p>
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            )}
+                                        </div>
                                     </TableCell>
                                     <TableCell>{recipient.opens}</TableCell>
                                     <TableCell>{recipient.clicks}</TableCell>
@@ -197,25 +268,14 @@ export default function EmailRecipients({
                                                     data-test="retry-delivery-button"
                                                     disabled={retrying}
                                                     onClick={() =>
-                                                        router.post(
-                                                            retryDelivery.url([
-                                                                currentTeam.slug,
-                                                                campaign.uuid,
-                                                                recipient.uuid,
-                                                            ]),
-                                                            {},
-                                                            {
-                                                                preserveScroll: true,
-                                                                onStart: () =>
-                                                                    setRetrying(
-                                                                        true,
-                                                                    ),
-                                                                onFinish: () =>
-                                                                    setRetrying(
-                                                                        false,
-                                                                    ),
-                                                            },
-                                                        )
+                                                        recipient.unconfirmed
+                                                            ? setConfirmingRetry(
+                                                                  recipient,
+                                                              )
+                                                            : retryRecipient(
+                                                                  recipient,
+                                                                  false,
+                                                              )
                                                     }
                                                 >
                                                     <HugeiconsIcon
@@ -224,6 +284,27 @@ export default function EmailRecipients({
                                                     />
                                                     Retry
                                                 </Button>
+                                            ) : recipient.retry_blocked_reason ? (
+                                                <Tooltip>
+                                                    <TooltipTrigger
+                                                        render={
+                                                            <span
+                                                                tabIndex={0}
+                                                                className="cursor-help text-sm text-muted-foreground underline decoration-dotted underline-offset-4"
+                                                                data-test="retry-blocked-reason"
+                                                            />
+                                                        }
+                                                    >
+                                                        Can't retry
+                                                    </TooltipTrigger>
+                                                    <TooltipContent className="max-w-64">
+                                                        <p>
+                                                            {
+                                                                recipient.retry_blocked_reason
+                                                            }
+                                                        </p>
+                                                    </TooltipContent>
+                                                </Tooltip>
                                             ) : (
                                                 <span className="text-muted-foreground">
                                                     —
@@ -246,6 +327,46 @@ export default function EmailRecipients({
                     </div>
                 </CardContent>
             </Card>
+
+            <AlertDialog
+                open={confirmingRetry !== null}
+                onOpenChange={(open) => {
+                    if (!open && !retrying) {
+                        setConfirmingRetry(null);
+                    }
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            Retry an unconfirmed delivery?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Sending stopped after this message was handed to
+                            your email provider, so{' '}
+                            {confirmingRetry?.email ?? 'this recipient'} may
+                            already have it. Retrying can send them a second
+                            copy.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={retrying}>
+                            Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            data-test="confirm-retry-unconfirmed"
+                            disabled={retrying}
+                            onClick={() =>
+                                confirmingRetry &&
+                                retryRecipient(confirmingRetry, true)
+                            }
+                        >
+                            {retrying && <Spinner data-icon="inline-start" />}
+                            Retry anyway
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </EmailReportLayout>
     );
 }

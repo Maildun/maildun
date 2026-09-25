@@ -89,6 +89,29 @@ test('the api uses an audience double opt-in transactional email', function () {
     Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
 });
 
+test('an api double opt-in signup is kept when the workspace cannot send', function () {
+    $audience = Audience::factory()->create();
+    $transactionalEmail = TransactionalEmail::factory()->for($audience->team)->published()->create();
+    $audience->update([
+        'double_opt_in' => true,
+        'double_opt_in_email_id' => $transactionalEmail->id,
+    ]);
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+    Queue::fake();
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'ada@example.com',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.email', 'ada@example.com')
+        ->assertJsonPath('data.subscribed_at', null);
+
+    expect($audience->subscribers()->sole()->subscribed_at)->toBeNull();
+
+    Queue::assertNothingPushed();
+});
+
 test('the api resubscribes an unsubscribed member and fires the lifecycle event', function () {
     $subscriber = Subscriber::factory()->unsubscribed()->create();
     $issued = TeamApiKey::issue($subscriber->audience->team, 'Production');

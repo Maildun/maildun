@@ -3,7 +3,6 @@
 namespace App\Actions\Emails;
 
 use App\Enums\EmailStatus;
-use App\Enums\SubscriberStatus;
 use App\Exceptions\EmailTransportException;
 use App\Jobs\PrepareEmailSendChunk;
 use App\Models\Email;
@@ -50,7 +49,7 @@ class StartEmailSend
             $subscribers = $lockedEmail->segment_id
                 ? $lockedEmail->segment->subscribers()
                 : $lockedEmail->audience->subscribers();
-            $recipientCount = $subscribers->where('status', SubscriberStatus::Subscribed)->count();
+            $recipientCount = $subscribers->sendableFor($lockedEmail->team)->count();
 
             if ($recipientCount === 0) {
                 throw ValidationException::withMessages(['email' => __('This campaign has no subscribed recipients.')]);

@@ -9,6 +9,7 @@ use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
 use App\Enums\EmailProvider;
 use App\Enums\EmailStatus;
+use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Exceptions\EmailTransportException;
 use App\Jobs\PrepareEmailSendChunk;
@@ -16,6 +17,7 @@ use App\Jobs\SendEmailDelivery;
 use App\Mail\CampaignEmail;
 use App\Models\Audience;
 use App\Models\Email;
+use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
 use App\Models\Subscriber;
@@ -65,6 +67,58 @@ test('a campaign queues bounded background preparation before snapshotting recip
     expect($email->deliveries()->count())->toBe(2)
         ->and($email->deliveries()->where('provider', 'smtp')->count())->toBe(2)
         ->and($email->links()->value('url'))->toBe('https://example.com/news');
+});
+
+test('a campaign skips addresses its workspace has suppressed', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'reader@example.com']);
+    Subscriber::factory()->for($audience)->create(['email' => 'bounced@example.com']);
+    Subscriber::factory()->for($audience)->create(['email' => 'other-workspace@example.com']);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => 'bounced@example.com']);
+    EmailAddressHealth::factory()->suppressed()->create(['email' => 'other-workspace@example.com']);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.send', [$team, $email]))
+        ->assertRedirect(route('emails.show', [$team, $email]));
+
+    [$loader] = (new PrepareEmailSendChunk($email->id))->withFakeBatch();
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    expect($email->fresh()->recipient_count)->toBe(2);
+    expect($email->deliveries()->orderBy('email_address')->pluck('email_address')->all())
+        ->toBe(['other-workspace@example.com', 'reader@example.com']);
+});
+
+test('a campaign whose only subscribers are suppressed cannot be queued', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'bounced@example.com']);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => 'bounced@example.com']);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.send', [$team, $email]))
+        ->assertSessionHasErrors(['email' => 'This campaign has no subscribed recipients.']);
+
+    Bus::assertNothingBatched();
+
+    expect($email->fresh()->status)->toBe(EmailStatus::Draft);
 });
 
 test('a campaign can be queued with a supported workspace email provider', function () {
@@ -592,6 +646,242 @@ test('failed and delayed deliveries can be retried without touching bounces', fu
         ->and($email->fresh()->status)->toBe(EmailStatus::Sending);
 });
 
+test('a retry leaves deliveries to suppressed addresses alone', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 2,
+    ]);
+    $failed = EmailDelivery::factory()->for($email)->create([
+        'email_address' => 'reader@example.com',
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+    $suppressed = EmailDelivery::factory()->for($email)->create([
+        'email_address' => 'bounced@example.com',
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => 'bounced@example.com']);
+
+    app(RetryEmailDeliveries::class)->handle($email);
+
+    expect($failed->fresh()->status)->toBe(EmailDeliveryStatus::Queued)
+        ->and($suppressed->fresh()->status)->toBe(EmailDeliveryStatus::Failed);
+});
+
+test('a bulk retry leaves unconfirmed deliveries alone unless asked to include them', function (bool $includeUnconfirmed, EmailDeliveryStatus $unconfirmedStatus) {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 2,
+    ]);
+    $refused = EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Failed,
+        'send_attempted_at' => null,
+    ]);
+    $unconfirmed = EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Failed,
+        'send_attempted_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('emails.show', [$team, $email]))
+        ->post(route('emails.retry', [$team, $email]), ['include_unconfirmed' => $includeUnconfirmed])
+        ->assertRedirect(route('emails.show', [$team, $email]));
+
+    expect($refused->fresh()->status)->toBe(EmailDeliveryStatus::Queued)
+        ->and($unconfirmed->fresh()->status)->toBe($unconfirmedStatus);
+})->with([
+    'by default' => [false, EmailDeliveryStatus::Failed],
+    'when included' => [true, EmailDeliveryStatus::Queued],
+]);
+
+test('retrying a single unconfirmed delivery requires confirmation', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::Failed,
+        'recipient_count' => 1,
+    ]);
+    $unconfirmed = EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Failed,
+        'send_attempted_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.deliveries.retry', [$team, $email, $unconfirmed]))
+        ->assertSessionHasErrors([
+            'email' => 'These deliveries may already have reached their recipients. Confirm that you want to send them again.',
+        ]);
+
+    Bus::assertNothingBatched();
+
+    expect($unconfirmed->fresh()->status)->toBe(EmailDeliveryStatus::Failed);
+});
+
+test('a confirmed retry queues a single unconfirmed delivery again', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::Failed,
+        'recipient_count' => 1,
+    ]);
+    $unconfirmed = EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Failed,
+        'send_attempted_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.deliveries.retry', [$team, $email, $unconfirmed]), ['include_unconfirmed' => true])
+        ->assertSessionHasNoErrors();
+
+    expect($unconfirmed->fresh()->status)->toBe(EmailDeliveryStatus::Queued);
+});
+
+test('the campaign report flags unconfirmed deliveries', function () {
+    $this->freezeTime();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 2,
+    ]);
+    EmailDelivery::factory()->for($email)->create([
+        'email_address' => 'refused@example.com',
+        'status' => EmailDeliveryStatus::Failed,
+        'send_attempted_at' => null,
+    ]);
+    $this->travel(1)->minute();
+    EmailDelivery::factory()->for($email)->create([
+        'email_address' => 'unconfirmed@example.com',
+        'status' => EmailDeliveryStatus::Failed,
+        'send_attempted_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('emails.recipients', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.retryable', 2)
+            ->where('metrics.unconfirmed', 1)
+            ->where('recipients.data.0.email', 'unconfirmed@example.com')
+            ->where('recipients.data.0.unconfirmed', true)
+            ->where('recipients.data.1.email', 'refused@example.com')
+            ->where('recipients.data.1.unconfirmed', false));
+});
+
+test('each recipient row says whether it can be retried and why not', function (
+    EmailStatus $campaignStatus,
+    EmailDeliveryStatus $deliveryStatus,
+    SubscriberStatus $subscriberStatus,
+    bool $suppressed,
+    bool $canRetry,
+    ?string $blockedReason,
+) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create([
+        'email' => 'reader@example.com',
+        'status' => $subscriberStatus,
+    ]);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'status' => $campaignStatus,
+        'recipient_count' => 1,
+    ]);
+    EmailDelivery::factory()->for($email)->create([
+        'subscriber_id' => $subscriber->id,
+        'email_address' => 'reader@example.com',
+        'status' => $deliveryStatus,
+    ]);
+
+    if ($suppressed) {
+        EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => 'reader@example.com']);
+    }
+
+    $this->actingAs($user)
+        ->get(route('emails.recipients', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('recipients.data.0.can_retry', $canRetry)
+            ->where('recipients.data.0.retry_blocked_reason', $blockedReason));
+})->with([
+    'a failed send' => [EmailStatus::PartiallyFailed, EmailDeliveryStatus::Failed, SubscriberStatus::Subscribed, false, true, null],
+    'a campaign still sending' => [EmailStatus::Sending, EmailDeliveryStatus::Failed, SubscriberStatus::Subscribed, false, false, 'Wait until this campaign finishes sending.'],
+    'an unsubscribed recipient' => [EmailStatus::PartiallyFailed, EmailDeliveryStatus::Failed, SubscriberStatus::Unsubscribed, false, false, 'This recipient has unsubscribed.'],
+    'a suppressed address' => [EmailStatus::PartiallyFailed, EmailDeliveryStatus::Failed, SubscriberStatus::Subscribed, true, false, 'This address is suppressed after a permanent bounce or spam complaint.'],
+    'a permanent bounce' => [EmailStatus::Sent, EmailDeliveryStatus::Bounced, SubscriberStatus::Subscribed, false, false, 'Permanent bounces are never retried.'],
+    'a spam complaint' => [EmailStatus::Sent, EmailDeliveryStatus::Complained, SubscriberStatus::Subscribed, false, false, 'Spam complaints are never retried.'],
+    'a delivered message' => [EmailStatus::Sent, EmailDeliveryStatus::Delivered, SubscriberStatus::Subscribed, false, false, null],
+]);
+
+test('the retryable filter lists exactly the deliveries the retry count covers', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $reader = Subscriber::factory()->for($audience)->create(['email' => 'reader@example.com']);
+    $gone = Subscriber::factory()->for($audience)->unsubscribed()->create(['email' => 'gone@example.com']);
+    $bounced = Subscriber::factory()->for($audience)->create(['email' => 'bounced@example.com']);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => 'bounced@example.com']);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 3,
+    ]);
+
+    foreach ([$reader, $gone, $bounced] as $subscriber) {
+        EmailDelivery::factory()->for($email)->create([
+            'subscriber_id' => $subscriber->id,
+            'email_address' => $subscriber->email,
+            'status' => EmailDeliveryStatus::Failed,
+        ]);
+    }
+
+    $this->actingAs($user)
+        ->get(route('emails.recipients', [$team, $email, 'status' => 'retryable']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.retryable', 1)
+            ->has('recipients.data', 1)
+            ->where('recipients.data.0.email', 'reader@example.com'));
+});
+
+test('the campaign report does not count suppressed addresses as retryable', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 2,
+    ]);
+    EmailDelivery::factory()->for($email)->create([
+        'email_address' => 'reader@example.com',
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+    EmailDelivery::factory()->for($email)->create([
+        'email_address' => 'bounced@example.com',
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => 'bounced@example.com']);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.failed', 2)
+            ->where('metrics.retryable', 1));
+});
+
 test('a single failed delivery can be retried', function () {
     Bus::fake();
 
@@ -783,6 +1073,41 @@ test('a retried job never sends the same delivery twice', function () {
         ->and($delivery->attempts()->sole()->status)->toBe(EmailDeliveryStatus::Sent);
 });
 
+test('the first claimed delivery moves a queued campaign to sending', function () {
+    Mail::fake();
+
+    $email = Email::factory()->create(['html' => '<p>Hello</p>', 'status' => EmailStatus::Queued]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $delivery = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+
+    (new SendEmailDelivery($delivery->id))->handle(app(BuildTrackedEmailHtml::class), app(TeamMailer::class));
+
+    Mail::assertSentCount(1);
+
+    expect($email->fresh()->status)->toBe(EmailStatus::Sending);
+});
+
+test('a late delivery job does not reopen a finished campaign', function (EmailStatus $finishedStatus) {
+    Mail::fake();
+
+    $email = Email::factory()->create([
+        'html' => '<p>Hello</p>',
+        'status' => $finishedStatus,
+        'sent_at' => now(),
+    ]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $delivery = EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Sent,
+        'send_attempted_at' => now(),
+    ]);
+
+    (new SendEmailDelivery($delivery->id))->handle(app(BuildTrackedEmailHtml::class), app(TeamMailer::class));
+
+    Mail::assertNothingSent();
+
+    expect($email->fresh()->status)->toBe($finishedStatus);
+})->with([EmailStatus::Sent, EmailStatus::PartiallyFailed, EmailStatus::Failed]);
+
 test('a transport failure hands the delivery back so the queue can retry it', function () {
     $email = Email::factory()->create(['html' => '<p>Hello</p>', 'status' => EmailStatus::Queued]);
     TeamEmailIntegration::factory()->for($email->team)->ses()->create();
@@ -832,7 +1157,7 @@ test('a deliberate retry re-arms a delivery that already went out', function () 
         'failure_reason' => 'Old failure',
     ]);
 
-    app(RetryEmailDeliveries::class)->handle($email);
+    app(RetryEmailDeliveries::class)->handle($email, includeUnconfirmed: true);
 
     expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Queued)
         ->and($delivery->fresh()->send_attempted_at)->toBeNull()

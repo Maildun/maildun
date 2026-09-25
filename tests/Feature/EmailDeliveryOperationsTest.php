@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\ResumeEmailDeliveriesCommand;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailStatus;
 use App\Jobs\PrepareEmailSendChunk;
@@ -16,6 +17,8 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
@@ -237,6 +240,55 @@ test('a campaign whose batch is still running is not finalized early', function 
     expect($email->fresh()->status)->toBe(EmailStatus::Sending);
 });
 
+test('a campaign whose batch lost its jobs is finalized only once nothing can still run', function (
+    bool $jobStillQueued,
+    int $minutesSinceLastClaim,
+    EmailStatus $expectedStatus,
+    bool $batchCancelled,
+) {
+    Queue::fake();
+    $batch = Bus::batch([new SendEmailDelivery(1)])
+        ->onQueue(config('delivery.queues.campaigns'))
+        ->dispatch();
+    DB::table('job_batches')
+        ->where('id', $batch->id)
+        ->update(['created_at' => now()->subHour()->getTimestamp()]);
+
+    if (! $jobStillQueued) {
+        // A fresh fake has an empty queue: the batch's job was lost, the way a
+        // Redis flush loses it, while the batch record stays unfinished.
+        Queue::fake();
+    }
+
+    $email = Email::factory()->create([
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 1,
+        'send_started_at' => now()->subHour(),
+        'batch_id' => $batch->id,
+    ]);
+    EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Sent,
+        'send_attempted_at' => now()->subMinutes($minutesSinceLastClaim),
+    ]);
+
+    $this->artisan('emails:resume')->assertSuccessful();
+
+    expect($email->fresh()->status)->toBe($expectedStatus);
+    expect(Bus::findBatch($batch->id)->cancelled())->toBe($batchCancelled);
+})->with([
+    'its jobs were lost' => [false, 60, EmailStatus::Sent, true],
+    'a job is still waiting for a worker' => [true, 60, EmailStatus::Sending, false],
+    'a delivery was claimed moments ago' => [false, 1, EmailStatus::Sending, false],
+]);
+
+test('the resume sweep records when it last ran', function () {
+    $this->freezeTime();
+
+    $this->artisan('emails:resume')->assertSuccessful();
+
+    expect(Cache::get(ResumeEmailDeliveriesCommand::LAST_RUN_CACHE_KEY))->toBe(now()->toIso8601String());
+});
+
 test('a stalled transactional delivery goes back on the queue', function () {
     Queue::fake();
     $transactionalEmail = TransactionalEmail::factory()->published()->create();
@@ -255,6 +307,31 @@ test('a stalled transactional delivery goes back on the queue', function () {
         fn ($job): bool => $job->deliveryId === $delivery->id,
     );
 });
+
+test('a transactional delivery stuck mid-handoff is failed rather than sent a second time', function (
+    int $minutesSinceClaim,
+    EmailDeliveryStatus $expectedStatus,
+) {
+    Queue::fake();
+    $transactionalEmail = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()
+        ->for($transactionalEmail, 'transactionalEmail')
+        ->create([
+            'team_id' => $transactionalEmail->team_id,
+            'status' => EmailDeliveryStatus::Sending,
+            'send_attempted_at' => now()->subMinutes($minutesSinceClaim),
+        ]);
+
+    $this->artisan('emails:resume')->assertSuccessful();
+
+    // The transport may already have accepted it, so it must never be re-queued.
+    Queue::assertNotPushed(SendTransactionalEmailDelivery::class);
+
+    expect($delivery->fresh()->status)->toBe($expectedStatus);
+})->with([
+    'past the stall window' => [60, EmailDeliveryStatus::Failed],
+    'claimed moments ago' => [1, EmailDeliveryStatus::Sending],
+]);
 
 /*
 |--------------------------------------------------------------------------

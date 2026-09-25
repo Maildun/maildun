@@ -15,6 +15,7 @@ use App\Enums\SubscriberStatus;
 use App\Enums\TeamBrandColor;
 use App\Enums\TeamBrandFont;
 use App\Enums\TeamBrandInputStyle;
+use App\Enums\TransactionalEmailStatus;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Jobs\SendTransactionalEmailDelivery;
 use App\Models\Audience;
@@ -25,6 +26,7 @@ use App\Models\Subscriber;
 use App\Models\TeamEmailIntegration;
 use App\Models\TransactionalEmail;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\URL;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -248,6 +250,48 @@ test('double opt-in forms queue the selected transactional confirmation email', 
     );
     Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
 });
+
+test('a double opt-in signup is kept when the confirmation email cannot be queued', function (
+    bool $providerConnected,
+    TransactionalEmailStatus $confirmationEmailStatus,
+) {
+    $audience = Audience::factory()->create();
+
+    if ($providerConnected) {
+        TeamEmailIntegration::factory()->for($audience->team)->ses()->create();
+    }
+
+    $transactionalEmail = TransactionalEmail::factory()
+        ->for($audience->team)
+        ->create(['status' => $confirmationEmailStatus]);
+    $audience->update([
+        'double_opt_in' => true,
+        'double_opt_in_email_id' => $transactionalEmail->id,
+    ]);
+    $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
+    Queue::fake();
+    Log::spy();
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+        'website' => '',
+    ])->assertOk()->assertExactJson(['message' => $subscribeForm->success_message]);
+
+    $subscriber = $audience->subscribers()->sole();
+
+    expect($subscriber->email)->toBe('person@example.com')
+        ->and($subscriber->consented_at)->not->toBeNull()
+        ->and($subscriber->subscribed_at)->toBeNull();
+
+    Queue::assertNothingPushed();
+    Log::shouldHaveReceived('warning')
+        ->withArgs(fn (string $message, array $context): bool => $context['audience_id'] === $audience->id)
+        ->once();
+})->with([
+    'no email provider is connected' => [false, TransactionalEmailStatus::Published],
+    'the confirmation email was unpublished' => [true, TransactionalEmailStatus::Draft],
+]);
 
 test('a signed double opt-in link confirms a pending subscriber', function () {
     $audience = Audience::factory()->create(['double_opt_in' => true]);

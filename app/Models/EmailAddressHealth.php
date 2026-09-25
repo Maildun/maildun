@@ -7,6 +7,7 @@ use App\Enums\EmailAddressHealthStatus;
 use App\Enums\EmailProvider;
 use Database\Factories\EmailAddressHealthFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -66,6 +67,19 @@ class EmailAddressHealth extends Model
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class);
+    }
+
+    /**
+     * Addresses the workspace must not mail again. A permanent bounce or a
+     * complaint in any audience suppresses the address in every audience.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeSuppressedFor(Builder $query, Team $team): void
+    {
+        $query
+            ->whereBelongsTo($team)
+            ->where('email_address_healths.status', EmailAddressHealthStatus::Suppressed);
     }
 
     protected function casts(): array

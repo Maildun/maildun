@@ -6,6 +6,7 @@ use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberStatus;
 use Database\Factories\EmailDeliveryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -129,13 +130,62 @@ class EmailDelivery extends Model
         return 'uuid';
     }
 
+    /**
+     * Deliveries a deliberate retry may queue again: a retryable outcome, a
+     * subscriber who is still subscribed (or was deleted), and an address the
+     * workspace has not suppressed after a permanent bounce or complaint.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeRetryableFor(Builder $query, Team $team): void
+    {
+        $query
+            ->whereIn('email_deliveries.status', EmailDeliveryStatus::retryable())
+            ->where(function (Builder $deliveries): void {
+                $deliveries
+                    ->whereNull('subscriber_id')
+                    ->orWhereHas(
+                        'subscriber',
+                        fn (Builder $subscriber) => $subscriber->where('status', SubscriberStatus::Subscribed),
+                    );
+            })
+            ->whereNotExists(
+                EmailAddressHealth::query()
+                    ->suppressedFor($team)
+                    ->whereColumn('email_address_healths.email', 'email_deliveries.email_address'),
+            );
+    }
+
+    /**
+     * Failed deliveries that were claimed and handed to the transport but
+     * never confirmed. The provider may have accepted them, so retrying can
+     * mail the recipient twice. A refused send releases send_attempted_at
+     * before it fails, so it is never counted here.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeUnconfirmed(Builder $query): void
+    {
+        $query
+            ->where('email_deliveries.status', EmailDeliveryStatus::Failed)
+            ->whereNotNull('email_deliveries.send_attempted_at');
+    }
+
+    public function isUnconfirmed(): bool
+    {
+        return $this->status === EmailDeliveryStatus::Failed && $this->send_attempted_at !== null;
+    }
+
+    /**
+     * Whether a deliberate retry would queue this delivery again. It runs the
+     * retryableFor scope so the row, the report count, and the action can
+     * never disagree; use the scope directly when checking a whole list.
+     */
     public function isRetryable(): bool
     {
-        if (! $this->status->isRetryable()) {
-            return false;
-        }
-
-        return $this->subscriber === null
-            || $this->subscriber->status === SubscriberStatus::Subscribed;
+        return static::query()
+            ->whereKey($this->getKey())
+            ->retryableFor($this->email->team)
+            ->exists();
     }
 }

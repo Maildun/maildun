@@ -5,7 +5,6 @@ namespace App\Jobs;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailStatus;
-use App\Enums\SubscriberStatus;
 use App\Exceptions\EmailTransportException;
 use App\Models\Email;
 use App\Models\EmailDelivery;
@@ -137,7 +136,7 @@ class PrepareEmailSendChunk implements ShouldQueue
             ->getQuery()
             ->with('contact:id')
             ->select('subscribers.*')
-            ->where('subscribers.status', SubscriberStatus::Subscribed)
+            ->sendableFor($email->team)
             ->where('subscribers.id', '>', $this->afterSubscriberId)
             ->orderBy('subscribers.id')
             ->limit(self::CHUNK_SIZE);
