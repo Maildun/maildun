@@ -128,6 +128,26 @@ jobs:
           docker logs maildun-ci
           exit 1
 
+      # How Coolify-style platforms (Managed WP) install it: real environment
+      # variables, no .env, and a read-only application root. The installer
+      # must migrate, create the administrator and leave no .env behind.
+      - name: Verify the installer runs on a platform-managed environment
+        run: |
+          KEY="base64:$(head -c 32 /dev/urandom | base64)"
+          PASSWORD="Ci-$(head -c 18 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')-7."
+          docker run --rm \
+            -e APP_KEY="$KEY" \
+            -e DB_CONNECTION=sqlite \
+            -e DB_DATABASE=:memory: \
+            -e CACHE_STORE=array \
+            -e SESSION_DRIVER=array \
+            -e QUEUE_CONNECTION=sync \
+            -e ADMIN_PASSWORD="$PASSWORD" \
+            maildun:ci \
+            sh -c 'php artisan app:install --no-interaction --force --skip-storage --registration=closed \
+              --admin-name="CI Admin" --admin-email=ci@example.com --admin-password="$ADMIN_PASSWORD" \
+              && test ! -f .env'
+
       - name: Container logs on failure
         if: failure()
         run: docker logs maildun-ci || true

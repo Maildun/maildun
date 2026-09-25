@@ -138,12 +138,18 @@ RUN export APP_KEY=base64:$(head -c 32 /dev/urandom | base64) \
 ########################################
 FROM base AS runtime
 
-COPY --chown=www-data:www-data . .
-COPY --from=vendor --chown=www-data:www-data /app/vendor ./vendor
-COPY --from=assets --chown=www-data:www-data /app/public/build ./public/build
+# The code belongs to root, so the server cannot change it; only the
+# directories Laravel writes to belong to www-data. A writable application
+# root would also let app:install create a .env from .env.example underneath
+# an environment the platform manages (Coolify, Managed WP).
+COPY . .
+COPY --from=vendor /app/vendor ./vendor
+COPY --from=assets /app/public/build ./public/build
 
 # Directories Laravel writes to at runtime. docker-compose.yml mounts a volume
-# over storage/, so these are the fallback for a plain `docker run`.
+# over storage/, so these are the fallback for a plain `docker run`. The
+# storage:link symlink is made here too, because public/ is read-only at
+# runtime; it serves uploads on the local disk (FILESYSTEM_DISK=local).
 RUN mkdir -p \
         storage/app/public \
         storage/framework/cache/data \
@@ -151,7 +157,11 @@ RUN mkdir -p \
         storage/framework/views \
         storage/logs \
         bootstrap/cache \
+    && ln -s /app/storage/app/public public/storage \
     && chown -R www-data:www-data storage bootstrap/cache
+
+# The entrypoint locks with flock and the healthcheck requests with curl.
+RUN command -v flock curl
 
 COPY <<'PHPINI' /usr/local/etc/php/conf.d/maildun.ini
 ; Campaign HTML and contact imports both exceed the stock 2M ceiling.
@@ -172,7 +182,7 @@ set -e
 
 if [ -z "${APP_KEY}" ]; then
     echo "APP_KEY is not set." >&2
-    echo "Generate one with: docker compose run --rm app php artisan key:generate --show" >&2
+    echo "Generate one with: docker compose run --rm --entrypoint php app artisan key:generate --show" >&2
     echo "It encrypts stored workspace mail credentials and automation tokens." >&2
     echo "Losing or changing it makes existing encrypted values unreadable." >&2
     exit 1
@@ -194,9 +204,10 @@ fi
 
 # Passport signs API tokens with these. They live under storage/, which is a
 # volume, so they survive restarts; regenerating them invalidates every token.
-if [ ! -f storage/oauth-private.key ]; then
-    php artisan passport:keys --no-interaction || true
-fi
+# The web server, Horizon and the scheduler share that volume and start
+# together, so the lock lets exactly one of them create the pair.
+flock storage/.passport-keys.lock sh -c \
+    '[ -f storage/oauth-private.key ] || php artisan passport:keys --no-interaction || true'
 
 php artisan config:cache
 php artisan route:cache

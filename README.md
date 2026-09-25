@@ -89,7 +89,7 @@ To explore with sample audiences and campaigns, pass `--demo` to the installer. 
 
 ```bash
 cp .env.example .env
-docker compose run --rm app php artisan key:generate --show   # paste into .env, and set DB_PASSWORD
+docker compose run --rm --entrypoint php app artisan key:generate --show   # paste into .env, and set DB_PASSWORD
 docker compose up -d
 docker compose exec app php artisan app:install --no-interaction \
     --admin-name="Your Name" --admin-email=you@example.com \

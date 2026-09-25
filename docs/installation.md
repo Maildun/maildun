@@ -75,7 +75,7 @@ drift apart.
 
 ```bash
 cp .env.example .env
-docker compose run --rm app php artisan key:generate --show
+docker compose run --rm --entrypoint php app artisan key:generate --show
 ```
 
 Put that key in `.env` as `APP_KEY`, set `DB_PASSWORD`, and set `APP_URL` to the
