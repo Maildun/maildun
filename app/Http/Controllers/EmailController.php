@@ -762,11 +762,12 @@ class EmailController extends Controller
             ->whereKey($page->modelKeys())
             ->pluck('email_deliveries.id')
             ->all();
-        $suppressedAddresses = EmailAddressHealth::query()
+        $suppressedAddresses = array_values(EmailAddressHealth::query()
             ->suppressedFor($email->team)
             ->whereIn('email_address_healths.email', $page->pluck('email_address'))
-            ->pluck('email_address_healths.email')
-            ->all();
+            ->get(['email_address_healths.email'])
+            ->map(fn (EmailAddressHealth $health): string => $health->email)
+            ->all());
 
         return $recipients->through(function (EmailDelivery $delivery) use ($canManage, $email, $retryableIds, $suppressedAddresses): array {
             $retryable = in_array($delivery->id, $retryableIds, true);
@@ -799,10 +800,19 @@ class EmailController extends Controller
      */
     private function retryBlockedReason(Email $email, EmailDelivery $delivery, array $suppressedAddresses): ?string
     {
+        if ($delivery->status === EmailDeliveryStatus::Bounced) {
+            return __('Permanent bounces are never retried.');
+        }
+
+        if ($delivery->status === EmailDeliveryStatus::Complained) {
+            return __('Spam complaints are never retried.');
+        }
+
+        if (! $delivery->status->isRetryable()) {
+            return null;
+        }
+
         return match (true) {
-            $delivery->status === EmailDeliveryStatus::Bounced => __('Permanent bounces are never retried.'),
-            $delivery->status === EmailDeliveryStatus::Complained => __('Spam complaints are never retried.'),
-            ! $delivery->status->isRetryable() => null,
             $email->status->isActive() => __('Wait until this campaign finishes sending.'),
             $delivery->subscriber !== null
                 && $delivery->subscriber->status !== SubscriberStatus::Subscribed => __('This recipient has unsubscribed.'),
@@ -889,7 +899,7 @@ class EmailController extends Controller
     protected function subscribedCount(Team $team): array
     {
         return [
-            'subscribers as subscribed_count' => fn (Builder $query) => $query->sendableFor($team),
+            'subscribers as subscribed_count' => fn (Builder $query) => $query->scopes(['sendableFor' => [$team]]),
         ];
     }
 
@@ -926,7 +936,7 @@ class EmailController extends Controller
      */
     private function suppressedRecipients(Email $email): array
     {
-        $reasons = EmailAddressHealth::query()
+        $reasons = array_values(EmailAddressHealth::query()
             ->suppressedFor($email->team)
             ->whereIn(
                 'email_address_healths.email',
@@ -945,8 +955,7 @@ class EmailController extends Controller
                 'label' => EmailAddressHealthReason::tryFrom((string) $row->reason)?->label() ?? __('Suppressed'),
                 'count' => (int) $row->recipients,
             ])
-            ->values()
-            ->all();
+            ->all());
 
         return [
             'count' => array_sum(array_column($reasons, 'count')),
