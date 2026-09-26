@@ -7,6 +7,7 @@ import {
     MailSend01Icon,
     MoreHorizontalIcon,
     Upload01Icon,
+    Clock01Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, router, setLayoutProps, useForm } from '@inertiajs/react';
@@ -64,6 +65,7 @@ import {
 import { cn } from '@/lib/utils';
 import {
     index,
+    log,
     publish,
     unpublish,
     update,
@@ -527,6 +529,22 @@ export default function TransactionalEdit({
                                         className="w-52"
                                     >
                                         <DropdownMenuGroup>
+                                            <DropdownMenuItem
+                                                data-test="transactional-log-link"
+                                                render={
+                                                    <Link
+                                                        href={log([
+                                                            currentTeam.slug,
+                                                            email.uuid,
+                                                        ])}
+                                                    />
+                                                }
+                                            >
+                                                <HugeiconsIcon
+                                                    icon={Clock01Icon}
+                                                />
+                                                Delivery log
+                                            </DropdownMenuItem>
                                             <DropdownMenuItem
                                                 data-test="send-test-button"
                                                 onClick={() =>

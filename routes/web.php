@@ -33,6 +33,7 @@ use App\Http\Controllers\SubscriptionConfirmationController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\TeamSenderVerificationController;
 use App\Http\Controllers\TransactionalEmailController;
+use App\Http\Controllers\TransactionalEmailLogController;
 use App\Http\Controllers\UnsubscribeController;
 use App\Http\Middleware\EnsureInstallationIsPending;
 use App\Http\Middleware\EnsureTeamMembership;
@@ -275,6 +276,8 @@ Route::prefix('{current_team}')
                 ->parameters(['transactional-emails' => 'transactionalEmail'])
                 ->names('transactional_emails')
                 ->only(['index', 'store', 'edit', 'update', 'destroy']);
+            Route::get('transactional-emails/{transactionalEmail}/log', TransactionalEmailLogController::class)
+                ->name('transactional_emails.log');
             Route::post('transactional-emails/{transactionalEmail}/publish', [TransactionalEmailController::class, 'publish'])
                 ->name('transactional_emails.publish');
             Route::post('transactional-emails/{transactionalEmail}/unpublish', [TransactionalEmailController::class, 'unpublish'])
