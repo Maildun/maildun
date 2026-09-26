@@ -3,6 +3,7 @@ import { AppShell } from '@/components/app-shell';
 import { AppSidebar } from '@/components/app-sidebar';
 import { AppSidebarHeader } from '@/components/app-sidebar-header';
 import { AttributionBadge } from '@/components/attribution-badge';
+import { DeliveryPausedBanner } from '@/components/delivery-paused-banner';
 import { cn } from '@/lib/utils';
 import type { AppLayoutProps } from '@/types';
 
@@ -42,6 +43,7 @@ export default function AppSidebarLayout({
                             fullscreen && 'p-0',
                         )}
                     >
+                        {!fullscreen && <DeliveryPausedBanner />}
                         {children}
                     </div>
                     <AttributionBadge

@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Actions\Teams\BuildOnboardingChecklist;
 use App\Models\Email;
+use App\Models\TeamEmailIntegration;
 use App\Services\AppUpdateChecker;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -58,6 +59,12 @@ class HandleInertiaRequests extends Middleware
             'appUpdate' => fn () => $user?->currentTeam && $user->ownsTeam($user->currentTeam)
                 ? $this->updates->status()
                 : null,
+            // A connection exists but no longer passes its test (credentials
+            // changed, incomplete, or never retested), so every campaign,
+            // automation and transactional send is refused until it is fixed.
+            'deliveryPaused' => fn (): bool => $user?->currentTeam !== null
+                && ($integration = $user->currentTeam->emailIntegration()->first()) instanceof TeamEmailIntegration
+                && ! $integration->isVerified(),
             'recentCampaigns' => fn () => $user?->currentTeam
                 ? $user->currentTeam->emails()
                     ->select(['uuid', 'name', 'status', 'updated_at'])

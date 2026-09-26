@@ -9,6 +9,7 @@ use App\Models\Email;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use App\Models\Team;
+use App\Models\TeamEmailIntegration;
 use App\Models\TeamInvitation;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -223,3 +224,21 @@ test('dashboard does not include or delete other users invitations', function ()
         'id' => $invitation->id,
     ]);
 });
+
+test('sending is reported as paused only when the delivery connection fails its test', function (?string $state, bool $paused) {
+    $user = User::factory()->create();
+
+    if ($state === 'tested') {
+        TeamEmailIntegration::factory()->for($user->currentTeam)->smtp()->create();
+    } elseif ($state === 'untested') {
+        TeamEmailIntegration::factory()->for($user->currentTeam)->smtp()->untested()->create();
+    }
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page->where('deliveryPaused', $paused));
+})->with([
+    'no connection yet' => [null, false],
+    'a tested connection' => ['tested', false],
+    'a connection that needs a new test' => ['untested', true],
+]);
