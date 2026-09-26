@@ -6,6 +6,7 @@ use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailProvider;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
+use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
 use App\Models\EmailProviderEvent;
@@ -405,6 +406,52 @@ test('a transient bounce cannot regress an already delivered attempt', function 
         ->and($attempt->fresh()->delayed_at)->toBeNull()
         ->and($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Delivered)
         ->and($delivery->fresh()->delayed_at)->toBeNull();
+});
+
+test('an SES reject marks the delivery rejected without suppressing the address', function () {
+    $topicArn = sesFeedbackTopic();
+    $subscriber = Subscriber::factory()->create();
+    $delivery = EmailDelivery::factory()->create([
+        'subscriber_id' => $subscriber->id,
+        'provider' => EmailProvider::AmazonSes,
+        'status' => EmailDeliveryStatus::Sent,
+    ]);
+    $attempt = createSesFeedbackAttempt($delivery, $topicArn);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    app(ProcessSesEvent::class)->handle('sns-reject', [
+        'eventType' => 'Reject',
+        'mail' => [
+            'timestamp' => now()->toISOString(),
+            'tags' => ['attempt_uuid' => [$attempt->uuid]],
+        ],
+        'reject' => ['reason' => 'Bad content'],
+    ], $topicArn);
+
+    expect($attempt->fresh()->status)->toBe(EmailDeliveryStatus::Rejected)
+        ->and($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Rejected)
+        ->and($delivery->fresh()->failure_reason)->toBe('Amazon SES rejected the message: Bad content')
+        ->and($subscriber->fresh()->status)->toBe(SubscriberStatus::Subscribed);
+    expect(EmailAddressHealth::query()->where('email', $delivery->email_address)->exists())->toBeFalse();
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('a late SES reject cannot undo a delivered message', function () {
+    $topicArn = sesFeedbackTopic();
+    $delivery = EmailDelivery::factory()->create([
+        'provider' => EmailProvider::AmazonSes,
+        'status' => EmailDeliveryStatus::Delivered,
+    ]);
+    $attempt = createSesFeedbackAttempt($delivery, $topicArn, ['status' => EmailDeliveryStatus::Delivered]);
+
+    app(ProcessSesEvent::class)->handle('sns-late-reject', [
+        'eventType' => 'Reject',
+        'mail' => ['tags' => ['attempt_uuid' => [$attempt->uuid]]],
+        'reject' => ['reason' => 'Bad content'],
+    ], $topicArn);
+
+    expect($attempt->fresh()->status)->toBe(EmailDeliveryStatus::Delivered)
+        ->and($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Delivered);
 });
 
 test('a complaint updates the latest attempt and unsubscribes the recipient', function () {

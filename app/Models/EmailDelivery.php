@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailFailureCode;
 use App\Enums\SubscriberStatus;
 use Database\Factories\EmailDeliveryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -20,6 +21,7 @@ use Illuminate\Support\Str;
  * @property int $id
  * @property string $uuid
  * @property int $email_id
+ * @property int|null $email_send_run_id
  * @property int|null $subscriber_id
  * @property int|null $contact_id
  * @property string $email_address
@@ -31,6 +33,7 @@ use Illuminate\Support\Str;
  * @property bool $uses_team_email_integration
  * @property string|null $provider_message_id
  * @property string|null $failure_reason
+ * @property EmailFailureCode|null $failure_code
  * @property Carbon|null $send_attempted_at
  * @property int $opens_count
  * @property int $clicks_count
@@ -51,8 +54,8 @@ use Illuminate\Support\Str;
  * @property-read EmailDeliveryAttempt|null $latestAttempt
  */
 #[Fillable([
-    'email_id', 'subscriber_id', 'contact_id', 'email_address', 'first_name', 'last_name', 'merge_data',
-    'status', 'provider', 'uses_team_email_integration', 'provider_message_id', 'failure_reason', 'send_attempted_at', 'sent_at',
+    'email_id', 'email_send_run_id', 'subscriber_id', 'contact_id', 'email_address', 'first_name', 'last_name', 'merge_data',
+    'status', 'provider', 'uses_team_email_integration', 'provider_message_id', 'failure_reason', 'failure_code', 'send_attempted_at', 'sent_at',
     'delivered_at', 'delayed_at', 'bounced_at', 'complained_at',
     'first_opened_at', 'last_opened_at', 'first_clicked_at', 'last_clicked_at',
     'opens_count', 'clicks_count',
@@ -73,6 +76,12 @@ class EmailDelivery extends Model
     public function email(): BelongsTo
     {
         return $this->belongsTo(Email::class);
+    }
+
+    /** @return BelongsTo<EmailSendRun, $this> */
+    public function sendRun(): BelongsTo
+    {
+        return $this->belongsTo(EmailSendRun::class, 'email_send_run_id');
     }
 
     /** @return BelongsTo<Subscriber, $this> */
@@ -115,6 +124,7 @@ class EmailDelivery extends Model
     {
         return [
             'status' => EmailDeliveryStatus::class,
+            'failure_code' => EmailFailureCode::class,
             'uses_team_email_integration' => 'boolean',
             'merge_data' => 'array',
             'send_attempted_at' => 'datetime', 'sent_at' => 'datetime',
@@ -132,7 +142,7 @@ class EmailDelivery extends Model
 
     /**
      * Deliveries a deliberate retry may queue again: a retryable outcome, a
-     * subscriber who is still subscribed (or was deleted), and an address the
+     * subscriber who is still subscribed and confirmed (or was deleted), and an address the
      * workspace has not suppressed after a permanent bounce or complaint.
      *
      * @param  Builder<$this>  $query
@@ -146,7 +156,9 @@ class EmailDelivery extends Model
                     ->whereNull('subscriber_id')
                     ->orWhereHas(
                         'subscriber',
-                        fn (Builder $subscriber) => $subscriber->where('status', SubscriberStatus::Subscribed),
+                        fn (Builder $subscriber) => $subscriber
+                            ->where('status', SubscriberStatus::Subscribed)
+                            ->whereNotNull('subscribed_at'),
                     );
             })
             ->whereNotExists(

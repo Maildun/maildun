@@ -10,3 +10,6 @@ A workspace may store one encrypted connection per EmailProvider, but normal del
 
 ## Multiple named email connections
 Supersedes the earlier one-connection-per-EmailProvider rule. The overview may list multiple named connections for one provider and must link/manage/mark active by integration UUID, not provider value; only teams.active_email_integration_id selects the sender.
+
+## One email connection per workspace (supersedes multi-connection rules)
+Supersedes the "active sender" and "multiple named connections" rules above. Migration enforce_single_email_delivery_per_workspace makes team_email_integrations one-per-team; Team::emailIntegration() is a HasOne (emailIntegrations() is only an alias for scoped route binding). There is no active_email_integration_id to select or clear — the workspace's single connection is what TeamMailer resolves, fresh and team-scoped, at send time.

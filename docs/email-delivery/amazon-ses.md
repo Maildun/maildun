@@ -21,7 +21,7 @@ Create narrowly scoped IAM credentials for the same AWS account and region enter
 2. Create a configuration set, for example `maildun-feedback`.
 3. In Amazon SNS, create a topic in the same region as the configuration set.
 4. Add an SNS event destination to the configuration set.
-5. Enable **Delivery, Bounce, and Complaint** events only. Maildun provides its own campaign open and click tracking.
+5. Enable **Delivery, Bounce, and Complaint** events. Also enable **Reject** so messages SES refuses to send show as `Rejected`. Leave Open and Click off: Maildun provides its own campaign open and click tracking.
 6. In Maildun, add an Amazon SES provider and enter the AWS region, IAM access key ID, IAM secret access key, configuration set, and SNS topic ARN.
 7. Save the provider, then copy its **SNS webhook URL**.
 8. Subscribe the SNS topic to that URL using the HTTPS protocol. Maildun validates the signed SNS message and confirms the subscription automatically.
@@ -39,6 +39,7 @@ Maildun adds the configuration set and its own correlation tags to campaign mess
 | Transient bounce         | The matching non-terminal attempt becomes `Delayed`.                                 |
 | Permanent bounce         | The matching attempt becomes `Bounced`, and a subscribed contact is unsubscribed.    |
 | Complaint                | The matching attempt becomes `Complained`, and a subscribed contact is unsubscribed. |
+| Reject                   | The matching attempt becomes `Rejected` unless it already has a final outcome. The address is not suppressed. |
 
 Maildun stores each SNS event once, verifies the AWS signature, and accepts events only from the SNS topic configured for that connection.
 

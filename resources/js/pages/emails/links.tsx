@@ -45,7 +45,9 @@ export default function EmailLinks({
                 <CardHeader>
                     <CardTitle>Tracked links</CardTitle>
                     <CardDescription>
-                        Total clicks across every recipient.
+                        Unique clicks count each recipient once; total clicks
+                        count every click. Click rate is unique clicks out of
+                        all recipients.
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -59,7 +61,13 @@ export default function EmailLinks({
                                 <TableRow>
                                     <TableHead>Destination</TableHead>
                                     <TableHead className="text-right">
-                                        Clicks
+                                        Unique clicks
+                                    </TableHead>
+                                    <TableHead className="text-right">
+                                        Total clicks
+                                    </TableHead>
+                                    <TableHead className="text-right">
+                                        Click rate
                                     </TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -70,7 +78,15 @@ export default function EmailLinks({
                                             {link.url}
                                         </TableCell>
                                         <TableCell className="text-right tabular-nums">
-                                            {link.clicks}
+                                            {link.unique_clicks.toLocaleString()}
+                                        </TableCell>
+                                        <TableCell className="text-right tabular-nums">
+                                            {link.clicks.toLocaleString()}
+                                        </TableCell>
+                                        <TableCell className="text-right tabular-nums">
+                                            {campaign.recipient_count > 0
+                                                ? `${Math.round((link.unique_clicks / campaign.recipient_count) * 1000) / 10}%`
+                                                : '—'}
                                         </TableCell>
                                     </TableRow>
                                 ))}

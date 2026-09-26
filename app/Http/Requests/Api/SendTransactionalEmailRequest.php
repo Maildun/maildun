@@ -3,7 +3,9 @@
 namespace App\Http\Requests\Api;
 
 use App\Models\TeamApiKey;
+use Illuminate\Contracts\Validation\Validator as ValidatorContract;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Validator;
 
@@ -34,6 +36,19 @@ class SendTransactionalEmailRequest extends FormRequest
             'data.*' => ['nullable'],
             'idempotency_key' => ['sometimes', 'string', 'max:255'],
         ];
+    }
+
+    /**
+     * API callers branch on the code, so a validation failure carries one
+     * like every other error from this endpoint.
+     */
+    protected function failedValidation(ValidatorContract $validator): void
+    {
+        throw new HttpResponseException(response()->json([
+            'message' => $validator->errors()->first(),
+            'code' => 'validation_failed',
+            'errors' => $validator->errors(),
+        ], 422));
     }
 
     /** @return array<int, callable(Validator): void> */

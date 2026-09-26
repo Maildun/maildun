@@ -29,7 +29,7 @@ class SubscribeToAudience
             $audience = Audience::query()->whereKey($subscribeForm->audience_id)->lockForUpdate()->firstOrFail();
             $subscriber = $audience->subscribers()->where('email', $data['email'])->first();
 
-            if ($subscriber?->status === SubscriberStatus::Subscribed) {
+            if ($subscriber?->status === SubscriberStatus::Subscribed && ! $subscriber->isPendingConfirmation()) {
                 return $subscriber;
             }
 

@@ -131,6 +131,9 @@ jobs:
       # How Coolify-style platforms (Managed WP) install it: real environment
       # variables, no .env, and a read-only application root. The installer
       # must migrate, create the administrator and leave no .env behind.
+      # The database is a file in /tmp, not :memory:, because the installer
+      # rebuilds the config cache near the end and the reconnect would drop
+      # an in-memory database before the final summary reads it.
       - name: Verify the installer runs on a platform-managed environment
         run: |
           KEY="base64:$(head -c 32 /dev/urandom | base64)"
@@ -138,13 +141,13 @@ jobs:
           docker run --rm \
             -e APP_KEY="$KEY" \
             -e DB_CONNECTION=sqlite \
-            -e DB_DATABASE=:memory: \
+            -e DB_DATABASE=/tmp/maildun-ci.sqlite \
             -e CACHE_STORE=array \
             -e SESSION_DRIVER=array \
             -e QUEUE_CONNECTION=sync \
             -e ADMIN_PASSWORD="$PASSWORD" \
             maildun:ci \
-            sh -c 'php artisan app:install --no-interaction --force --skip-storage --registration=closed \
+            sh -c 'touch "$DB_DATABASE" && php artisan app:install --no-interaction --force --skip-storage --registration=closed \
               --admin-name="CI Admin" --admin-email=ci@example.com --admin-password="$ADMIN_PASSWORD" \
               && test ! -f .env'
 

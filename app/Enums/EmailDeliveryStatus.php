@@ -13,6 +13,8 @@ enum EmailDeliveryStatus: string
     case Complained = 'complained';
     case Rejected = 'rejected';
     case Failed = 'failed';
+    /** Never handed to the provider because the campaign was stopped. */
+    case Cancelled = 'cancelled';
 
     /**
      * Transient send problems that can be queued again. Permanent bounces and

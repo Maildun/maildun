@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\EmailEditor;
 use App\Enums\EmailStatus;
+use App\Enums\TestSendStatus;
 use Database\Factories\EmailFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Collection;
@@ -36,6 +37,7 @@ use Illuminate\Support\Str;
  * @property string|null $plain_text
  * @property string|null $query_string
  * @property-read EmailTrackingAggregate|null $trackingAggregate
+ * @property-read EmailSendRun|null $latestSendRun
  * @property-read Collection<int, EmailTrackingInsightAggregate> $insightAggregates
  * @property bool $track_clicks
  * @property bool $track_opens
@@ -43,7 +45,12 @@ use Illuminate\Support\Str;
  * @property string|null $batch_id
  * @property int $recipient_count
  * @property Carbon|null $last_tested_at
+ * @property TestSendStatus|null $last_test_status
+ * @property string|null $last_test_recipient
+ * @property string|null $last_test_error
  * @property Carbon|null $send_started_at
+ * @property Carbon|null $scheduled_at
+ * @property string|null $schedule_error
  * @property Carbon|null $sent_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -78,6 +85,8 @@ use Illuminate\Support\Str;
     'recipient_count',
     'send_started_at',
     'sent_at',
+    'scheduled_at',
+    'schedule_error',
 ])]
 class Email extends Model
 {
@@ -126,6 +135,18 @@ class Email extends Model
     public function deliveries(): HasMany
     {
         return $this->hasMany(EmailDelivery::class);
+    }
+
+    /** @return HasMany<EmailSendRun, $this> */
+    public function sendRuns(): HasMany
+    {
+        return $this->hasMany(EmailSendRun::class);
+    }
+
+    /** @return HasOne<EmailSendRun, $this> */
+    public function latestSendRun(): HasOne
+    {
+        return $this->hasOne(EmailSendRun::class)->latestOfMany();
     }
 
     /** @return HasMany<EmailLink, $this> */
@@ -192,6 +213,8 @@ class Email extends Model
             'track_clicks' => 'boolean',
             'track_opens' => 'boolean',
             'last_tested_at' => 'datetime',
+            'scheduled_at' => 'datetime',
+            'last_test_status' => TestSendStatus::class,
             'send_started_at' => 'datetime',
             'sent_at' => 'datetime',
         ];

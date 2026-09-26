@@ -43,7 +43,7 @@ class SubscribeViaApi
                 'last_name' => $contact->last_name,
             ];
 
-            if ($subscriber?->status === SubscriberStatus::Subscribed) {
+            if ($subscriber?->status === SubscriberStatus::Subscribed && ! $subscriber->isPendingConfirmation()) {
                 $subscriber->update([
                     ...$profile,
                     ...($attributeValues === [] ? [] : [

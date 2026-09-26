@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AutomationStatus;
+use App\Enums\EmailProvider;
 use App\Enums\SubscriberStatus;
 use App\Models\Email;
 use App\Models\EmailDelivery;
@@ -62,6 +63,7 @@ class DashboardController extends Controller
      *         status: string,
      *         recipients: int,
      *         delivered: int,
+     *         deliveryReported: bool,
      *         sentAt: string|null
      *     }>
      * }
@@ -74,6 +76,7 @@ class DashboardController extends Controller
 
         $deliveryStats = EmailDelivery::query()
             ->whereHas('email', fn (Builder $query): Builder => $query->where('team_id', $team->id))
+            ->where('provider', EmailProvider::AmazonSes)
             ->whereNotNull('sent_at')
             ->where('sent_at', '>=', $periodStart)
             ->toBase()
@@ -113,6 +116,7 @@ class DashboardController extends Controller
                 ])
                 ->withCount([
                     'deliveries as delivered_count' => fn (Builder $query): Builder => $query->whereNotNull('delivered_at'),
+                    'deliveries as ses_delivery_count' => fn (Builder $query): Builder => $query->where('provider', EmailProvider::AmazonSes),
                 ])
                 ->whereNotNull('send_started_at')
                 ->latest('send_started_at')
@@ -124,6 +128,7 @@ class DashboardController extends Controller
                     'status' => $campaign->status->value,
                     'recipients' => $campaign->recipient_count,
                     'delivered' => (int) $campaign->getAttribute('delivered_count'),
+                    'deliveryReported' => (int) $campaign->getAttribute('ses_delivery_count') > 0,
                     'sentAt' => ($campaign->sent_at ?? $campaign->send_started_at)?->toIso8601String(),
                 ])
                 ->all()),

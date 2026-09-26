@@ -3,6 +3,7 @@ import {
     ArrowLeft01Icon,
     Attachment01Icon,
     CheckmarkCircle02Icon,
+    Clock01Icon,
     Delete02Icon,
     Edit03Icon,
     File01Icon,
@@ -73,6 +74,12 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
 import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
+import {
     firstUploadErrorMessage,
     useUploadToast,
 } from '@/hooks/use-upload-toast';
@@ -88,7 +95,13 @@ import {
     toReaderDocument,
 } from '@/lib/email-builder';
 import { cn } from '@/lib/utils';
-import { checkLinks, index, previewAndSend, update } from '@/routes/emails';
+import {
+    checkLinks,
+    index,
+    previewAndSend,
+    unschedule,
+    update,
+} from '@/routes/emails';
 import {
     destroy as destroyAttachment,
     store as storeAttachments,
@@ -102,6 +115,7 @@ import type {
     EmailSenderDefaults,
     EmailSenderOption,
     MediaLibraryData,
+    SendReadiness,
 } from '@/types';
 
 type Props = {
@@ -113,6 +127,7 @@ type Props = {
     canManage: boolean;
     currentTeam: { slug: string };
     mediaLibrary: MediaLibraryData | null;
+    sendReadiness: SendReadiness;
 };
 
 /** The Select primitive has no "empty" value, so absence gets its own key. */
@@ -219,9 +234,11 @@ export default function EmailEdit({
     canManage,
     currentTeam,
     mediaLibrary,
+    sendReadiness,
 }: Props) {
     const [view, setView] = useState<'hub' | 'design'>('hub');
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
+    const [cancellingSchedule, setCancellingSchedule] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
     const [tagsDialogOpen, setTagsDialogOpen] = useState(false);
@@ -371,6 +388,19 @@ export default function EmailEdit({
         );
     };
 
+    const cancelSchedule = () => {
+        router.delete(unschedule.url([currentTeam.slug, email.uuid]), {
+            preserveScroll: true,
+            onStart: () => setCancellingSchedule(true),
+            onFinish: () => setCancellingSchedule(false),
+            onError: () =>
+                toast.add({
+                    type: 'error',
+                    title: 'The schedule could not be cancelled.',
+                }),
+        });
+    };
+
     const runLinkCheck = () => {
         void linkCheck
             .get(checkLinks.url([currentTeam.slug, email.uuid]), {
@@ -449,6 +479,26 @@ export default function EmailEdit({
         saveDraft(() => setOpenSection(null));
     };
 
+    /**
+     * Closing a section dialog without saving (Cancel, Esc, clicking outside)
+     * puts that section's fields back to their saved values, so abandoned
+     * edits never linger in the form or block Preview and Send.
+     */
+    const changeSection = (section: DialogSection, open: boolean) => {
+        if (open) {
+            setOpenSection(section);
+
+            return;
+        }
+
+        const fields = (SECTIONS.find((entry) => entry.value === section)
+            ?.fields ?? []) as (keyof typeof form.data)[];
+
+        form.reset(...fields);
+        form.clearErrors(...fields);
+        setOpenSection(null);
+    };
+
     const openTemplateDialog = () => {
         const isBuilder = email.editor === 'builder';
         const sourceEditor = isSourceEditor(email.editor) ? email.editor : null;
@@ -501,12 +551,26 @@ export default function EmailEdit({
     const senderDone = Boolean(senderAddress);
     const recipientsDone = form.data.audience !== null && recipientCount > 0;
     const subjectDone = form.data.subject.trim() !== '';
-    const readyToSend =
-        subjectDone &&
-        hasBody &&
+    // Workspace setup the hub cannot fix itself; recipients and content are
+    // covered by the live form checks below.
+    const setupProblems = sendReadiness.checks.filter(
+        (check) =>
+            !check.passed &&
+            (check.key === 'provider' || check.key === 'sender'),
+    );
+    const sendBlockers = [
+        !subjectDone && 'Add a subject line',
+        !hasBody && 'Design the email',
+        form.data.audience === null && 'Choose recipients',
         form.data.audience !== null &&
-        recipientCount > 0 &&
-        !form.isDirty;
+            recipientCount === 0 &&
+            'The selected recipients have nobody to send to',
+        form.isDirty && 'Save your changes',
+        ...setupProblems.map((check) => check.message),
+    ].filter((blocker): blocker is string => typeof blocker === 'string');
+    const readyToSend = sendBlockers.length === 0;
+
+    useUnsavedChanges(form.isDirty);
 
     const senderSummary = senderAddress
         ? [senderName, senderAddress].filter(Boolean).join(' · ')
@@ -750,13 +814,39 @@ export default function EmailEdit({
                                                 Preview and Send
                                             </Link>
                                         ) : (
-                                            <Button
-                                                type="button"
-                                                disabled
-                                                data-test="preview-and-send-button"
-                                            >
-                                                Preview and Send
-                                            </Button>
+                                            <Tooltip>
+                                                <TooltipTrigger
+                                                    render={<span />}
+                                                >
+                                                    <Button
+                                                        type="button"
+                                                        disabled
+                                                        data-test="preview-and-send-button"
+                                                        aria-describedby="preview-and-send-blockers"
+                                                    >
+                                                        Preview and Send
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <ul
+                                                        id="preview-and-send-blockers"
+                                                        data-test="preview-and-send-blockers"
+                                                        className="flex flex-col gap-0.5"
+                                                    >
+                                                        {sendBlockers.map(
+                                                            (blocker) => (
+                                                                <li
+                                                                    key={
+                                                                        blocker
+                                                                    }
+                                                                >
+                                                                    {blocker}
+                                                                </li>
+                                                            ),
+                                                        )}
+                                                    </ul>
+                                                </TooltipContent>
+                                            </Tooltip>
                                         )}
                                         <DropdownMenu>
                                             <DropdownMenuTrigger
@@ -809,6 +899,86 @@ export default function EmailEdit({
                                 )}
                             </div>
                         </div>
+                        {email.scheduled_at ? (
+                            <Alert data-test="campaign-scheduled">
+                                <HugeiconsIcon icon={Clock01Icon} />
+                                <AlertTitle>
+                                    Scheduled to send{' '}
+                                    {new Date(
+                                        email.scheduled_at,
+                                    ).toLocaleString(undefined, {
+                                        dateStyle: 'medium',
+                                        timeStyle: 'short',
+                                    })}
+                                </AlertTitle>
+                                <AlertDescription>
+                                    <p>
+                                        Maildun starts the send at this time
+                                        (shown in your browser's time zone).
+                                        Edits you save before then are included.
+                                    </p>
+                                    {canManage ? (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="mt-2"
+                                            data-test="cancel-schedule-button"
+                                            disabled={cancellingSchedule}
+                                            onClick={cancelSchedule}
+                                        >
+                                            Cancel schedule
+                                        </Button>
+                                    ) : null}
+                                </AlertDescription>
+                            </Alert>
+                        ) : null}
+                        {email.schedule_error ? (
+                            <Alert
+                                variant="destructive"
+                                data-test="campaign-schedule-error"
+                            >
+                                <HugeiconsIcon icon={Alert01Icon} />
+                                <AlertTitle>
+                                    The scheduled send did not start
+                                </AlertTitle>
+                                <AlertDescription>
+                                    {email.schedule_error} Fix the problem, then
+                                    send or schedule the campaign again.
+                                </AlertDescription>
+                            </Alert>
+                        ) : null}
+                        {canManage && setupProblems.length > 0 ? (
+                            <Alert
+                                variant="warning"
+                                data-test="campaign-setup-problems"
+                            >
+                                <HugeiconsIcon icon={Alert01Icon} />
+                                <AlertTitle>
+                                    This workspace cannot send yet
+                                </AlertTitle>
+                                <AlertDescription>
+                                    <ul className="flex flex-col gap-1">
+                                        {setupProblems.map((check) => (
+                                            <li key={check.key}>
+                                                {check.message}{' '}
+                                                {check.action_url ? (
+                                                    <a
+                                                        href={check.action_url}
+                                                        className="font-medium text-foreground underline underline-offset-4"
+                                                    >
+                                                        {check.key ===
+                                                        'provider'
+                                                            ? 'Set up email delivery'
+                                                            : 'Manage senders'}
+                                                    </a>
+                                                ) : null}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </AlertDescription>
+                            </Alert>
+                        ) : null}
                         <div className="overflow-hidden rounded-2xl border bg-card">
                             <div className="divide-y">
                                 <CampaignSetupRow
@@ -926,7 +1096,7 @@ export default function EmailEdit({
 
             <Dialog
                 open={openSection === 'name'}
-                onOpenChange={(open) => setOpenSection(open ? 'name' : null)}
+                onOpenChange={(open) => changeSection('name', open)}
             >
                 <DialogContent>
                     <DialogHeader>
@@ -967,7 +1137,7 @@ export default function EmailEdit({
 
             <Dialog
                 open={openSection === 'sender'}
-                onOpenChange={(open) => setOpenSection(open ? 'sender' : null)}
+                onOpenChange={(open) => changeSection('sender', open)}
             >
                 <DialogContent>
                     <DialogHeader>
@@ -1054,9 +1224,7 @@ export default function EmailEdit({
 
             <Dialog
                 open={openSection === 'recipients'}
-                onOpenChange={(open) =>
-                    setOpenSection(open ? 'recipients' : null)
-                }
+                onOpenChange={(open) => changeSection('recipients', open)}
             >
                 <DialogContent>
                     <DialogHeader>
@@ -1181,7 +1349,7 @@ export default function EmailEdit({
 
             <Dialog
                 open={openSection === 'subject'}
-                onOpenChange={(open) => setOpenSection(open ? 'subject' : null)}
+                onOpenChange={(open) => changeSection('subject', open)}
             >
                 <DialogContent>
                     <DialogHeader>
@@ -1246,9 +1414,7 @@ export default function EmailEdit({
 
             <Dialog
                 open={openSection === 'settings'}
-                onOpenChange={(open) =>
-                    setOpenSection(open ? 'settings' : null)
-                }
+                onOpenChange={(open) => changeSection('settings', open)}
             >
                 <DialogContent className="max-h-[min(40rem,calc(100vh-4rem))] overflow-y-auto">
                     <DialogHeader>

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Teams;
 
+use App\Actions\Emails\BuildSesFeedbackHeartbeat;
 use App\Enums\EmailProvider;
 use App\Enums\TeamPermission;
 use App\Http\Controllers\Controller;
@@ -12,6 +13,7 @@ use App\Jobs\SendTeamEmailIntegrationTest;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
+use App\Services\SesAccountLimits;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -258,6 +260,10 @@ class TeamEmailIntegrationController extends Controller
             'sender' => $this->senderData($team),
             'canManage' => $request->user()->hasTeamPermission($team, TeamPermission::UpdateTeam),
             'webhookUrl' => route('webhooks.aws.ses'),
+            // Loaded after the page renders so the AWS call never delays it.
+            'sesLimits' => Inertia::defer(fn (): ?array => $integration instanceof TeamEmailIntegration && $integration->isVerified()
+                ? app(SesAccountLimits::class)->fetch($integration)
+                : null),
         ]);
     }
 
@@ -329,6 +335,7 @@ class TeamEmailIntegrationController extends Controller
             'delivery_is_verified' => $integration->isVerified(),
             'verified_sender_count' => $integration->verifiedSenders()->count(),
             'configuration_is_complete' => $integration->hasCompleteConfiguration(),
+            'feedback' => app(BuildSesFeedbackHeartbeat::class)->handle($integration),
         ];
     }
 

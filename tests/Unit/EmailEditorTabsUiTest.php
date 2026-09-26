@@ -75,8 +75,9 @@ test('campaign delivery opens one dedicated recipient-personalized preview page'
         ->toContain('side="right"')
         ->toContain('data-test="campaign-preview-subscribe"')
         ->toContain('data-test="campaign-preview-missing-unsubscribe"')
-        ->toContain('variant="warning"')
-        ->toContain('This campaign has no unsubscribe link')
+        ->toContain('Maildun will add an unsubscribe footer')
+        ->toContain('every recipient still gets one in a standard footer')
+        ->not->toContain('This campaign has no unsubscribe link')
         ->toContain("{'{{ unsubscribe_url }}'}")
         ->toContain('pointer-events-none block origin-top-left overflow-hidden border-0 bg-background')
         ->toContain('previewDocumentHeight * previewScale')
@@ -142,7 +143,15 @@ test('campaign design view fills leftover height and hub dialogs use the default
         ->toContain('<DialogContent>')
         ->not->toContain('w-2xl')
         ->not->toContain('max-w-96')
-        ->toContain("subjectDone &&\n        hasBody &&\n        form.data.audience !== null &&\n        recipientCount > 0 &&\n        !form.isDirty")
+        ->toContain("!subjectDone && 'Add a subject line'")
+        ->toContain("!hasBody && 'Design the email'")
+        ->toContain("form.data.audience === null && 'Choose recipients'")
+        ->toContain("form.isDirty && 'Save your changes'")
+        ->toContain('const readyToSend = sendBlockers.length === 0;')
+        ->toContain('data-test="preview-and-send-blockers"')
+        ->toContain('form.reset(...fields);')
+        ->toContain("onOpenChange={(open) => changeSection('recipients', open)}")
+        ->toContain('useUnsavedChanges(form.isDirty);')
         ->not->toContain('min-h-full min-w-0 flex-col gap-4')
         ->and($row)->toContain('CheckmarkCircleSolidIcon')
         ->toContain('text-success')
@@ -209,4 +218,33 @@ test('the sliding tab indicator stays aligned when the tab list scrolls', functi
     expect($source)->toBeString()
         ->toContain('triggerRect.left - listRect.left + list.scrollLeft')
         ->toContain('inline-flex w-fit shrink-0 items-center');
+});
+
+test('preview and send lists pre-send content checks', function () {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/preview-and-send.tsx');
+
+    expect($source)->toBeString()
+        ->toContain('data-test="campaign-preview-content-issues"')
+        ->toContain('<ContentIssuesCallout issues={contentIssues} />')
+        ->toContain('things to check before sending');
+});
+
+test('preview and send checks links automatically when it opens', function () {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/preview-and-send.tsx');
+
+    expect($source)->toBeString()
+        ->toContain('linkCheckStarted.current = true;')
+        ->toContain('checkLinks.url([currentTeam.slug, campaign.uuid])')
+        ->toContain('data-test="campaign-preview-broken-links"');
+});
+
+test('sending a campaign asks for confirmation and shows readiness blockers', function () {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/preview-and-send.tsx');
+
+    expect($source)->toBeString()
+        ->toContain('onClick={() => setConfirmSendOpen(true)}')
+        ->toContain('data-test="confirm-send-dialog"')
+        ->toContain('data-test="confirm-send-blockers"')
+        ->toContain('Sending cannot be undone.')
+        ->toMatch('/data-test="confirm-send-campaign"\s+disabled=\{sending\}\s+onClick=\{handleSend\}/');
 });

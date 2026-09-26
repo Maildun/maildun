@@ -7,7 +7,18 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property int $id
+ * @property string $provider
+ * @property string $event_id
+ * @property int|null $email_delivery_id
+ * @property string $type
+ * @property array<string, mixed> $payload
+ * @property Carbon|null $occurred_at
+ * @property Carbon $processed_at
+ */
 #[Fillable([
     'provider',
     'ses_sns_topic_arn_hash',

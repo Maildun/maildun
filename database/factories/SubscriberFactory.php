@@ -63,6 +63,17 @@ class SubscriberFactory extends Factory
         ]);
     }
 
+    /**
+     * A double opt-in signup who has not clicked the confirmation link yet.
+     */
+    public function pendingConfirmation(): static
+    {
+        return $this->state(fn (): array => [
+            'status' => SubscriberStatus::Subscribed,
+            'subscribed_at' => null,
+        ]);
+    }
+
     public function fromForm(SubscribeForm $form): static
     {
         return $this->state(fn (): array => [

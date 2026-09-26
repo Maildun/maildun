@@ -10,7 +10,7 @@ import {
     UserGroupIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, usePage, usePoll } from '@inertiajs/react';
 import { useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
 import DeleteEmailModal from '@/components/delete-email-modal';
@@ -52,6 +52,10 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { useListFilters } from '@/hooks/use-list-filters';
+import {
+    CAMPAIGN_STATUS_LABELS,
+    campaignStatusVariant,
+} from '@/lib/email-status';
 import { formatRelativeTime } from '@/lib/format';
 import { index as templatesIndex } from '@/routes/email_templates';
 import { edit, index, show } from '@/routes/emails';
@@ -73,20 +77,34 @@ type Props = {
     canManage: boolean;
 };
 
+/**
+ * A queued or sending campaign is still handing deliveries to the provider,
+ * so it cannot be deleted until it finishes.
+ */
+/** A scheduled campaign is still an editable draft until its time comes. */
+function isDraft(status: EmailSummary['status']): boolean {
+    return status === 'draft' || status === 'scheduled';
+}
+
+function isSending(status: EmailSummary['status']): boolean {
+    return status === 'queued' || status === 'sending';
+}
+
+/**
+ * While any listed campaign is queued or sending, refresh only the rows so
+ * status and progress update without a reload.
+ */
+function CampaignRowsPoller() {
+    usePoll(4000, { only: ['emails'] }, { mode: 'rest' });
+
+    return null;
+}
+
 const EDITOR_LABELS: Record<EmailEditorMode, string> = {
     html: 'HTML',
     builder: 'EmailBuilder.js',
     plain_text: 'Plain text',
     markdown: 'Markdown',
-};
-
-const STATUS_LABELS: Record<EmailSummary['status'], string> = {
-    draft: 'Draft',
-    queued: 'Queued',
-    sending: 'Sending',
-    sent: 'Sent',
-    partially_failed: 'Partially failed',
-    failed: 'Failed',
 };
 
 const RECIPIENT_OVERFLOW_FORMATTER = new Intl.NumberFormat('en', {
@@ -108,6 +126,7 @@ export default function EmailsIndex({
 }: Props) {
     const { currentTeam } = usePage().props;
     const [composeOpen, setComposeOpen] = useState(false);
+    const hasSendingRow = emails.data.some((email) => isSending(email.status));
     const [emailToDelete, setEmailToDelete] = useState<EmailSummary | null>(
         null,
     );
@@ -129,6 +148,7 @@ export default function EmailsIndex({
     return (
         <>
             <Head title="Campaigns" />
+            {hasSendingRow && <CampaignRowsPoller />}
             <div className="flex flex-1 flex-col gap-6">
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                     <div className="flex flex-col gap-1">
@@ -181,7 +201,7 @@ export default function EmailsIndex({
                                         value: filters.status,
                                         allLabel: 'All statuses',
                                         options: Object.entries(
-                                            STATUS_LABELS,
+                                            CAMPAIGN_STATUS_LABELS,
                                         ).map(([value, label]) => ({
                                             value,
                                             label,
@@ -247,7 +267,7 @@ export default function EmailsIndex({
                                               key: 'status',
                                               field: 'Status',
                                               value:
-                                                  STATUS_LABELS[
+                                                  CAMPAIGN_STATUS_LABELS[
                                                       filters.status as EmailSummary['status']
                                                   ] ?? filters.status,
                                               onClear: () =>
@@ -341,30 +361,28 @@ export default function EmailsIndex({
                                     <TableCell>
                                         <Badge
                                             data-test="email-status"
-                                            variant={
-                                                email.status === 'sent'
-                                                    ? 'success'
-                                                    : email.status ===
-                                                            'failed' ||
-                                                        email.status ===
-                                                            'partially_failed'
-                                                      ? 'destructive'
-                                                      : email.status ===
-                                                              'queued' ||
-                                                          email.status ===
-                                                              'sending'
-                                                        ? 'info'
-                                                        : 'secondary'
-                                            }
+                                            variant={campaignStatusVariant(
+                                                email.status,
+                                            )}
                                         >
-                                            {STATUS_LABELS[email.status]}
+                                            {
+                                                CAMPAIGN_STATUS_LABELS[
+                                                    email.status
+                                                ]
+                                            }
+                                            {email.progress !== null
+                                                ? ` · ${email.progress}%`
+                                                : null}
+                                            {email.scheduled_at
+                                                ? ` · ${new Date(email.scheduled_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`
+                                                : null}
                                         </Badge>
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex min-w-0 flex-col">
                                             <Link
                                                 href={
-                                                    email.status === 'draft'
+                                                    isDraft(email.status)
                                                         ? edit([
                                                               currentTeam.slug,
                                                               email.uuid,
@@ -474,8 +492,9 @@ export default function EmailsIndex({
                                                         render={
                                                             <Link
                                                                 href={
-                                                                    email.status ===
-                                                                    'draft'
+                                                                    isDraft(
+                                                                        email.status,
+                                                                    )
                                                                         ? edit([
                                                                               currentTeam.slug,
                                                                               email.uuid,
@@ -491,40 +510,43 @@ export default function EmailsIndex({
                                                     >
                                                         <HugeiconsIcon
                                                             icon={
-                                                                email.status ===
-                                                                'draft'
+                                                                isDraft(
+                                                                    email.status,
+                                                                )
                                                                     ? Edit03Icon
                                                                     : PieChartIcon
                                                             }
                                                         />
-                                                        {email.status ===
-                                                        'draft'
+                                                        {isDraft(email.status)
                                                             ? canManage
                                                                 ? 'Edit'
                                                                 : 'View'
                                                             : 'View report'}
                                                     </DropdownMenuItem>
-                                                    {canManage && (
-                                                        <>
-                                                            <DropdownMenuSeparator />
-                                                            <DropdownMenuItem
-                                                                variant="destructive"
-                                                                data-test="delete-email-button"
-                                                                onClick={() =>
-                                                                    setEmailToDelete(
-                                                                        email,
-                                                                    )
-                                                                }
-                                                            >
-                                                                <HugeiconsIcon
-                                                                    icon={
-                                                                        Delete02Icon
+                                                    {canManage &&
+                                                        !isSending(
+                                                            email.status,
+                                                        ) && (
+                                                            <>
+                                                                <DropdownMenuSeparator />
+                                                                <DropdownMenuItem
+                                                                    variant="destructive"
+                                                                    data-test="delete-email-button"
+                                                                    onClick={() =>
+                                                                        setEmailToDelete(
+                                                                            email,
+                                                                        )
                                                                     }
-                                                                />
-                                                                Delete
-                                                            </DropdownMenuItem>
-                                                        </>
-                                                    )}
+                                                                >
+                                                                    <HugeiconsIcon
+                                                                        icon={
+                                                                            Delete02Icon
+                                                                        }
+                                                                    />
+                                                                    Delete
+                                                                </DropdownMenuItem>
+                                                            </>
+                                                        )}
                                                 </DropdownMenuGroup>
                                             </DropdownMenuContent>
                                         </DropdownMenu>

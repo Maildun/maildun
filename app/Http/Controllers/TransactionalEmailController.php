@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\EmailEditor;
+use App\Enums\TestSendStatus;
 use App\Enums\TransactionalEmailStatus;
 use App\Http\Requests\SendTestTransactionalEmailRequest;
 use App\Http\Requests\StoreTransactionalEmailRequest;
@@ -124,6 +125,12 @@ class TransactionalEmailController extends Controller
                 'variables' => $transactionalEmail->variables,
                 'slug_frozen' => $transactionalEmail->slugIsFrozen(),
                 'last_tested_at' => $transactionalEmail->last_tested_at?->toISOString(),
+                'last_test' => $transactionalEmail->last_test_status === null ? null : [
+                    'status' => $transactionalEmail->last_test_status->value,
+                    'recipient' => $transactionalEmail->last_test_recipient,
+                    'error' => $transactionalEmail->last_test_error,
+                    'tested_at' => $transactionalEmail->last_tested_at?->toISOString(),
+                ],
                 'updated_at' => $transactionalEmail->updated_at?->toISOString(),
             ],
             'defaults' => [
@@ -183,6 +190,11 @@ class TransactionalEmailController extends Controller
     ): RedirectResponse {
         /** @var array<string, mixed> $data */
         $data = $request->input('data', []);
+        $transactionalEmail->forceFill([
+            'last_test_status' => TestSendStatus::Queued,
+            'last_test_recipient' => $request->string('to')->value(),
+            'last_test_error' => null,
+        ])->save();
 
         SendTransactionalEmailTest::dispatch(
             $transactionalEmail->id,
@@ -222,6 +234,7 @@ class TransactionalEmailController extends Controller
     public function unpublish(Team $currentTeam, TransactionalEmail $transactionalEmail): RedirectResponse
     {
         Gate::authorize('publish', $transactionalEmail);
+        $this->ensureNotDoubleOptInEmail($transactionalEmail);
 
         $transactionalEmail->update([
             'status' => TransactionalEmailStatus::Draft,
@@ -262,11 +275,21 @@ class TransactionalEmailController extends Controller
     public function destroy(Team $currentTeam, TransactionalEmail $transactionalEmail): RedirectResponse
     {
         Gate::authorize('delete', $transactionalEmail);
+        $this->ensureNotDoubleOptInEmail($transactionalEmail);
         $transactionalEmail->delete();
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Transactional email deleted.')]);
 
         return to_route('transactional_emails.index', ['current_team' => $currentTeam]);
+    }
+
+    private function ensureNotDoubleOptInEmail(TransactionalEmail $transactionalEmail): void
+    {
+        $reason = $transactionalEmail->doubleOptInBlockReason();
+
+        if ($reason !== null) {
+            throw ValidationException::withMessages(['email' => $reason]);
+        }
     }
 
     /**

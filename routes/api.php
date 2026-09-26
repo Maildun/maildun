@@ -17,6 +17,8 @@ Route::prefix('v1')
     ->group(function (): void {
         Route::post('transactional-emails/{transactionalEmail}/send', [TransactionalEmailController::class, 'store'])
             ->name('transactional-emails.send');
+        Route::get('transactional-deliveries/{delivery}', [TransactionalEmailController::class, 'show'])
+            ->name('transactional-deliveries.show');
 
         Route::post('audiences/{audience}/subscribers', [SubscriberController::class, 'store'])
             ->name('audiences.subscribers.store');

@@ -56,6 +56,10 @@ import {
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+    DELIVERY_STATUS_LABELS,
+    deliveryStatusVariant,
+} from '@/lib/email-status';
 import { formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
 import { cn } from '@/lib/utils';
@@ -83,7 +87,6 @@ import type {
     SubscriberShowFilters,
     Tag,
 } from '@/types/audiences';
-import type { EmailDeliveryStatus } from '@/types/emails';
 
 type Props = {
     audience: { uuid: string; name: string };
@@ -96,18 +99,6 @@ type Props = {
     tags: Tag[];
     filters: SubscriberShowFilters;
     canManage: boolean;
-};
-
-const DELIVERY_LABELS: Record<EmailDeliveryStatus, string> = {
-    queued: 'Queued',
-    sending: 'Sending',
-    sent: 'Sent',
-    delivered: 'Delivered',
-    delayed: 'Delayed',
-    bounced: 'Bounced',
-    complained: 'Complained',
-    rejected: 'Rejected',
-    failed: 'Failed',
 };
 
 const AUTOMATION_RUN_LABELS: Record<string, string> = {
@@ -669,12 +660,12 @@ export default function SubscriberShow({
                                         </div>
                                         <div className="flex shrink-0 flex-col items-end gap-1">
                                             <Badge
-                                                variant={deliveryBadgeVariant(
+                                                variant={deliveryStatusVariant(
                                                     delivery.status,
                                                 )}
                                             >
                                                 {
-                                                    DELIVERY_LABELS[
+                                                    DELIVERY_STATUS_LABELS[
                                                         delivery.status
                                                     ]
                                                 }
@@ -1063,23 +1054,4 @@ function activityDetail(stats: SubscriberEmailStats, source: string): string {
     }
 
     return `Joined via ${source}`;
-}
-
-function deliveryBadgeVariant(
-    status: EmailDeliveryStatus,
-): 'success' | 'destructive' | 'secondary' {
-    if (status === 'delivered') {
-        return 'success';
-    }
-
-    if (
-        status === 'bounced' ||
-        status === 'complained' ||
-        status === 'rejected' ||
-        status === 'failed'
-    ) {
-        return 'destructive';
-    }
-
-    return 'secondary';
 }

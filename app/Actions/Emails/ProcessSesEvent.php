@@ -4,6 +4,7 @@ namespace App\Actions\Emails;
 
 use App\Enums\AutomationTrigger;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailProvider;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
@@ -19,7 +20,10 @@ use Illuminate\Support\Facades\DB;
 
 class ProcessSesEvent
 {
-    public function __construct(private RecordEmailAddressHealth $emailHealth) {}
+    public function __construct(
+        private RecordEmailAddressHealth $emailHealth,
+        private ResolveCampaignOutcome $campaignOutcome,
+    ) {}
 
     /** @param array<string, mixed> $payload */
     public function handle(string $eventId, array $payload, string $topicArn): void
@@ -57,7 +61,7 @@ class ProcessSesEvent
                 ],
             );
 
-            if (! $event->wasRecentlyCreated || ! in_array($type, ['Delivery', 'Bounce', 'Complaint'], true)) {
+            if (! $event->wasRecentlyCreated || ! in_array($type, ['Delivery', 'Bounce', 'Complaint', 'Reject'], true)) {
                 return;
             }
 
@@ -77,6 +81,10 @@ class ProcessSesEvent
 
                 if ($this->isLatestAttempt($attempt)) {
                     $this->applyFeedback($delivery, $type, $payload, $occurredAt);
+
+                    if ($type === 'Reject') {
+                        $this->campaignOutcome->refresh($delivery->email);
+                    }
                 }
 
                 $delivery->loadMissing('email.team');
@@ -278,6 +286,7 @@ class ProcessSesEvent
             'Delivery' => $this->deliveryAttributes($subject, $occurredAt),
             'Bounce' => $this->bounceAttributes($subject, $payload, $occurredAt),
             'Complaint' => $this->complaintAttributes($subject, $occurredAt),
+            'Reject' => $this->rejectAttributes($subject, $payload),
             default => [],
         };
 
@@ -333,6 +342,7 @@ class ProcessSesEvent
 
         return [
             'status' => EmailDeliveryStatus::Delayed,
+            ...($subject instanceof EmailDelivery ? ['failure_code' => EmailFailureCode::TransientBounce] : []),
             'delayed_at' => $subject->delayed_at ?? $occurredAt,
             'failure_reason' => $subject->failure_reason ?? $reason,
         ];
@@ -344,6 +354,35 @@ class ProcessSesEvent
         return [
             'status' => EmailDeliveryStatus::Complained,
             'complained_at' => $subject->complained_at ?? $occurredAt,
+        ];
+    }
+
+    /**
+     * SES accepted the message but refused to send it, which it does when it
+     * finds a virus. The recipient did nothing wrong, so the address is not
+     * suppressed, and a later outcome for the same message is never undone.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function rejectAttributes(EmailDelivery|EmailDeliveryAttempt|AutomationEmailDelivery $subject, array $payload): array
+    {
+        if (in_array($subject->status, [
+            EmailDeliveryStatus::Delivered,
+            EmailDeliveryStatus::Bounced,
+            EmailDeliveryStatus::Complained,
+        ], true)) {
+            return [];
+        }
+
+        $reason = data_get($payload, 'reject.reason');
+
+        return [
+            'status' => EmailDeliveryStatus::Rejected,
+            ...($subject instanceof EmailDelivery ? ['failure_code' => EmailFailureCode::SesRejected] : []),
+            'failure_reason' => is_string($reason) && $reason !== ''
+                ? __('Amazon SES rejected the message: :reason', ['reason' => $reason])
+                : __('Amazon SES rejected the message.'),
         ];
     }
 

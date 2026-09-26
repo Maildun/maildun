@@ -254,6 +254,73 @@ test('the link checker reports broken links without requesting private hosts', f
     Http::assertSentCount(2);
 });
 
+test('the link checker follows redirects and reports where they end', function () {
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://moved.example/old' => Http::response('', 301, ['Location' => '/new']),
+        'https://moved.example/new' => Http::response('', 404),
+        'https://short.example/go' => Http::response('', 302, ['Location' => 'https://landing.example/page']),
+        'https://landing.example/page' => Http::response('', 200),
+        'https://sneaky.example/go' => Http::response('', 302, ['Location' => 'https://internal.example/admin']),
+    ]);
+
+    $resolver = Mockery::mock(DnsResolver::class);
+    $resolver->shouldReceive('resolve')->with('moved.example')->andReturn(['93.184.216.34']);
+    $resolver->shouldReceive('resolve')->with('short.example')->andReturn(['93.184.216.34']);
+    $resolver->shouldReceive('resolve')->with('landing.example')->andReturn(['93.184.216.34']);
+    $resolver->shouldReceive('resolve')->with('sneaky.example')->andReturn(['93.184.216.34']);
+    $resolver->shouldReceive('resolve')->with('internal.example')->andReturn(['10.0.0.5']);
+    $this->app->instance(DnsResolver::class, $resolver);
+
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'html' => <<<'HTML'
+            <a href="https://moved.example/old">Moved</a>
+            <a href="https://short.example/go">Short</a>
+            <a href="https://sneaky.example/go">Sneaky</a>
+            HTML,
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('emails.check-links', [$user->currentTeam, $email]))
+        ->assertOk()
+        ->assertJsonPath('checked', 3)
+        ->assertJsonCount(2, 'broken')
+        ->assertJsonPath('broken.0.url', 'https://moved.example/old')
+        ->assertJsonPath('broken.0.status', 404)
+        ->assertJsonPath('broken.0.reason', 'Redirects to https://moved.example/new, which returns HTTP 404.')
+        ->assertJsonPath('broken.1.url', 'https://sneaky.example/go')
+        ->assertJsonPath('broken.1.status', null);
+
+    Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'internal.example'));
+});
+
+test('the link checker retries with GET when a server refuses HEAD', function () {
+    Http::preventStrayRequests();
+    Http::fake(function ($request) {
+        return $request->method() === 'HEAD'
+            ? Http::response('', 405)
+            : Http::response('ok', 200);
+    });
+
+    $resolver = Mockery::mock(DnsResolver::class);
+    $resolver->shouldReceive('resolve')->with('nohead.example')->andReturn(['93.184.216.34']);
+    $this->app->instance(DnsResolver::class, $resolver);
+
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'html' => '<a href="https://nohead.example/page">Page</a>',
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('emails.check-links', [$user->currentTeam, $email]))
+        ->assertOk()
+        ->assertJsonPath('checked', 1)
+        ->assertJsonCount(0, 'broken');
+
+    Http::assertSentCount(2);
+});
+
 test('a send replaces the subscribe tag with the published form url', function () {
     $audience = Audience::factory()->create();
     $form = SubscribeForm::factory()->for($audience)->published()->create();

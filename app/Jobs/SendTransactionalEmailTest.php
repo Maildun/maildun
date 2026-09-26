@@ -2,11 +2,14 @@
 
 namespace App\Jobs;
 
+use App\Enums\TestSendStatus;
+use App\Exceptions\EmailTransportException;
 use App\Mail\TransactionalEmailTest;
 use App\Models\TransactionalEmail;
 use App\Services\TeamMailer;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Throwable;
 
 class SendTransactionalEmailTest implements ShouldQueue
 {
@@ -41,6 +44,27 @@ class SendTransactionalEmailTest implements ShouldQueue
             $email->resolvedFromAddress(),
         );
 
-        $email->forceFill(['last_tested_at' => now()])->save();
+        $email->forceFill([
+            'last_tested_at' => now(),
+            'last_test_status' => TestSendStatus::Sent,
+            'last_test_error' => null,
+        ])->save();
+    }
+
+    /**
+     * Record why the test copy never arrived so the editor can say so,
+     * instead of the author only ever seeing "Test email queued".
+     */
+    public function failed(?Throwable $exception): void
+    {
+        TransactionalEmail::query()
+            ->whereKey($this->emailId)
+            ->where('last_test_recipient', $this->recipient)
+            ->update([
+                'last_test_status' => TestSendStatus::Failed,
+                'last_test_error' => $exception instanceof EmailTransportException
+                    ? $exception->getMessage()
+                    : __('The test email could not be sent.'),
+            ]);
     }
 }

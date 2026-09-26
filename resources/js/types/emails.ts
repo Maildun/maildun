@@ -235,7 +235,15 @@ export type EmailRecipientRef = {
 };
 
 export type EmailCampaignStatus =
-    'draft' | 'queued' | 'sending' | 'sent' | 'partially_failed' | 'failed';
+    | 'draft'
+    | 'queued'
+    | 'sending'
+    | 'sent'
+    | 'partially_failed'
+    | 'failed'
+    | 'stopped'
+    /** Display only: a draft with a scheduled send time. */
+    | 'scheduled';
 
 export type EmailDeliveryStatus =
     | 'queued'
@@ -246,7 +254,8 @@ export type EmailDeliveryStatus =
     | 'bounced'
     | 'complained'
     | 'rejected'
-    | 'failed';
+    | 'failed'
+    | 'cancelled';
 
 export type CampaignRecipientFilter =
     'retryable' | 'opened' | 'clicked' | EmailDeliveryStatus;
@@ -282,6 +291,9 @@ export type EmailSummary = {
     subject: string;
     editor: EmailEditorMode;
     status: EmailCampaignStatus;
+    /** Percent of recipients processed, only while queued or sending. */
+    progress: number | null;
+    scheduled_at: string | null;
     audience: EmailRecipientRef | null;
     segment: EmailRecipientRef | null;
     recipient_count: number;
@@ -309,6 +321,10 @@ export type EmailDetail = {
     audience: string | null;
     segment: string | null;
     last_tested_at: string | null;
+    last_test: LastTestSend | null;
+    scheduled_at: string | null;
+    /** Why the last scheduled send did not start; cleared when rescheduled. */
+    schedule_error: string | null;
     updated_at: string | null;
     attachments: EmailAttachment[];
 };
@@ -422,5 +438,39 @@ export type TransactionalEmailDetail = {
     variables: TransactionalVariable[];
     slug_frozen: boolean;
     last_tested_at: string | null;
+    last_test: LastTestSend | null;
     updated_at: string | null;
 };
+
+/** One server-side condition StartEmailSend enforces; see BuildSendReadiness. */
+export type SendReadinessCheck = {
+    key: 'provider' | 'sender' | 'recipients' | 'content';
+    passed: boolean;
+    message: string;
+    action_url: string | null;
+};
+
+export type SendReadiness = {
+    ready: boolean;
+    checks: SendReadinessCheck[];
+};
+
+/** How the latest test copy actually went; see the test-send jobs. */
+export type LastTestSend = {
+    status: 'queued' | 'sent' | 'failed';
+    recipient: string | null;
+    error: string | null;
+    tested_at: string | null;
+};
+
+/** Amazon SES sending limits; see SesAccountLimits. Loaded as a deferred prop. */
+export type SesAccountLimits =
+    | {
+          available: true;
+          max_24_hour_send: number;
+          sent_last_24_hours: number;
+          remaining: number;
+          max_send_rate: number;
+          sandbox: boolean;
+      }
+    | { available: false; reason: string };

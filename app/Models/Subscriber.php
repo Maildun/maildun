@@ -133,8 +133,9 @@ class Subscriber extends Model
     }
 
     /**
-     * The subscribed people a campaign may actually mail. Anyone the
-     * workspace suppressed after a permanent bounce or complaint is skipped.
+     * The subscribed people a campaign may actually mail. Double opt-in
+     * signups who never confirmed (subscribed_at is null) are skipped, as is
+     * anyone the workspace suppressed after a permanent bounce or complaint.
      *
      * @param  Builder<$this>  $query
      */
@@ -142,11 +143,20 @@ class Subscriber extends Model
     {
         $query
             ->where('subscribers.status', SubscriberStatus::Subscribed)
+            ->whereNotNull('subscribers.subscribed_at')
             ->whereNotExists(
                 EmailAddressHealth::query()
                     ->suppressedFor($team)
                     ->whereColumn('email_address_healths.email', 'subscribers.email'),
             );
+    }
+
+    /**
+     * A double opt-in signup who has not clicked the confirmation link yet.
+     */
+    public function isPendingConfirmation(): bool
+    {
+        return $this->status === SubscriberStatus::Subscribed && $this->subscribed_at === null;
     }
 
     /** @return Attribute<string, string> */

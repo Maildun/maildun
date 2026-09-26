@@ -1,5 +1,4 @@
 import {
-    Alert02Icon,
     ArrowLeft01Icon,
     ArrowRight01Icon,
     InformationCircleIcon,
@@ -10,6 +9,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
+    Deferred,
     Head,
     Link,
     router,
@@ -19,10 +19,21 @@ import {
 } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import type { SyntheticEvent } from 'react';
+import { LastTestStatus } from '@/components/last-test-status';
 import PreviewWidthTabs from '@/components/preview-width-tabs';
 import type { PreviewWidth } from '@/components/preview-width-tabs';
 import SendTestEmailDialog from '@/components/send-test-email-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -41,6 +52,8 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
     Popover,
     PopoverContent,
@@ -68,7 +81,14 @@ import {
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
-import { composePreview, edit as editCampaign, send } from '@/routes/emails';
+import {
+    checkLinks,
+    composePreview,
+    edit as editCampaign,
+    schedule,
+    send,
+} from '@/routes/emails';
+import type { LastTestSend, SendReadiness, SesAccountLimits } from '@/types';
 
 type PreviewRecipient = {
     uuid: string;
@@ -94,12 +114,33 @@ type Props = {
     campaign: {
         uuid: string;
         name: string;
+        subject: string;
+        from_name: string;
+        from_address: string;
+        last_test: LastTestSend | null;
+        /** ISO time the campaign is set to send, or null to send now. */
+        scheduled_at: string | null;
     };
     recipientCount: number;
+    sendReadiness: SendReadiness;
+    /** Deferred: the workspace's SES limits, null for other providers. */
+    sesQuota?: SesAccountLimits | null;
     suppressedRecipients: SuppressedRecipients;
+    unconfirmedRecipients: number;
     missingUnsubscribe: boolean;
+    contentIssues: ContentIssue[];
     preview: CampaignPreview;
 };
+
+type ContentIssue = {
+    level: 'warning' | 'notice';
+    code: string;
+    message: string;
+};
+
+type BrokenLink = { url: string; status: number | null; reason: string };
+
+type LinkCheckResponse = { checked: number; broken: BrokenLink[] };
 
 type SuppressedRecipients = {
     count: number;
@@ -223,16 +264,17 @@ function findPreviewAnchor(
 function MissingUnsubscribeCallout({ className }: { className?: string }) {
     return (
         <Alert
-            variant="warning"
             className={className}
             data-test="campaign-preview-missing-unsubscribe"
         >
-            <HugeiconsIcon icon={Alert02Icon} />
-            <AlertTitle>Warning</AlertTitle>
+            <HugeiconsIcon icon={InformationCircleIcon} />
+            <AlertTitle>Maildun will add an unsubscribe footer</AlertTitle>
             <AlertDescription>
-                This campaign has no unsubscribe link. Add{' '}
-                <code className="font-mono">{'{{ unsubscribe_url }}'}</code> to
-                the body — missing one can lower delivery rates.
+                The body has no{' '}
+                <code className="font-mono">{'{{ unsubscribe_url }}'}</code>{' '}
+                link, so every recipient still gets one in a standard footer.
+                Placing the link in your own design usually looks better and can
+                help inbox placement.
             </AlertDescription>
         </Alert>
     );
@@ -264,6 +306,131 @@ function SuppressedRecipientsCallout({
                         .map((reason) => `${reason.label}: ${reason.count}`)
                         .join(' · ')}
                 </p>
+            </AlertDescription>
+        </Alert>
+    );
+}
+
+/**
+ * Pre-send content checks from LintCampaignContent. None of them block the
+ * send; warnings come first because they are likely to hurt delivery.
+ */
+function ContentIssuesCallout({ issues }: { issues: ContentIssue[] }) {
+    const hasWarning = issues.some((issue) => issue.level === 'warning');
+    const sorted = [...issues].sort(
+        (first, second) =>
+            Number(second.level === 'warning') -
+            Number(first.level === 'warning'),
+    );
+
+    return (
+        <Alert
+            variant={hasWarning ? 'warning' : 'default'}
+            className="mx-auto w-full max-w-3xl shrink-0"
+            data-test="campaign-preview-content-issues"
+        >
+            <HugeiconsIcon icon={InformationCircleIcon} />
+            <AlertTitle>
+                {issues.length === 1
+                    ? '1 thing to check before sending'
+                    : `${issues.length} things to check before sending`}
+            </AlertTitle>
+            <AlertDescription>
+                <ul className="flex list-disc flex-col gap-1 pl-4">
+                    {sorted.map((issue) => (
+                        <li key={issue.code}>{issue.message}</li>
+                    ))}
+                </ul>
+            </AlertDescription>
+        </Alert>
+    );
+}
+
+/**
+ * SES refuses messages past the account's 24-hour quota, and a sandbox
+ * account only delivers to verified addresses, so say so before sending.
+ */
+function SesQuotaWarning({
+    quota,
+    recipientCount,
+}: {
+    quota: SesAccountLimits | null;
+    recipientCount: number;
+}) {
+    if (quota === null || !quota.available) {
+        return null;
+    }
+
+    if (quota.sandbox) {
+        return (
+            <p
+                className="text-sm text-warning"
+                data-test="confirm-send-ses-sandbox"
+            >
+                Your Amazon SES account is in the sandbox, so it only delivers
+                to verified addresses. Request production access first.
+            </p>
+        );
+    }
+
+    if (recipientCount <= quota.remaining) {
+        return null;
+    }
+
+    return (
+        <p className="text-sm text-warning" data-test="confirm-send-ses-quota">
+            Amazon SES allows {quota.remaining.toLocaleString()} more{' '}
+            {quota.remaining === 1 ? 'message' : 'messages'} in the next 24
+            hours. The other{' '}
+            {(recipientCount - quota.remaining).toLocaleString()} will fail
+            until the quota frees up; you can retry them afterwards.
+        </p>
+    );
+}
+
+function BrokenLinksCallout({ links }: { links: BrokenLink[] }) {
+    return (
+        <Alert
+            variant="destructive"
+            className="mx-auto w-full max-w-3xl shrink-0"
+            data-test="campaign-preview-broken-links"
+        >
+            <HugeiconsIcon icon={InformationCircleIcon} />
+            <AlertTitle>
+                {links.length === 1
+                    ? '1 link looks broken'
+                    : `${links.length} links look broken`}
+            </AlertTitle>
+            <AlertDescription>
+                <ul className="flex flex-col gap-1">
+                    {links.map((link) => (
+                        <li key={link.url} className="break-all">
+                            <span className="font-medium">{link.url}</span>
+                            {' — '}
+                            {link.reason}
+                        </li>
+                    ))}
+                </ul>
+            </AlertDescription>
+        </Alert>
+    );
+}
+
+function UnconfirmedRecipientsCallout({ count }: { count: number }) {
+    return (
+        <Alert
+            className="mx-auto w-full max-w-3xl shrink-0"
+            data-test="campaign-preview-unconfirmed"
+        >
+            <HugeiconsIcon icon={InformationCircleIcon} />
+            <AlertTitle>
+                Skipping {count} unconfirmed{' '}
+                {count === 1 ? 'recipient' : 'recipients'}
+            </AlertTitle>
+            <AlertDescription>
+                {count === 1
+                    ? "This person signed up but hasn't clicked the double opt-in confirmation link yet."
+                    : "These people signed up but haven't clicked the double opt-in confirmation link yet."}
             </AlertDescription>
         </Alert>
     );
@@ -338,7 +505,11 @@ export default function PreviewAndSend({
     campaign,
     recipientCount,
     suppressedRecipients,
+    unconfirmedRecipients,
+    contentIssues,
     missingUnsubscribe,
+    sendReadiness,
+    sesQuota,
     preview: initialPreview,
 }: Props) {
     const { auth, currentTeam } = usePage().props;
@@ -351,6 +522,10 @@ export default function PreviewAndSend({
     const [previewError, setPreviewError] = useState<string | null>(null);
     const [sendError, setSendError] = useState<string | null>(null);
     const [sending, setSending] = useState(false);
+    const [confirmSendOpen, setConfirmSendOpen] = useState(false);
+    const [sendLaterAt, setSendLaterAt] = useState(() =>
+        campaign.scheduled_at ? toLocalInputValue(campaign.scheduled_at) : '',
+    );
     const [testOpen, setTestOpen] = useState(false);
     const [previewDocumentHeight, setPreviewDocumentHeight] = useState(0);
     const [previewLinks, setPreviewLinks] = useState<PreviewLink[]>([]);
@@ -363,6 +538,9 @@ export default function PreviewAndSend({
     const canvasRef = useRef<HTMLDivElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const previewRequest = useHttp<Record<string, never>, CampaignPreview>({});
+    const linkCheck = useHttp<Record<string, never>, LinkCheckResponse>({});
+    const linkCheckStarted = useRef(false);
+    const [brokenLinks, setBrokenLinks] = useState<BrokenLink[]>([]);
 
     setLayoutProps({ fullscreen: true });
 
@@ -371,6 +549,21 @@ export default function PreviewAndSend({
             previewHeightObserver.current?.disconnect();
         };
     }, []);
+
+    // Check every tracked link once when the page opens, following
+    // redirects, so a broken destination is caught before the send.
+    useEffect(() => {
+        if (!currentTeam || linkCheckStarted.current) {
+            return;
+        }
+
+        linkCheckStarted.current = true;
+        void linkCheck
+            .get(checkLinks.url([currentTeam.slug, campaign.uuid]), {
+                onSuccess: (response) => setBrokenLinks(response.broken),
+            })
+            .catch(() => undefined);
+    }, [currentTeam, campaign.uuid, linkCheck]);
 
     if (!currentTeam) {
         return null;
@@ -543,21 +736,40 @@ export default function PreviewAndSend({
     const handleSend = () => {
         setSendError(null);
 
+        const scheduling = sendLaterAt !== '';
+
         router.post(
-            send.url([currentTeam.slug, campaign.uuid]),
-            {},
+            scheduling
+                ? schedule.url([currentTeam.slug, campaign.uuid])
+                : send.url([currentTeam.slug, campaign.uuid]),
+            scheduling
+                ? { scheduled_at: new Date(sendLaterAt).toISOString() }
+                : {},
             {
                 onStart: () => setSending(true),
-                onError: (errors) =>
+                onError: (errors) => {
+                    const message = scheduling
+                        ? errors.scheduled_at
+                        : errors.email;
+
                     setSendError(
-                        typeof errors.email === 'string'
-                            ? errors.email
-                            : 'Unable to queue this campaign.',
-                    ),
-                onFinish: () => setSending(false),
+                        typeof message === 'string'
+                            ? message
+                            : scheduling
+                              ? 'Unable to schedule this campaign.'
+                              : 'Unable to queue this campaign.',
+                    );
+                },
+                onFinish: () => {
+                    setSending(false);
+                    setConfirmSendOpen(false);
+                },
             },
         );
     };
+    const failedReadiness = sendReadiness.checks.filter(
+        (check) => !check.passed,
+    );
 
     const recipientLabels = preview.recipients.map(
         (recipient) => recipient.label,
@@ -604,6 +816,11 @@ export default function PreviewAndSend({
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
+                        <LastTestStatus
+                            test={campaign.last_test}
+                            pollProp="campaign"
+                            className="hidden max-w-72 truncate lg:block"
+                        />
                         <Button
                             type="button"
                             variant="outline"
@@ -620,8 +837,8 @@ export default function PreviewAndSend({
                                 previewRequest.processing ||
                                 Boolean(previewError)
                             }
-                            onClick={handleSend}
-                            data-test="confirm-send-campaign"
+                            onClick={() => setConfirmSendOpen(true)}
+                            data-test="send-campaign-button"
                         >
                             {sending ? (
                                 <Spinner data-icon="inline-start" />
@@ -879,6 +1096,17 @@ export default function PreviewAndSend({
                                 suppressed={suppressedRecipients}
                             />
                         ) : null}
+                        {brokenLinks.length > 0 ? (
+                            <BrokenLinksCallout links={brokenLinks} />
+                        ) : null}
+                        {contentIssues.length > 0 ? (
+                            <ContentIssuesCallout issues={contentIssues} />
+                        ) : null}
+                        {unconfirmedRecipients > 0 ? (
+                            <UnconfirmedRecipientsCallout
+                                count={unconfirmedRecipients}
+                            />
+                        ) : null}
                         {previewError || sendError ? (
                             <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-3">
                                 {previewError ? (
@@ -1005,6 +1233,125 @@ export default function PreviewAndSend({
                 </div>
             </div>
 
+            <AlertDialog
+                open={confirmSendOpen}
+                onOpenChange={(open) => !sending && setConfirmSendOpen(open)}
+            >
+                <AlertDialogContent data-test="confirm-send-dialog">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            {failedReadiness.length > 0
+                                ? 'This campaign cannot be sent yet'
+                                : `Send to ${recipientCount.toLocaleString()} ${recipientCount === 1 ? 'recipient' : 'recipients'}?`}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {failedReadiness.length > 0
+                                ? 'Fix these first, then come back to send.'
+                                : 'Sending cannot be undone. A scheduled send can be cancelled until its time. Recipients who were skipped as suppressed or unconfirmed are not included.'}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    {failedReadiness.length > 0 ? (
+                        <ul
+                            className="flex list-disc flex-col gap-1 pl-5 text-sm"
+                            data-test="confirm-send-blockers"
+                        >
+                            {failedReadiness.map((check) => (
+                                <li key={check.key}>
+                                    {check.message}{' '}
+                                    {check.action_url ? (
+                                        <a
+                                            href={check.action_url}
+                                            className="font-medium underline underline-offset-4"
+                                        >
+                                            Fix
+                                        </a>
+                                    ) : null}
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+                            <dt className="text-muted-foreground">From</dt>
+                            <dd className="min-w-0 truncate">
+                                {campaign.from_name
+                                    ? `${campaign.from_name} <${campaign.from_address}>`
+                                    : campaign.from_address}
+                            </dd>
+                            <dt className="text-muted-foreground">Subject</dt>
+                            <dd className="min-w-0 truncate">
+                                {campaign.subject}
+                            </dd>
+                            <dt className="text-muted-foreground">
+                                Recipients
+                            </dt>
+                            <dd className="tabular-nums">
+                                {recipientCount.toLocaleString()}
+                            </dd>
+                        </dl>
+                    )}
+                    {failedReadiness.length === 0 ? (
+                        <div className="flex flex-col gap-1.5">
+                            <Label htmlFor="send-later-at">
+                                Send later (optional)
+                            </Label>
+                            <Input
+                                id="send-later-at"
+                                type="datetime-local"
+                                data-test="send-later-input"
+                                placeholder="Send now"
+                                value={sendLaterAt}
+                                min={toLocalInputValue(
+                                    new Date().toISOString(),
+                                )}
+                                disabled={sending}
+                                onChange={(event) =>
+                                    setSendLaterAt(event.target.value)
+                                }
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Leave empty to send now. Times use your
+                                browser's time zone (
+                                {
+                                    Intl.DateTimeFormat().resolvedOptions()
+                                        .timeZone
+                                }
+                                ).
+                            </p>
+                        </div>
+                    ) : null}
+                    {failedReadiness.length === 0 ? (
+                        <Deferred data="sesQuota" fallback={null}>
+                            <SesQuotaWarning
+                                quota={sesQuota ?? null}
+                                recipientCount={recipientCount}
+                            />
+                        </Deferred>
+                    ) : null}
+                    {sendError ? (
+                        <p className="text-sm text-destructive">{sendError}</p>
+                    ) : null}
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={sending}>
+                            Cancel
+                        </AlertDialogCancel>
+                        {failedReadiness.length === 0 ? (
+                            <AlertDialogAction
+                                data-test="confirm-send-campaign"
+                                disabled={sending}
+                                onClick={handleSend}
+                            >
+                                {sending && (
+                                    <Spinner data-icon="inline-start" />
+                                )}
+                                {sendLaterAt !== ''
+                                    ? 'Schedule campaign'
+                                    : 'Send campaign'}
+                            </AlertDialogAction>
+                        ) : null}
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
             <SendTestEmailDialog
                 teamSlug={currentTeam.slug}
                 emailUuid={campaign.uuid}
@@ -1109,4 +1456,14 @@ export default function PreviewAndSend({
             </Dialog>
         </>
     );
+}
+
+/**
+ * Format an ISO time for a datetime-local input, in the browser's time zone.
+ */
+function toLocalInputValue(iso: string): string {
+    const date = new Date(iso);
+    const pad = (value: number) => String(value).padStart(2, '0');
+
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }

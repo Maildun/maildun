@@ -25,6 +25,7 @@ declare module '@inertiajs/core' {
             appUpdate: AppUpdateStatus | null;
             onboarding: OnboardingChecklist | null;
             recentCampaigns: RecentCampaign[];
+            deliveryPaused: boolean;
             [key: string]: unknown;
         };
     }

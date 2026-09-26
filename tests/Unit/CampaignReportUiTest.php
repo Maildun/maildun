@@ -181,3 +181,186 @@ test('campaign overview page does not render an activity chart', function () {
         ->not->toContain('CampaignOverviewChart')
         ->not->toContain('campaign-overview-chart');
 });
+
+test('refused retries show the server reason in an error toast', function () {
+    $recipients = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/recipients.tsx');
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain("title: 'Could not retry failed deliveries.'")
+        ->toContain('errors.email ??');
+
+    expect($recipients)->toBeString()
+        ->toContain('title: `Could not retry ${recipient.email}.`')
+        ->toContain('errors.email ??');
+});
+
+test('a sending campaign surfaces failures while it is still in flight', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain('data-test="sending-failure-counts"')
+        ->toContain('waiting')
+        ->toContain('data-test="sending-failures-alert"')
+        ->toContain('Sending continues for everyone else.');
+});
+
+test('delivery health says SMTP does not report bounces instead of showing zero', function () {
+    $report = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/show.tsx');
+
+    expect($report)->toBeString()
+        ->toContain("metrics.delivery_feedback !== 'unavailable'")
+        ->toContain('value={feedbackReported ? metrics.bounced : null}')
+        ->toContain('Not reported by SMTP');
+});
+
+test('campaign and delivery badges come from the shared email status module', function (string $path) {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/'.$path);
+
+    expect($source)->toBeString()
+        ->toContain("from '@/lib/email-status'")
+        ->not->toMatch('/const (CAMPAIGN_|DELIVERY_)?STATUS_(LABELS|VARIANTS)\b|const (CAMPAIGN|DELIVERY)_LABELS\b/');
+})->with([
+    'campaign index' => 'pages/emails/index.tsx',
+    'report layout' => 'components/email-report-layout.tsx',
+    'recipients' => 'pages/emails/recipients.tsx',
+    'dashboard' => 'pages/dashboard.tsx',
+    'sidebar campaigns' => 'components/nav-campaigns.tsx',
+    'subscriber profile' => 'pages/audiences/subscribers/show.tsx',
+]);
+
+test('report metrics explain what they count and human engagement is labelled as human', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+    $insights = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/campaign-insights.tsx');
+    $links = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/links.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain('aria-label={`About ${label}`}')
+        ->toContain('including privacy proxies and security scanners');
+
+    expect($insights)->toBeString()
+        ->toContain('label="Human opens"')
+        ->toContain('label="Human clicks"');
+
+    expect($links)->toBeString()
+        ->toContain('Unique clicks')
+        ->toContain('Total clicks')
+        ->toContain('Click rate')
+        ->toContain('link.unique_clicks');
+});
+
+test('a sending campaign says it is safe to leave and announces when it finishes', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+    $sidebar = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/nav-campaigns.tsx');
+
+    expect(preg_replace('/\s+/', ' ', (string) $layout))->toBeString()
+        ->toContain('You can leave this page; sending continues in the background');
+
+    expect($layout)->toBeString()
+        ->toContain('if (wasActive.current && !isActive) {')
+        ->toContain('finished sending.`')
+        ->toContain('finished with failures.`');
+
+    expect($sidebar)->toBeString()
+        ->toContain('{hasActiveCampaign && <RecentCampaignsPoller />}')
+        ->toContain("usePoll(5000, { only: ['recentCampaigns'] }, { mode: 'rest' });");
+});
+
+test('a retry reports its own progress and the overview lists the send history', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+    $report = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/show.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain("metrics.run_kind === 'retry' || metrics.run_kind === 'resume'")
+        ->toContain("'Retrying failed deliveries'")
+        ->toContain('aria-valuenow={runProgress}');
+
+    expect($report)->toBeString()
+        ->toContain('{sendRuns.length > 1 && <SendHistory runs={sendRuns} />}')
+        ->toContain("'sendRuns',")
+        ->toContain("'failureCauses',")
+        ->toContain('data-test="campaign-failure-causes"');
+});
+
+test('the sending card shows segmented progress, an ETA and stall guidance', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain('data-test="sending-progress-bar"')
+        ->toContain('percentOf(runProcessed - runFailed, runRecipients)')
+        ->toContain('percentOf(runFailed, runRecipients)')
+        ->toContain('data-test="sending-eta"')
+        ->toContain('data-test="sending-stalled-alert"')
+        ->toContain("'No queue worker is running'")
+        ->toContain("'Queue workers are paused'");
+});
+
+test('a recipient opens a detail sheet with attempts and provider feedback', function () {
+    $recipients = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/recipients.tsx');
+    $sheet = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/recipient-delivery-sheet.tsx');
+
+    expect($recipients)->toBeString()
+        ->toContain('data-test="open-recipient-detail"')
+        ->toContain('<RecipientDeliverySheet');
+
+    expect($sheet)->toBeString()
+        ->toContain('showDelivery.url([teamSlug, campaignUuid, deliveryUuid])')
+        ->toContain('Send attempts')
+        ->toContain('Provider feedback');
+});
+
+test('recipients can be searched, counted per tab and exported', function () {
+    $recipients = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/recipients.tsx');
+
+    expect($recipients)->toBeString()
+        ->toContain('placeholder="Search recipients"')
+        ->toContain('{counts[filter.value].toLocaleString()}')
+        ->toContain('data-test="export-recipients"')
+        ->toContain('showRecipientExport.url(')
+        ->toContain("only: ['recipients', 'filters', 'filterCounts']");
+});
+
+test('recipients a failed loader never reached can be queued from the report', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain('data-test="unqueued-recipients-alert"')
+        ->toContain('data-test="queue-remaining-button"')
+        ->toContain("'Sending to the remaining recipients'");
+});
+
+test('the campaign index refreshes rows while a campaign is sending', function () {
+    $index = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/index.tsx');
+
+    expect($index)->toBeString()
+        ->toContain('{hasSendingRow && <CampaignRowsPoller />}')
+        ->toContain("usePoll(4000, { only: ['emails'] }, { mode: 'rest' });")
+        ->toContain('email.progress !== null');
+});
+
+test('a sending campaign can be stopped after a confirmation', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain('data-test="stop-sending-button"')
+        ->toContain('data-test="stop-sending-dialog"')
+        ->toContain('data-test="confirm-stop-sending"')
+        ->toContain('data-test="campaign-stopped-alert"')
+        ->toContain('stop.url([currentTeam.slug, campaign.uuid])');
+});
+
+test('a campaign can be scheduled from the send confirmation and cancelled from the hub', function () {
+    $root = dirname(__DIR__, 2).'/resources/js/pages/emails';
+    $previewAndSend = file_get_contents($root.'/preview-and-send.tsx');
+    $edit = file_get_contents($root.'/edit.tsx');
+
+    expect($previewAndSend)->toBeString()
+        ->toContain('data-test="send-later-input"')
+        ->toContain('schedule.url([currentTeam.slug, campaign.uuid])')
+        ->toContain('Intl.DateTimeFormat().resolvedOptions()')
+        ->and($edit)->toBeString()
+        ->toContain('data-test="campaign-scheduled"')
+        ->toContain('data-test="cancel-schedule-button"')
+        ->toContain('data-test="campaign-schedule-error"')
+        ->toContain('unschedule.url([currentTeam.slug, email.uuid])');
+});

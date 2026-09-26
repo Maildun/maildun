@@ -3,16 +3,26 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Emails\BuildCampaignInsights;
+use App\Actions\Emails\BuildSendReadiness;
 use App\Actions\Emails\BuildTrackedEmailHtml;
+use App\Actions\Emails\LintCampaignContent;
+use App\Actions\Emails\QueueRemainingRecipients;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\RetryEmailDeliveries;
+use App\Actions\Emails\ScheduleEmailSend;
 use App\Actions\Emails\StartEmailSend;
+use App\Actions\Emails\StopEmailSend;
+use App\Concerns\FiltersCampaignRecipients;
 use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailProvider;
+use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
+use App\Enums\TestSendStatus;
+use App\Http\Requests\ScheduleEmailRequest;
 use App\Http\Requests\SendTestEmailRequest;
 use App\Http\Requests\StoreEmailRequest;
 use App\Http\Requests\UpdateEmailRequest;
@@ -24,13 +34,17 @@ use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
 use App\Models\EmailLink;
 use App\Models\EmailLinkTrackingAggregate;
+use App\Models\EmailSendRun;
 use App\Models\EmailTemplate;
 use App\Models\EmailTrackingAggregate;
 use App\Models\Media;
 use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Team;
+use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
+use App\Services\InstallationState;
+use App\Services\SesAccountLimits;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -38,6 +52,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Number;
@@ -48,6 +63,8 @@ use Inertia\Response;
 
 class EmailController extends Controller
 {
+    use FiltersCampaignRecipients;
+
     public function index(Request $request, Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [Email::class, $currentTeam]);
@@ -67,8 +84,13 @@ class EmailController extends Controller
                 'status',
                 'recipient_count',
                 'send_started_at',
+                'scheduled_at',
                 'sent_at',
                 'updated_at',
+            ])
+            ->withCount([
+                'deliveries as processed_count' => fn (Builder $query) => $query
+                    ->whereNotIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending]),
             ])
             ->with([
                 'audience' => function (Relation $query) use ($currentTeam): void {
@@ -110,13 +132,17 @@ class EmailController extends Controller
                 $status = $email->status === EmailStatus::Draft && $email->sent_at
                     ? EmailStatus::Sent
                     : $email->status;
+                $displayStatus = $status === EmailStatus::Draft && $email->scheduled_at !== null
+                    ? 'scheduled'
+                    : $status->value;
 
                 return [
                     'uuid' => $email->uuid,
                     'name' => $email->name,
                     'subject' => $email->subject,
                     'editor' => $email->editor->value,
-                    'status' => $status->value,
+                    'status' => $displayStatus,
+                    'scheduled_at' => $email->scheduled_at?->toISOString(),
                     'audience' => $email->audience ? [
                         'uuid' => $email->audience->uuid,
                         'name' => $email->audience->name,
@@ -136,6 +162,9 @@ class EmailController extends Controller
                         ])->values()->all()
                         : [],
                     'last_tested_at' => $email->last_tested_at?->toISOString(),
+                    'progress' => $status->isActive()
+                        ? (int) min(100, round(((int) $email->getAttribute('processed_count')) / max($email->recipient_count, 1) * 100))
+                        : null,
                     'updated_at' => $email->updated_at?->toISOString(),
                 ];
             });
@@ -191,7 +220,7 @@ class EmailController extends Controller
         return to_route('emails.edit', ['current_team' => $currentTeam, 'email' => $email]);
     }
 
-    public function edit(Team $currentTeam, Email $email): Response|RedirectResponse
+    public function edit(Team $currentTeam, Email $email, BuildSendReadiness $sendReadiness): Response|RedirectResponse
     {
         Gate::authorize('view', $email);
 
@@ -245,6 +274,9 @@ class EmailController extends Controller
                 'audience' => $email->audience?->uuid,
                 'segment' => $email->segment?->uuid,
                 'last_tested_at' => $email->last_tested_at?->toISOString(),
+                'last_test' => $this->lastTestPayload($email),
+                'scheduled_at' => $email->scheduled_at?->toISOString(),
+                'schedule_error' => $email->schedule_error,
                 'updated_at' => $email->updated_at?->toISOString(),
                 'attachments' => $email->attachments->map(fn ($attachment): array => [
                     'uuid' => $attachment->uuid,
@@ -254,6 +286,12 @@ class EmailController extends Controller
                     'size_label' => Number::fileSize($attachment->size),
                 ])->values(),
             ],
+            'sendReadiness' => $sendReadiness->handle($email),
+            // Deferred: the SES quota needs an AWS call the page must not wait on.
+            'sesQuota' => Inertia::defer(fn (): ?array => ($integration = $currentTeam->emailIntegration()->first()) instanceof TeamEmailIntegration
+                && $integration->isVerified()
+                ? app(SesAccountLimits::class)->fetch($integration)
+                : null),
             'audiences' => $currentTeam->audiences()
                 ->withCount($this->subscribedCount($currentTeam))
                 ->with([
@@ -409,6 +447,8 @@ class EmailController extends Controller
         Email $email,
         BuildTrackedEmailHtml $trackedHtml,
         RenderCampaignContent $renderer,
+        LintCampaignContent $lintContent,
+        BuildSendReadiness $sendReadiness,
     ): Response|RedirectResponse {
         Gate::authorize('send', $email);
 
@@ -444,10 +484,21 @@ class EmailController extends Controller
             'campaign' => [
                 'uuid' => $email->uuid,
                 'name' => $email->name,
+                'subject' => $email->subject,
+                'from_name' => $email->resolvedFromName(),
+                'from_address' => $email->resolvedFromAddress(),
+                'last_test' => $this->lastTestPayload($email),
+                'scheduled_at' => $email->scheduled_at?->toISOString(),
             ],
+            'sendReadiness' => $sendReadiness->handle($email),
             'recipientCount' => (clone $recipientQuery)->count(),
             'suppressedRecipients' => $this->suppressedRecipients($email),
+            'unconfirmedRecipients' => $this->campaignSubscribers($email)
+                ->where('subscribers.status', SubscriberStatus::Subscribed)
+                ->whereNull('subscribers.subscribed_at')
+                ->count(),
             'missingUnsubscribe' => ! $trackedHtml->authorPlacedUnsubscribe($email->html ?? ''),
+            'contentIssues' => $lintContent->handle($email),
             'preview' => $this->composePreviewPayload(
                 $email,
                 $recipient,
@@ -511,6 +562,11 @@ class EmailController extends Controller
         abort_unless($email->status === EmailStatus::Draft, 409, __('A queued campaign can no longer send test copies.'));
 
         $mergeData = $renderer->testData($request->string('to')->value(), now());
+        $email->forceFill([
+            'last_test_status' => TestSendStatus::Queued,
+            'last_test_recipient' => $request->string('to')->value(),
+            'last_test_error' => null,
+        ])->save();
 
         SendCampaignTestEmail::dispatch(
             $email->id,
@@ -541,12 +597,54 @@ class EmailController extends Controller
         return to_route('emails.show', [$currentTeam, $email]);
     }
 
+    public function schedule(ScheduleEmailRequest $request, Team $currentTeam, Email $email, ScheduleEmailSend $schedules): RedirectResponse
+    {
+        $schedules->schedule($email, $request->sendAt());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Campaign scheduled.')]);
+
+        return to_route('emails.edit', [$currentTeam, $email]);
+    }
+
+    public function unschedule(Team $currentTeam, Email $email, ScheduleEmailSend $schedules): RedirectResponse
+    {
+        Gate::authorize('send', $email);
+        $schedules->cancel($email);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Schedule cancelled. The campaign is a draft again.')]);
+
+        return back();
+    }
+
     public function retry(Request $request, Team $currentTeam, Email $email, RetryEmailDeliveries $retry): RedirectResponse
     {
         Gate::authorize('send', $email);
         $retry->handle($email, includeUnconfirmed: $request->boolean('include_unconfirmed'));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Failed deliveries queued again.')]);
+
+        return back();
+    }
+
+    public function stop(Team $currentTeam, Email $email, StopEmailSend $stopEmailSend): RedirectResponse
+    {
+        Gate::authorize('send', $email);
+        $cancelled = $stopEmailSend->handle($email);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => trans_choice(
+            'Sending stopped. :count recipient will not receive this campaign.|Sending stopped. :count recipients will not receive this campaign.',
+            $cancelled,
+        )]);
+
+        return back();
+    }
+
+    public function queueRemaining(Team $currentTeam, Email $email, QueueRemainingRecipients $queueRemaining): RedirectResponse
+    {
+        Gate::authorize('send', $email);
+        $queueRemaining->handle($email);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Remaining recipients queued.')]);
 
         return back();
     }
@@ -584,13 +682,16 @@ class EmailController extends Controller
 
         $props = $this->campaignReportProps($email);
         $recipientFilter = $this->recipientFilter($request);
+        $search = $this->recipientSearch($request);
 
         return Inertia::render('emails/recipients', [
             ...$props,
             'filters' => [
                 'status' => $recipientFilter,
+                'q' => $search,
             ],
-            'recipients' => $this->recipientsPaginator($email, $recipientFilter, $props['canManage']),
+            'filterCounts' => $this->recipientFilterCounts($email, $search),
+            'recipients' => $this->recipientsPaginator($email, $recipientFilter, $props['canManage'], $search),
         ]);
     }
 
@@ -614,6 +715,9 @@ class EmailController extends Controller
                         'url' => $link->url,
                         'clicks' => $trackingAggregate instanceof EmailLinkTrackingAggregate
                             ? $trackingAggregate->total_clicks_count
+                            : 0,
+                        'unique_clicks' => $trackingAggregate instanceof EmailLinkTrackingAggregate
+                            ? $trackingAggregate->unique_clicks_count
                             : 0,
                     ];
                 }),
@@ -641,6 +745,22 @@ class EmailController extends Controller
         return to_route('emails.index', ['current_team' => $currentTeam]);
     }
 
+    /**
+     * The latest test copy's real outcome, so the page can say it arrived or
+     * why it did not; null before the first test.
+     *
+     * @return array{status: string, recipient: string|null, error: string|null, tested_at: string|null}|null
+     */
+    private function lastTestPayload(Email $email): ?array
+    {
+        return $email->last_test_status === null ? null : [
+            'status' => $email->last_test_status->value,
+            'recipient' => $email->last_test_recipient,
+            'error' => $email->last_test_error,
+            'tested_at' => $email->last_tested_at?->toISOString(),
+        ];
+    }
+
     private function prepareReport(Team $currentTeam, Email $email): ?RedirectResponse
     {
         Gate::authorize('view', $email);
@@ -651,7 +771,7 @@ class EmailController extends Controller
     }
 
     /**
-     * @return array{campaign: array<string, mixed>, metrics: array<string, int|float|string|null>, canManage: bool}
+     * @return array{campaign: array<string, mixed>, metrics: array<string, int|float|string|bool|null>, sendRuns: list<array{kind: string, recipient_count: int, processed: int, failed: int, started_at: string, finished_at: string|null}>, failureCauses: list<array{code: string, label: string, count: int}>, canManage: bool}
      */
     private function campaignReportProps(Email $email): array
     {
@@ -691,6 +811,13 @@ class EmailController extends Controller
             EmailDeliveryStatus::Failed,
             EmailDeliveryStatus::Rejected,
         ])->count();
+        $sendRuns = $this->sendRunHistory($email);
+        $currentRun = $sendRuns[0] ?? null;
+        $progress = $email->status->isActive() ? $this->sendProgress($email, $currentRun) : null;
+        $retryingCount = (clone $deliveries)
+            ->where('status', EmailDeliveryStatus::Queued)
+            ->whereHas('attempts', fn (Builder $attempts) => $attempts->where('status', EmailDeliveryStatus::Failed))
+            ->count();
         $retryableCount = (clone $deliveries)->retryableFor($email->team)->count();
         $unconfirmedRetryableCount = (clone $deliveries)->retryableFor($email->team)->unconfirmed()->count();
         $deliveryTransports = (clone $deliveries)
@@ -726,8 +853,19 @@ class EmailController extends Controller
                 'bounced' => $bouncedCount,
                 'complained' => $complainedCount,
                 'failed' => $failedCount,
+                'retrying' => $retryingCount,
+                'cancelled' => (clone $deliveries)->where('status', EmailDeliveryStatus::Cancelled)->count(),
+                'unqueued' => app(QueueRemainingRecipients::class)->remainingCount($email),
                 'retryable' => $retryableCount,
                 'unconfirmed' => $unconfirmedRetryableCount,
+                'run_kind' => $currentRun['kind'] ?? null,
+                'run_recipient_count' => $currentRun['recipient_count'] ?? null,
+                'run_processed' => $currentRun['processed'] ?? null,
+                'run_failed' => $currentRun['failed'] ?? null,
+                'last_activity_at' => $progress['last_activity_at'] ?? null,
+                'stalled' => $progress['stalled'] ?? false,
+                'worker_state' => $progress['worker_state'] ?? null,
+                'eta_seconds' => $progress['eta_seconds'] ?? null,
                 'delivery_feedback' => $deliveryFeedback,
                 'feedback_recipient_count' => $sesRecipientCount,
                 'delivery_rate' => $sesRecipientCount === 0
@@ -736,18 +874,131 @@ class EmailController extends Controller
                 'open_rate' => round(($openedCount / $recipientCount) * 100, 1),
                 'click_rate' => round(($clickedCount / $recipientCount) * 100, 1),
             ],
+            'sendRuns' => $sendRuns,
+            'failureCauses' => $this->failureCauses($email),
             'canManage' => Gate::allows('send', $email),
         ];
     }
 
     /**
+     * Failed, rejected and delayed deliveries grouped by why, most common
+     * first. Deliveries from before failure codes existed count as "Other".
+     *
+     * @return list<array{code: string, label: string, count: int}>
+     */
+    private function failureCauses(Email $email): array
+    {
+        $rows = $email->deliveries()
+            ->whereIn('status', EmailDeliveryStatus::retryable())
+            ->toBase()
+            ->selectRaw('failure_code, count(*) as deliveries')
+            ->groupBy('failure_code')
+            ->get();
+        $counts = [];
+
+        foreach ($rows as $row) {
+            $code = EmailFailureCode::tryFrom((string) $row->failure_code) ?? EmailFailureCode::Unknown;
+            $counts[$code->value] = ($counts[$code->value] ?? 0) + (int) $row->deliveries;
+        }
+
+        arsort($counts);
+        $causes = [];
+
+        foreach ($counts as $code => $count) {
+            $causes[] = ['code' => $code, 'label' => EmailFailureCode::from($code)->label(), 'count' => $count];
+        }
+
+        return $causes;
+    }
+
+    /**
+     * Minutes without any delivery finishing before an in-flight send is
+     * reported as stalled. Well below the recovery sweep, so the sender sees
+     * the problem before emails:resume acts on it.
+     */
+    private const int STALL_WARNING_MINUTES = 5;
+
+    /**
+     * How an in-flight send is moving: when a delivery last finished, whether
+     * it has gone quiet, whether queue workers are running, and a rough ETA
+     * from the pace of the last five minutes.
+     *
+     * @param  array{kind: string, recipient_count: int, processed: int, failed: int, started_at: string, finished_at: string|null}|null  $currentRun
+     * @return array{last_activity_at: string|null, stalled: bool, worker_state: string, eta_seconds: int|null}
+     */
+    private function sendProgress(Email $email, ?array $currentRun): array
+    {
+        $deliveries = $email->deliveries()
+            ->when($currentRun !== null && $currentRun['kind'] !== EmailSendRunKind::Initial->value, fn (Builder $query) => $query
+                ->where('email_send_run_id', $email->sendRuns()->latest('id')->value('id')));
+        $finished = (clone $deliveries)->whereNotIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending]);
+        $lastActivity = (clone $finished)->max('updated_at');
+        $lastActivityAt = is_string($lastActivity) || $lastActivity instanceof \DateTimeInterface
+            ? Carbon::parse($lastActivity)
+            : null;
+        $startedAt = $email->send_started_at ?? now();
+        $quietSince = $lastActivityAt ?? $startedAt;
+        $recentlyFinished = (clone $finished)->where('updated_at', '>=', now()->subMinutes(5))->count();
+        $remaining = (clone $deliveries)->whereIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending])->count();
+
+        return [
+            'last_activity_at' => $lastActivityAt?->toISOString(),
+            'stalled' => $quietSince->lt(now()->subMinutes(self::STALL_WARNING_MINUTES)),
+            'worker_state' => app(InstallationState::class)->workerState(),
+            'eta_seconds' => $recentlyFinished > 0 && $remaining > 0
+                ? (int) ceil($remaining / ($recentlyFinished / 300))
+                : null,
+        ];
+    }
+
+    /**
+     * Every pass over the campaign, newest first: the first send and each
+     * deliberate retry, with how many of its deliveries have finished and
+     * failed. A delivery counts toward the run that last queued it.
+     *
+     * @return list<array{kind: string, recipient_count: int, processed: int, failed: int, started_at: string, finished_at: string|null}>
+     */
+    private function sendRunHistory(Email $email): array
+    {
+        $totals = $email->deliveries()
+            ->whereNotNull('email_send_run_id')
+            ->toBase()
+            ->select('email_send_run_id')
+            ->selectRaw('count(case when status not in (?, ?) then 1 end) as processed', [
+                EmailDeliveryStatus::Queued->value,
+                EmailDeliveryStatus::Sending->value,
+            ])
+            ->selectRaw('count(case when status in (?, ?) then 1 end) as failed', [
+                EmailDeliveryStatus::Failed->value,
+                EmailDeliveryStatus::Rejected->value,
+            ])
+            ->groupBy('email_send_run_id')
+            ->get()
+            ->keyBy('email_send_run_id');
+
+        return array_values($email->sendRuns()
+            ->latest('id')
+            ->get()
+            ->map(fn (EmailSendRun $run): array => [
+                'kind' => $run->kind->value,
+                'recipient_count' => $run->recipient_count,
+                'processed' => (int) ($totals->get($run->id)->processed ?? 0),
+                'failed' => (int) ($totals->get($run->id)->failed ?? 0),
+                'started_at' => $run->started_at->toISOString(),
+                'finished_at' => $run->finished_at?->toISOString(),
+            ])
+            ->all());
+    }
+
+    /**
      * @return LengthAwarePaginator<int, covariant array{uuid: string, avatar: string|null, email: string, name: string|null, status: string, opens: int, clicks: int, failure_reason: string|null, sent_at: string|null, can_retry: bool, retry_blocked_reason: string|null, unconfirmed: bool}>
      */
-    private function recipientsPaginator(Email $email, ?string $recipientFilter, bool $canManage): LengthAwarePaginator
+    private function recipientsPaginator(Email $email, ?string $recipientFilter, bool $canManage, string $search = ''): LengthAwarePaginator
     {
         $recipients = $email->deliveries()
-            ->with(['subscriber:id,uuid,status'])
+            ->with(['subscriber:id,uuid,status,subscribed_at'])
             ->tap(fn (Builder $query) => $this->applyRecipientFilter($query, $recipientFilter, $email->team))
+            ->tap(fn (Builder $query) => $this->applyRecipientSearch($query, $search))
             ->latest()
             ->paginate(25)
             ->withQueryString();
@@ -758,11 +1009,12 @@ class EmailController extends Controller
             ->whereKey($page->modelKeys())
             ->pluck('email_deliveries.id')
             ->all();
-        $suppressedAddresses = EmailAddressHealth::query()
+        $suppressedAddresses = array_values(EmailAddressHealth::query()
             ->suppressedFor($email->team)
             ->whereIn('email_address_healths.email', $page->pluck('email_address'))
-            ->pluck('email_address_healths.email')
-            ->all();
+            ->get(['email_address_healths.email'])
+            ->map(fn (EmailAddressHealth $health): string => $health->email)
+            ->all());
 
         return $recipients->through(function (EmailDelivery $delivery) use ($canManage, $email, $retryableIds, $suppressedAddresses): array {
             $retryable = in_array($delivery->id, $retryableIds, true);
@@ -795,13 +1047,23 @@ class EmailController extends Controller
      */
     private function retryBlockedReason(Email $email, EmailDelivery $delivery, array $suppressedAddresses): ?string
     {
+        if ($delivery->status === EmailDeliveryStatus::Bounced) {
+            return __('Permanent bounces are never retried.');
+        }
+
+        if ($delivery->status === EmailDeliveryStatus::Complained) {
+            return __('Spam complaints are never retried.');
+        }
+
+        if (! $delivery->status->isRetryable()) {
+            return null;
+        }
+
         return match (true) {
-            $delivery->status === EmailDeliveryStatus::Bounced => __('Permanent bounces are never retried.'),
-            $delivery->status === EmailDeliveryStatus::Complained => __('Spam complaints are never retried.'),
-            ! $delivery->status->isRetryable() => null,
             $email->status->isActive() => __('Wait until this campaign finishes sending.'),
             $delivery->subscriber !== null
                 && $delivery->subscriber->status !== SubscriberStatus::Subscribed => __('This recipient has unsubscribed.'),
+            $delivery->subscriber?->isPendingConfirmation() === true => __('This recipient has not confirmed their subscription yet.'),
             in_array($delivery->email_address, $suppressedAddresses, true) => __('This address is suppressed after a permanent bounce or spam complaint.'),
             default => __('This delivery cannot be retried.'),
         };
@@ -819,7 +1081,11 @@ class EmailController extends Controller
 
         return [
             'q' => $request->string('q')->trim()->toString(),
-            'status' => $statusEnum instanceof EmailStatus ? $statusEnum->value : '',
+            'status' => match (true) {
+                $status === 'scheduled' => 'scheduled',
+                $statusEnum instanceof EmailStatus => $statusEnum->value,
+                default => '',
+            },
             'editor' => $editorEnum instanceof EmailEditor ? $editorEnum->value : '',
             'audience' => $request->string('audience')->trim()->toString(),
         ];
@@ -844,7 +1110,15 @@ class EmailController extends Controller
 
         if ($status === EmailStatus::Draft->value) {
             $query->where('status', EmailStatus::Draft)
-                ->whereNull('sent_at');
+                ->whereNull('sent_at')
+                ->whereNull('scheduled_at');
+
+            return;
+        }
+
+        if ($status === 'scheduled') {
+            $query->where('status', EmailStatus::Draft)
+                ->whereNotNull('scheduled_at');
 
             return;
         }
@@ -884,7 +1158,7 @@ class EmailController extends Controller
     protected function subscribedCount(Team $team): array
     {
         return [
-            'subscribers as subscribed_count' => fn (Builder $query) => $query->sendableFor($team),
+            'subscribers as subscribed_count' => fn (Builder $query) => $query->scopes(['sendableFor' => [$team]]),
         ];
     }
 
@@ -914,19 +1188,20 @@ class EmailController extends Controller
     }
 
     /**
-     * Subscribed recipients the send will skip because the workspace
+     * Confirmed recipients the send will skip because the workspace
      * suppressed their address, grouped by why it was suppressed.
      *
      * @return array{count: int, reasons: list<array{label: string, count: int}>}
      */
     private function suppressedRecipients(Email $email): array
     {
-        $reasons = EmailAddressHealth::query()
+        $reasons = array_values(EmailAddressHealth::query()
             ->suppressedFor($email->team)
             ->whereIn(
                 'email_address_healths.email',
                 $this->campaignSubscribers($email)
                     ->where('subscribers.status', SubscriberStatus::Subscribed)
+                    ->whereNotNull('subscribers.subscribed_at')
                     ->select('subscribers.email'),
             )
             ->toBase()
@@ -939,8 +1214,7 @@ class EmailController extends Controller
                 'label' => EmailAddressHealthReason::tryFrom((string) $row->reason)?->label() ?? __('Suppressed'),
                 'count' => (int) $row->recipients,
             ])
-            ->values()
-            ->all();
+            ->all());
 
         return [
             'count' => array_sum(array_column($reasons, 'count')),
@@ -1067,31 +1341,22 @@ class EmailController extends Controller
     }
 
     /**
-     * @param  Builder<EmailDelivery>  $query
-     * @return Builder<EmailDelivery>
+     * How many recipients each tab would show for the current search.
+     *
+     * @return array<string, int>
      */
-    protected function applyRecipientFilter(Builder $query, ?string $filter, Team $team): Builder
+    private function recipientFilterCounts(Email $email, string $search): array
     {
-        return match ($filter) {
-            'retryable' => $query->retryableFor($team),
-            'opened' => $query->where('opens_count', '>', 0),
-            'clicked' => $query->where('clicks_count', '>', 0),
-            null => $query,
-            default => $query->where('status', $filter),
-        };
-    }
+        $counts = [];
 
-    protected function recipientFilter(Request $request): ?string
-    {
-        $status = $request->string('status')->toString();
-        $allowed = [
-            'retryable',
-            'opened',
-            'clicked',
-            ...array_column(EmailDeliveryStatus::cases(), 'value'),
-        ];
+        foreach (['all', 'opened', 'clicked', 'retryable', 'failed', 'bounced', 'complained'] as $filter) {
+            $counts[$filter] = $this->applyRecipientSearch(
+                $this->applyRecipientFilter($email->deliveries()->getQuery(), $filter === 'all' ? null : $filter, $email->team),
+                $search,
+            )->count();
+        }
 
-        return in_array($status, $allowed, true) ? $status : null;
+        return $counts;
     }
 
     protected function resolveAudienceId(Team $team, ?string $uuid): ?int

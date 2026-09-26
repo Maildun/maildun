@@ -4,6 +4,7 @@ use App\Enums\EmailEditor;
 use App\Enums\TeamRole;
 use App\Enums\TransactionalEmailStatus;
 use App\Jobs\SendTransactionalEmailTest;
+use App\Models\Audience;
 use App\Models\EmailTemplate;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
@@ -274,6 +275,42 @@ test('a transactional email can be published and unpublished', function () {
 
     expect($email->status)->toBe(TransactionalEmailStatus::Draft)
         ->and($email->published_at?->eq($publishedAt))->toBeTrue();
+});
+
+test('an email an audience confirms signups with cannot be unpublished or deleted', function (string $method, string $routeName) {
+    $user = User::factory()->create();
+    $email = TransactionalEmail::factory()->for($user->currentTeam)->published()->create();
+    Audience::factory()->for($user->currentTeam)->create([
+        'name' => 'Newsletter',
+        'double_opt_in' => true,
+        'double_opt_in_email_id' => $email->id,
+    ]);
+
+    $this->actingAs($user)
+        ->{$method}(route($routeName, [$user->currentTeam, $email]))
+        ->assertInvalid(['email' => 'Newsletter uses this as its double opt-in confirmation email.']);
+
+    expect($email->fresh()->status)->toBe(TransactionalEmailStatus::Published);
+    $this->assertNotSoftDeleted($email);
+})->with([
+    'unpublish' => ['post', 'transactional_emails.unpublish'],
+    'delete' => ['delete', 'transactional_emails.destroy'],
+]);
+
+test('an email stays unpublishable when its audience turned double opt-in off', function () {
+    $user = User::factory()->create();
+    $email = TransactionalEmail::factory()->for($user->currentTeam)->published()->create();
+    Audience::factory()->for($user->currentTeam)->create([
+        'double_opt_in' => false,
+        'double_opt_in_email_id' => $email->id,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('transactional_emails.unpublish', [$user->currentTeam, $email]))
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect($email->fresh()->status)->toBe(TransactionalEmailStatus::Draft);
 });
 
 test('publishing requires a subject and content', function () {

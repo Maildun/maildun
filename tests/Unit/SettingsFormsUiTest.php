@@ -171,3 +171,17 @@ test('member actions keep role editing in a dialog and group password recovery t
         ->toContain('role === member.role')
         ->toContain('updateMember([team.slug, member.id])');
 });
+
+test('sender row actions report refusals and lapsed senders are called out', function () {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/teams/sender.tsx');
+
+    expect($source)->toBeString()
+        ->toContain('function toastRequestError(title: string)')
+        ->toContain("'The DNS check could not run.'")
+        ->toContain("'The verification email could not be sent.'")
+        ->toContain("'The default sender could not be changed.'")
+        ->toContain("toastRequestError('The sender could not be removed.')")
+        ->toContain("'The sender domain could not be removed.'")
+        ->toContain('data-test="sender-retest-required"')
+        ->toContain('(sender) => sender.was_verified && !sender.is_verified');
+});

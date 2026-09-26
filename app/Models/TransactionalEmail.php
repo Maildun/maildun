@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\EmailEditor;
+use App\Enums\TestSendStatus;
 use App\Enums\TransactionalEmailStatus;
 use Database\Factories\TransactionalEmailFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -35,6 +36,9 @@ use Illuminate\Support\Str;
  * @property list<array{key: string, example: string}> $variables
  * @property Carbon|null $published_at
  * @property Carbon|null $last_tested_at
+ * @property TestSendStatus|null $last_test_status
+ * @property string|null $last_test_recipient
+ * @property string|null $last_test_error
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
@@ -88,6 +92,37 @@ class TransactionalEmail extends Model
     public function deliveries(): HasMany
     {
         return $this->hasMany(TransactionalEmailDelivery::class);
+    }
+
+    /**
+     * Audiences that send this email as their double opt-in confirmation.
+     *
+     * @return HasMany<Audience, $this>
+     */
+    public function doubleOptInAudiences(): HasMany
+    {
+        return $this->hasMany(Audience::class, 'double_opt_in_email_id')
+            ->where('double_opt_in', true);
+    }
+
+    /**
+     * Why this email cannot be unpublished or deleted: an audience still
+     * needs it to confirm new signups, which would otherwise stay pending
+     * without ever receiving a link. Null when nothing depends on it.
+     */
+    public function doubleOptInBlockReason(): ?string
+    {
+        $audienceNames = $this->doubleOptInAudiences()->orderBy('name')->pluck('name');
+
+        if ($audienceNames->isEmpty()) {
+            return null;
+        }
+
+        return trans_choice(
+            ':audiences uses this as its double opt-in confirmation email. Choose another confirmation email or turn off double opt-in first.|:audiences use this as their double opt-in confirmation email. Choose another confirmation email or turn off double opt-in first.',
+            $audienceNames->count(),
+            ['audiences' => $audienceNames->join(', ', ' and ')],
+        );
     }
 
     public function isPublished(): bool
@@ -177,6 +212,7 @@ class TransactionalEmail extends Model
             'variables' => 'array',
             'published_at' => 'datetime',
             'last_tested_at' => 'datetime',
+            'last_test_status' => TestSendStatus::class,
         ];
     }
 

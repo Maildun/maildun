@@ -3,6 +3,7 @@
 namespace App\Actions\Emails;
 
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailStatus;
 use App\Models\Email;
 use App\Models\EmailDeliveryAttempt;
@@ -29,6 +30,18 @@ class FinalizeEmailSend
 
         $failureReason = __('The delivery did not report back before the campaign finished.');
 
+        // A loader that checked the campaign just before it was stopped can
+        // still insert rows whose claims then fail; they were never sent.
+        if ($email->status === EmailStatus::Stopped) {
+            $email->deliveries()
+                ->where('status', EmailDeliveryStatus::Queued)
+                ->whereNull('send_attempted_at')
+                ->update([
+                    'status' => EmailDeliveryStatus::Cancelled,
+                    'failure_reason' => __('The campaign was stopped before this recipient was sent to.'),
+                ]);
+        }
+
         DB::transaction(function () use ($email, $failureReason): void {
             // A worker killed after the transport accepted a message leaves the
             // parent and attempt claimed. A failed loader may also leave queued
@@ -51,29 +64,14 @@ class FinalizeEmailSend
                 ->update([
                     'status' => EmailDeliveryStatus::Failed,
                     'failure_reason' => $failureReason,
+                    'failure_code' => EmailFailureCode::NoReport,
                 ]);
         }, attempts: 3);
 
-        if ($email->deliveries()->count() < $email->recipient_count) {
-            $email->update([
-                'status' => EmailStatus::Failed,
-                'sent_at' => now(),
-            ]);
-
-            return;
-        }
-
-        $failed = $email->deliveries()->whereIn('status', [
-            EmailDeliveryStatus::Failed,
-            EmailDeliveryStatus::Rejected,
-        ])->count();
+        $email->sendRuns()->whereNull('finished_at')->update(['finished_at' => now()]);
 
         $email->update([
-            'status' => match (true) {
-                $failed === 0 => EmailStatus::Sent,
-                $failed >= $email->recipient_count => EmailStatus::Failed,
-                default => EmailStatus::PartiallyFailed,
-            },
+            'status' => app(ResolveCampaignOutcome::class)->handle($email),
             'sent_at' => now(),
         ]);
     }

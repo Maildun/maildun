@@ -7,7 +7,9 @@ use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\RetryEmailDeliveries;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailProvider;
+use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
@@ -20,6 +22,7 @@ use App\Models\Email;
 use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
+use App\Models\EmailSendRun;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
@@ -96,6 +99,31 @@ test('a campaign skips addresses its workspace has suppressed', function () {
     expect($email->fresh()->recipient_count)->toBe(2);
     expect($email->deliveries()->orderBy('email_address')->pluck('email_address')->all())
         ->toBe(['other-workspace@example.com', 'reader@example.com']);
+});
+
+test('a campaign skips double opt-in signups who never confirmed', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    Subscriber::factory()->for($audience)->create(['email' => 'confirmed@example.com']);
+    Subscriber::factory()->for($audience)->pendingConfirmation()->create(['email' => 'pending@example.com']);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.send', [$team, $email]))
+        ->assertRedirect(route('emails.show', [$team, $email]));
+
+    [$loader] = (new PrepareEmailSendChunk($email->id))->withFakeBatch();
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    expect($email->fresh()->recipient_count)->toBe(1);
+    expect($email->deliveries()->pluck('email_address')->all())->toBe(['confirmed@example.com']);
 });
 
 test('a campaign whose only subscribers are suppressed cannot be queued', function () {
@@ -297,7 +325,8 @@ test('the campaign report exposes dedicated overview, recipient, link, and previ
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('emails/links')
-            ->where('links.0.clicks', 1));
+            ->where('links.0.clicks', 1)
+            ->where('links.0.unique_clicks', 1));
 
     $this->actingAs($user)
         ->get(route('emails.preview', [$user->currentTeam, $email]))
@@ -366,7 +395,10 @@ test('an SMTP campaign report does not claim delivery feedback', function () {
 
 test('a delivery job sends one tracked message through the configured mailer', function () {
     Mail::fake();
-    $email = Email::factory()->create(['html' => '<a href="https://example.com">Visit</a>']);
+    $email = Email::factory()->create([
+        'html' => '<a href="https://example.com">Visit</a>',
+        'status' => EmailStatus::Sending,
+    ]);
     TeamEmailIntegration::factory()->for($email->team)->ses()->create();
     $delivery = $email->deliveries()->create([
         'email_address' => 'reader@example.com',
@@ -672,6 +704,33 @@ test('a retry leaves deliveries to suppressed addresses alone', function () {
         ->and($suppressed->fresh()->status)->toBe(EmailDeliveryStatus::Failed);
 });
 
+test('a retry leaves deliveries to subscribers pending confirmation alone', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 2,
+    ]);
+    $confirmed = EmailDelivery::factory()->for($email)->create([
+        'subscriber_id' => Subscriber::factory()->for($audience)->create()->id,
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+    $pending = EmailDelivery::factory()->for($email)->create([
+        'subscriber_id' => Subscriber::factory()->for($audience)->pendingConfirmation()->create()->id,
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+
+    app(RetryEmailDeliveries::class)->handle($email);
+
+    expect($confirmed->fresh()->status)->toBe(EmailDeliveryStatus::Queued)
+        ->and($pending->fresh()->status)->toBe(EmailDeliveryStatus::Failed);
+});
+
 test('a bulk retry leaves unconfirmed deliveries alone unless asked to include them', function (bool $includeUnconfirmed, EmailDeliveryStatus $unconfirmedStatus) {
     Bus::fake();
 
@@ -882,6 +941,200 @@ test('the campaign report does not count suppressed addresses as retryable', fun
             ->where('metrics.retryable', 1));
 });
 
+test('a sending campaign reports deliveries waiting on an automatic retry', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 3,
+        'send_started_at' => now(),
+    ]);
+    $retrying = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+    EmailDeliveryAttempt::factory()->for($retrying, 'delivery')->create(['status' => EmailDeliveryStatus::Failed]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Failed]);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.retrying', 1)
+            ->where('metrics.failed', 1));
+});
+
+test('a sending campaign with no finished delivery for several minutes is stalled', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 2,
+        'send_started_at' => now()->subMinutes(20),
+    ]);
+    EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Sent,
+        'updated_at' => now()->subMinutes(12),
+    ]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.stalled', true)
+            ->where('metrics.worker_state', 'unknown')
+            ->where('metrics.eta_seconds', null));
+});
+
+test('a sending campaign estimates the time left from its recent pace', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 20,
+        'send_started_at' => now()->subMinutes(5),
+    ]);
+    EmailDelivery::factory()->count(10)->for($email)->create([
+        'status' => EmailDeliveryStatus::Sent,
+        'updated_at' => now()->subMinute(),
+    ]);
+    EmailDelivery::factory()->count(10)->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.stalled', false)
+            ->where('metrics.eta_seconds', 300));
+});
+
+test('a finished campaign reports no in-flight progress', function () {
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 1,
+        'sent_at' => now(),
+    ]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Sent]);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$user->currentTeam, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.stalled', false)
+            ->where('metrics.worker_state', null));
+});
+
+test('a delivery that fails for good records why as a failure code', function (Throwable $exception, EmailFailureCode $code) {
+    $delivery = EmailDelivery::factory()->create(['status' => EmailDeliveryStatus::Sending]);
+
+    (new SendEmailDelivery($delivery->id))->failed($exception);
+
+    expect($delivery->fresh())
+        ->status->toBe(EmailDeliveryStatus::Failed)
+        ->failure_code->toBe($code);
+})->with([
+    'no tested provider' => [fn () => EmailTransportException::providerUnavailable(), EmailFailureCode::ProviderUnavailable],
+    'unverified sender' => [fn () => EmailTransportException::unauthorizedSender(), EmailFailureCode::SenderUnauthorized],
+    'provider refused' => [fn () => new EmailTransportException, EmailFailureCode::ProviderRefused],
+    'anything else' => [fn () => new RuntimeException('boom'), EmailFailureCode::Unknown],
+]);
+
+test('the report groups failed deliveries by cause, most common first', function () {
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 5,
+    ]);
+    EmailDelivery::factory()->count(2)->for($email)->create([
+        'status' => EmailDeliveryStatus::Failed,
+        'failure_code' => EmailFailureCode::ProviderRefused,
+    ]);
+    EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Failed,
+        'failure_code' => null,
+    ]);
+    EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Delayed,
+        'failure_code' => EmailFailureCode::TransientBounce,
+    ]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Sent]);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$user->currentTeam, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('failureCauses', 3)
+            ->where('failureCauses.0.code', 'provider_refused')
+            ->where('failureCauses.0.count', 2)
+            ->where('failureCauses.0.label', 'The provider refused the message'));
+});
+
+test('finalizing a campaign codes deliveries that never reported back', function () {
+    $email = Email::factory()->create(['status' => EmailStatus::Sending, 'recipient_count' => 1]);
+    $delivery = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+
+    (new FinalizeEmailSend($email->id))();
+
+    expect($delivery->fresh()->failure_code)->toBe(EmailFailureCode::NoReport);
+});
+
+test('recipients a failed loader never reached can be queued without resending the rest', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    [$reached, $missedA, $missedB] = Subscriber::factory()->for($audience)->count(3)->create()->sortBy('id')->values()->all();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello</p>',
+        'status' => EmailStatus::Failed,
+        'recipient_count' => 3,
+        'send_started_at' => now()->subHour(),
+        'sent_at' => now()->subHour(),
+    ]);
+    $sent = EmailDelivery::factory()->for($email)->create([
+        'subscriber_id' => $reached->id,
+        'email_address' => $reached->email,
+        'status' => EmailDeliveryStatus::Sent,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page->where('metrics.unqueued', 2));
+
+    $this->actingAs($user)
+        ->post(route('emails.queue-remaining', [$team, $email]))
+        ->assertRedirect();
+
+    $run = $email->sendRuns()->sole();
+    expect($run->kind)->toBe(EmailSendRunKind::Resume)
+        ->and($run->recipient_count)->toBe(2)
+        ->and($email->fresh()->status)->toBe(EmailStatus::Queued);
+    Bus::assertBatched(fn (PendingBatch $batch): bool => $batch->jobs->first() instanceof PrepareEmailSendChunk
+        && $batch->jobs->first()->afterSubscriberId === $reached->id);
+
+    [$loader] = (new PrepareEmailSendChunk($email->id, $reached->id))->withFakeBatch();
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    expect($email->deliveries()->whereIn('subscriber_id', [$missedA->id, $missedB->id])->pluck('email_send_run_id')->unique()->all())->toBe([$run->id])
+        ->and($sent->fresh()->status)->toBe(EmailDeliveryStatus::Sent)
+        ->and($email->deliveries()->count())->toBe(3);
+});
+
+test('a fully prepared campaign has no remaining recipients to queue', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 1,
+    ]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Sent]);
+
+    $this->actingAs($user)
+        ->post(route('emails.queue-remaining', [$user->currentTeam, $email]))
+        ->assertInvalid(['email' => 'Every recipient of this campaign has already been queued.']);
+
+    Bus::assertNothingBatched();
+});
+
 test('a single failed delivery can be retried', function () {
     Bus::fake();
 
@@ -914,6 +1167,78 @@ test('a single failed delivery can be retried', function () {
     Bus::assertBatched(fn (PendingBatch $batch): bool => $batch->jobs->count() === 1);
     expect($failed->fresh()->status)->toBe(EmailDeliveryStatus::Queued)
         ->and($email->fresh()->status)->toBe(EmailStatus::Sending);
+});
+
+test('a retry is recorded as its own send run with its own progress', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 3,
+        'send_started_at' => now()->subHour(),
+        'sent_at' => now()->subHour(),
+    ]);
+    $firstRun = EmailSendRun::factory()->for($email)->finished()->create(['recipient_count' => 3]);
+    $failed = EmailDelivery::factory()->for($email)->create([
+        'email_send_run_id' => $firstRun->id,
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+    EmailDelivery::factory()->count(2)->for($email)->create([
+        'email_send_run_id' => $firstRun->id,
+        'status' => EmailDeliveryStatus::Sent,
+    ]);
+
+    app(RetryEmailDeliveries::class)->handle($email);
+
+    $retryRun = $email->sendRuns()->latest('id')->first();
+
+    expect($retryRun->kind)->toBe(EmailSendRunKind::Retry)
+        ->and($retryRun->recipient_count)->toBe(1)
+        ->and($retryRun->finished_at)->toBeNull()
+        ->and($failed->fresh()->email_send_run_id)->toBe($retryRun->id);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.run_kind', 'retry')
+            ->where('metrics.run_recipient_count', 1)
+            ->where('metrics.run_processed', 0)
+            ->has('sendRuns', 2)
+            ->where('sendRuns.0.kind', 'retry')
+            ->where('sendRuns.1.kind', 'initial')
+            ->where('sendRuns.1.processed', 2));
+
+    (new FinalizeEmailSend($email->id))();
+
+    expect($retryRun->fresh()->finished_at)->not->toBeNull();
+});
+
+test('the first send records an initial run and stamps its deliveries', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->count(2)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello</p>',
+    ]);
+
+    $this->actingAs($user)->post(route('emails.send', [$team, $email]));
+
+    [$loader] = (new PrepareEmailSendChunk($email->id))->withFakeBatch();
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    $run = $email->sendRuns()->sole();
+
+    expect($run->kind)->toBe(EmailSendRunKind::Initial)
+        ->and($run->recipient_count)->toBe(2)
+        ->and($email->deliveries()->where('email_send_run_id', $run->id)->count())->toBe(2);
 });
 
 test('permanent bounces cannot be retried', function () {

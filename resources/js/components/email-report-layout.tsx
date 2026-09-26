@@ -5,6 +5,8 @@ import {
     MouseLeftClick01Icon,
     Refresh03Icon,
     UserGroupIcon,
+    InformationCircleIcon,
+    StopCircleIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { IconSvgElement } from '@hugeicons/react';
@@ -16,7 +18,13 @@ import {
     usePage,
     usePoll,
 } from '@inertiajs/react';
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+} from 'react';
 import type { ReactNode } from 'react';
 import {
     Alert,
@@ -47,17 +55,29 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
+import { toast } from '@/components/ui/toast';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
+    CAMPAIGN_STATUS_LABELS,
+    campaignStatusVariant,
+} from '@/lib/email-status';
 import { formatRelativeTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
     index,
     links as linksRoute,
     preview as previewRoute,
+    queueRemaining,
     recipients,
     retry,
     show,
+    stop,
 } from '@/routes/emails';
-import type { EmailCampaignStatus } from '@/types/emails';
+import type { EmailCampaignStatus, EmailDeliveryStatus } from '@/types/emails';
 
 export type CampaignEmailProvider =
     'smtp' | 'ses' | 'sendgrid' | 'mailgun' | 'resend' | 'postmark' | 'mixed';
@@ -87,9 +107,27 @@ export type CampaignReportMetrics = {
     bounced: number;
     complained: number;
     failed: number;
+    /** Queued deliveries whose last send attempt failed; the queue tries them again. */
+    retrying: number;
+    /** Recipients never sent to because a person stopped the campaign. */
+    cancelled: number;
+    /** Recipients never queued because preparing the send failed part-way. */
+    unqueued: number;
     retryable: number;
     /** Retryable deliveries that were handed to the provider but never confirmed. */
     unconfirmed: number;
+    /** The newest send run: the first send or a retry. Null for campaigns sent before runs were recorded. */
+    run_kind: 'initial' | 'retry' | 'resume' | null;
+    run_recipient_count: number | null;
+    run_processed: number | null;
+    run_failed: number | null;
+    /** Only while queued or sending: when a delivery last finished. */
+    last_activity_at: string | null;
+    /** No delivery has finished for several minutes while the campaign is active. */
+    stalled: boolean;
+    worker_state: 'running' | 'paused' | 'stopped' | 'unknown' | null;
+    /** Rough time left from the pace of the last five minutes. */
+    eta_seconds: number | null;
     delivery_feedback: 'available' | 'partial' | 'unavailable';
     feedback_recipient_count: number;
     delivery_rate: number | null;
@@ -113,21 +151,23 @@ export type CampaignReportRecipient = {
     unconfirmed: boolean;
 };
 
-export type CampaignRecipientStatus =
-    | 'queued'
-    | 'sending'
-    | 'sent'
-    | 'delivered'
-    | 'delayed'
-    | 'bounced'
-    | 'complained'
-    | 'rejected'
-    | 'failed';
+export type CampaignRecipientStatus = EmailDeliveryStatus;
 
 export type CampaignTrackedLink = {
     uuid: string;
     url: string;
     clicks: number;
+    /** Recipients who clicked this link at least once. */
+    unique_clicks: number;
+};
+
+export type CampaignSendRun = {
+    kind: 'initial' | 'retry' | 'resume';
+    recipient_count: number;
+    processed: number;
+    failed: number;
+    started_at: string;
+    finished_at: string | null;
 };
 
 export type CampaignReportPage =
@@ -140,15 +180,6 @@ type Props = {
     activePage: CampaignReportPage;
     pollProps: string[];
     children: ReactNode;
-};
-
-const CAMPAIGN_LABELS: Record<EmailCampaignStatus, string> = {
-    draft: 'Draft',
-    queued: 'Queued',
-    sending: 'Sending',
-    sent: 'Sent',
-    partially_failed: 'Partially failed',
-    failed: 'Failed',
 };
 
 const EMAIL_PROVIDER_LABELS: Record<CampaignEmailProvider, string> = {
@@ -203,6 +234,9 @@ export function EmailReportLayout({
     const [retryOpen, setRetryOpen] = useState(false);
     const [retrying, setRetrying] = useState(false);
     const [includeUnconfirmed, setIncludeUnconfirmed] = useState(false);
+    const [queueingRemaining, setQueueingRemaining] = useState(false);
+    const [stopOpen, setStopOpen] = useState(false);
+    const [stopping, setStopping] = useState(false);
 
     setLayoutProps({
         fullscreen: false,
@@ -221,6 +255,40 @@ export function EmailReportLayout({
     });
     const isActive =
         campaign.status === 'queued' || campaign.status === 'sending';
+    const wasActive = useRef(isActive);
+    // Retries and resumed loads report their own progress, not the campaign's.
+    const isRetryRun =
+        metrics.run_kind === 'retry' || metrics.run_kind === 'resume';
+    const runRecipients = isRetryRun
+        ? (metrics.run_recipient_count ?? 0)
+        : campaign.recipient_count;
+    const runProcessed = isRetryRun
+        ? (metrics.run_processed ?? 0)
+        : metrics.processed;
+    const runFailed = isRetryRun ? (metrics.run_failed ?? 0) : metrics.failed;
+    const runProgress = isRetryRun
+        ? Math.round((runProcessed / Math.max(runRecipients, 1)) * 100)
+        : metrics.progress;
+
+    useEffect(() => {
+        if (wasActive.current && !isActive) {
+            toast.add(
+                campaign.status === 'sent'
+                    ? {
+                          type: 'success',
+                          title: `${campaign.name} finished sending.`,
+                      }
+                    : {
+                          type: 'warning',
+                          title: `${campaign.name} finished with failures.`,
+                          description:
+                              'Retry failed deliveries from this report.',
+                      },
+            );
+        }
+
+        wasActive.current = isActive;
+    }, [isActive, campaign.name, campaign.status]);
     const providerLabel = campaign.provider
         ? EMAIL_PROVIDER_LABELS[campaign.provider]
         : null;
@@ -271,17 +339,9 @@ export function EmailReportLayout({
                                 {campaign.name}
                             </h1>
                             <Badge
-                                variant={
-                                    campaign.status === 'sent'
-                                        ? 'success'
-                                        : campaign.status === 'failed' ||
-                                            campaign.status ===
-                                                'partially_failed'
-                                          ? 'destructive'
-                                          : 'info'
-                                }
+                                variant={campaignStatusVariant(campaign.status)}
                             >
-                                {CAMPAIGN_LABELS[campaign.status]}
+                                {CAMPAIGN_STATUS_LABELS[campaign.status]}
                             </Badge>
                             <Badge variant="outline">{providerLabel}</Badge>
                         </div>
@@ -298,6 +358,20 @@ export function EmailReportLayout({
                                   ? `Started ${formatRelativeTime(campaign.send_started_at)}`
                                   : 'Preparing delivery'}
                         </p>
+                        {canManage && isActive && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                data-test="stop-sending-button"
+                                onClick={() => setStopOpen(true)}
+                            >
+                                <HugeiconsIcon
+                                    icon={StopCircleIcon}
+                                    data-icon="inline-start"
+                                />
+                                Stop sending
+                            </Button>
+                        )}
                         {canRetryFailed && (
                             <Button
                                 type="button"
@@ -318,22 +392,175 @@ export function EmailReportLayout({
                 {isActive && (
                     <Card>
                         <CardHeader>
-                            <CardTitle>Sending campaign</CardTitle>
+                            <CardTitle>
+                                {metrics.run_kind === 'retry'
+                                    ? 'Retrying failed deliveries'
+                                    : metrics.run_kind === 'resume'
+                                      ? 'Sending to the remaining recipients'
+                                      : 'Sending campaign'}
+                            </CardTitle>
                             <CardDescription>
-                                {metrics.processed} of{' '}
-                                {campaign.recipient_count} recipients processed.
-                                This report refreshes automatically.
+                                {runProcessed.toLocaleString()} of{' '}
+                                {runRecipients.toLocaleString()}{' '}
+                                {isRetryRun
+                                    ? 'retried deliveries'
+                                    : 'recipients'}{' '}
+                                processed. You can leave this page; sending
+                                continues in the background and this report
+                                refreshes on its own.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent>
-                            <div className="h-2 overflow-hidden rounded-full bg-muted">
+                        <CardContent className="flex flex-col gap-3">
+                            <div
+                                className="flex h-2 overflow-hidden rounded-full bg-muted"
+                                data-test="sending-progress-bar"
+                                role="progressbar"
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-valuenow={runProgress}
+                            >
                                 <div
-                                    className="h-full rounded-full bg-primary transition-[width]"
-                                    style={{ width: `${metrics.progress}%` }}
+                                    className="h-full bg-primary transition-[width]"
+                                    style={{
+                                        width: `${percentOf(runProcessed - runFailed, runRecipients)}%`,
+                                    }}
+                                />
+                                <div
+                                    className="h-full bg-destructive transition-[width]"
+                                    style={{
+                                        width: `${percentOf(runFailed, runRecipients)}%`,
+                                    }}
                                 />
                             </div>
+                            {metrics.eta_seconds !== null &&
+                            !metrics.stalled ? (
+                                <p
+                                    className="text-sm text-muted-foreground"
+                                    data-test="sending-eta"
+                                >
+                                    About {formatEta(metrics.eta_seconds)} left
+                                    at the current pace.
+                                </p>
+                            ) : null}
+                            {(metrics.failed > 0 || metrics.retrying > 0) && (
+                                <p
+                                    className="text-sm text-muted-foreground tabular-nums"
+                                    data-test="sending-failure-counts"
+                                >
+                                    {metrics.failed.toLocaleString()} failed ·{' '}
+                                    {metrics.retrying.toLocaleString()} waiting
+                                    to retry
+                                </p>
+                            )}
                         </CardContent>
                     </Card>
+                )}
+
+                {isActive && metrics.stalled && (
+                    <Alert variant="warning" data-test="sending-stalled-alert">
+                        <AlertTitle>
+                            {metrics.worker_state === 'stopped'
+                                ? 'No queue worker is running'
+                                : metrics.worker_state === 'paused'
+                                  ? 'Queue workers are paused'
+                                  : 'Sending has stalled'}
+                        </AlertTitle>
+                        <AlertDescription>
+                            {metrics.worker_state === 'stopped'
+                                ? 'Nothing will send until Horizon is started again under your process manager.'
+                                : metrics.worker_state === 'paused'
+                                  ? 'Horizon is paused, so no deliveries are being handed to the provider. Continue it with php artisan horizon:continue.'
+                                  : `No delivery has finished ${metrics.last_activity_at ? `since ${formatRelativeTime(metrics.last_activity_at)} ago` : 'since the send started'}. Check that queue workers are running; stuck deliveries are recovered automatically.`}
+                        </AlertDescription>
+                    </Alert>
+                )}
+
+                {isActive && metrics.failed > 0 && (
+                    <Alert variant="warning" data-test="sending-failures-alert">
+                        <AlertTitle>
+                            {metrics.failed.toLocaleString()}{' '}
+                            {metrics.failed === 1
+                                ? 'delivery has'
+                                : 'deliveries have'}{' '}
+                            failed so far
+                        </AlertTitle>
+                        <AlertDescription>
+                            Sending continues for everyone else. Failed
+                            deliveries used up their automatic retries; you can
+                            retry them from this report once the campaign
+                            finishes.
+                        </AlertDescription>
+                    </Alert>
+                )}
+
+                {campaign.status === 'stopped' && metrics.cancelled > 0 && (
+                    <Alert data-test="campaign-stopped-alert">
+                        <AlertTitle>Sending was stopped</AlertTitle>
+                        <AlertDescription>
+                            {metrics.cancelled.toLocaleString()}{' '}
+                            {metrics.cancelled === 1
+                                ? 'recipient was'
+                                : 'recipients were'}{' '}
+                            not sent this campaign. Everyone already handed to
+                            the provider before the stop received it.
+                        </AlertDescription>
+                    </Alert>
+                )}
+
+                {canManage && !isActive && metrics.unqueued > 0 && (
+                    <Alert
+                        variant="destructive"
+                        data-test="unqueued-recipients-alert"
+                    >
+                        <AlertTitle>
+                            {metrics.unqueued.toLocaleString()}{' '}
+                            {metrics.unqueued === 1
+                                ? 'recipient was'
+                                : 'recipients were'}{' '}
+                            never queued
+                        </AlertTitle>
+                        <AlertDescription>
+                            Preparing this send stopped part-way, so these
+                            recipients never received it. Queue them to continue
+                            where it stopped; nobody who already got the
+                            campaign is sent it again.
+                        </AlertDescription>
+                        <AlertAction>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={queueingRemaining}
+                                data-test="queue-remaining-button"
+                                onClick={() =>
+                                    router.post(
+                                        queueRemaining.url([
+                                            currentTeam.slug,
+                                            campaign.uuid,
+                                        ]),
+                                        {},
+                                        {
+                                            preserveScroll: true,
+                                            onStart: () =>
+                                                setQueueingRemaining(true),
+                                            onFinish: () =>
+                                                setQueueingRemaining(false),
+                                            onError: (errors) =>
+                                                toast.add({
+                                                    type: 'error',
+                                                    title: 'Could not queue the remaining recipients.',
+                                                    description:
+                                                        errors.email ??
+                                                        'Try again in a moment.',
+                                                }),
+                                        },
+                                    )
+                                }
+                            >
+                                Queue remaining
+                            </Button>
+                        </AlertAction>
+                    </Alert>
                 )}
 
                 {canRetryFailed && (
@@ -370,6 +597,7 @@ export function EmailReportLayout({
                         label="Recipients"
                         value={campaign.recipient_count.toLocaleString()}
                         detail={`${metrics.processed.toLocaleString()} processed`}
+                        hint="Everyone the campaign was queued for. Processed counts recipients whose send finished, whether it succeeded or not."
                         icon={UserGroupIcon}
                     />
                     <MetricCard
@@ -380,18 +608,21 @@ export function EmailReportLayout({
                                 : `${metrics.delivery_rate}%`
                         }
                         detail={deliveryFeedbackDetail}
+                        hint="Share of Amazon SES recipients whose mail server confirmed receipt. SMTP hands mail off without reporting delivery, so it is left out."
                         icon={MailSend01Icon}
                     />
                     <MetricCard
                         label="Unique opens"
                         value={`${metrics.open_rate}%`}
                         detail={`${metrics.opened.toLocaleString()} recipients`}
+                        hint="Recipients who opened at least once, including privacy proxies and security scanners that load images automatically. Human engagement below counts only confident human opens."
                         icon={MailOpen01Icon}
                     />
                     <MetricCard
                         label="Unique clicks"
                         value={`${metrics.click_rate}%`}
                         detail={`${metrics.clicked.toLocaleString()} recipients`}
+                        hint="Recipients who clicked any tracked link at least once, including link scanners. Human engagement below counts only confident human clicks."
                         icon={MouseLeftClick01Icon}
                     />
                 </div>
@@ -404,6 +635,58 @@ export function EmailReportLayout({
 
                 {children}
             </div>
+
+            <AlertDialog
+                open={stopOpen}
+                onOpenChange={(open) => !stopping && setStopOpen(open)}
+            >
+                <AlertDialogContent data-test="stop-sending-dialog">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Stop sending?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Recipients who have not been sent to yet will not
+                            receive this campaign, and this cannot be undone.
+                            Messages already handed to the provider cannot be
+                            recalled.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={stopping}>
+                            Keep sending
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            variant="destructive"
+                            data-test="confirm-stop-sending"
+                            disabled={stopping}
+                            onClick={() =>
+                                router.post(
+                                    stop.url([currentTeam.slug, campaign.uuid]),
+                                    {},
+                                    {
+                                        preserveScroll: true,
+                                        onStart: () => setStopping(true),
+                                        onError: (errors) =>
+                                            toast.add({
+                                                type: 'error',
+                                                title: 'Could not stop sending.',
+                                                description:
+                                                    errors.email ??
+                                                    'Try again in a moment.',
+                                            }),
+                                        onFinish: () => {
+                                            setStopping(false);
+                                            setStopOpen(false);
+                                        },
+                                    },
+                                )
+                            }
+                        >
+                            {stopping && <Spinner data-icon="inline-start" />}
+                            Stop sending
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             <AlertDialog open={retryOpen} onOpenChange={setRetryOpen}>
                 <AlertDialogContent>
@@ -466,6 +749,14 @@ export function EmailReportLayout({
                                     { include_unconfirmed: includeUnconfirmed },
                                     {
                                         onStart: () => setRetrying(true),
+                                        onError: (errors) =>
+                                            toast.add({
+                                                type: 'error',
+                                                title: 'Could not retry failed deliveries.',
+                                                description:
+                                                    errors.email ??
+                                                    'Nothing was queued. Try again in a moment.',
+                                            }),
                                         onFinish: () => {
                                             setRetrying(false);
                                             setRetryOpen(false);
@@ -605,17 +896,42 @@ function MetricCard({
     label,
     value,
     detail,
+    hint,
     icon,
 }: {
     label: string;
     value: string;
     detail: string;
+    /** What the metric counts, shown in a tooltip next to the label. */
+    hint: string;
     icon: IconSvgElement;
 }) {
     return (
         <Card>
             <CardHeader>
-                <CardDescription>{label}</CardDescription>
+                <CardDescription className="flex items-center gap-1">
+                    {label}
+                    <Tooltip>
+                        <TooltipTrigger
+                            render={
+                                <button
+                                    type="button"
+                                    aria-label={`About ${label}`}
+                                    className="text-muted-foreground hover:text-foreground"
+                                />
+                            }
+                        >
+                            <HugeiconsIcon
+                                icon={InformationCircleIcon}
+                                className="size-3.5"
+                                aria-hidden
+                            />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-64">
+                            {hint}
+                        </TooltipContent>
+                    </Tooltip>
+                </CardDescription>
                 <CardAction>
                     <div className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                         <HugeiconsIcon
@@ -634,6 +950,22 @@ function MetricCard({
             </CardContent>
         </Card>
     );
+}
+
+function percentOf(part: number, whole: number): number {
+    return whole > 0 ? Math.min(100, Math.max(0, (part / whole) * 100)) : 0;
+}
+
+function formatEta(seconds: number): string {
+    if (seconds < 90) {
+        return 'a minute';
+    }
+
+    if (seconds < 5400) {
+        return `${Math.round(seconds / 60)} minutes`;
+    }
+
+    return `${Math.round(seconds / 3600)} hours`;
 }
 
 function CampaignPoller({ only }: { only: string[] }) {

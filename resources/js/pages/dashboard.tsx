@@ -38,15 +38,16 @@ import {
 } from '@/components/ui/empty';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMounted } from '@/hooks/use-mounted';
+import {
+    CAMPAIGN_STATUS_LABELS,
+    campaignStatusVariant,
+} from '@/lib/email-status';
 import { formatRelativeTime } from '@/lib/format';
 import { dashboard } from '@/routes';
 import { index as audiencesIndex } from '@/routes/audiences';
 import { index as automationsIndex } from '@/routes/automations';
 import { index as campaignsIndex, show as showCampaign } from '@/routes/emails';
-import type { DashboardInvitation } from '@/types';
-
-type DashboardCampaignStatus =
-    'draft' | 'queued' | 'sending' | 'sent' | 'partially_failed' | 'failed';
+import type { DashboardInvitation, EmailCampaignStatus } from '@/types';
 
 type DashboardData = {
     overview: {
@@ -59,9 +60,11 @@ type DashboardData = {
     recentCampaigns: {
         uuid: string;
         name: string;
-        status: DashboardCampaignStatus;
+        status: EmailCampaignStatus;
         recipients: number;
         delivered: number;
+        /** False when no recipient was sent through SES, which is the only transport that confirms delivery. */
+        deliveryReported: boolean;
         sentAt: string | null;
     }[];
 };
@@ -74,27 +77,6 @@ type Props = {
 const CHART_CONFIG = {
     total: { label: 'Total new subscribers', color: 'var(--primary)' },
 } satisfies ChartConfig;
-
-const CAMPAIGN_STATUS_LABELS: Record<DashboardCampaignStatus, string> = {
-    draft: 'Draft',
-    queued: 'Queued',
-    sending: 'Sending',
-    sent: 'Sent',
-    partially_failed: 'Partially failed',
-    failed: 'Failed',
-};
-
-const CAMPAIGN_STATUS_VARIANTS: Record<
-    DashboardCampaignStatus,
-    'default' | 'secondary' | 'success' | 'destructive'
-> = {
-    draft: 'default',
-    queued: 'secondary',
-    sending: 'secondary',
-    sent: 'success',
-    partially_failed: 'secondary',
-    failed: 'destructive',
-};
 
 export default function Dashboard({
     pendingInvitations = [],
@@ -180,8 +162,8 @@ export default function Dashboard({
                         }
                         description={
                             dashboardData.overview.deliveryRate === null
-                                ? 'No deliveries in the last 30 days'
-                                : 'Delivered in the last 30 days'
+                                ? 'No Amazon SES deliveries in the last 30 days'
+                                : 'Confirmed by Amazon SES in the last 30 days'
                         }
                         icon={MailSend01Icon}
                     />
@@ -263,17 +245,21 @@ export default function Dashboard({
                                             </div>
                                             <div className="flex items-center gap-3 sm:justify-end">
                                                 <span className="text-sm text-muted-foreground tabular-nums">
-                                                    {campaign.delivered.toLocaleString()}{' '}
-                                                    /{' '}
-                                                    {campaign.recipients.toLocaleString()}{' '}
-                                                    delivered
+                                                    {campaign.deliveryReported ? (
+                                                        <>
+                                                            {campaign.delivered.toLocaleString()}{' '}
+                                                            /{' '}
+                                                            {campaign.recipients.toLocaleString()}{' '}
+                                                            delivered
+                                                        </>
+                                                    ) : (
+                                                        'Delivery not reported'
+                                                    )}
                                                 </span>
                                                 <Badge
-                                                    variant={
-                                                        CAMPAIGN_STATUS_VARIANTS[
-                                                            campaign.status
-                                                        ]
-                                                    }
+                                                    variant={campaignStatusVariant(
+                                                        campaign.status,
+                                                    )}
                                                 >
                                                     {
                                                         CAMPAIGN_STATUS_LABELS[

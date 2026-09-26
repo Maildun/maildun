@@ -15,6 +15,7 @@ use App\Http\Controllers\ContactImportController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmailAttachmentController;
 use App\Http\Controllers\EmailController;
+use App\Http\Controllers\EmailDeliveryDetailController;
 use App\Http\Controllers\EmailLinkCheckController;
 use App\Http\Controllers\EmailTemplateController;
 use App\Http\Controllers\EmailTrackingController;
@@ -32,6 +33,7 @@ use App\Http\Controllers\SubscriptionConfirmationController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\TeamSenderVerificationController;
 use App\Http\Controllers\TransactionalEmailController;
+use App\Http\Controllers\TransactionalEmailLogController;
 use App\Http\Controllers\UnsubscribeController;
 use App\Http\Middleware\EnsureInstallationIsPending;
 use App\Http\Middleware\EnsureTeamMembership;
@@ -246,8 +248,21 @@ Route::prefix('{current_team}')
                 ->name('emails.send');
             Route::post('emails/{email}/retry', [EmailController::class, 'retry'])
                 ->name('emails.retry');
+            Route::post('emails/{email}/queue-remaining', [EmailController::class, 'queueRemaining'])
+                ->name('emails.queue-remaining');
+            Route::post('emails/{email}/stop', [EmailController::class, 'stop'])
+                ->name('emails.stop');
+            Route::post('emails/{email}/schedule', [EmailController::class, 'schedule'])
+                ->name('emails.schedule');
+            Route::delete('emails/{email}/schedule', [EmailController::class, 'unschedule'])
+                ->name('emails.unschedule');
             Route::post('emails/{email}/deliveries/{delivery}/retry', [EmailController::class, 'retryDelivery'])
                 ->name('emails.deliveries.retry');
+            Route::get('emails/{email}/deliveries/{delivery}', EmailDeliveryDetailController::class)
+                ->name('emails.deliveries.show');
+            Route::get('emails/{email}/recipients/exports/{format}', [ContactExportController::class, 'campaignRecipients'])
+                ->middleware('throttle:10,1')
+                ->name('emails.recipients.exports.show');
             Route::post('emails/{email}/test', [EmailController::class, 'sendTest'])
                 ->middleware('throttle:6,1')
                 ->name('emails.test');
@@ -267,6 +282,8 @@ Route::prefix('{current_team}')
                 ->parameters(['transactional-emails' => 'transactionalEmail'])
                 ->names('transactional_emails')
                 ->only(['index', 'store', 'edit', 'update', 'destroy']);
+            Route::get('transactional-emails/{transactionalEmail}/log', TransactionalEmailLogController::class)
+                ->name('transactional_emails.log');
             Route::post('transactional-emails/{transactionalEmail}/publish', [TransactionalEmailController::class, 'publish'])
                 ->name('transactional_emails.publish');
             Route::post('transactional-emails/{transactionalEmail}/unpublish', [TransactionalEmailController::class, 'unpublish'])

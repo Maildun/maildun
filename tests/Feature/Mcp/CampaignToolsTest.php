@@ -157,3 +157,16 @@ test('drafts a source-based campaign through MCP before its body is written', fu
         ->where('campaign.plain_text', null)
         ->etc());
 });
+
+test('refuses to delete a campaign that is still sending', function () {
+    $team = Team::factory()->create(['slug' => 'sending-workspace']);
+    $campaign = Email::factory()->for($team)->create(['status' => EmailStatus::Sending]);
+
+    MaildunServer::tool(DeleteCampaignTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $campaign->uuid,
+        'confirm_name' => $campaign->name,
+    ])->assertHasErrors(['Wait until this campaign finishes sending']);
+
+    $this->assertNotSoftDeleted($campaign);
+});

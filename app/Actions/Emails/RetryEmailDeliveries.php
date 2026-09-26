@@ -3,6 +3,7 @@
 namespace App\Actions\Emails;
 
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
 use App\Exceptions\EmailTransportException;
 use App\Jobs\SendEmailDelivery;
@@ -74,11 +75,19 @@ class RetryEmailDeliveries
                 )]);
             }
 
+            $sendRun = $lockedEmail->sendRuns()->create([
+                'kind' => EmailSendRunKind::Retry,
+                'recipient_count' => $deliveries->count(),
+                'started_at' => now(),
+            ]);
+
             $lockedEmail->deliveries()
                 ->whereKey($deliveries->modelKeys())
                 ->update([
+                    'email_send_run_id' => $sendRun->id,
                     'status' => EmailDeliveryStatus::Queued,
                     'failure_reason' => null,
+                    'failure_code' => null,
                     'provider_message_id' => null,
                     'send_attempted_at' => null,
                     'sent_at' => null,

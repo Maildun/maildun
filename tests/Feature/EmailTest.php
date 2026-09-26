@@ -1,7 +1,9 @@
 <?php
 
 use App\Enums\EmailAddressHealthReason;
+use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
+use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Jobs\SendCampaignTestEmail;
@@ -9,6 +11,7 @@ use App\Mail\ComposedEmailTest;
 use App\Models\Audience;
 use App\Models\Email;
 use App\Models\EmailAddressHealth;
+use App\Models\EmailDelivery;
 use App\Models\EmailTemplate;
 use App\Models\Media;
 use App\Models\Segment;
@@ -703,6 +706,24 @@ test('the preview and send page skips suppressed recipients and says why', funct
             ]));
 });
 
+test('the preview and send page counts unconfirmed double opt-in signups separately', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    Subscriber::factory()->for($audience)->create();
+    Subscriber::factory()->for($audience)->pendingConfirmation()->count(2)->create();
+    Subscriber::factory()->for($audience)->pendingConfirmation()->create(['email' => 'pending-bounced@example.com']);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => 'pending-bounced@example.com']);
+    $email = Email::factory()->for($team)->create(['audience_id' => $audience->id]);
+
+    $this->actingAs($user)
+        ->get(route('emails.preview-and-send', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('recipientCount', 1)
+            ->where('unconfirmedRecipients', 3)
+            ->where('suppressedRecipients.count', 0));
+});
+
 test('the preview and send page flags a missing unsubscribe tag', function (string $html, bool $missing) {
     $user = User::factory()->create();
     $team = $user->currentTeam;
@@ -1089,6 +1110,20 @@ test('an email can be deleted', function () {
     $this->assertSoftDeleted($email);
 });
 
+test('a campaign cannot be deleted while it is queued or sending', function (EmailStatus $status) {
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create(['status' => $status]);
+
+    $this->actingAs($user)
+        ->delete(route('emails.destroy', [$user->currentTeam, $email]))
+        ->assertForbidden();
+
+    $this->assertNotSoftDeleted($email);
+})->with([
+    'queued' => [EmailStatus::Queued],
+    'sending' => [EmailStatus::Sending],
+]);
+
 test('a queued campaign opens its report and cannot be edited', function () {
     $user = User::factory()->create();
     $email = Email::factory()->for($user->currentTeam)->create([
@@ -1248,4 +1283,22 @@ test('an audience filter from another team matches no campaign', function () {
         ->get(route('emails.index', ['current_team' => $team, 'audience' => $foreign->uuid]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page->has('emails.data', 0));
+});
+
+test('the campaign index shows progress for campaigns that are still sending', function () {
+    $user = User::factory()->create();
+    $sending = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 4,
+        'send_started_at' => now(),
+    ]);
+    EmailDelivery::factory()->for($sending)->create(['status' => EmailDeliveryStatus::Sent]);
+    EmailDelivery::factory()->for($sending)->count(3)->create(['status' => EmailDeliveryStatus::Queued]);
+    Email::factory()->for($user->currentTeam)->create(['status' => EmailStatus::Draft]);
+
+    $this->actingAs($user)
+        ->get(route('emails.index', $user->currentTeam))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('emails.data', fn ($rows) => collect($rows)->firstWhere('uuid', $sending->uuid)['progress'] === 25
+                && collect($rows)->firstWhere('status', 'draft')['progress'] === null));
 });

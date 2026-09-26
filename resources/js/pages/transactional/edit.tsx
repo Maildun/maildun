@@ -7,6 +7,7 @@ import {
     MailSend01Icon,
     MoreHorizontalIcon,
     Upload01Icon,
+    Clock01Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, router, setLayoutProps, useForm } from '@inertiajs/react';
@@ -18,6 +19,7 @@ import DeleteTransactionalEmailModal from '@/components/delete-transactional-ema
 import { EmailBuilderEditor } from '@/components/email-builder-editor';
 import { EmailHtmlEditor } from '@/components/email-html-editor';
 import { EmailSourceEditor } from '@/components/email-source-editor';
+import { LastTestStatus } from '@/components/last-test-status';
 import SendTestTransactionalEmailDialog from '@/components/send-test-transactional-email-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -47,6 +49,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
+import { toast } from '@/components/ui/toast';
 import { useClipboard } from '@/hooks/use-clipboard';
 import {
     EMPTY_BUILDER_DOCUMENT,
@@ -62,6 +65,7 @@ import {
 import { cn } from '@/lib/utils';
 import {
     index,
+    log,
     publish,
     unpublish,
     update,
@@ -389,6 +393,11 @@ export default function TransactionalEdit({
                                 >
                                     {published ? 'Published' : 'Draft'}
                                 </Badge>
+                                <LastTestStatus
+                                    test={email.last_test}
+                                    pollProp="email"
+                                    className="hidden truncate md:block"
+                                />
                             </div>
                             {canManage ? (
                                 <Button
@@ -521,6 +530,22 @@ export default function TransactionalEdit({
                                     >
                                         <DropdownMenuGroup>
                                             <DropdownMenuItem
+                                                data-test="transactional-log-link"
+                                                render={
+                                                    <Link
+                                                        href={log([
+                                                            currentTeam.slug,
+                                                            email.uuid,
+                                                        ])}
+                                                    />
+                                                }
+                                            >
+                                                <HugeiconsIcon
+                                                    icon={Clock01Icon}
+                                                />
+                                                Delivery log
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
                                                 data-test="send-test-button"
                                                 onClick={() =>
                                                     setTestOpen(true)
@@ -562,6 +587,15 @@ export default function TransactionalEdit({
                                                                 setPublishing(
                                                                     false,
                                                                 ),
+                                                            onError: (errors) =>
+                                                                toast.add({
+                                                                    type: 'error',
+                                                                    title: published
+                                                                        ? 'Could not unpublish the transactional email.'
+                                                                        : 'Could not publish the transactional email.',
+                                                                    description:
+                                                                        errors.email,
+                                                                }),
                                                         },
                                                     )
                                                 }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\EmailProvider;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Models\Audience;
@@ -8,6 +9,7 @@ use App\Models\Email;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use App\Models\Team;
+use App\Models\TeamEmailIntegration;
 use App\Models\TeamInvitation;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -59,11 +61,18 @@ test('dashboard includes team scoped activity metrics', function () {
     ]);
     EmailDelivery::factory()->create([
         'email_id' => $campaign->id,
+        'provider' => EmailProvider::AmazonSes,
         'sent_at' => now()->subDay(),
         'delivered_at' => now()->subDay(),
     ]);
     EmailDelivery::factory()->create([
         'email_id' => $campaign->id,
+        'provider' => EmailProvider::AmazonSes,
+        'sent_at' => now()->subDay(),
+    ]);
+    EmailDelivery::factory()->create([
+        'email_id' => $campaign->id,
+        'provider' => EmailProvider::Smtp,
         'sent_at' => now()->subDay(),
     ]);
 
@@ -81,8 +90,30 @@ test('dashboard includes team scoped activity metrics', function () {
         ->has('dashboard.subscriberGrowth', 30)
         ->has('dashboard.recentCampaigns', 1)
         ->where('dashboard.recentCampaigns.0.uuid', $campaign->uuid)
-        ->where('dashboard.recentCampaigns.0.delivered', 1),
+        ->where('dashboard.recentCampaigns.0.delivered', 1)
+        ->where('dashboard.recentCampaigns.0.deliveryReported', true),
     );
+});
+
+test('dashboard does not report a delivery rate for SMTP-only sends', function () {
+    $user = User::factory()->create();
+    $campaign = Email::factory()->create([
+        'team_id' => $user->currentTeam->id,
+        'recipient_count' => 1,
+        'send_started_at' => now()->subDay(),
+        'sent_at' => now()->subDay(),
+    ]);
+    EmailDelivery::factory()->create([
+        'email_id' => $campaign->id,
+        'provider' => EmailProvider::Smtp,
+        'sent_at' => now()->subDay(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('dashboard.overview.deliveryRate', null)
+            ->where('dashboard.recentCampaigns.0.deliveryReported', false));
 });
 
 test('dashboard includes pending invitations for the authenticated user', function () {
@@ -193,3 +224,21 @@ test('dashboard does not include or delete other users invitations', function ()
         'id' => $invitation->id,
     ]);
 });
+
+test('sending is reported as paused only when the delivery connection fails its test', function (?string $state, bool $paused) {
+    $user = User::factory()->create();
+
+    if ($state === 'tested') {
+        TeamEmailIntegration::factory()->for($user->currentTeam)->smtp()->create();
+    } elseif ($state === 'untested') {
+        TeamEmailIntegration::factory()->for($user->currentTeam)->smtp()->untested()->create();
+    }
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page->where('deliveryPaused', $paused));
+})->with([
+    'no connection yet' => [null, false],
+    'a tested connection' => ['tested', false],
+    'a connection that needs a new test' => ['untested', true],
+]);

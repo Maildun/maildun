@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Concerns\ThrottlesEmailDelivery;
 use App\Enums\EmailDeliveryStatus;
+use App\Exceptions\EmailTransportException;
 use App\Mail\TransactionalEmailMessage;
 use App\Models\TransactionalEmailDelivery;
 use App\Services\TeamMailer;
@@ -68,12 +69,22 @@ class SendTransactionalEmailDelivery implements ShouldQueue
             ]);
     }
 
+    /**
+     * Only a delivery that never finished can fail: a late failure must not
+     * overwrite one that was sent. Only the sanitized transport message is
+     * stored, because other exceptions can echo provider credentials.
+     */
     public function failed(?Throwable $exception): void
     {
-        TransactionalEmailDelivery::query()->whereKey($this->deliveryId)->update([
-            'status' => EmailDeliveryStatus::Failed,
-            'failure_reason' => $exception?->getMessage() ?? __('Delivery failed.'),
-        ]);
+        TransactionalEmailDelivery::query()
+            ->whereKey($this->deliveryId)
+            ->whereIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending])
+            ->update([
+                'status' => EmailDeliveryStatus::Failed,
+                'failure_reason' => $exception instanceof EmailTransportException
+                    ? $exception->getMessage()
+                    : __('Delivery failed.'),
+            ]);
     }
 
     /** @return list<string> */
