@@ -8,6 +8,7 @@ import {
     MoreHorizontalIcon,
     Refresh03Icon,
     Tick02Icon,
+    Alert02Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Form, Head, Link, router } from '@inertiajs/react';
@@ -106,6 +107,9 @@ export default function TeamSenderSettingsPage({
     );
     const [domainToRemove, setDomainToRemove] =
         useState<TeamSenderDomain | null>(null);
+    const retestCount = senders.filter(
+        (sender) => sender.was_verified && !sender.is_verified,
+    ).length;
 
     return (
         <>
@@ -137,6 +141,23 @@ export default function TeamSenderSettingsPage({
                             >
                                 Manage email delivery
                             </Link>
+                        </AlertDescription>
+                    </Alert>
+                ) : null}
+                {retestCount > 0 ? (
+                    <Alert variant="warning" data-test="sender-retest-required">
+                        <HugeiconsIcon icon={Alert02Icon} aria-hidden="true" />
+                        <AlertTitle>
+                            {retestCount === 1
+                                ? '1 sender needs to be retested'
+                                : `${retestCount} senders need to be retested`}
+                        </AlertTitle>
+                        <AlertDescription>
+                            Their verification no longer matches the current
+                            delivery connection, because it changed or needs a
+                            new test. Campaigns, automations and transactional
+                            emails from them are blocked until they are verified
+                            again.
                         </AlertDescription>
                     </Alert>
                 ) : null}
@@ -520,6 +541,9 @@ function SenderDomainRow({
                                             {
                                                 method: 'post',
                                                 preserveScroll: true,
+                                                onError: toastRequestError(
+                                                    'The DNS check could not run.',
+                                                ),
                                             },
                                         )
                                     }
@@ -698,6 +722,9 @@ function RemoveSenderDomainDialog({
                 onStart: () => setProcessing(true),
                 onFinish: () => setProcessing(false),
                 onSuccess: () => onOpenChange(false),
+                onError: toastRequestError(
+                    'The sender domain could not be removed.',
+                ),
             },
         );
     };
@@ -782,7 +809,13 @@ function SenderActions({
                                         team: team.slug,
                                         teamSender: sender.uuid,
                                     }).url,
-                                    { method: 'post', preserveScroll: true },
+                                    {
+                                        method: 'post',
+                                        preserveScroll: true,
+                                        onError: toastRequestError(
+                                            'The verification email could not be sent.',
+                                        ),
+                                    },
                                 )
                             }
                         >
@@ -799,7 +832,13 @@ function SenderActions({
                                         team: team.slug,
                                         teamSender: sender.uuid,
                                     }).url,
-                                    { method: 'patch', preserveScroll: true },
+                                    {
+                                        method: 'patch',
+                                        preserveScroll: true,
+                                        onError: toastRequestError(
+                                            'The default sender could not be changed.',
+                                        ),
+                                    },
                                 )
                             }
                         >
@@ -1090,6 +1129,7 @@ function RemoveSenderDialog({
                 onStart: () => setProcessing(true),
                 onFinish: () => setProcessing(false),
                 onSuccess: () => onOpenChange(false),
+                onError: toastRequestError('The sender could not be removed.'),
             },
         );
     };
@@ -1124,4 +1164,17 @@ function RemoveSenderDialog({
             </DialogContent>
         </Dialog>
     );
+}
+
+/**
+ * Row actions post without a form, so a refused request would otherwise do
+ * nothing visible. Show the server's first reason in an error toast.
+ */
+function toastRequestError(title: string) {
+    return (errors: Record<string, string>) =>
+        toast.add({
+            type: 'error',
+            title,
+            description: Object.values(errors)[0] ?? 'Try again in a moment.',
+        });
 }
