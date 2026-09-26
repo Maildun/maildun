@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Emails\BuildCampaignInsights;
 use App\Actions\Emails\BuildTrackedEmailHtml;
+use App\Actions\Emails\LintCampaignContent;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\RetryEmailDeliveries;
 use App\Actions\Emails\StartEmailSend;
@@ -410,6 +411,7 @@ class EmailController extends Controller
         Email $email,
         BuildTrackedEmailHtml $trackedHtml,
         RenderCampaignContent $renderer,
+        LintCampaignContent $lintContent,
     ): Response|RedirectResponse {
         Gate::authorize('send', $email);
 
@@ -453,6 +455,7 @@ class EmailController extends Controller
                 ->whereNull('subscribers.subscribed_at')
                 ->count(),
             'missingUnsubscribe' => ! $trackedHtml->authorPlacedUnsubscribe($email->html ?? ''),
+            'contentIssues' => $lintContent->handle($email),
             'preview' => $this->composePreviewPayload(
                 $email,
                 $recipient,

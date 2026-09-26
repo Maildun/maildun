@@ -219,3 +219,12 @@ test('the sliding tab indicator stays aligned when the tab list scrolls', functi
         ->toContain('triggerRect.left - listRect.left + list.scrollLeft')
         ->toContain('inline-flex w-fit shrink-0 items-center');
 });
+
+test('preview and send lists pre-send content checks', function () {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/preview-and-send.tsx');
+
+    expect($source)->toBeString()
+        ->toContain('data-test="campaign-preview-content-issues"')
+        ->toContain('<ContentIssuesCallout issues={contentIssues} />')
+        ->toContain("things to check before sending");
+});

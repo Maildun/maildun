@@ -98,7 +98,14 @@ type Props = {
     suppressedRecipients: SuppressedRecipients;
     unconfirmedRecipients: number;
     missingUnsubscribe: boolean;
+    contentIssues: ContentIssue[];
     preview: CampaignPreview;
+};
+
+type ContentIssue = {
+    level: 'warning' | 'notice';
+    code: string;
+    message: string;
 };
 
 type SuppressedRecipients = {
@@ -270,6 +277,41 @@ function SuppressedRecipientsCallout({
     );
 }
 
+/**
+ * Pre-send content checks from LintCampaignContent. None of them block the
+ * send; warnings come first because they are likely to hurt delivery.
+ */
+function ContentIssuesCallout({ issues }: { issues: ContentIssue[] }) {
+    const hasWarning = issues.some((issue) => issue.level === 'warning');
+    const sorted = [...issues].sort(
+        (first, second) =>
+            Number(second.level === 'warning') -
+            Number(first.level === 'warning'),
+    );
+
+    return (
+        <Alert
+            variant={hasWarning ? 'warning' : 'default'}
+            className="mx-auto w-full max-w-3xl shrink-0"
+            data-test="campaign-preview-content-issues"
+        >
+            <HugeiconsIcon icon={InformationCircleIcon} />
+            <AlertTitle>
+                {issues.length === 1
+                    ? '1 thing to check before sending'
+                    : `${issues.length} things to check before sending`}
+            </AlertTitle>
+            <AlertDescription>
+                <ul className="flex list-disc flex-col gap-1 pl-4">
+                    {sorted.map((issue) => (
+                        <li key={issue.code}>{issue.message}</li>
+                    ))}
+                </ul>
+            </AlertDescription>
+        </Alert>
+    );
+}
+
 function UnconfirmedRecipientsCallout({ count }: { count: number }) {
     return (
         <Alert
@@ -360,6 +402,7 @@ export default function PreviewAndSend({
     recipientCount,
     suppressedRecipients,
     unconfirmedRecipients,
+    contentIssues,
     missingUnsubscribe,
     preview: initialPreview,
 }: Props) {
@@ -900,6 +943,9 @@ export default function PreviewAndSend({
                             <SuppressedRecipientsCallout
                                 suppressed={suppressedRecipients}
                             />
+                        ) : null}
+                        {contentIssues.length > 0 ? (
+                            <ContentIssuesCallout issues={contentIssues} />
                         ) : null}
                         {unconfirmedRecipients > 0 ? (
                             <UnconfirmedRecipientsCallout
