@@ -77,10 +77,12 @@ test('the signed system page reports sanitized installation checks', function ()
 
     $response->assertInertia(fn (Assert $page) => $page
         ->component('auth/install-system')
-        ->has('checks', 8)
+        ->has('checks', 10)
         ->where('checks.6.key', 'storage-configuration')
         ->where('checks.7.key', 'storage-round-trip')
         ->where('checks.7.status', 'pending')
+        ->where('checks.8.key', 'scheduler')
+        ->where('checks.9.key', 'campaign-sends')
         ->where('installUrl', fn (string $url): bool => str_starts_with($url, '/install?')),
     );
 });

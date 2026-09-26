@@ -2,9 +2,13 @@
 
 namespace App\Services;
 
+use App\Console\Commands\ResumeEmailDeliveriesCommand;
+use App\Enums\EmailStatus;
 use App\Enums\StorageBackend;
 use App\Enums\TeamPermission;
+use App\Models\Email;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -162,7 +166,7 @@ class InstallationState
                 'status' => 'pending',
             ];
 
-            return $checks;
+            return [...$checks, ...$this->deliveryChecks()];
         }
 
         $storageFailures = $storageConfigured
@@ -176,6 +180,74 @@ class InstallationState
                 ? 'Temporary files were written, read back, and removed from both storage roles.'
                 : 'One or more storage roles rejected the temporary file check.',
             'status' => $storageReady ? 'ready' : 'failed',
+        ];
+
+        return [...$checks, ...$this->deliveryChecks()];
+    }
+
+    /**
+     * Whether the scheduler keeps stranded sends moving, and whether any
+     * campaign has stopped moving. emails:resume runs every five minutes and
+     * records when it last ran.
+     *
+     * @return list<array{key: string, label: string, description: string, status: 'ready'|'failed'|'pending'}>
+     */
+    private function deliveryChecks(): array
+    {
+        // The installer shows these checks before migrations have run, so the
+        // cache and campaign tables may not exist yet.
+        try {
+            $lastRun = Cache::get(ResumeEmailDeliveriesCommand::LAST_RUN_CACHE_KEY);
+        } catch (Throwable) {
+            $lastRun = null;
+        }
+
+        $lastRunAt = is_string($lastRun) ? Carbon::parse($lastRun) : null;
+        $stalledAfter = max(1, (int) config('delivery.recovery.stalled_after_minutes'));
+
+        try {
+            $stalledCampaigns = Schema::hasTable('emails') ? Email::query()
+                ->whereIn('status', EmailStatus::active())
+                ->where('send_started_at', '<=', now()->subMinutes($stalledAfter))
+                ->whereDoesntHave('deliveries', fn ($deliveries) => $deliveries
+                    ->where('updated_at', '>', now()->subMinutes($stalledAfter)))
+                ->count() : null;
+        } catch (Throwable) {
+            $stalledCampaigns = null;
+        }
+
+        $checks = [
+            [
+                'key' => 'scheduler',
+                'label' => 'Scheduler',
+                'description' => match (true) {
+                    $lastRunAt === null => 'The scheduler has not run the delivery sweep yet. Run php artisan schedule:run every minute so stranded sends recover.',
+                    $lastRunAt->lt(now()->subMinutes(15)) => 'The delivery sweep last ran '.$lastRunAt->diffForHumans().'. Check that php artisan schedule:run runs every minute.',
+                    default => 'The delivery sweep last ran '.$lastRunAt->diffForHumans().'.',
+                },
+                'status' => match (true) {
+                    $lastRunAt === null => 'pending',
+                    $lastRunAt->lt(now()->subMinutes(15)) => 'failed',
+                    default => 'ready',
+                },
+            ],
+        ];
+
+        if ($stalledCampaigns === null) {
+            return $checks;
+        }
+
+        $checks[] = [
+            'key' => 'campaign-sends',
+            'label' => 'Campaign sends',
+            'description' => $stalledCampaigns === 0
+                ? 'No campaign has stopped moving.'
+                : trans_choice(
+                    ':count campaign has had no delivery finish for :minutes minutes. Check the queue workers.|:count campaigns have had no delivery finish for :minutes minutes. Check the queue workers.',
+                    $stalledCampaigns,
+                    ['minutes' => $stalledAfter],
+                ),
+            'status' => $stalledCampaigns === 0 ? 'ready' : 'failed',
         ];
 
         return $checks;
