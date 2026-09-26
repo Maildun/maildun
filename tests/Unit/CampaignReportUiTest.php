@@ -348,3 +348,19 @@ test('a sending campaign can be stopped after a confirmation', function () {
         ->toContain('data-test="campaign-stopped-alert"')
         ->toContain('stop.url([currentTeam.slug, campaign.uuid])');
 });
+
+test('a campaign can be scheduled from the send confirmation and cancelled from the hub', function () {
+    $root = dirname(__DIR__, 2).'/resources/js/pages/emails';
+    $previewAndSend = file_get_contents($root.'/preview-and-send.tsx');
+    $edit = file_get_contents($root.'/edit.tsx');
+
+    expect($previewAndSend)->toBeString()
+        ->toContain('data-test="send-later-input"')
+        ->toContain('schedule.url([currentTeam.slug, campaign.uuid])')
+        ->toContain('Intl.DateTimeFormat().resolvedOptions()')
+        ->and($edit)->toBeString()
+        ->toContain('data-test="campaign-scheduled"')
+        ->toContain('data-test="cancel-schedule-button"')
+        ->toContain('data-test="campaign-schedule-error"')
+        ->toContain('unschedule.url([currentTeam.slug, email.uuid])');
+});

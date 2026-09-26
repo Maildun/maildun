@@ -21,11 +21,11 @@ test('email index follows the audience plain table presentation', function () {
         ->toContain('data-test="email-row"')
         ->toContain('data-test="campaign-name-link"')
         ->toContain('className="font-medium underline-offset-4 hover:underline"')
-        ->toMatch("/email.status\\s*===\\s*'draft'\\s*\\?\\s*edit\\(\\[/")
+        ->toMatch('/isDraft\\(email.status\\)\\s*\\?\\s*edit\\(\\[/')
         ->toContain('<div className="flex min-w-0 flex-col">')
         ->toContain('<TableCell className="text-right">')
         ->toContain('PieChartIcon')
-        ->toMatch("/icon=\\{\\s*email.status\\s*===\\s*'draft'\\s*\\?\\s*Edit03Icon\\s*:\\s*PieChartIcon\\s*\\}/s")
+        ->toMatch('/icon=\\{\\s*isDraft\\(\\s*email.status,?\\s*\\)\\s*\\?\\s*Edit03Icon\\s*:\\s*PieChartIcon\\s*\\}/s')
         ->toContain('<Empty>')
         ->not->toContain("from '@/components/ui/card'")
         ->not->toContain('<Card>');

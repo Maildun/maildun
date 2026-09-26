@@ -52,6 +52,8 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
     Popover,
     PopoverContent,
@@ -83,6 +85,7 @@ import {
     checkLinks,
     composePreview,
     edit as editCampaign,
+    schedule,
     send,
 } from '@/routes/emails';
 import type { LastTestSend, SendReadiness, SesAccountLimits } from '@/types';
@@ -115,6 +118,8 @@ type Props = {
         from_name: string;
         from_address: string;
         last_test: LastTestSend | null;
+        /** ISO time the campaign is set to send, or null to send now. */
+        scheduled_at: string | null;
     };
     recipientCount: number;
     sendReadiness: SendReadiness;
@@ -518,6 +523,9 @@ export default function PreviewAndSend({
     const [sendError, setSendError] = useState<string | null>(null);
     const [sending, setSending] = useState(false);
     const [confirmSendOpen, setConfirmSendOpen] = useState(false);
+    const [sendLaterAt, setSendLaterAt] = useState(() =>
+        campaign.scheduled_at ? toLocalInputValue(campaign.scheduled_at) : '',
+    );
     const [testOpen, setTestOpen] = useState(false);
     const [previewDocumentHeight, setPreviewDocumentHeight] = useState(0);
     const [previewLinks, setPreviewLinks] = useState<PreviewLink[]>([]);
@@ -728,17 +736,30 @@ export default function PreviewAndSend({
     const handleSend = () => {
         setSendError(null);
 
+        const scheduling = sendLaterAt !== '';
+
         router.post(
-            send.url([currentTeam.slug, campaign.uuid]),
-            {},
+            scheduling
+                ? schedule.url([currentTeam.slug, campaign.uuid])
+                : send.url([currentTeam.slug, campaign.uuid]),
+            scheduling
+                ? { scheduled_at: new Date(sendLaterAt).toISOString() }
+                : {},
             {
                 onStart: () => setSending(true),
-                onError: (errors) =>
+                onError: (errors) => {
+                    const message = scheduling
+                        ? errors.scheduled_at
+                        : errors.email;
+
                     setSendError(
-                        typeof errors.email === 'string'
-                            ? errors.email
-                            : 'Unable to queue this campaign.',
-                    ),
+                        typeof message === 'string'
+                            ? message
+                            : scheduling
+                              ? 'Unable to schedule this campaign.'
+                              : 'Unable to queue this campaign.',
+                    );
+                },
                 onFinish: () => {
                     setSending(false);
                     setConfirmSendOpen(false);
@@ -1226,7 +1247,7 @@ export default function PreviewAndSend({
                         <AlertDialogDescription>
                             {failedReadiness.length > 0
                                 ? 'Fix these first, then come back to send.'
-                                : 'Sending cannot be undone. Recipients who were skipped as suppressed or unconfirmed are not included.'}
+                                : 'Sending cannot be undone. A scheduled send can be cancelled until its time. Recipients who were skipped as suppressed or unconfirmed are not included.'}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     {failedReadiness.length > 0 ? (
@@ -1269,6 +1290,36 @@ export default function PreviewAndSend({
                         </dl>
                     )}
                     {failedReadiness.length === 0 ? (
+                        <div className="flex flex-col gap-1.5">
+                            <Label htmlFor="send-later-at">
+                                Send later (optional)
+                            </Label>
+                            <Input
+                                id="send-later-at"
+                                type="datetime-local"
+                                data-test="send-later-input"
+                                placeholder="Send now"
+                                value={sendLaterAt}
+                                min={toLocalInputValue(
+                                    new Date().toISOString(),
+                                )}
+                                disabled={sending}
+                                onChange={(event) =>
+                                    setSendLaterAt(event.target.value)
+                                }
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Leave empty to send now. Times use your
+                                browser's time zone (
+                                {
+                                    Intl.DateTimeFormat().resolvedOptions()
+                                        .timeZone
+                                }
+                                ).
+                            </p>
+                        </div>
+                    ) : null}
+                    {failedReadiness.length === 0 ? (
                         <Deferred data="sesQuota" fallback={null}>
                             <SesQuotaWarning
                                 quota={sesQuota ?? null}
@@ -1292,7 +1343,9 @@ export default function PreviewAndSend({
                                 {sending && (
                                     <Spinner data-icon="inline-start" />
                                 )}
-                                Send campaign
+                                {sendLaterAt !== ''
+                                    ? 'Schedule campaign'
+                                    : 'Send campaign'}
                             </AlertDialogAction>
                         ) : null}
                     </AlertDialogFooter>
@@ -1403,4 +1456,14 @@ export default function PreviewAndSend({
             </Dialog>
         </>
     );
+}
+
+/**
+ * Format an ISO time for a datetime-local input, in the browser's time zone.
+ */
+function toLocalInputValue(iso: string): string {
+    const date = new Date(iso);
+    const pad = (value: number) => String(value).padStart(2, '0');
+
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }

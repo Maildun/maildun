@@ -81,6 +81,11 @@ type Props = {
  * A queued or sending campaign is still handing deliveries to the provider,
  * so it cannot be deleted until it finishes.
  */
+/** A scheduled campaign is still an editable draft until its time comes. */
+function isDraft(status: EmailSummary['status']): boolean {
+    return status === 'draft' || status === 'scheduled';
+}
+
 function isSending(status: EmailSummary['status']): boolean {
     return status === 'queued' || status === 'sending';
 }
@@ -368,13 +373,16 @@ export default function EmailsIndex({
                                             {email.progress !== null
                                                 ? ` · ${email.progress}%`
                                                 : null}
+                                            {email.scheduled_at
+                                                ? ` · ${new Date(email.scheduled_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`
+                                                : null}
                                         </Badge>
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex min-w-0 flex-col">
                                             <Link
                                                 href={
-                                                    email.status === 'draft'
+                                                    isDraft(email.status)
                                                         ? edit([
                                                               currentTeam.slug,
                                                               email.uuid,
@@ -484,8 +492,9 @@ export default function EmailsIndex({
                                                         render={
                                                             <Link
                                                                 href={
-                                                                    email.status ===
-                                                                    'draft'
+                                                                    isDraft(
+                                                                        email.status,
+                                                                    )
                                                                         ? edit([
                                                                               currentTeam.slug,
                                                                               email.uuid,
@@ -501,14 +510,14 @@ export default function EmailsIndex({
                                                     >
                                                         <HugeiconsIcon
                                                             icon={
-                                                                email.status ===
-                                                                'draft'
+                                                                isDraft(
+                                                                    email.status,
+                                                                )
                                                                     ? Edit03Icon
                                                                     : PieChartIcon
                                                             }
                                                         />
-                                                        {email.status ===
-                                                        'draft'
+                                                        {isDraft(email.status)
                                                             ? canManage
                                                                 ? 'Edit'
                                                                 : 'View'

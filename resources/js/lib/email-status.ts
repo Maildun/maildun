@@ -15,6 +15,7 @@ export const CAMPAIGN_STATUS_LABELS: Record<EmailCampaignStatus, string> = {
     partially_failed: 'Partially failed',
     failed: 'Failed',
     stopped: 'Stopped',
+    scheduled: 'Scheduled',
 };
 
 /**
@@ -32,6 +33,7 @@ export function campaignStatusVariant(
             return 'destructive';
         case 'queued':
         case 'sending':
+        case 'scheduled':
             return 'info';
         default:
             return 'secondary';

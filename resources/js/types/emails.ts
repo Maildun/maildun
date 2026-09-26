@@ -241,7 +241,9 @@ export type EmailCampaignStatus =
     | 'sent'
     | 'partially_failed'
     | 'failed'
-    | 'stopped';
+    | 'stopped'
+    /** Display only: a draft with a scheduled send time. */
+    | 'scheduled';
 
 export type EmailDeliveryStatus =
     | 'queued'
@@ -291,6 +293,7 @@ export type EmailSummary = {
     status: EmailCampaignStatus;
     /** Percent of recipients processed, only while queued or sending. */
     progress: number | null;
+    scheduled_at: string | null;
     audience: EmailRecipientRef | null;
     segment: EmailRecipientRef | null;
     recipient_count: number;
@@ -319,6 +322,9 @@ export type EmailDetail = {
     segment: string | null;
     last_tested_at: string | null;
     last_test: LastTestSend | null;
+    scheduled_at: string | null;
+    /** Why the last scheduled send did not start; cleared when rescheduled. */
+    schedule_error: string | null;
     updated_at: string | null;
     attachments: EmailAttachment[];
 };

@@ -3,6 +3,7 @@ import {
     ArrowLeft01Icon,
     Attachment01Icon,
     CheckmarkCircle02Icon,
+    Clock01Icon,
     Delete02Icon,
     Edit03Icon,
     File01Icon,
@@ -94,7 +95,13 @@ import {
     toReaderDocument,
 } from '@/lib/email-builder';
 import { cn } from '@/lib/utils';
-import { checkLinks, index, previewAndSend, update } from '@/routes/emails';
+import {
+    checkLinks,
+    index,
+    previewAndSend,
+    unschedule,
+    update,
+} from '@/routes/emails';
 import {
     destroy as destroyAttachment,
     store as storeAttachments,
@@ -231,6 +238,7 @@ export default function EmailEdit({
 }: Props) {
     const [view, setView] = useState<'hub' | 'design'>('hub');
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
+    const [cancellingSchedule, setCancellingSchedule] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
     const [tagsDialogOpen, setTagsDialogOpen] = useState(false);
@@ -378,6 +386,19 @@ export default function EmailEdit({
                     }),
             },
         );
+    };
+
+    const cancelSchedule = () => {
+        router.delete(unschedule.url([currentTeam.slug, email.uuid]), {
+            preserveScroll: true,
+            onStart: () => setCancellingSchedule(true),
+            onFinish: () => setCancellingSchedule(false),
+            onError: () =>
+                toast.add({
+                    type: 'error',
+                    title: 'The schedule could not be cancelled.',
+                }),
+        });
     };
 
     const runLinkCheck = () => {
@@ -878,6 +899,55 @@ export default function EmailEdit({
                                 )}
                             </div>
                         </div>
+                        {email.scheduled_at ? (
+                            <Alert data-test="campaign-scheduled">
+                                <HugeiconsIcon icon={Clock01Icon} />
+                                <AlertTitle>
+                                    Scheduled to send{' '}
+                                    {new Date(
+                                        email.scheduled_at,
+                                    ).toLocaleString(undefined, {
+                                        dateStyle: 'medium',
+                                        timeStyle: 'short',
+                                    })}
+                                </AlertTitle>
+                                <AlertDescription>
+                                    <p>
+                                        Maildun starts the send at this time
+                                        (shown in your browser's time zone).
+                                        Edits you save before then are included.
+                                    </p>
+                                    {canManage ? (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="mt-2"
+                                            data-test="cancel-schedule-button"
+                                            disabled={cancellingSchedule}
+                                            onClick={cancelSchedule}
+                                        >
+                                            Cancel schedule
+                                        </Button>
+                                    ) : null}
+                                </AlertDescription>
+                            </Alert>
+                        ) : null}
+                        {email.schedule_error ? (
+                            <Alert
+                                variant="destructive"
+                                data-test="campaign-schedule-error"
+                            >
+                                <HugeiconsIcon icon={Alert01Icon} />
+                                <AlertTitle>
+                                    The scheduled send did not start
+                                </AlertTitle>
+                                <AlertDescription>
+                                    {email.schedule_error} Fix the problem, then
+                                    send or schedule the campaign again.
+                                </AlertDescription>
+                            </Alert>
+                        ) : null}
                         {canManage && setupProblems.length > 0 ? (
                             <Alert
                                 variant="warning"

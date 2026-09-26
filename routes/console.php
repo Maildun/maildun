@@ -32,3 +32,7 @@ Schedule::command('automations:resume')->everyFiveMinutes()->withoutOverlapping(
 // Same problem on the send side: re-queues deliveries whose job was lost and
 // closes campaigns whose batch disappeared mid-send.
 Schedule::command('emails:resume')->everyFiveMinutes()->withoutOverlapping();
+
+// Starts campaigns whose scheduled time has come. withoutOverlapping plus the
+// per-campaign claim in ScheduleEmailSend::claimDue mean each starts once.
+Schedule::command('emails:send-scheduled')->everyMinute()->withoutOverlapping();

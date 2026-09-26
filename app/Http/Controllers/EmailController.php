@@ -9,6 +9,7 @@ use App\Actions\Emails\LintCampaignContent;
 use App\Actions\Emails\QueueRemainingRecipients;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\RetryEmailDeliveries;
+use App\Actions\Emails\ScheduleEmailSend;
 use App\Actions\Emails\StartEmailSend;
 use App\Actions\Emails\StopEmailSend;
 use App\Concerns\FiltersCampaignRecipients;
@@ -21,6 +22,7 @@ use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
 use App\Enums\TestSendStatus;
+use App\Http\Requests\ScheduleEmailRequest;
 use App\Http\Requests\SendTestEmailRequest;
 use App\Http\Requests\StoreEmailRequest;
 use App\Http\Requests\UpdateEmailRequest;
@@ -82,6 +84,7 @@ class EmailController extends Controller
                 'status',
                 'recipient_count',
                 'send_started_at',
+                'scheduled_at',
                 'sent_at',
                 'updated_at',
             ])
@@ -129,13 +132,17 @@ class EmailController extends Controller
                 $status = $email->status === EmailStatus::Draft && $email->sent_at
                     ? EmailStatus::Sent
                     : $email->status;
+                $displayStatus = $status === EmailStatus::Draft && $email->scheduled_at !== null
+                    ? 'scheduled'
+                    : $status->value;
 
                 return [
                     'uuid' => $email->uuid,
                     'name' => $email->name,
                     'subject' => $email->subject,
                     'editor' => $email->editor->value,
-                    'status' => $status->value,
+                    'status' => $displayStatus,
+                    'scheduled_at' => $email->scheduled_at?->toISOString(),
                     'audience' => $email->audience ? [
                         'uuid' => $email->audience->uuid,
                         'name' => $email->audience->name,
@@ -268,6 +275,8 @@ class EmailController extends Controller
                 'segment' => $email->segment?->uuid,
                 'last_tested_at' => $email->last_tested_at?->toISOString(),
                 'last_test' => $this->lastTestPayload($email),
+                'scheduled_at' => $email->scheduled_at?->toISOString(),
+                'schedule_error' => $email->schedule_error,
                 'updated_at' => $email->updated_at?->toISOString(),
                 'attachments' => $email->attachments->map(fn ($attachment): array => [
                     'uuid' => $attachment->uuid,
@@ -479,6 +488,7 @@ class EmailController extends Controller
                 'from_name' => $email->resolvedFromName(),
                 'from_address' => $email->resolvedFromAddress(),
                 'last_test' => $this->lastTestPayload($email),
+                'scheduled_at' => $email->scheduled_at?->toISOString(),
             ],
             'sendReadiness' => $sendReadiness->handle($email),
             'recipientCount' => (clone $recipientQuery)->count(),
@@ -585,6 +595,25 @@ class EmailController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Campaign queued for delivery.')]);
 
         return to_route('emails.show', [$currentTeam, $email]);
+    }
+
+    public function schedule(ScheduleEmailRequest $request, Team $currentTeam, Email $email, ScheduleEmailSend $schedules): RedirectResponse
+    {
+        $schedules->schedule($email, $request->sendAt());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Campaign scheduled.')]);
+
+        return to_route('emails.edit', [$currentTeam, $email]);
+    }
+
+    public function unschedule(Team $currentTeam, Email $email, ScheduleEmailSend $schedules): RedirectResponse
+    {
+        Gate::authorize('send', $email);
+        $schedules->cancel($email);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Schedule cancelled. The campaign is a draft again.')]);
+
+        return back();
     }
 
     public function retry(Request $request, Team $currentTeam, Email $email, RetryEmailDeliveries $retry): RedirectResponse
@@ -1052,7 +1081,11 @@ class EmailController extends Controller
 
         return [
             'q' => $request->string('q')->trim()->toString(),
-            'status' => $statusEnum instanceof EmailStatus ? $statusEnum->value : '',
+            'status' => match (true) {
+                $status === 'scheduled' => 'scheduled',
+                $statusEnum instanceof EmailStatus => $statusEnum->value,
+                default => '',
+            },
             'editor' => $editorEnum instanceof EmailEditor ? $editorEnum->value : '',
             'audience' => $request->string('audience')->trim()->toString(),
         ];
@@ -1077,7 +1110,15 @@ class EmailController extends Controller
 
         if ($status === EmailStatus::Draft->value) {
             $query->where('status', EmailStatus::Draft)
-                ->whereNull('sent_at');
+                ->whereNull('sent_at')
+                ->whereNull('scheduled_at');
+
+            return;
+        }
+
+        if ($status === 'scheduled') {
+            $query->where('status', EmailStatus::Draft)
+                ->whereNotNull('scheduled_at');
 
             return;
         }

@@ -85,6 +85,9 @@ class StartEmailSend
                 'status' => EmailStatus::Queued,
                 'recipient_count' => $recipientCount,
                 'send_started_at' => $sendStartedAt,
+                // Sending now supersedes any schedule the draft had.
+                'scheduled_at' => null,
+                'schedule_error' => null,
             ]);
             $lockedEmail->sendRuns()->create([
                 'kind' => EmailSendRunKind::Initial,

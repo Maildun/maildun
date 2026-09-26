@@ -49,6 +49,8 @@ use Illuminate\Support\Str;
  * @property string|null $last_test_recipient
  * @property string|null $last_test_error
  * @property Carbon|null $send_started_at
+ * @property Carbon|null $scheduled_at
+ * @property string|null $schedule_error
  * @property Carbon|null $sent_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -83,6 +85,8 @@ use Illuminate\Support\Str;
     'recipient_count',
     'send_started_at',
     'sent_at',
+    'scheduled_at',
+    'schedule_error',
 ])]
 class Email extends Model
 {
@@ -209,6 +213,7 @@ class Email extends Model
             'track_clicks' => 'boolean',
             'track_opens' => 'boolean',
             'last_tested_at' => 'datetime',
+            'scheduled_at' => 'datetime',
             'last_test_status' => TestSendStatus::class,
             'send_started_at' => 'datetime',
             'sent_at' => 'datetime',
