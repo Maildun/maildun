@@ -294,3 +294,17 @@ test('the sending card shows segmented progress, an ETA and stall guidance', fun
         ->toContain("'No queue worker is running'")
         ->toContain("'Queue workers are paused'");
 });
+
+test('a recipient opens a detail sheet with attempts and provider feedback', function () {
+    $recipients = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/recipients.tsx');
+    $sheet = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/recipient-delivery-sheet.tsx');
+
+    expect($recipients)->toBeString()
+        ->toContain('data-test="open-recipient-detail"')
+        ->toContain('<RecipientDeliverySheet');
+
+    expect($sheet)->toBeString()
+        ->toContain('showDelivery.url([teamSlug, campaignUuid, deliveryUuid])')
+        ->toContain('Send attempts')
+        ->toContain('Provider feedback');
+});

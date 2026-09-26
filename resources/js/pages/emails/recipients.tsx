@@ -9,6 +9,7 @@ import type {
     CampaignReportRecipient,
 } from '@/components/email-report-layout';
 import { Paginator } from '@/components/paginator';
+import { RecipientDeliverySheet } from '@/components/recipient-delivery-sheet';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -82,6 +83,7 @@ export default function EmailRecipients({
 }: Props) {
     const { currentTeam } = usePage().props;
     const [retrying, setRetrying] = useState(false);
+    const [detailFor, setDetailFor] = useState<string | null>(null);
     const [confirmingRetry, setConfirmingRetry] =
         useState<CampaignReportRecipient | null>(null);
 
@@ -179,10 +181,19 @@ export default function EmailRecipients({
                                                 </AvatarFallback>
                                             </Avatar>
                                             <div className="flex min-w-0 flex-col">
-                                                <span className="truncate font-medium">
+                                                <button
+                                                    type="button"
+                                                    className="truncate text-left font-medium underline-offset-4 hover:underline"
+                                                    data-test="open-recipient-detail"
+                                                    onClick={() =>
+                                                        setDetailFor(
+                                                            recipient.uuid,
+                                                        )
+                                                    }
+                                                >
                                                     {recipient.name ??
                                                         recipient.email}
-                                                </span>
+                                                </button>
                                                 {recipient.name && (
                                                     <span className="truncate text-muted-foreground">
                                                         {recipient.email}
@@ -356,6 +367,12 @@ export default function EmailRecipients({
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+            <RecipientDeliverySheet
+                teamSlug={currentTeam.slug}
+                campaignUuid={campaign.uuid}
+                deliveryUuid={detailFor}
+                onClose={() => setDetailFor(null)}
+            />
         </EmailReportLayout>
     );
 }
