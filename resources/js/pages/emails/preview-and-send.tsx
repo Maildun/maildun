@@ -9,6 +9,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
+    Deferred,
     Head,
     Link,
     router,
@@ -84,7 +85,7 @@ import {
     edit as editCampaign,
     send,
 } from '@/routes/emails';
-import type { LastTestSend, SendReadiness } from '@/types';
+import type { LastTestSend, SendReadiness, SesAccountLimits } from '@/types';
 
 type PreviewRecipient = {
     uuid: string;
@@ -117,6 +118,8 @@ type Props = {
     };
     recipientCount: number;
     sendReadiness: SendReadiness;
+    /** Deferred: the workspace's SES limits, null for other providers. */
+    sesQuota?: SesAccountLimits | null;
     suppressedRecipients: SuppressedRecipients;
     unconfirmedRecipients: number;
     missingUnsubscribe: boolean;
@@ -338,6 +341,48 @@ function ContentIssuesCallout({ issues }: { issues: ContentIssue[] }) {
     );
 }
 
+/**
+ * SES refuses messages past the account's 24-hour quota, and a sandbox
+ * account only delivers to verified addresses, so say so before sending.
+ */
+function SesQuotaWarning({
+    quota,
+    recipientCount,
+}: {
+    quota: SesAccountLimits | null;
+    recipientCount: number;
+}) {
+    if (quota === null || !quota.available) {
+        return null;
+    }
+
+    if (quota.sandbox) {
+        return (
+            <p
+                className="text-sm text-warning"
+                data-test="confirm-send-ses-sandbox"
+            >
+                Your Amazon SES account is in the sandbox, so it only delivers
+                to verified addresses. Request production access first.
+            </p>
+        );
+    }
+
+    if (recipientCount <= quota.remaining) {
+        return null;
+    }
+
+    return (
+        <p className="text-sm text-warning" data-test="confirm-send-ses-quota">
+            Amazon SES allows {quota.remaining.toLocaleString()} more{' '}
+            {quota.remaining === 1 ? 'message' : 'messages'} in the next 24
+            hours. The other{' '}
+            {(recipientCount - quota.remaining).toLocaleString()} will fail
+            until the quota frees up; you can retry them afterwards.
+        </p>
+    );
+}
+
 function BrokenLinksCallout({ links }: { links: BrokenLink[] }) {
     return (
         <Alert
@@ -459,6 +504,7 @@ export default function PreviewAndSend({
     contentIssues,
     missingUnsubscribe,
     sendReadiness,
+    sesQuota,
     preview: initialPreview,
 }: Props) {
     const { auth, currentTeam } = usePage().props;
@@ -1222,6 +1268,14 @@ export default function PreviewAndSend({
                             </dd>
                         </dl>
                     )}
+                    {failedReadiness.length === 0 ? (
+                        <Deferred data="sesQuota" fallback={null}>
+                            <SesQuotaWarning
+                                quota={sesQuota ?? null}
+                                recipientCount={recipientCount}
+                            />
+                        </Deferred>
+                    ) : null}
                     {sendError ? (
                         <p className="text-sm text-destructive">{sendError}</p>
                     ) : null}

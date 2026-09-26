@@ -38,8 +38,10 @@ use App\Models\Media;
 use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Team;
+use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
 use App\Services\InstallationState;
+use App\Services\SesAccountLimits;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -275,6 +277,11 @@ class EmailController extends Controller
                 ])->values(),
             ],
             'sendReadiness' => $sendReadiness->handle($email),
+            // Deferred: the SES quota needs an AWS call the page must not wait on.
+            'sesQuota' => Inertia::defer(fn (): ?array => ($integration = $currentTeam->emailIntegration()->first()) instanceof TeamEmailIntegration
+                && $integration->isVerified()
+                ? app(SesAccountLimits::class)->fetch($integration)
+                : null),
             'audiences' => $currentTeam->audiences()
                 ->withCount($this->subscribedCount($currentTeam))
                 ->with([

@@ -4,7 +4,7 @@ import {
     CheckmarkCircle02Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Form, Head, Link } from '@inertiajs/react';
+import { Deferred, Form, Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
 import { SettingsPageHeader } from '@/components/settings-page-header';
 import { SettingsPanel } from '@/components/settings-panel';
@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { UnsavedChangesGuard } from '@/hooks/use-unsaved-changes';
 import { focusFirstInvalidField } from '@/lib/focus-first-invalid';
@@ -58,6 +59,7 @@ import {
     update,
 } from '@/routes/teams/email-provider';
 import { edit as editSenders } from '@/routes/teams/sender';
+import type { SesAccountLimits } from '@/types';
 
 type TeamSummary = {
     id: number;
@@ -85,6 +87,8 @@ type Props = {
     };
     canManage: boolean;
     webhookUrl: string;
+    /** Deferred: undefined until loaded, null when the connection is not tested. */
+    sesLimits?: SesAccountLimits | null;
 };
 
 function relativeTimestamp(value: string): string {
@@ -98,6 +102,7 @@ function relativeTimestamp(value: string): string {
 }
 
 export default function TeamEmailProviderShowPage({
+    sesLimits,
     team,
     provider,
     integration,
@@ -286,6 +291,31 @@ export default function TeamEmailProviderShowPage({
                                                       .last_feedback_at,
                                               )
                                             : 'None received yet'}
+                                    </dd>
+                                </div>
+                            </>
+                        ) : null}
+                        {integration?.provider === 'ses' ? (
+                            <>
+                                <Separator />
+                                <div className="grid gap-2 px-5 py-4 sm:grid-cols-[14rem_1fr] sm:items-center">
+                                    <dt className="text-sm text-muted-foreground">
+                                        Sending quota
+                                    </dt>
+                                    <dd
+                                        className="text-sm font-medium"
+                                        data-test="ses-sending-quota"
+                                    >
+                                        <Deferred
+                                            data="sesLimits"
+                                            fallback={
+                                                <Skeleton className="h-4 w-56 animate-pulse" />
+                                            }
+                                        >
+                                            <SesLimitsSummary
+                                                limits={sesLimits ?? null}
+                                            />
+                                        </Deferred>
                                     </dd>
                                 </div>
                             </>
@@ -596,5 +626,36 @@ export default function TeamEmailProviderShowPage({
                 </AlertDialog>
             ) : null}
         </>
+    );
+}
+
+function SesLimitsSummary({ limits }: { limits: SesAccountLimits | null }) {
+    if (limits === null) {
+        return (
+            <span className="text-muted-foreground">
+                Available once the connection is tested
+            </span>
+        );
+    }
+
+    if (!limits.available) {
+        return <span className="text-muted-foreground">{limits.reason}</span>;
+    }
+
+    return (
+        <span className="flex flex-col gap-1">
+            <span className="tabular-nums">
+                {limits.sent_last_24_hours.toLocaleString()} of{' '}
+                {limits.max_24_hour_send.toLocaleString()} sent in the last 24
+                hours · up to {limits.max_send_rate.toLocaleString()} per second
+            </span>
+            {limits.sandbox ? (
+                <span className="text-warning">
+                    This account is in the SES sandbox, so it can only send to
+                    verified addresses. Request production access in the AWS
+                    console before sending campaigns.
+                </span>
+            ) : null}
+        </span>
     );
 }

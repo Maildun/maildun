@@ -449,3 +449,15 @@ export type LastTestSend = {
     error: string | null;
     tested_at: string | null;
 };
+
+/** Amazon SES sending limits; see SesAccountLimits. Loaded as a deferred prop. */
+export type SesAccountLimits =
+    | {
+          available: true;
+          max_24_hour_send: number;
+          sent_last_24_hours: number;
+          remaining: number;
+          max_send_rate: number;
+          sandbox: boolean;
+      }
+    | { available: false; reason: string };
