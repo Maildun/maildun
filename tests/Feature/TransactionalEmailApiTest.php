@@ -179,3 +179,54 @@ test('the delivery job sends once and records the result', function () {
         ->and($delivery->fresh()->uses_team_email_integration)->toBeTrue()
         ->and($delivery->fresh()->sent_at)->not->toBeNull();
 });
+
+test('api errors carry a machine readable code', function () {
+    $email = TransactionalEmail::factory()->published()->create();
+    $issued = TeamApiKey::issue($email->team, 'Production');
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.transactional-emails.send', 'missing-template'), ['to' => 'ada@example.com'])
+        ->assertNotFound()
+        ->assertJsonPath('code', 'transactional_email_not_found');
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.transactional-emails.send', $email->slug), ['to' => 'not-an-address'])
+        ->assertUnprocessable()
+        ->assertJsonPath('code', 'validation_failed')
+        ->assertJsonValidationErrors('to');
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.transactional-emails.send', $email->slug), ['to' => 'ada@example.com'])
+        ->assertServiceUnavailable()
+        ->assertJsonPath('code', 'delivery_disconnected');
+});
+
+test('an api key can check the status of a message its workspace sent', function () {
+    $email = TransactionalEmail::factory()->published()->create(['slug' => 'receipt']);
+    $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create([
+        'to_address' => 'ada@example.com',
+        'status' => EmailDeliveryStatus::Failed,
+        'failure_reason' => 'Email delivery failed.',
+        'html' => '<p>secret body</p>',
+    ]);
+    $issued = TeamApiKey::issue($email->team, 'Production');
+    $otherTeamKey = TeamApiKey::issue(TransactionalEmail::factory()->create()->team, 'Other');
+
+    $this->withToken($issued['token'])
+        ->getJson(route('api.v1.transactional-deliveries.show', $delivery->uuid))
+        ->assertOk()
+        ->assertJsonPath('data.id', $delivery->uuid)
+        ->assertJsonPath('data.status', 'failed')
+        ->assertJsonPath('data.transactional_email', 'receipt')
+        ->assertJsonPath('data.failure_reason', 'Email delivery failed.')
+        ->assertDontSee('secret body');
+
+    $this->withToken($otherTeamKey['token'])
+        ->getJson(route('api.v1.transactional-deliveries.show', $delivery->uuid))
+        ->assertNotFound()
+        ->assertJsonPath('code', 'delivery_not_found');
+
+    $this->withToken($issued['token'])
+        ->getJson(route('api.v1.transactional-deliveries.show', 'not-a-uuid'))
+        ->assertNotFound();
+});

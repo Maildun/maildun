@@ -51,6 +51,7 @@ class QueueTransactionalEmail
         } catch (EmailTransportException) {
             throw new HttpResponseException(response()->json([
                 'message' => __('Email delivery is disconnected for this workspace.'),
+                'code' => 'delivery_disconnected',
             ], 503));
         }
 
@@ -59,6 +60,7 @@ class QueueTransactionalEmail
         if (! $transport->allowsSender($email->resolvedFromAddress())) {
             throw new HttpResponseException(response()->json([
                 'message' => __('The From address for this email is not authorized for the connected email provider.'),
+                'code' => 'sender_unauthorized',
             ], 503));
         }
 
@@ -168,6 +170,7 @@ class QueueTransactionalEmail
 
         throw new HttpResponseException(response()->json([
             'message' => __('The Idempotency-Key has already been used with a different request.'),
+            'code' => 'idempotency_conflict',
         ], 409));
     }
 }
