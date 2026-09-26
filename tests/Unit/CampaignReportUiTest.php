@@ -204,3 +204,12 @@ test('a sending campaign surfaces failures while it is still in flight', functio
         ->toContain('data-test="sending-failures-alert"')
         ->toContain('Sending continues for everyone else.');
 });
+
+test('delivery health says SMTP does not report bounces instead of showing zero', function () {
+    $report = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/show.tsx');
+
+    expect($report)->toBeString()
+        ->toContain("metrics.delivery_feedback !== 'unavailable'")
+        ->toContain('value={feedbackReported ? metrics.bounced : null}')
+        ->toContain('Not reported by SMTP');
+});

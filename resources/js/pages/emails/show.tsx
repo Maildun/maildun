@@ -35,6 +35,8 @@ export default function EmailShow({
     insights,
     canManage,
 }: Props) {
+    const feedbackReported = metrics.delivery_feedback !== 'unavailable';
+
     return (
         <EmailReportLayout
             campaign={campaign}
@@ -63,13 +65,13 @@ export default function EmailShow({
                         />
                         <HealthStat
                             label="Bounced"
-                            value={metrics.bounced}
+                            value={feedbackReported ? metrics.bounced : null}
                             icon={MailRemove01Icon}
                             tone="danger"
                         />
                         <HealthStat
                             label="Complaints"
-                            value={metrics.complained}
+                            value={feedbackReported ? metrics.complained : null}
                             icon={Alert02Icon}
                             tone="danger"
                         />
@@ -88,6 +90,10 @@ export default function EmailShow({
     );
 }
 
+/**
+ * A null value means the transport never reports this outcome (SMTP is
+ * handoff only), so the stat says so instead of showing a misleading 0.
+ */
 function HealthStat({
     label,
     value,
@@ -95,11 +101,11 @@ function HealthStat({
     tone = 'default',
 }: {
     label: string;
-    value: number;
+    value: number | null;
     icon: IconSvgElement;
     tone?: 'default' | 'danger';
 }) {
-    const isAlert = tone === 'danger' && value > 0;
+    const isAlert = tone === 'danger' && value !== null && value > 0;
 
     return (
         <div className="flex items-start gap-3">
@@ -119,14 +125,20 @@ function HealthStat({
             </span>
             <div className="min-w-0">
                 <p className="text-xs text-muted-foreground">{label}</p>
-                <p
-                    className={cn(
-                        'text-2xl font-semibold tabular-nums',
-                        isAlert && 'text-destructive',
-                    )}
-                >
-                    {value.toLocaleString()}
-                </p>
+                {value === null ? (
+                    <p className="pt-1.5 text-sm text-muted-foreground">
+                        Not reported by SMTP
+                    </p>
+                ) : (
+                    <p
+                        className={cn(
+                            'text-2xl font-semibold tabular-nums',
+                            isAlert && 'text-destructive',
+                        )}
+                    >
+                        {value.toLocaleString()}
+                    </p>
+                )}
             </div>
         </div>
     );

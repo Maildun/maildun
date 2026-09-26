@@ -62,6 +62,8 @@ type DashboardData = {
         status: DashboardCampaignStatus;
         recipients: number;
         delivered: number;
+        /** False when no recipient was sent through SES, which is the only transport that confirms delivery. */
+        deliveryReported: boolean;
         sentAt: string | null;
     }[];
 };
@@ -180,8 +182,8 @@ export default function Dashboard({
                         }
                         description={
                             dashboardData.overview.deliveryRate === null
-                                ? 'No deliveries in the last 30 days'
-                                : 'Delivered in the last 30 days'
+                                ? 'No Amazon SES deliveries in the last 30 days'
+                                : 'Confirmed by Amazon SES in the last 30 days'
                         }
                         icon={MailSend01Icon}
                     />
@@ -263,10 +265,16 @@ export default function Dashboard({
                                             </div>
                                             <div className="flex items-center gap-3 sm:justify-end">
                                                 <span className="text-sm text-muted-foreground tabular-nums">
-                                                    {campaign.delivered.toLocaleString()}{' '}
-                                                    /{' '}
-                                                    {campaign.recipients.toLocaleString()}{' '}
-                                                    delivered
+                                                    {campaign.deliveryReported ? (
+                                                        <>
+                                                            {campaign.delivered.toLocaleString()}{' '}
+                                                            /{' '}
+                                                            {campaign.recipients.toLocaleString()}{' '}
+                                                            delivered
+                                                        </>
+                                                    ) : (
+                                                        'Delivery not reported'
+                                                    )}
                                                 </span>
                                                 <Badge
                                                     variant={
