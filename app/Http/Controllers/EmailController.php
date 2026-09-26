@@ -695,6 +695,10 @@ class EmailController extends Controller
             EmailDeliveryStatus::Failed,
             EmailDeliveryStatus::Rejected,
         ])->count();
+        $retryingCount = (clone $deliveries)
+            ->where('status', EmailDeliveryStatus::Queued)
+            ->whereHas('attempts', fn (Builder $attempts) => $attempts->where('status', EmailDeliveryStatus::Failed))
+            ->count();
         $retryableCount = (clone $deliveries)->retryableFor($email->team)->count();
         $unconfirmedRetryableCount = (clone $deliveries)->retryableFor($email->team)->unconfirmed()->count();
         $deliveryTransports = (clone $deliveries)
@@ -730,6 +734,7 @@ class EmailController extends Controller
                 'bounced' => $bouncedCount,
                 'complained' => $complainedCount,
                 'failed' => $failedCount,
+                'retrying' => $retryingCount,
                 'retryable' => $retryableCount,
                 'unconfirmed' => $unconfirmedRetryableCount,
                 'delivery_feedback' => $deliveryFeedback,

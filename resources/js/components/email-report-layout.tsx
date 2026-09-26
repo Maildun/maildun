@@ -88,6 +88,8 @@ export type CampaignReportMetrics = {
     bounced: number;
     complained: number;
     failed: number;
+    /** Queued deliveries whose last send attempt failed; the queue tries them again. */
+    retrying: number;
     retryable: number;
     /** Retryable deliveries that were handed to the provider but never confirmed. */
     unconfirmed: number;
@@ -326,15 +328,43 @@ export function EmailReportLayout({
                                 This report refreshes automatically.
                             </CardDescription>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="flex flex-col gap-3">
                             <div className="h-2 overflow-hidden rounded-full bg-muted">
                                 <div
                                     className="h-full rounded-full bg-primary transition-[width]"
                                     style={{ width: `${metrics.progress}%` }}
                                 />
                             </div>
+                            {(metrics.failed > 0 || metrics.retrying > 0) && (
+                                <p
+                                    className="text-sm text-muted-foreground tabular-nums"
+                                    data-test="sending-failure-counts"
+                                >
+                                    {metrics.failed.toLocaleString()} failed ·{' '}
+                                    {metrics.retrying.toLocaleString()} waiting
+                                    to retry
+                                </p>
+                            )}
                         </CardContent>
                     </Card>
+                )}
+
+                {isActive && metrics.failed > 0 && (
+                    <Alert variant="warning" data-test="sending-failures-alert">
+                        <AlertTitle>
+                            {metrics.failed.toLocaleString()}{' '}
+                            {metrics.failed === 1
+                                ? 'delivery has'
+                                : 'deliveries have'}{' '}
+                            failed so far
+                        </AlertTitle>
+                        <AlertDescription>
+                            Sending continues for everyone else. Failed
+                            deliveries used up their automatic retries; you can
+                            retry them from this report once the campaign
+                            finishes.
+                        </AlertDescription>
+                    </Alert>
                 )}
 
                 {canRetryFailed && (

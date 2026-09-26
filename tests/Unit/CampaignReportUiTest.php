@@ -194,3 +194,13 @@ test('refused retries show the server reason in an error toast', function () {
         ->toContain('title: `Could not retry ${recipient.email}.`')
         ->toContain('errors.email ??');
 });
+
+test('a sending campaign surfaces failures while it is still in flight', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain('data-test="sending-failure-counts"')
+        ->toContain('waiting')
+        ->toContain('data-test="sending-failures-alert"')
+        ->toContain('Sending continues for everyone else.');
+});

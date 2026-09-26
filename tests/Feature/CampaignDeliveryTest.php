@@ -934,6 +934,26 @@ test('the campaign report does not count suppressed addresses as retryable', fun
             ->where('metrics.retryable', 1));
 });
 
+test('a sending campaign reports deliveries waiting on an automatic retry', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 3,
+        'send_started_at' => now(),
+    ]);
+    $retrying = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+    EmailDeliveryAttempt::factory()->for($retrying, 'delivery')->create(['status' => EmailDeliveryStatus::Failed]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Failed]);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.retrying', 1)
+            ->where('metrics.failed', 1));
+});
+
 test('a single failed delivery can be retried', function () {
     Bus::fake();
 
