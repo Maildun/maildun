@@ -162,6 +162,21 @@ export default function TeamEmailProviderShowPage({
                     ) : null}
                 </div>
 
+                {integration?.feedback?.stale ? (
+                    <Alert variant="warning" data-test="ses-feedback-stale">
+                        <AlertTitle>
+                            Amazon SES has stopped reporting back
+                        </AlertTitle>
+                        <AlertDescription>
+                            Mail went out through this connection more than an
+                            hour ago, but no delivery, bounce or complaint
+                            feedback has arrived since. Check that the SNS topic
+                            is still subscribed to the webhook URL below; until
+                            it is, campaigns show no delivery results and hard
+                            bounces are not suppressed.
+                        </AlertDescription>
+                    </Alert>
+                ) : null}
                 {integration ? (
                     <Alert data-test="delivery-verification-status">
                         <HugeiconsIcon
@@ -254,6 +269,27 @@ export default function TeamEmailProviderShowPage({
                                 ) : null}
                             </dd>
                         </div>
+                        {integration?.feedback ? (
+                            <>
+                                <Separator />
+                                <div className="grid gap-2 px-5 py-4 sm:grid-cols-[14rem_1fr] sm:items-center">
+                                    <dt className="text-sm text-muted-foreground">
+                                        Last SES feedback
+                                    </dt>
+                                    <dd
+                                        className="text-sm font-medium"
+                                        data-test="ses-feedback-heartbeat"
+                                    >
+                                        {integration.feedback.last_feedback_at
+                                            ? relativeTimestamp(
+                                                  integration.feedback
+                                                      .last_feedback_at,
+                                              )
+                                            : 'None received yet'}
+                                    </dd>
+                                </div>
+                            </>
+                        ) : null}
                         {sender.address ? (
                             <>
                                 <Separator />

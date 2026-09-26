@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Teams;
 
+use App\Actions\Emails\BuildSesFeedbackHeartbeat;
 use App\Enums\EmailProvider;
 use App\Enums\TeamPermission;
 use App\Http\Controllers\Controller;
@@ -329,6 +330,7 @@ class TeamEmailIntegrationController extends Controller
             'delivery_is_verified' => $integration->isVerified(),
             'verified_sender_count' => $integration->verifiedSenders()->count(),
             'configuration_is_complete' => $integration->hasCompleteConfiguration(),
+            'feedback' => app(BuildSesFeedbackHeartbeat::class)->handle($integration),
         ];
     }
 

@@ -30,6 +30,12 @@ export type EmailProviderIntegration = {
     delivery_is_verified: boolean;
     verified_sender_count: number;
     configuration_is_complete: boolean;
+    /** Amazon SES only: when feedback last arrived and whether it has gone quiet. */
+    feedback: {
+        last_feedback_at: string | null;
+        last_sent_at: string | null;
+        stale: boolean;
+    } | null;
 };
 
 export const SECRET_FIELD_NAMES = ['smtp_password', 'ses_secret_access_key'];
