@@ -48,6 +48,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from '@/components/ui/toast';
+import {
+    CAMPAIGN_STATUS_LABELS,
+    campaignStatusVariant,
+} from '@/lib/email-status';
 import { formatRelativeTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
@@ -143,15 +147,6 @@ type Props = {
     activePage: CampaignReportPage;
     pollProps: string[];
     children: ReactNode;
-};
-
-const CAMPAIGN_LABELS: Record<EmailCampaignStatus, string> = {
-    draft: 'Draft',
-    queued: 'Queued',
-    sending: 'Sending',
-    sent: 'Sent',
-    partially_failed: 'Partially failed',
-    failed: 'Failed',
 };
 
 const EMAIL_PROVIDER_LABELS: Record<CampaignEmailProvider, string> = {
@@ -274,17 +269,9 @@ export function EmailReportLayout({
                                 {campaign.name}
                             </h1>
                             <Badge
-                                variant={
-                                    campaign.status === 'sent'
-                                        ? 'success'
-                                        : campaign.status === 'failed' ||
-                                            campaign.status ===
-                                                'partially_failed'
-                                          ? 'destructive'
-                                          : 'info'
-                                }
+                                variant={campaignStatusVariant(campaign.status)}
                             >
-                                {CAMPAIGN_LABELS[campaign.status]}
+                                {CAMPAIGN_STATUS_LABELS[campaign.status]}
                             </Badge>
                             <Badge variant="outline">{providerLabel}</Badge>
                         </div>

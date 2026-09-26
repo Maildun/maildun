@@ -213,3 +213,18 @@ test('delivery health says SMTP does not report bounces instead of showing zero'
         ->toContain('value={feedbackReported ? metrics.bounced : null}')
         ->toContain('Not reported by SMTP');
 });
+
+test('campaign and delivery badges come from the shared email status module', function (string $path) {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/'.$path);
+
+    expect($source)->toBeString()
+        ->toContain("from '@/lib/email-status'")
+        ->not->toMatch('/const (CAMPAIGN_|DELIVERY_)?STATUS_(LABELS|VARIANTS)\b|const (CAMPAIGN|DELIVERY)_LABELS\b/');
+})->with([
+    'campaign index' => 'pages/emails/index.tsx',
+    'report layout' => 'components/email-report-layout.tsx',
+    'recipients' => 'pages/emails/recipients.tsx',
+    'dashboard' => 'pages/dashboard.tsx',
+    'sidebar campaigns' => 'components/nav-campaigns.tsx',
+    'subscriber profile' => 'pages/audiences/subscribers/show.tsx',
+]);

@@ -45,6 +45,10 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+    DELIVERY_STATUS_LABELS,
+    deliveryStatusVariant,
+} from '@/lib/email-status';
 import { formatRelativeTime } from '@/lib/format';
 import { recipients as recipientsRoute } from '@/routes/emails';
 import { retry as retryDelivery } from '@/routes/emails/deliveries';
@@ -57,18 +61,6 @@ type Props = {
     filters: { status: CampaignRecipientFilter | null };
     recipients: Paginated<CampaignReportRecipient>;
     canManage: boolean;
-};
-
-const DELIVERY_LABELS: Record<CampaignReportRecipient['status'], string> = {
-    queued: 'Queued',
-    sending: 'Sending',
-    sent: 'Sent',
-    delivered: 'Delivered',
-    delayed: 'Delayed',
-    bounced: 'Bounced',
-    complained: 'Complained',
-    rejected: 'Rejected',
-    failed: 'Failed',
 };
 
 const RECIPIENT_FILTERS = [
@@ -209,24 +201,12 @@ export default function EmailRecipients({
                                     <TableCell>
                                         <div className="flex flex-wrap items-center gap-1.5">
                                             <Badge
-                                                variant={
-                                                    recipient.status ===
-                                                    'delivered'
-                                                        ? 'success'
-                                                        : [
-                                                                'bounced',
-                                                                'complained',
-                                                                'rejected',
-                                                                'failed',
-                                                            ].includes(
-                                                                recipient.status,
-                                                            )
-                                                          ? 'destructive'
-                                                          : 'secondary'
-                                                }
+                                                variant={deliveryStatusVariant(
+                                                    recipient.status,
+                                                )}
                                             >
                                                 {
-                                                    DELIVERY_LABELS[
+                                                    DELIVERY_STATUS_LABELS[
                                                         recipient.status
                                                     ]
                                                 }

@@ -52,6 +52,10 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { useListFilters } from '@/hooks/use-list-filters';
+import {
+    CAMPAIGN_STATUS_LABELS,
+    campaignStatusVariant,
+} from '@/lib/email-status';
 import { formatRelativeTime } from '@/lib/format';
 import { index as templatesIndex } from '@/routes/email_templates';
 import { edit, index, show } from '@/routes/emails';
@@ -86,15 +90,6 @@ const EDITOR_LABELS: Record<EmailEditorMode, string> = {
     builder: 'EmailBuilder.js',
     plain_text: 'Plain text',
     markdown: 'Markdown',
-};
-
-const STATUS_LABELS: Record<EmailSummary['status'], string> = {
-    draft: 'Draft',
-    queued: 'Queued',
-    sending: 'Sending',
-    sent: 'Sent',
-    partially_failed: 'Partially failed',
-    failed: 'Failed',
 };
 
 const RECIPIENT_OVERFLOW_FORMATTER = new Intl.NumberFormat('en', {
@@ -189,7 +184,7 @@ export default function EmailsIndex({
                                         value: filters.status,
                                         allLabel: 'All statuses',
                                         options: Object.entries(
-                                            STATUS_LABELS,
+                                            CAMPAIGN_STATUS_LABELS,
                                         ).map(([value, label]) => ({
                                             value,
                                             label,
@@ -255,7 +250,7 @@ export default function EmailsIndex({
                                               key: 'status',
                                               field: 'Status',
                                               value:
-                                                  STATUS_LABELS[
+                                                  CAMPAIGN_STATUS_LABELS[
                                                       filters.status as EmailSummary['status']
                                                   ] ?? filters.status,
                                               onClear: () =>
@@ -349,23 +344,15 @@ export default function EmailsIndex({
                                     <TableCell>
                                         <Badge
                                             data-test="email-status"
-                                            variant={
-                                                email.status === 'sent'
-                                                    ? 'success'
-                                                    : email.status ===
-                                                            'failed' ||
-                                                        email.status ===
-                                                            'partially_failed'
-                                                      ? 'destructive'
-                                                      : email.status ===
-                                                              'queued' ||
-                                                          email.status ===
-                                                              'sending'
-                                                        ? 'info'
-                                                        : 'secondary'
-                                            }
+                                            variant={campaignStatusVariant(
+                                                email.status,
+                                            )}
                                         >
-                                            {STATUS_LABELS[email.status]}
+                                            {
+                                                CAMPAIGN_STATUS_LABELS[
+                                                    email.status
+                                                ]
+                                            }
                                         </Badge>
                                     </TableCell>
                                     <TableCell>

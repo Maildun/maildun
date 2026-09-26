@@ -7,29 +7,11 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import {
+    CAMPAIGN_STATUS_LABELS,
+    campaignStatusVariant,
+} from '@/lib/email-status';
 import { index, show as showEmail } from '@/routes/emails';
-import type { RecentCampaign } from '@/types';
-
-const STATUS_LABELS: Record<RecentCampaign['status'], string> = {
-    draft: 'Draft',
-    queued: 'Queued',
-    sending: 'Sending',
-    sent: 'Sent',
-    partially_failed: 'Partially failed',
-    failed: 'Failed',
-};
-
-const STATUS_VARIANTS: Record<
-    RecentCampaign['status'],
-    'default' | 'secondary' | 'success' | 'destructive'
-> = {
-    draft: 'default',
-    queued: 'secondary',
-    sending: 'secondary',
-    sent: 'success',
-    partially_failed: 'secondary',
-    failed: 'destructive',
-};
 
 export function NavCampaigns() {
     const { props } = usePage();
@@ -65,10 +47,10 @@ export function NavCampaigns() {
                         >
                             <span className="truncate">{campaign.name}</span>
                             <Badge
-                                variant={STATUS_VARIANTS[campaign.status]}
+                                variant={campaignStatusVariant(campaign.status)}
                                 className="ml-auto"
                             >
-                                {STATUS_LABELS[campaign.status]}
+                                {CAMPAIGN_STATUS_LABELS[campaign.status]}
                             </Badge>
                         </SidebarMenuButton>
                     </SidebarMenuItem>
