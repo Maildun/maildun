@@ -20,6 +20,7 @@ use Illuminate\Support\Str;
  * @property int $id
  * @property string $uuid
  * @property int $email_id
+ * @property int|null $email_send_run_id
  * @property int|null $subscriber_id
  * @property int|null $contact_id
  * @property string $email_address
@@ -51,7 +52,7 @@ use Illuminate\Support\Str;
  * @property-read EmailDeliveryAttempt|null $latestAttempt
  */
 #[Fillable([
-    'email_id', 'subscriber_id', 'contact_id', 'email_address', 'first_name', 'last_name', 'merge_data',
+    'email_id', 'email_send_run_id', 'subscriber_id', 'contact_id', 'email_address', 'first_name', 'last_name', 'merge_data',
     'status', 'provider', 'uses_team_email_integration', 'provider_message_id', 'failure_reason', 'send_attempted_at', 'sent_at',
     'delivered_at', 'delayed_at', 'bounced_at', 'complained_at',
     'first_opened_at', 'last_opened_at', 'first_clicked_at', 'last_clicked_at',
@@ -73,6 +74,12 @@ class EmailDelivery extends Model
     public function email(): BelongsTo
     {
         return $this->belongsTo(Email::class);
+    }
+
+    /** @return BelongsTo<EmailSendRun, $this> */
+    public function sendRun(): BelongsTo
+    {
+        return $this->belongsTo(EmailSendRun::class, 'email_send_run_id');
     }
 
     /** @return BelongsTo<Subscriber, $this> */

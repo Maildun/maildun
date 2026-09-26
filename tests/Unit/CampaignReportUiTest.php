@@ -253,8 +253,10 @@ test('a sending campaign says it is safe to leave and announces when it finishes
     $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
     $sidebar = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/nav-campaigns.tsx');
 
+    expect(preg_replace('/\s+/', ' ', (string) $layout))->toBeString()
+        ->toContain('You can leave this page; sending continues in the background');
+
     expect($layout)->toBeString()
-        ->toContain('You can leave this page; sending continues in')
         ->toContain('if (wasActive.current && !isActive) {')
         ->toContain('finished sending.`')
         ->toContain('finished with failures.`');
@@ -262,4 +264,18 @@ test('a sending campaign says it is safe to leave and announces when it finishes
     expect($sidebar)->toBeString()
         ->toContain('{hasActiveCampaign && <RecentCampaignsPoller />}')
         ->toContain("usePoll(5000, { only: ['recentCampaigns'] }, { mode: 'rest' });");
+});
+
+test('a retry reports its own progress and the overview lists the send history', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+    $report = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/show.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain("const isRetryRun = metrics.run_kind === 'retry';")
+        ->toContain("'Retrying failed deliveries'")
+        ->toContain('width: `${runProgress}%`');
+
+    expect($report)->toBeString()
+        ->toContain('{sendRuns.length > 1 && <SendHistory runs={sendRuns} />}')
+        ->toContain("pollProps={['campaign', 'metrics', 'insights', 'sendRuns']}");
 });

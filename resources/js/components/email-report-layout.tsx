@@ -109,6 +109,10 @@ export type CampaignReportMetrics = {
     retryable: number;
     /** Retryable deliveries that were handed to the provider but never confirmed. */
     unconfirmed: number;
+    /** The newest send run: the first send or a retry. Null for campaigns sent before runs were recorded. */
+    run_kind: 'initial' | 'retry' | null;
+    run_recipient_count: number | null;
+    run_processed: number | null;
     delivery_feedback: 'available' | 'partial' | 'unavailable';
     feedback_recipient_count: number;
     delivery_rate: number | null;
@@ -149,6 +153,15 @@ export type CampaignTrackedLink = {
     clicks: number;
     /** Recipients who clicked this link at least once. */
     unique_clicks: number;
+};
+
+export type CampaignSendRun = {
+    kind: 'initial' | 'retry';
+    recipient_count: number;
+    processed: number;
+    failed: number;
+    started_at: string;
+    finished_at: string | null;
 };
 
 export type CampaignReportPage =
@@ -234,6 +247,16 @@ export function EmailReportLayout({
     const isActive =
         campaign.status === 'queued' || campaign.status === 'sending';
     const wasActive = useRef(isActive);
+    const isRetryRun = metrics.run_kind === 'retry';
+    const runRecipients = isRetryRun
+        ? (metrics.run_recipient_count ?? 0)
+        : campaign.recipient_count;
+    const runProcessed = isRetryRun
+        ? (metrics.run_processed ?? 0)
+        : metrics.processed;
+    const runProgress = isRetryRun
+        ? Math.round((runProcessed / Math.max(runRecipients, 1)) * 100)
+        : metrics.progress;
 
     useEffect(() => {
         if (wasActive.current && !isActive) {
@@ -343,20 +366,27 @@ export function EmailReportLayout({
                 {isActive && (
                     <Card>
                         <CardHeader>
-                            <CardTitle>Sending campaign</CardTitle>
+                            <CardTitle>
+                                {isRetryRun
+                                    ? 'Retrying failed deliveries'
+                                    : 'Sending campaign'}
+                            </CardTitle>
                             <CardDescription>
-                                {metrics.processed} of{' '}
-                                {campaign.recipient_count} recipients processed.
-                                You can leave this page; sending continues in
-                                the background and this report refreshes on its
-                                own.
+                                {runProcessed.toLocaleString()} of{' '}
+                                {runRecipients.toLocaleString()}{' '}
+                                {isRetryRun
+                                    ? 'retried deliveries'
+                                    : 'recipients'}{' '}
+                                processed. You can leave this page; sending
+                                continues in the background and this report
+                                refreshes on its own.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="flex flex-col gap-3">
                             <div className="h-2 overflow-hidden rounded-full bg-muted">
                                 <div
                                     className="h-full rounded-full bg-primary transition-[width]"
-                                    style={{ width: `${metrics.progress}%` }}
+                                    style={{ width: `${runProgress}%` }}
                                 />
                             </div>
                             {(metrics.failed > 0 || metrics.retrying > 0) && (

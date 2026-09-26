@@ -74,9 +74,11 @@ class PrepareEmailSendChunk implements ShouldQueue
 
         $sentAt = $email->send_started_at ?? now();
         $createdAt = now();
+        $sendRunId = $email->sendRuns()->latest('id')->value('id');
         $rows = $subscribers->map(fn (Subscriber $subscriber): array => [
             'uuid' => (string) Str::uuid(),
             'email_id' => $email->id,
+            'email_send_run_id' => $sendRunId,
             'subscriber_id' => $subscriber->id,
             'contact_id' => $subscriber->contact_id,
             'email_address' => $subscriber->email,

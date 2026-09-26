@@ -12,6 +12,7 @@ import { EmailReportLayout } from '@/components/email-report-layout';
 import type {
     CampaignReportCampaign,
     CampaignReportMetrics,
+    CampaignSendRun,
 } from '@/components/email-report-layout';
 import {
     Card,
@@ -20,12 +21,14 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { formatRelativeTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 type Props = {
     campaign: CampaignReportCampaign;
     metrics: CampaignReportMetrics;
     insights: CampaignInsightsData;
+    sendRuns: CampaignSendRun[];
     canManage: boolean;
 };
 
@@ -33,6 +36,7 @@ export default function EmailShow({
     campaign,
     metrics,
     insights,
+    sendRuns,
     canManage,
 }: Props) {
     const feedbackReported = metrics.delivery_feedback !== 'unavailable';
@@ -43,7 +47,7 @@ export default function EmailShow({
             metrics={metrics}
             canManage={canManage}
             activePage="overview"
-            pollProps={['campaign', 'metrics', 'insights']}
+            pollProps={['campaign', 'metrics', 'insights', 'sendRuns']}
         >
             <div className="flex flex-col gap-4">
                 <CampaignInsights insights={insights} />
@@ -85,8 +89,50 @@ export default function EmailShow({
                         />
                     </CardContent>
                 </Card>
+                {sendRuns.length > 1 && <SendHistory runs={sendRuns} />}
             </div>
         </EmailReportLayout>
+    );
+}
+
+/**
+ * Lists the first send and every retry, newest first, so a retry reads as
+ * its own pass instead of silently reopening the original send.
+ */
+function SendHistory({ runs }: { runs: CampaignSendRun[] }) {
+    return (
+        <Card size="sm" data-test="campaign-send-history">
+            <CardHeader className="border-b">
+                <CardTitle>Send history</CardTitle>
+                <CardDescription>
+                    The first send and each retry of failed deliveries.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <ul className="flex flex-col divide-y">
+                    {runs.map((run) => (
+                        <li
+                            key={run.started_at}
+                            className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
+                        >
+                            <span className="font-medium">
+                                {run.kind === 'retry' ? 'Retry' : 'First send'}
+                            </span>
+                            <span className="text-muted-foreground tabular-nums">
+                                {run.recipient_count.toLocaleString()}{' '}
+                                {run.recipient_count === 1
+                                    ? 'recipient'
+                                    : 'recipients'}{' '}
+                                · {run.failed.toLocaleString()} failed ·{' '}
+                                {run.finished_at
+                                    ? `finished ${formatRelativeTime(run.finished_at)} ago`
+                                    : `${run.processed.toLocaleString()} processed so far`}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            </CardContent>
+        </Card>
     );
 }
 

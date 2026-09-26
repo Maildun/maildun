@@ -2,6 +2,7 @@
 
 namespace App\Actions\Emails;
 
+use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
 use App\Exceptions\EmailTransportException;
 use App\Jobs\PrepareEmailSendChunk;
@@ -84,6 +85,11 @@ class StartEmailSend
                 'status' => EmailStatus::Queued,
                 'recipient_count' => $recipientCount,
                 'send_started_at' => $sendStartedAt,
+            ]);
+            $lockedEmail->sendRuns()->create([
+                'kind' => EmailSendRunKind::Initial,
+                'recipient_count' => $recipientCount,
+                'started_at' => $sendStartedAt,
             ]);
 
             return $lockedEmail;

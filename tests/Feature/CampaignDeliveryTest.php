@@ -8,6 +8,7 @@ use App\Actions\Emails\RetryEmailDeliveries;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
 use App\Enums\EmailProvider;
+use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
@@ -20,6 +21,7 @@ use App\Models\Email;
 use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
+use App\Models\EmailSendRun;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
@@ -987,6 +989,78 @@ test('a single failed delivery can be retried', function () {
     Bus::assertBatched(fn (PendingBatch $batch): bool => $batch->jobs->count() === 1);
     expect($failed->fresh()->status)->toBe(EmailDeliveryStatus::Queued)
         ->and($email->fresh()->status)->toBe(EmailStatus::Sending);
+});
+
+test('a retry is recorded as its own send run with its own progress', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 3,
+        'send_started_at' => now()->subHour(),
+        'sent_at' => now()->subHour(),
+    ]);
+    $firstRun = EmailSendRun::factory()->for($email)->finished()->create(['recipient_count' => 3]);
+    $failed = EmailDelivery::factory()->for($email)->create([
+        'email_send_run_id' => $firstRun->id,
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+    EmailDelivery::factory()->count(2)->for($email)->create([
+        'email_send_run_id' => $firstRun->id,
+        'status' => EmailDeliveryStatus::Sent,
+    ]);
+
+    app(RetryEmailDeliveries::class)->handle($email);
+
+    $retryRun = $email->sendRuns()->latest('id')->first();
+
+    expect($retryRun->kind)->toBe(EmailSendRunKind::Retry)
+        ->and($retryRun->recipient_count)->toBe(1)
+        ->and($retryRun->finished_at)->toBeNull()
+        ->and($failed->fresh()->email_send_run_id)->toBe($retryRun->id);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.run_kind', 'retry')
+            ->where('metrics.run_recipient_count', 1)
+            ->where('metrics.run_processed', 0)
+            ->has('sendRuns', 2)
+            ->where('sendRuns.0.kind', 'retry')
+            ->where('sendRuns.1.kind', 'initial')
+            ->where('sendRuns.1.processed', 2));
+
+    (new FinalizeEmailSend($email->id))();
+
+    expect($retryRun->fresh()->finished_at)->not->toBeNull();
+});
+
+test('the first send records an initial run and stamps its deliveries', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->count(2)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello</p>',
+    ]);
+
+    $this->actingAs($user)->post(route('emails.send', [$team, $email]));
+
+    [$loader] = (new PrepareEmailSendChunk($email->id))->withFakeBatch();
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    $run = $email->sendRuns()->sole();
+
+    expect($run->kind)->toBe(EmailSendRunKind::Initial)
+        ->and($run->recipient_count)->toBe(2)
+        ->and($email->deliveries()->where('email_send_run_id', $run->id)->count())->toBe(2);
 });
 
 test('permanent bounces cannot be retried', function () {

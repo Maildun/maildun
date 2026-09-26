@@ -36,6 +36,7 @@ use Illuminate\Support\Str;
  * @property string|null $plain_text
  * @property string|null $query_string
  * @property-read EmailTrackingAggregate|null $trackingAggregate
+ * @property-read EmailSendRun|null $latestSendRun
  * @property-read Collection<int, EmailTrackingInsightAggregate> $insightAggregates
  * @property bool $track_clicks
  * @property bool $track_opens
@@ -126,6 +127,18 @@ class Email extends Model
     public function deliveries(): HasMany
     {
         return $this->hasMany(EmailDelivery::class);
+    }
+
+    /** @return HasMany<EmailSendRun, $this> */
+    public function sendRuns(): HasMany
+    {
+        return $this->hasMany(EmailSendRun::class);
+    }
+
+    /** @return HasOne<EmailSendRun, $this> */
+    public function latestSendRun(): HasOne
+    {
+        return $this->hasOne(EmailSendRun::class)->latestOfMany();
     }
 
     /** @return HasMany<EmailLink, $this> */

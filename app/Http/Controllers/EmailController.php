@@ -24,6 +24,7 @@ use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
 use App\Models\EmailLink;
 use App\Models\EmailLinkTrackingAggregate;
+use App\Models\EmailSendRun;
 use App\Models\EmailTemplate;
 use App\Models\EmailTrackingAggregate;
 use App\Models\Media;
@@ -658,7 +659,7 @@ class EmailController extends Controller
     }
 
     /**
-     * @return array{campaign: array<string, mixed>, metrics: array<string, int|float|string|null>, canManage: bool}
+     * @return array{campaign: array<string, mixed>, metrics: array<string, int|float|string|null>, sendRuns: list<array{kind: string, recipient_count: int, processed: int, failed: int, started_at: string, finished_at: string|null}>, canManage: bool}
      */
     private function campaignReportProps(Email $email): array
     {
@@ -698,6 +699,8 @@ class EmailController extends Controller
             EmailDeliveryStatus::Failed,
             EmailDeliveryStatus::Rejected,
         ])->count();
+        $sendRuns = $this->sendRunHistory($email);
+        $currentRun = $sendRuns[0] ?? null;
         $retryingCount = (clone $deliveries)
             ->where('status', EmailDeliveryStatus::Queued)
             ->whereHas('attempts', fn (Builder $attempts) => $attempts->where('status', EmailDeliveryStatus::Failed))
@@ -740,6 +743,9 @@ class EmailController extends Controller
                 'retrying' => $retryingCount,
                 'retryable' => $retryableCount,
                 'unconfirmed' => $unconfirmedRetryableCount,
+                'run_kind' => $currentRun['kind'] ?? null,
+                'run_recipient_count' => $currentRun['recipient_count'] ?? null,
+                'run_processed' => $currentRun['processed'] ?? null,
                 'delivery_feedback' => $deliveryFeedback,
                 'feedback_recipient_count' => $sesRecipientCount,
                 'delivery_rate' => $sesRecipientCount === 0
@@ -748,8 +754,48 @@ class EmailController extends Controller
                 'open_rate' => round(($openedCount / $recipientCount) * 100, 1),
                 'click_rate' => round(($clickedCount / $recipientCount) * 100, 1),
             ],
+            'sendRuns' => $sendRuns,
             'canManage' => Gate::allows('send', $email),
         ];
+    }
+
+    /**
+     * Every pass over the campaign, newest first: the first send and each
+     * deliberate retry, with how many of its deliveries have finished and
+     * failed. A delivery counts toward the run that last queued it.
+     *
+     * @return list<array{kind: string, recipient_count: int, processed: int, failed: int, started_at: string, finished_at: string|null}>
+     */
+    private function sendRunHistory(Email $email): array
+    {
+        $totals = $email->deliveries()
+            ->whereNotNull('email_send_run_id')
+            ->toBase()
+            ->select('email_send_run_id')
+            ->selectRaw('count(case when status not in (?, ?) then 1 end) as processed', [
+                EmailDeliveryStatus::Queued->value,
+                EmailDeliveryStatus::Sending->value,
+            ])
+            ->selectRaw('count(case when status in (?, ?) then 1 end) as failed', [
+                EmailDeliveryStatus::Failed->value,
+                EmailDeliveryStatus::Rejected->value,
+            ])
+            ->groupBy('email_send_run_id')
+            ->get()
+            ->keyBy('email_send_run_id');
+
+        return array_values($email->sendRuns()
+            ->latest('id')
+            ->get()
+            ->map(fn (EmailSendRun $run): array => [
+                'kind' => $run->kind->value,
+                'recipient_count' => $run->recipient_count,
+                'processed' => (int) ($totals->get($run->id)->processed ?? 0),
+                'failed' => (int) ($totals->get($run->id)->failed ?? 0),
+                'started_at' => $run->started_at->toISOString(),
+                'finished_at' => $run->finished_at?->toISOString(),
+            ])
+            ->all());
     }
 
     /**

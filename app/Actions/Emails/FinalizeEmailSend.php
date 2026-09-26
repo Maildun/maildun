@@ -54,6 +54,8 @@ class FinalizeEmailSend
                 ]);
         }, attempts: 3);
 
+        $email->sendRuns()->whereNull('finished_at')->update(['finished_at' => now()]);
+
         if ($email->deliveries()->count() < $email->recipient_count) {
             $email->update([
                 'status' => EmailStatus::Failed,
