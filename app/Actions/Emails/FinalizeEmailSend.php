@@ -4,7 +4,6 @@ namespace App\Actions\Emails;
 
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailFailureCode;
-use App\Enums\EmailStatus;
 use App\Models\Email;
 use App\Models\EmailDeliveryAttempt;
 use Illuminate\Bus\Batch;
@@ -58,26 +57,8 @@ class FinalizeEmailSend
 
         $email->sendRuns()->whereNull('finished_at')->update(['finished_at' => now()]);
 
-        if ($email->deliveries()->count() < $email->recipient_count) {
-            $email->update([
-                'status' => EmailStatus::Failed,
-                'sent_at' => now(),
-            ]);
-
-            return;
-        }
-
-        $failed = $email->deliveries()->whereIn('status', [
-            EmailDeliveryStatus::Failed,
-            EmailDeliveryStatus::Rejected,
-        ])->count();
-
         $email->update([
-            'status' => match (true) {
-                $failed === 0 => EmailStatus::Sent,
-                $failed >= $email->recipient_count => EmailStatus::Failed,
-                default => EmailStatus::PartiallyFailed,
-            },
+            'status' => app(ResolveCampaignOutcome::class)->handle($email),
             'sent_at' => now(),
         ]);
     }

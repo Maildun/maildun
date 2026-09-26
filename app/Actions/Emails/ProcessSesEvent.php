@@ -20,7 +20,10 @@ use Illuminate\Support\Facades\DB;
 
 class ProcessSesEvent
 {
-    public function __construct(private RecordEmailAddressHealth $emailHealth) {}
+    public function __construct(
+        private RecordEmailAddressHealth $emailHealth,
+        private ResolveCampaignOutcome $campaignOutcome,
+    ) {}
 
     /** @param array<string, mixed> $payload */
     public function handle(string $eventId, array $payload, string $topicArn): void
@@ -78,6 +81,10 @@ class ProcessSesEvent
 
                 if ($this->isLatestAttempt($attempt)) {
                     $this->applyFeedback($delivery, $type, $payload, $occurredAt);
+
+                    if ($type === 'Reject') {
+                        $this->campaignOutcome->refresh($delivery->email);
+                    }
                 }
 
                 $delivery->loadMissing('email.team');
