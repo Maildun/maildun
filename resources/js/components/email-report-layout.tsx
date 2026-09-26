@@ -17,7 +17,13 @@ import {
     usePage,
     usePoll,
 } from '@inertiajs/react';
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+} from 'react';
 import type { ReactNode } from 'react';
 import {
     Alert,
@@ -227,6 +233,27 @@ export function EmailReportLayout({
     });
     const isActive =
         campaign.status === 'queued' || campaign.status === 'sending';
+    const wasActive = useRef(isActive);
+
+    useEffect(() => {
+        if (wasActive.current && !isActive) {
+            toast.add(
+                campaign.status === 'sent'
+                    ? {
+                          type: 'success',
+                          title: `${campaign.name} finished sending.`,
+                      }
+                    : {
+                          type: 'warning',
+                          title: `${campaign.name} finished with failures.`,
+                          description:
+                              'Retry failed deliveries from this report.',
+                      },
+            );
+        }
+
+        wasActive.current = isActive;
+    }, [isActive, campaign.name, campaign.status]);
     const providerLabel = campaign.provider
         ? EMAIL_PROVIDER_LABELS[campaign.provider]
         : null;
@@ -320,7 +347,9 @@ export function EmailReportLayout({
                             <CardDescription>
                                 {metrics.processed} of{' '}
                                 {campaign.recipient_count} recipients processed.
-                                This report refreshes automatically.
+                                You can leave this page; sending continues in
+                                the background and this report refreshes on its
+                                own.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="flex flex-col gap-3">

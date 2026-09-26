@@ -248,3 +248,18 @@ test('report metrics explain what they count and human engagement is labelled as
         ->toContain('Click rate')
         ->toContain('link.unique_clicks');
 });
+
+test('a sending campaign says it is safe to leave and announces when it finishes', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+    $sidebar = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/nav-campaigns.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain('You can leave this page; sending continues in')
+        ->toContain('if (wasActive.current && !isActive) {')
+        ->toContain('finished sending.`')
+        ->toContain('finished with failures.`');
+
+    expect($sidebar)->toBeString()
+        ->toContain('{hasActiveCampaign && <RecentCampaignsPoller />}')
+        ->toContain("usePoll(5000, { only: ['recentCampaigns'] }, { mode: 'rest' });");
+});

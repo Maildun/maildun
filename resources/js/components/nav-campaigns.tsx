@@ -1,4 +1,4 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link, usePage, usePoll } from '@inertiajs/react';
 import { Badge } from '@/components/ui/badge';
 import {
     SidebarGroup,
@@ -21,8 +21,14 @@ export function NavCampaigns() {
         return null;
     }
 
+    const hasActiveCampaign = recentCampaigns.some(
+        (campaign) =>
+            campaign.status === 'queued' || campaign.status === 'sending',
+    );
+
     return (
         <SidebarGroup className="px-2 py-0">
+            {hasActiveCampaign && <RecentCampaignsPoller />}
             <SidebarGroupLabel
                 className="hover:text-sidebar-foreground"
                 render={<Link href={index(currentTeam.slug)} prefetch />}
@@ -58,4 +64,15 @@ export function NavCampaigns() {
             </SidebarMenu>
         </SidebarGroup>
     );
+}
+
+/**
+ * Keeps the sidebar badges live while a recent campaign is queued or
+ * sending, on any page. It only reloads the shared recentCampaigns prop and
+ * unmounts, stopping the poll, once nothing is in flight.
+ */
+function RecentCampaignsPoller() {
+    usePoll(5000, { only: ['recentCampaigns'] }, { mode: 'rest' });
+
+    return null;
 }
