@@ -108,6 +108,7 @@ import type {
     EmailSenderDefaults,
     EmailSenderOption,
     MediaLibraryData,
+    SendReadiness,
 } from '@/types';
 
 type Props = {
@@ -119,6 +120,7 @@ type Props = {
     canManage: boolean;
     currentTeam: { slug: string };
     mediaLibrary: MediaLibraryData | null;
+    sendReadiness: SendReadiness;
 };
 
 /** The Select primitive has no "empty" value, so absence gets its own key. */
@@ -225,6 +227,7 @@ export default function EmailEdit({
     canManage,
     currentTeam,
     mediaLibrary,
+    sendReadiness,
 }: Props) {
     const [view, setView] = useState<'hub' | 'design'>('hub');
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
@@ -527,6 +530,13 @@ export default function EmailEdit({
     const senderDone = Boolean(senderAddress);
     const recipientsDone = form.data.audience !== null && recipientCount > 0;
     const subjectDone = form.data.subject.trim() !== '';
+    // Workspace setup the hub cannot fix itself; recipients and content are
+    // covered by the live form checks below.
+    const setupProblems = sendReadiness.checks.filter(
+        (check) =>
+            !check.passed &&
+            (check.key === 'provider' || check.key === 'sender'),
+    );
     const sendBlockers = [
         !subjectDone && 'Add a subject line',
         !hasBody && 'Design the email',
@@ -535,6 +545,7 @@ export default function EmailEdit({
             recipientCount === 0 &&
             'The selected recipients have nobody to send to',
         form.isDirty && 'Save your changes',
+        ...setupProblems.map((check) => check.message),
     ].filter((blocker): blocker is string => typeof blocker === 'string');
     const readyToSend = sendBlockers.length === 0;
 
@@ -867,6 +878,37 @@ export default function EmailEdit({
                                 )}
                             </div>
                         </div>
+                        {canManage && setupProblems.length > 0 ? (
+                            <Alert
+                                variant="warning"
+                                data-test="campaign-setup-problems"
+                            >
+                                <HugeiconsIcon icon={Alert01Icon} />
+                                <AlertTitle>
+                                    This workspace cannot send yet
+                                </AlertTitle>
+                                <AlertDescription>
+                                    <ul className="flex flex-col gap-1">
+                                        {setupProblems.map((check) => (
+                                            <li key={check.key}>
+                                                {check.message}{' '}
+                                                {check.action_url ? (
+                                                    <a
+                                                        href={check.action_url}
+                                                        className="font-medium text-foreground underline underline-offset-4"
+                                                    >
+                                                        {check.key ===
+                                                        'provider'
+                                                            ? 'Set up email delivery'
+                                                            : 'Manage senders'}
+                                                    </a>
+                                                ) : null}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </AlertDescription>
+                            </Alert>
+                        ) : null}
                         <div className="overflow-hidden rounded-2xl border bg-card">
                             <div className="divide-y">
                                 <CampaignSetupRow

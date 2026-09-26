@@ -424,3 +424,16 @@ export type TransactionalEmailDetail = {
     last_tested_at: string | null;
     updated_at: string | null;
 };
+
+/** One server-side condition StartEmailSend enforces; see BuildSendReadiness. */
+export type SendReadinessCheck = {
+    key: 'provider' | 'sender' | 'recipients' | 'content';
+    passed: boolean;
+    message: string;
+    action_url: string | null;
+};
+
+export type SendReadiness = {
+    ready: boolean;
+    checks: SendReadinessCheck[];
+};

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Emails\BuildCampaignInsights;
+use App\Actions\Emails\BuildSendReadiness;
 use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Actions\Emails\LintCampaignContent;
 use App\Actions\Emails\RenderCampaignContent;
@@ -193,7 +194,7 @@ class EmailController extends Controller
         return to_route('emails.edit', ['current_team' => $currentTeam, 'email' => $email]);
     }
 
-    public function edit(Team $currentTeam, Email $email): Response|RedirectResponse
+    public function edit(Team $currentTeam, Email $email, BuildSendReadiness $sendReadiness): Response|RedirectResponse
     {
         Gate::authorize('view', $email);
 
@@ -256,6 +257,7 @@ class EmailController extends Controller
                     'size_label' => Number::fileSize($attachment->size),
                 ])->values(),
             ],
+            'sendReadiness' => $sendReadiness->handle($email),
             'audiences' => $currentTeam->audiences()
                 ->withCount($this->subscribedCount($currentTeam))
                 ->with([
