@@ -957,6 +957,65 @@ test('a sending campaign reports deliveries waiting on an automatic retry', func
             ->where('metrics.failed', 1));
 });
 
+test('a sending campaign with no finished delivery for several minutes is stalled', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 2,
+        'send_started_at' => now()->subMinutes(20),
+    ]);
+    EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Sent,
+        'updated_at' => now()->subMinutes(12),
+    ]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.stalled', true)
+            ->where('metrics.worker_state', 'unknown')
+            ->where('metrics.eta_seconds', null));
+});
+
+test('a sending campaign estimates the time left from its recent pace', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 20,
+        'send_started_at' => now()->subMinutes(5),
+    ]);
+    EmailDelivery::factory()->count(10)->for($email)->create([
+        'status' => EmailDeliveryStatus::Sent,
+        'updated_at' => now()->subMinute(),
+    ]);
+    EmailDelivery::factory()->count(10)->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.stalled', false)
+            ->where('metrics.eta_seconds', 300));
+});
+
+test('a finished campaign reports no in-flight progress', function () {
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 1,
+        'sent_at' => now(),
+    ]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Sent]);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$user->currentTeam, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.stalled', false)
+            ->where('metrics.worker_state', null));
+});
+
 test('a single failed delivery can be retried', function () {
     Bus::fake();
 

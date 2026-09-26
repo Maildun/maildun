@@ -243,6 +243,32 @@ class InstallationState
         return rtrim((string) config('app.url'), '/').$path;
     }
 
+    /**
+     * Whether queue workers are picking up background jobs. Only Horizon on
+     * Redis reports its supervisors, so any other queue setup is "unknown"
+     * rather than guessed at.
+     *
+     * @return 'running'|'paused'|'stopped'|'unknown'
+     */
+    public function workerState(): string
+    {
+        if (config('queue.default') !== 'redis') {
+            return 'unknown';
+        }
+
+        try {
+            $masters = $this->masterSupervisors->all();
+        } catch (Throwable) {
+            return 'unknown';
+        }
+
+        return match (true) {
+            $masters === [] => 'stopped',
+            collect($masters)->every(fn (object $master): bool => data_get($master, 'status') === 'paused') => 'paused',
+            default => 'running',
+        };
+    }
+
     private function passes(callable $check): bool
     {
         try {

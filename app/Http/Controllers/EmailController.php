@@ -13,6 +13,7 @@ use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
 use App\Enums\EmailProvider;
+use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
 use App\Enums\TestSendStatus;
@@ -35,6 +36,7 @@ use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamSender;
+use App\Services\InstallationState;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -42,6 +44,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Number;
@@ -693,7 +696,7 @@ class EmailController extends Controller
     }
 
     /**
-     * @return array{campaign: array<string, mixed>, metrics: array<string, int|float|string|null>, sendRuns: list<array{kind: string, recipient_count: int, processed: int, failed: int, started_at: string, finished_at: string|null}>, canManage: bool}
+     * @return array{campaign: array<string, mixed>, metrics: array<string, int|float|string|bool|null>, sendRuns: list<array{kind: string, recipient_count: int, processed: int, failed: int, started_at: string, finished_at: string|null}>, canManage: bool}
      */
     private function campaignReportProps(Email $email): array
     {
@@ -735,6 +738,7 @@ class EmailController extends Controller
         ])->count();
         $sendRuns = $this->sendRunHistory($email);
         $currentRun = $sendRuns[0] ?? null;
+        $progress = $email->status->isActive() ? $this->sendProgress($email, $currentRun) : null;
         $retryingCount = (clone $deliveries)
             ->where('status', EmailDeliveryStatus::Queued)
             ->whereHas('attempts', fn (Builder $attempts) => $attempts->where('status', EmailDeliveryStatus::Failed))
@@ -780,6 +784,11 @@ class EmailController extends Controller
                 'run_kind' => $currentRun['kind'] ?? null,
                 'run_recipient_count' => $currentRun['recipient_count'] ?? null,
                 'run_processed' => $currentRun['processed'] ?? null,
+                'run_failed' => $currentRun['failed'] ?? null,
+                'last_activity_at' => $progress['last_activity_at'] ?? null,
+                'stalled' => $progress['stalled'] ?? false,
+                'worker_state' => $progress['worker_state'] ?? null,
+                'eta_seconds' => $progress['eta_seconds'] ?? null,
                 'delivery_feedback' => $deliveryFeedback,
                 'feedback_recipient_count' => $sesRecipientCount,
                 'delivery_rate' => $sesRecipientCount === 0
@@ -790,6 +799,46 @@ class EmailController extends Controller
             ],
             'sendRuns' => $sendRuns,
             'canManage' => Gate::allows('send', $email),
+        ];
+    }
+
+    /**
+     * Minutes without any delivery finishing before an in-flight send is
+     * reported as stalled. Well below the recovery sweep, so the sender sees
+     * the problem before emails:resume acts on it.
+     */
+    private const int STALL_WARNING_MINUTES = 5;
+
+    /**
+     * How an in-flight send is moving: when a delivery last finished, whether
+     * it has gone quiet, whether queue workers are running, and a rough ETA
+     * from the pace of the last five minutes.
+     *
+     * @param  array{kind: string, recipient_count: int, processed: int, failed: int, started_at: string, finished_at: string|null}|null  $currentRun
+     * @return array{last_activity_at: string|null, stalled: bool, worker_state: string, eta_seconds: int|null}
+     */
+    private function sendProgress(Email $email, ?array $currentRun): array
+    {
+        $deliveries = $email->deliveries()
+            ->when($currentRun !== null && $currentRun['kind'] === EmailSendRunKind::Retry->value, fn (Builder $query) => $query
+                ->where('email_send_run_id', $email->sendRuns()->latest('id')->value('id')));
+        $finished = (clone $deliveries)->whereNotIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending]);
+        $lastActivity = (clone $finished)->max('updated_at');
+        $lastActivityAt = is_string($lastActivity) || $lastActivity instanceof \DateTimeInterface
+            ? Carbon::parse($lastActivity)
+            : null;
+        $startedAt = $email->send_started_at ?? now();
+        $quietSince = $lastActivityAt ?? $startedAt;
+        $recentlyFinished = (clone $finished)->where('updated_at', '>=', now()->subMinutes(5))->count();
+        $remaining = (clone $deliveries)->whereIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending])->count();
+
+        return [
+            'last_activity_at' => $lastActivityAt?->toISOString(),
+            'stalled' => $quietSince->lt(now()->subMinutes(self::STALL_WARNING_MINUTES)),
+            'worker_state' => app(InstallationState::class)->workerState(),
+            'eta_seconds' => $recentlyFinished > 0 && $remaining > 0
+                ? (int) ceil($remaining / ($recentlyFinished / 300))
+                : null,
         ];
     }
 

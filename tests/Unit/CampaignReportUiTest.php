@@ -273,9 +273,22 @@ test('a retry reports its own progress and the overview lists the send history',
     expect($layout)->toBeString()
         ->toContain("const isRetryRun = metrics.run_kind === 'retry';")
         ->toContain("'Retrying failed deliveries'")
-        ->toContain('width: `${runProgress}%`');
+        ->toContain('aria-valuenow={runProgress}');
 
     expect($report)->toBeString()
         ->toContain('{sendRuns.length > 1 && <SendHistory runs={sendRuns} />}')
         ->toContain("pollProps={['campaign', 'metrics', 'insights', 'sendRuns']}");
+});
+
+test('the sending card shows segmented progress, an ETA and stall guidance', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain('data-test="sending-progress-bar"')
+        ->toContain('percentOf(runProcessed - runFailed, runRecipients)')
+        ->toContain('percentOf(runFailed, runRecipients)')
+        ->toContain('data-test="sending-eta"')
+        ->toContain('data-test="sending-stalled-alert"')
+        ->toContain("'No queue worker is running'")
+        ->toContain("'Queue workers are paused'");
 });

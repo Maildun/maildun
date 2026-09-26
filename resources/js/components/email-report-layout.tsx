@@ -113,6 +113,14 @@ export type CampaignReportMetrics = {
     run_kind: 'initial' | 'retry' | null;
     run_recipient_count: number | null;
     run_processed: number | null;
+    run_failed: number | null;
+    /** Only while queued or sending: when a delivery last finished. */
+    last_activity_at: string | null;
+    /** No delivery has finished for several minutes while the campaign is active. */
+    stalled: boolean;
+    worker_state: 'running' | 'paused' | 'stopped' | 'unknown' | null;
+    /** Rough time left from the pace of the last five minutes. */
+    eta_seconds: number | null;
     delivery_feedback: 'available' | 'partial' | 'unavailable';
     feedback_recipient_count: number;
     delivery_rate: number | null;
@@ -254,6 +262,7 @@ export function EmailReportLayout({
     const runProcessed = isRetryRun
         ? (metrics.run_processed ?? 0)
         : metrics.processed;
+    const runFailed = isRetryRun ? (metrics.run_failed ?? 0) : metrics.failed;
     const runProgress = isRetryRun
         ? Math.round((runProcessed / Math.max(runRecipients, 1)) * 100)
         : metrics.progress;
@@ -383,12 +392,37 @@ export function EmailReportLayout({
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="flex flex-col gap-3">
-                            <div className="h-2 overflow-hidden rounded-full bg-muted">
+                            <div
+                                className="flex h-2 overflow-hidden rounded-full bg-muted"
+                                data-test="sending-progress-bar"
+                                role="progressbar"
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-valuenow={runProgress}
+                            >
                                 <div
-                                    className="h-full rounded-full bg-primary transition-[width]"
-                                    style={{ width: `${runProgress}%` }}
+                                    className="h-full bg-primary transition-[width]"
+                                    style={{
+                                        width: `${percentOf(runProcessed - runFailed, runRecipients)}%`,
+                                    }}
+                                />
+                                <div
+                                    className="h-full bg-destructive transition-[width]"
+                                    style={{
+                                        width: `${percentOf(runFailed, runRecipients)}%`,
+                                    }}
                                 />
                             </div>
+                            {metrics.eta_seconds !== null &&
+                            !metrics.stalled ? (
+                                <p
+                                    className="text-sm text-muted-foreground"
+                                    data-test="sending-eta"
+                                >
+                                    About {formatEta(metrics.eta_seconds)} left
+                                    at the current pace.
+                                </p>
+                            ) : null}
                             {(metrics.failed > 0 || metrics.retrying > 0) && (
                                 <p
                                     className="text-sm text-muted-foreground tabular-nums"
@@ -401,6 +435,25 @@ export function EmailReportLayout({
                             )}
                         </CardContent>
                     </Card>
+                )}
+
+                {isActive && metrics.stalled && (
+                    <Alert variant="warning" data-test="sending-stalled-alert">
+                        <AlertTitle>
+                            {metrics.worker_state === 'stopped'
+                                ? 'No queue worker is running'
+                                : metrics.worker_state === 'paused'
+                                  ? 'Queue workers are paused'
+                                  : 'Sending has stalled'}
+                        </AlertTitle>
+                        <AlertDescription>
+                            {metrics.worker_state === 'stopped'
+                                ? 'Nothing will send until Horizon is started again under your process manager.'
+                                : metrics.worker_state === 'paused'
+                                  ? 'Horizon is paused, so no deliveries are being handed to the provider. Continue it with php artisan horizon:continue.'
+                                  : `No delivery has finished ${metrics.last_activity_at ? `since ${formatRelativeTime(metrics.last_activity_at)} ago` : 'since the send started'}. Check that queue workers are running; stuck deliveries are recovered automatically.`}
+                        </AlertDescription>
+                    </Alert>
                 )}
 
                 {isActive && metrics.failed > 0 && (
@@ -756,6 +809,22 @@ function MetricCard({
             </CardContent>
         </Card>
     );
+}
+
+function percentOf(part: number, whole: number): number {
+    return whole > 0 ? Math.min(100, Math.max(0, (part / whole) * 100)) : 0;
+}
+
+function formatEta(seconds: number): string {
+    if (seconds < 90) {
+        return 'a minute';
+    }
+
+    if (seconds < 5400) {
+        return `${Math.round(seconds / 60)} minutes`;
+    }
+
+    return `${Math.round(seconds / 3600)} hours`;
 }
 
 function CampaignPoller({ only }: { only: string[] }) {
