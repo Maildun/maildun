@@ -27,9 +27,11 @@ test('owners can view and run system checks', function () {
         ->get(route('system-check.show'))
         ->assertInertia(fn (Assert $page) => $page
             ->component('settings/system-check')
-            ->has('checks', 8)
+            ->has('checks', 10)
             ->where('checks.7.key', 'storage-round-trip')
             ->where('checks.7.status', 'pending')
+            ->where('checks.8.key', 'scheduler')
+            ->where('checks.9.key', 'campaign-sends')
             ->where('appUpdate.status', 'unknown'));
 
     $this->actingAs($owner)
