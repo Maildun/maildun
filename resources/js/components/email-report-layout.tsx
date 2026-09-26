@@ -47,6 +47,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
+import { toast } from '@/components/ui/toast';
 import { formatRelativeTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
@@ -466,6 +467,14 @@ export function EmailReportLayout({
                                     { include_unconfirmed: includeUnconfirmed },
                                     {
                                         onStart: () => setRetrying(true),
+                                        onError: (errors) =>
+                                            toast.add({
+                                                type: 'error',
+                                                title: 'Could not retry failed deliveries.',
+                                                description:
+                                                    errors.email ??
+                                                    'Nothing was queued. Try again in a moment.',
+                                            }),
                                         onFinish: () => {
                                             setRetrying(false);
                                             setRetryOpen(false);

@@ -181,3 +181,16 @@ test('campaign overview page does not render an activity chart', function () {
         ->not->toContain('CampaignOverviewChart')
         ->not->toContain('campaign-overview-chart');
 });
+
+test('refused retries show the server reason in an error toast', function () {
+    $recipients = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/recipients.tsx');
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain("title: 'Could not retry failed deliveries.'")
+        ->toContain('errors.email ??');
+
+    expect($recipients)->toBeString()
+        ->toContain('title: `Could not retry ${recipient.email}.`')
+        ->toContain('errors.email ??');
+});

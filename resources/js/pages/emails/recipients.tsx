@@ -39,6 +39,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { toast } from '@/components/ui/toast';
 import {
     Tooltip,
     TooltipContent,
@@ -110,6 +111,14 @@ export default function EmailRecipients({
             {
                 preserveScroll: true,
                 onStart: () => setRetrying(true),
+                onError: (errors) =>
+                    toast.add({
+                        type: 'error',
+                        title: `Could not retry ${recipient.email}.`,
+                        description:
+                            errors.email ??
+                            'Nothing was queued. Try again in a moment.',
+                    }),
                 onFinish: () => {
                     setRetrying(false);
                     setConfirmingRetry(null);
