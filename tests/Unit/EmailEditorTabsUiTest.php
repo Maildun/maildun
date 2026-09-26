@@ -228,3 +228,12 @@ test('preview and send lists pre-send content checks', function () {
         ->toContain('<ContentIssuesCallout issues={contentIssues} />')
         ->toContain("things to check before sending");
 });
+
+test('preview and send checks links automatically when it opens', function () {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/preview-and-send.tsx');
+
+    expect($source)->toBeString()
+        ->toContain('linkCheckStarted.current = true;')
+        ->toContain('checkLinks.url([currentTeam.slug, campaign.uuid])')
+        ->toContain('data-test="campaign-preview-broken-links"');
+});

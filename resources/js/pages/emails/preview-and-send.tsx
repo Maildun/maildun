@@ -67,7 +67,12 @@ import {
 } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
-import { composePreview, edit as editCampaign, send } from '@/routes/emails';
+import {
+    checkLinks,
+    composePreview,
+    edit as editCampaign,
+    send,
+} from '@/routes/emails';
 
 type PreviewRecipient = {
     uuid: string;
@@ -107,6 +112,10 @@ type ContentIssue = {
     code: string;
     message: string;
 };
+
+type BrokenLink = { url: string; status: number | null; reason: string };
+
+type LinkCheckResponse = { checked: number; broken: BrokenLink[] };
 
 type SuppressedRecipients = {
     count: number;
@@ -312,6 +321,34 @@ function ContentIssuesCallout({ issues }: { issues: ContentIssue[] }) {
     );
 }
 
+function BrokenLinksCallout({ links }: { links: BrokenLink[] }) {
+    return (
+        <Alert
+            variant="destructive"
+            className="mx-auto w-full max-w-3xl shrink-0"
+            data-test="campaign-preview-broken-links"
+        >
+            <HugeiconsIcon icon={InformationCircleIcon} />
+            <AlertTitle>
+                {links.length === 1
+                    ? '1 link looks broken'
+                    : `${links.length} links look broken`}
+            </AlertTitle>
+            <AlertDescription>
+                <ul className="flex flex-col gap-1">
+                    {links.map((link) => (
+                        <li key={link.url} className="break-all">
+                            <span className="font-medium">{link.url}</span>
+                            {' — '}
+                            {link.reason}
+                        </li>
+                    ))}
+                </ul>
+            </AlertDescription>
+        </Alert>
+    );
+}
+
 function UnconfirmedRecipientsCallout({ count }: { count: number }) {
     return (
         <Alert
@@ -428,6 +465,9 @@ export default function PreviewAndSend({
     const canvasRef = useRef<HTMLDivElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const previewRequest = useHttp<Record<string, never>, CampaignPreview>({});
+    const linkCheck = useHttp<Record<string, never>, LinkCheckResponse>({});
+    const linkCheckStarted = useRef(false);
+    const [brokenLinks, setBrokenLinks] = useState<BrokenLink[]>([]);
 
     setLayoutProps({ fullscreen: true });
 
@@ -436,6 +476,21 @@ export default function PreviewAndSend({
             previewHeightObserver.current?.disconnect();
         };
     }, []);
+
+    // Check every tracked link once when the page opens, following
+    // redirects, so a broken destination is caught before the send.
+    useEffect(() => {
+        if (!currentTeam || linkCheckStarted.current) {
+            return;
+        }
+
+        linkCheckStarted.current = true;
+        void linkCheck
+            .get(checkLinks.url([currentTeam.slug, campaign.uuid]), {
+                onSuccess: (response) => setBrokenLinks(response.broken),
+            })
+            .catch(() => undefined);
+    }, [currentTeam, campaign.uuid, linkCheck]);
 
     if (!currentTeam) {
         return null;
@@ -943,6 +998,9 @@ export default function PreviewAndSend({
                             <SuppressedRecipientsCallout
                                 suppressed={suppressedRecipients}
                             />
+                        ) : null}
+                        {brokenLinks.length > 0 ? (
+                            <BrokenLinksCallout links={brokenLinks} />
                         ) : null}
                         {contentIssues.length > 0 ? (
                             <ContentIssuesCallout issues={contentIssues} />
