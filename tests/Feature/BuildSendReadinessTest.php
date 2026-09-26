@@ -84,3 +84,16 @@ test('the setup hub receives the send readiness', function () {
             ->where('sendReadiness.checks.0.key', 'provider')
             ->where('sendReadiness.checks.0.passed', false));
 });
+
+test('preview and send receives the readiness and what the confirmation repeats', function () {
+    $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->smtp()->create();
+    $email = readyCampaign($user->currentTeam);
+
+    $this->actingAs($user)
+        ->get(route('emails.preview-and-send', [$user->currentTeam, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('sendReadiness.ready', true)
+            ->where('campaign.subject', 'Hello')
+            ->where('campaign.from_address', $email->resolvedFromAddress()));
+});

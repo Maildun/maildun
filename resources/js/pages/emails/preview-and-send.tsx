@@ -22,6 +22,16 @@ import PreviewWidthTabs from '@/components/preview-width-tabs';
 import type { PreviewWidth } from '@/components/preview-width-tabs';
 import SendTestEmailDialog from '@/components/send-test-email-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -73,6 +83,7 @@ import {
     edit as editCampaign,
     send,
 } from '@/routes/emails';
+import type { SendReadiness } from '@/types';
 
 type PreviewRecipient = {
     uuid: string;
@@ -98,8 +109,12 @@ type Props = {
     campaign: {
         uuid: string;
         name: string;
+        subject: string;
+        from_name: string;
+        from_address: string;
     };
     recipientCount: number;
+    sendReadiness: SendReadiness;
     suppressedRecipients: SuppressedRecipients;
     unconfirmedRecipients: number;
     missingUnsubscribe: boolean;
@@ -441,6 +456,7 @@ export default function PreviewAndSend({
     unconfirmedRecipients,
     contentIssues,
     missingUnsubscribe,
+    sendReadiness,
     preview: initialPreview,
 }: Props) {
     const { auth, currentTeam } = usePage().props;
@@ -453,6 +469,7 @@ export default function PreviewAndSend({
     const [previewError, setPreviewError] = useState<string | null>(null);
     const [sendError, setSendError] = useState<string | null>(null);
     const [sending, setSending] = useState(false);
+    const [confirmSendOpen, setConfirmSendOpen] = useState(false);
     const [testOpen, setTestOpen] = useState(false);
     const [previewDocumentHeight, setPreviewDocumentHeight] = useState(0);
     const [previewLinks, setPreviewLinks] = useState<PreviewLink[]>([]);
@@ -674,10 +691,16 @@ export default function PreviewAndSend({
                             ? errors.email
                             : 'Unable to queue this campaign.',
                     ),
-                onFinish: () => setSending(false),
+                onFinish: () => {
+                    setSending(false);
+                    setConfirmSendOpen(false);
+                },
             },
         );
     };
+    const failedReadiness = sendReadiness.checks.filter(
+        (check) => !check.passed,
+    );
 
     const recipientLabels = preview.recipients.map(
         (recipient) => recipient.label,
@@ -740,8 +763,8 @@ export default function PreviewAndSend({
                                 previewRequest.processing ||
                                 Boolean(previewError)
                             }
-                            onClick={handleSend}
-                            data-test="confirm-send-campaign"
+                            onClick={() => setConfirmSendOpen(true)}
+                            data-test="send-campaign-button"
                         >
                             {sending ? (
                                 <Spinner data-icon="inline-start" />
@@ -1135,6 +1158,85 @@ export default function PreviewAndSend({
                     </aside>
                 </div>
             </div>
+
+            <AlertDialog
+                open={confirmSendOpen}
+                onOpenChange={(open) => !sending && setConfirmSendOpen(open)}
+            >
+                <AlertDialogContent data-test="confirm-send-dialog">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            {failedReadiness.length > 0
+                                ? 'This campaign cannot be sent yet'
+                                : `Send to ${recipientCount.toLocaleString()} ${recipientCount === 1 ? 'recipient' : 'recipients'}?`}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {failedReadiness.length > 0
+                                ? 'Fix these first, then come back to send.'
+                                : 'Sending cannot be undone. Recipients who were skipped as suppressed or unconfirmed are not included.'}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    {failedReadiness.length > 0 ? (
+                        <ul
+                            className="flex list-disc flex-col gap-1 pl-5 text-sm"
+                            data-test="confirm-send-blockers"
+                        >
+                            {failedReadiness.map((check) => (
+                                <li key={check.key}>
+                                    {check.message}{' '}
+                                    {check.action_url ? (
+                                        <a
+                                            href={check.action_url}
+                                            className="font-medium underline underline-offset-4"
+                                        >
+                                            Fix
+                                        </a>
+                                    ) : null}
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+                            <dt className="text-muted-foreground">From</dt>
+                            <dd className="min-w-0 truncate">
+                                {campaign.from_name
+                                    ? `${campaign.from_name} <${campaign.from_address}>`
+                                    : campaign.from_address}
+                            </dd>
+                            <dt className="text-muted-foreground">Subject</dt>
+                            <dd className="min-w-0 truncate">
+                                {campaign.subject}
+                            </dd>
+                            <dt className="text-muted-foreground">
+                                Recipients
+                            </dt>
+                            <dd className="tabular-nums">
+                                {recipientCount.toLocaleString()}
+                            </dd>
+                        </dl>
+                    )}
+                    {sendError ? (
+                        <p className="text-sm text-destructive">{sendError}</p>
+                    ) : null}
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={sending}>
+                            Cancel
+                        </AlertDialogCancel>
+                        {failedReadiness.length === 0 ? (
+                            <AlertDialogAction
+                                data-test="confirm-send-campaign"
+                                disabled={sending}
+                                onClick={handleSend}
+                            >
+                                {sending && (
+                                    <Spinner data-icon="inline-start" />
+                                )}
+                                Send campaign
+                            </AlertDialogAction>
+                        ) : null}
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             <SendTestEmailDialog
                 teamSlug={currentTeam.slug}

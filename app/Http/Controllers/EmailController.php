@@ -414,6 +414,7 @@ class EmailController extends Controller
         BuildTrackedEmailHtml $trackedHtml,
         RenderCampaignContent $renderer,
         LintCampaignContent $lintContent,
+        BuildSendReadiness $sendReadiness,
     ): Response|RedirectResponse {
         Gate::authorize('send', $email);
 
@@ -449,7 +450,11 @@ class EmailController extends Controller
             'campaign' => [
                 'uuid' => $email->uuid,
                 'name' => $email->name,
+                'subject' => $email->subject,
+                'from_name' => $email->resolvedFromName(),
+                'from_address' => $email->resolvedFromAddress(),
             ],
+            'sendReadiness' => $sendReadiness->handle($email),
             'recipientCount' => (clone $recipientQuery)->count(),
             'suppressedRecipients' => $this->suppressedRecipients($email),
             'unconfirmedRecipients' => $this->campaignSubscribers($email)

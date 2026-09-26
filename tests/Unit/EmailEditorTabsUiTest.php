@@ -226,7 +226,7 @@ test('preview and send lists pre-send content checks', function () {
     expect($source)->toBeString()
         ->toContain('data-test="campaign-preview-content-issues"')
         ->toContain('<ContentIssuesCallout issues={contentIssues} />')
-        ->toContain("things to check before sending");
+        ->toContain('things to check before sending');
 });
 
 test('preview and send checks links automatically when it opens', function () {
@@ -236,4 +236,15 @@ test('preview and send checks links automatically when it opens', function () {
         ->toContain('linkCheckStarted.current = true;')
         ->toContain('checkLinks.url([currentTeam.slug, campaign.uuid])')
         ->toContain('data-test="campaign-preview-broken-links"');
+});
+
+test('sending a campaign asks for confirmation and shows readiness blockers', function () {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/preview-and-send.tsx');
+
+    expect($source)->toBeString()
+        ->toContain('onClick={() => setConfirmSendOpen(true)}')
+        ->toContain('data-test="confirm-send-dialog"')
+        ->toContain('data-test="confirm-send-blockers"')
+        ->toContain('Sending cannot be undone.')
+        ->toMatch('/data-test="confirm-send-campaign"\s+disabled=\{sending\}\s+onClick=\{handleSend\}/');
 });
