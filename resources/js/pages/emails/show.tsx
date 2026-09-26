@@ -29,6 +29,7 @@ type Props = {
     metrics: CampaignReportMetrics;
     insights: CampaignInsightsData;
     sendRuns: CampaignSendRun[];
+    failureCauses: { code: string; label: string; count: number }[];
     canManage: boolean;
 };
 
@@ -37,6 +38,7 @@ export default function EmailShow({
     metrics,
     insights,
     sendRuns,
+    failureCauses,
     canManage,
 }: Props) {
     const feedbackReported = metrics.delivery_feedback !== 'unavailable';
@@ -47,7 +49,13 @@ export default function EmailShow({
             metrics={metrics}
             canManage={canManage}
             activePage="overview"
-            pollProps={['campaign', 'metrics', 'insights', 'sendRuns']}
+            pollProps={[
+                'campaign',
+                'metrics',
+                'insights',
+                'sendRuns',
+                'failureCauses',
+            ]}
         >
             <div className="flex flex-col gap-4">
                 <CampaignInsights insights={insights} />
@@ -88,6 +96,31 @@ export default function EmailShow({
                             icon={Clock01Icon}
                         />
                     </CardContent>
+                    {failureCauses.length > 0 ? (
+                        <CardContent
+                            className="border-t pt-4"
+                            data-test="campaign-failure-causes"
+                        >
+                            <p className="mb-2 text-sm font-medium">
+                                Top causes
+                            </p>
+                            <ul className="flex flex-col gap-1 text-sm">
+                                {failureCauses.map((cause) => (
+                                    <li
+                                        key={cause.code}
+                                        className="flex items-center justify-between gap-4"
+                                    >
+                                        <span className="text-muted-foreground">
+                                            {cause.label}
+                                        </span>
+                                        <span className="font-medium tabular-nums">
+                                            {cause.count.toLocaleString()}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </CardContent>
+                    ) : null}
                 </Card>
                 {sendRuns.length > 1 && <SendHistory runs={sendRuns} />}
             </div>

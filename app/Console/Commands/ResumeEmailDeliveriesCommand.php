@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Actions\Emails\FinalizeEmailSend;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailStatus;
 use App\Jobs\SendEmailDelivery;
 use App\Jobs\SendTransactionalEmailDelivery;
@@ -127,7 +128,11 @@ class ResumeEmailDeliveriesCommand extends Command
             return EmailDelivery::query()
                 ->whereIn('id', $stalled)
                 ->where('status', EmailDeliveryStatus::Sending)
-                ->update(['status' => EmailDeliveryStatus::Failed, 'failure_reason' => $failureReason]);
+                ->update([
+                    'status' => EmailDeliveryStatus::Failed,
+                    'failure_reason' => $failureReason,
+                    'failure_code' => EmailFailureCode::NoReport,
+                ]);
         }, attempts: 3);
     }
 

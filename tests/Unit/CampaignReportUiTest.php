@@ -277,7 +277,9 @@ test('a retry reports its own progress and the overview lists the send history',
 
     expect($report)->toBeString()
         ->toContain('{sendRuns.length > 1 && <SendHistory runs={sendRuns} />}')
-        ->toContain("pollProps={['campaign', 'metrics', 'insights', 'sendRuns']}");
+        ->toContain("'sendRuns',")
+        ->toContain("'failureCauses',")
+        ->toContain('data-test="campaign-failure-causes"');
 });
 
 test('the sending card shows segmented progress, an ETA and stall guidance', function () {

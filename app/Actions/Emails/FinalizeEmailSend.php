@@ -3,6 +3,7 @@
 namespace App\Actions\Emails;
 
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailStatus;
 use App\Models\Email;
 use App\Models\EmailDeliveryAttempt;
@@ -51,6 +52,7 @@ class FinalizeEmailSend
                 ->update([
                     'status' => EmailDeliveryStatus::Failed,
                     'failure_reason' => $failureReason,
+                    'failure_code' => EmailFailureCode::NoReport,
                 ]);
         }, attempts: 3);
 

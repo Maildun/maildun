@@ -7,6 +7,7 @@ use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\RetryEmailDeliveries;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailProvider;
 use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
@@ -1014,6 +1015,59 @@ test('a finished campaign reports no in-flight progress', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->where('metrics.stalled', false)
             ->where('metrics.worker_state', null));
+});
+
+test('a delivery that fails for good records why as a failure code', function (Throwable $exception, EmailFailureCode $code) {
+    $delivery = EmailDelivery::factory()->create(['status' => EmailDeliveryStatus::Sending]);
+
+    (new SendEmailDelivery($delivery->id))->failed($exception);
+
+    expect($delivery->fresh())
+        ->status->toBe(EmailDeliveryStatus::Failed)
+        ->failure_code->toBe($code);
+})->with([
+    'no tested provider' => [fn () => EmailTransportException::providerUnavailable(), EmailFailureCode::ProviderUnavailable],
+    'unverified sender' => [fn () => EmailTransportException::unauthorizedSender(), EmailFailureCode::SenderUnauthorized],
+    'provider refused' => [fn () => new EmailTransportException, EmailFailureCode::ProviderRefused],
+    'anything else' => [fn () => new RuntimeException('boom'), EmailFailureCode::Unknown],
+]);
+
+test('the report groups failed deliveries by cause, most common first', function () {
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 5,
+    ]);
+    EmailDelivery::factory()->count(2)->for($email)->create([
+        'status' => EmailDeliveryStatus::Failed,
+        'failure_code' => EmailFailureCode::ProviderRefused,
+    ]);
+    EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Failed,
+        'failure_code' => null,
+    ]);
+    EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Delayed,
+        'failure_code' => EmailFailureCode::TransientBounce,
+    ]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Sent]);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$user->currentTeam, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('failureCauses', 3)
+            ->where('failureCauses.0.code', 'provider_refused')
+            ->where('failureCauses.0.count', 2)
+            ->where('failureCauses.0.label', 'The provider refused the message'));
+});
+
+test('finalizing a campaign codes deliveries that never reported back', function () {
+    $email = Email::factory()->create(['status' => EmailStatus::Sending, 'recipient_count' => 1]);
+    $delivery = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+
+    (new FinalizeEmailSend($email->id))();
+
+    expect($delivery->fresh()->failure_code)->toBe(EmailFailureCode::NoReport);
 });
 
 test('a single failed delivery can be retried', function () {

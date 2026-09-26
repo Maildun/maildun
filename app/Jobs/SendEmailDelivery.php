@@ -6,6 +6,7 @@ use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Concerns\ThrottlesEmailDelivery;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailStatus;
 use App\Exceptions\EmailTransportException;
 use App\Mail\CampaignEmail;
@@ -141,8 +142,11 @@ class SendEmailDelivery implements ShouldQueue
         $failureReason = $exception instanceof EmailTransportException
             ? $exception->getMessage()
             : __('Delivery failed.');
+        $failureCode = $exception instanceof EmailTransportException
+            ? $exception->failureCode
+            : EmailFailureCode::Unknown;
 
-        DB::transaction(function () use ($failureReason): void {
+        DB::transaction(function () use ($failureReason, $failureCode): void {
             EmailDeliveryAttempt::query()
                 ->where('email_delivery_id', $this->deliveryId)
                 ->where('status', EmailDeliveryStatus::Sending)
@@ -157,6 +161,7 @@ class SendEmailDelivery implements ShouldQueue
                 ->update([
                     'status' => EmailDeliveryStatus::Failed,
                     'failure_reason' => $failureReason,
+                    'failure_code' => $failureCode,
                 ]);
         }, attempts: 3);
     }
@@ -182,6 +187,7 @@ class SendEmailDelivery implements ShouldQueue
                 'status' => EmailDeliveryStatus::Sending,
                 'send_attempted_at' => now(),
                 'failure_reason' => null,
+                'failure_code' => null,
             ]) === 1;
     }
 

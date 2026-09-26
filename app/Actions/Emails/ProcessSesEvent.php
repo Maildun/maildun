@@ -4,6 +4,7 @@ namespace App\Actions\Emails;
 
 use App\Enums\AutomationTrigger;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailProvider;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
@@ -334,6 +335,7 @@ class ProcessSesEvent
 
         return [
             'status' => EmailDeliveryStatus::Delayed,
+            ...($subject instanceof EmailDelivery ? ['failure_code' => EmailFailureCode::TransientBounce] : []),
             'delayed_at' => $subject->delayed_at ?? $occurredAt,
             'failure_reason' => $subject->failure_reason ?? $reason,
         ];
@@ -370,6 +372,7 @@ class ProcessSesEvent
 
         return [
             'status' => EmailDeliveryStatus::Rejected,
+            ...($subject instanceof EmailDelivery ? ['failure_code' => EmailFailureCode::SesRejected] : []),
             'failure_reason' => is_string($reason) && $reason !== ''
                 ? __('Amazon SES rejected the message: :reason', ['reason' => $reason])
                 : __('Amazon SES rejected the message.'),

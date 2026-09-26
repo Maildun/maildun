@@ -97,7 +97,7 @@ class TeamMailer
     public function resolve(Team $team): ResolvedEmailTransport
     {
         if (! $team->exists) {
-            throw new EmailTransportException;
+            throw EmailTransportException::providerUnavailable();
         }
 
         $integration = TeamEmailIntegration::query()
@@ -106,7 +106,7 @@ class TeamMailer
             ->first();
 
         if (! $integration instanceof TeamEmailIntegration || ! $integration->isVerified()) {
-            throw new EmailTransportException;
+            throw EmailTransportException::providerUnavailable();
         }
 
         return $this->resolveIntegration($integration);
@@ -120,7 +120,7 @@ class TeamMailer
         bool $enforceSenderAuthorization = true,
     ): ?SentMessage {
         if (! $transport->provider->isSupported()) {
-            throw new EmailTransportException;
+            throw EmailTransportException::providerUnavailable();
         }
 
         // A sender override that outlived its authorization must never reach the

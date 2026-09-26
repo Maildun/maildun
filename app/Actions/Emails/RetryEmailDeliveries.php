@@ -87,6 +87,7 @@ class RetryEmailDeliveries
                     'email_send_run_id' => $sendRun->id,
                     'status' => EmailDeliveryStatus::Queued,
                     'failure_reason' => null,
+                    'failure_code' => null,
                     'provider_message_id' => null,
                     'send_attempted_at' => null,
                     'sent_at' => null,

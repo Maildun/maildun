@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailFailureCode;
 use App\Enums\SubscriberStatus;
 use Database\Factories\EmailDeliveryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -32,6 +33,7 @@ use Illuminate\Support\Str;
  * @property bool $uses_team_email_integration
  * @property string|null $provider_message_id
  * @property string|null $failure_reason
+ * @property EmailFailureCode|null $failure_code
  * @property Carbon|null $send_attempted_at
  * @property int $opens_count
  * @property int $clicks_count
@@ -53,7 +55,7 @@ use Illuminate\Support\Str;
  */
 #[Fillable([
     'email_id', 'email_send_run_id', 'subscriber_id', 'contact_id', 'email_address', 'first_name', 'last_name', 'merge_data',
-    'status', 'provider', 'uses_team_email_integration', 'provider_message_id', 'failure_reason', 'send_attempted_at', 'sent_at',
+    'status', 'provider', 'uses_team_email_integration', 'provider_message_id', 'failure_reason', 'failure_code', 'send_attempted_at', 'sent_at',
     'delivered_at', 'delayed_at', 'bounced_at', 'complained_at',
     'first_opened_at', 'last_opened_at', 'first_clicked_at', 'last_clicked_at',
     'opens_count', 'clicks_count',
@@ -122,6 +124,7 @@ class EmailDelivery extends Model
     {
         return [
             'status' => EmailDeliveryStatus::class,
+            'failure_code' => EmailFailureCode::class,
             'uses_team_email_integration' => 'boolean',
             'merge_data' => 'array',
             'send_attempted_at' => 'datetime', 'sent_at' => 'datetime',

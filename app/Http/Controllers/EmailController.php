@@ -12,6 +12,7 @@ use App\Actions\Emails\StartEmailSend;
 use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailProvider;
 use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
@@ -696,7 +697,7 @@ class EmailController extends Controller
     }
 
     /**
-     * @return array{campaign: array<string, mixed>, metrics: array<string, int|float|string|bool|null>, sendRuns: list<array{kind: string, recipient_count: int, processed: int, failed: int, started_at: string, finished_at: string|null}>, canManage: bool}
+     * @return array{campaign: array<string, mixed>, metrics: array<string, int|float|string|bool|null>, sendRuns: list<array{kind: string, recipient_count: int, processed: int, failed: int, started_at: string, finished_at: string|null}>, failureCauses: list<array{code: string, label: string, count: int}>, canManage: bool}
      */
     private function campaignReportProps(Email $email): array
     {
@@ -798,8 +799,40 @@ class EmailController extends Controller
                 'click_rate' => round(($clickedCount / $recipientCount) * 100, 1),
             ],
             'sendRuns' => $sendRuns,
+            'failureCauses' => $this->failureCauses($email),
             'canManage' => Gate::allows('send', $email),
         ];
+    }
+
+    /**
+     * Failed, rejected and delayed deliveries grouped by why, most common
+     * first. Deliveries from before failure codes existed count as "Other".
+     *
+     * @return list<array{code: string, label: string, count: int}>
+     */
+    private function failureCauses(Email $email): array
+    {
+        $rows = $email->deliveries()
+            ->whereIn('status', EmailDeliveryStatus::retryable())
+            ->toBase()
+            ->selectRaw('failure_code, count(*) as deliveries')
+            ->groupBy('failure_code')
+            ->get();
+        $counts = [];
+
+        foreach ($rows as $row) {
+            $code = EmailFailureCode::tryFrom((string) $row->failure_code) ?? EmailFailureCode::Unknown;
+            $counts[$code->value] = ($counts[$code->value] ?? 0) + (int) $row->deliveries;
+        }
+
+        arsort($counts);
+        $causes = [];
+
+        foreach ($counts as $code => $count) {
+            $causes[] = ['code' => $code, 'label' => EmailFailureCode::from($code)->label(), 'count' => $count];
+        }
+
+        return $causes;
     }
 
     /**
