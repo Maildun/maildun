@@ -73,6 +73,12 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
 import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
+import {
     firstUploadErrorMessage,
     useUploadToast,
 } from '@/hooks/use-upload-toast';
@@ -449,6 +455,26 @@ export default function EmailEdit({
         saveDraft(() => setOpenSection(null));
     };
 
+    /**
+     * Closing a section dialog without saving (Cancel, Esc, clicking outside)
+     * puts that section's fields back to their saved values, so abandoned
+     * edits never linger in the form or block Preview and Send.
+     */
+    const changeSection = (section: DialogSection, open: boolean) => {
+        if (open) {
+            setOpenSection(section);
+
+            return;
+        }
+
+        const fields = (SECTIONS.find((entry) => entry.value === section)
+            ?.fields ?? []) as (keyof typeof form.data)[];
+
+        form.reset(...fields);
+        form.clearErrors(...fields);
+        setOpenSection(null);
+    };
+
     const openTemplateDialog = () => {
         const isBuilder = email.editor === 'builder';
         const sourceEditor = isSourceEditor(email.editor) ? email.editor : null;
@@ -501,12 +527,18 @@ export default function EmailEdit({
     const senderDone = Boolean(senderAddress);
     const recipientsDone = form.data.audience !== null && recipientCount > 0;
     const subjectDone = form.data.subject.trim() !== '';
-    const readyToSend =
-        subjectDone &&
-        hasBody &&
+    const sendBlockers = [
+        !subjectDone && 'Add a subject line',
+        !hasBody && 'Design the email',
+        form.data.audience === null && 'Choose recipients',
         form.data.audience !== null &&
-        recipientCount > 0 &&
-        !form.isDirty;
+            recipientCount === 0 &&
+            'The selected recipients have nobody to send to',
+        form.isDirty && 'Save your changes',
+    ].filter((blocker): blocker is string => typeof blocker === 'string');
+    const readyToSend = sendBlockers.length === 0;
+
+    useUnsavedChanges(form.isDirty);
 
     const senderSummary = senderAddress
         ? [senderName, senderAddress].filter(Boolean).join(' · ')
@@ -750,13 +782,39 @@ export default function EmailEdit({
                                                 Preview and Send
                                             </Link>
                                         ) : (
-                                            <Button
-                                                type="button"
-                                                disabled
-                                                data-test="preview-and-send-button"
-                                            >
-                                                Preview and Send
-                                            </Button>
+                                            <Tooltip>
+                                                <TooltipTrigger
+                                                    render={<span />}
+                                                >
+                                                    <Button
+                                                        type="button"
+                                                        disabled
+                                                        data-test="preview-and-send-button"
+                                                        aria-describedby="preview-and-send-blockers"
+                                                    >
+                                                        Preview and Send
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    <ul
+                                                        id="preview-and-send-blockers"
+                                                        data-test="preview-and-send-blockers"
+                                                        className="flex flex-col gap-0.5"
+                                                    >
+                                                        {sendBlockers.map(
+                                                            (blocker) => (
+                                                                <li
+                                                                    key={
+                                                                        blocker
+                                                                    }
+                                                                >
+                                                                    {blocker}
+                                                                </li>
+                                                            ),
+                                                        )}
+                                                    </ul>
+                                                </TooltipContent>
+                                            </Tooltip>
                                         )}
                                         <DropdownMenu>
                                             <DropdownMenuTrigger
@@ -926,7 +984,7 @@ export default function EmailEdit({
 
             <Dialog
                 open={openSection === 'name'}
-                onOpenChange={(open) => setOpenSection(open ? 'name' : null)}
+                onOpenChange={(open) => changeSection('name', open)}
             >
                 <DialogContent>
                     <DialogHeader>
@@ -967,7 +1025,7 @@ export default function EmailEdit({
 
             <Dialog
                 open={openSection === 'sender'}
-                onOpenChange={(open) => setOpenSection(open ? 'sender' : null)}
+                onOpenChange={(open) => changeSection('sender', open)}
             >
                 <DialogContent>
                     <DialogHeader>
@@ -1054,9 +1112,7 @@ export default function EmailEdit({
 
             <Dialog
                 open={openSection === 'recipients'}
-                onOpenChange={(open) =>
-                    setOpenSection(open ? 'recipients' : null)
-                }
+                onOpenChange={(open) => changeSection('recipients', open)}
             >
                 <DialogContent>
                     <DialogHeader>
@@ -1181,7 +1237,7 @@ export default function EmailEdit({
 
             <Dialog
                 open={openSection === 'subject'}
-                onOpenChange={(open) => setOpenSection(open ? 'subject' : null)}
+                onOpenChange={(open) => changeSection('subject', open)}
             >
                 <DialogContent>
                     <DialogHeader>
@@ -1246,9 +1302,7 @@ export default function EmailEdit({
 
             <Dialog
                 open={openSection === 'settings'}
-                onOpenChange={(open) =>
-                    setOpenSection(open ? 'settings' : null)
-                }
+                onOpenChange={(open) => changeSection('settings', open)}
             >
                 <DialogContent className="max-h-[min(40rem,calc(100vh-4rem))] overflow-y-auto">
                     <DialogHeader>
