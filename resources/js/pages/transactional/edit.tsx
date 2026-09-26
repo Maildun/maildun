@@ -18,6 +18,7 @@ import DeleteTransactionalEmailModal from '@/components/delete-transactional-ema
 import { EmailBuilderEditor } from '@/components/email-builder-editor';
 import { EmailHtmlEditor } from '@/components/email-html-editor';
 import { EmailSourceEditor } from '@/components/email-source-editor';
+import { LastTestStatus } from '@/components/last-test-status';
 import SendTestTransactionalEmailDialog from '@/components/send-test-transactional-email-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -390,6 +391,11 @@ export default function TransactionalEdit({
                                 >
                                     {published ? 'Published' : 'Draft'}
                                 </Badge>
+                                <LastTestStatus
+                                    test={email.last_test}
+                                    pollProp="email"
+                                    className="hidden truncate md:block"
+                                />
                             </div>
                             {canManage ? (
                                 <Button

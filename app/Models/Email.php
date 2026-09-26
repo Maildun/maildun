@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\EmailEditor;
 use App\Enums\EmailStatus;
+use App\Enums\TestSendStatus;
 use Database\Factories\EmailFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Collection;
@@ -44,6 +45,9 @@ use Illuminate\Support\Str;
  * @property string|null $batch_id
  * @property int $recipient_count
  * @property Carbon|null $last_tested_at
+ * @property TestSendStatus|null $last_test_status
+ * @property string|null $last_test_recipient
+ * @property string|null $last_test_error
  * @property Carbon|null $send_started_at
  * @property Carbon|null $sent_at
  * @property Carbon|null $created_at
@@ -205,6 +209,7 @@ class Email extends Model
             'track_clicks' => 'boolean',
             'track_opens' => 'boolean',
             'last_tested_at' => 'datetime',
+            'last_test_status' => TestSendStatus::class,
             'send_started_at' => 'datetime',
             'sent_at' => 'datetime',
         ];

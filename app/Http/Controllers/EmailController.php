@@ -15,6 +15,7 @@ use App\Enums\EmailEditor;
 use App\Enums\EmailProvider;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
+use App\Enums\TestSendStatus;
 use App\Http\Requests\SendTestEmailRequest;
 use App\Http\Requests\StoreEmailRequest;
 use App\Http\Requests\UpdateEmailRequest;
@@ -248,6 +249,7 @@ class EmailController extends Controller
                 'audience' => $email->audience?->uuid,
                 'segment' => $email->segment?->uuid,
                 'last_tested_at' => $email->last_tested_at?->toISOString(),
+                'last_test' => $this->lastTestPayload($email),
                 'updated_at' => $email->updated_at?->toISOString(),
                 'attachments' => $email->attachments->map(fn ($attachment): array => [
                     'uuid' => $attachment->uuid,
@@ -453,6 +455,7 @@ class EmailController extends Controller
                 'subject' => $email->subject,
                 'from_name' => $email->resolvedFromName(),
                 'from_address' => $email->resolvedFromAddress(),
+                'last_test' => $this->lastTestPayload($email),
             ],
             'sendReadiness' => $sendReadiness->handle($email),
             'recipientCount' => (clone $recipientQuery)->count(),
@@ -526,6 +529,11 @@ class EmailController extends Controller
         abort_unless($email->status === EmailStatus::Draft, 409, __('A queued campaign can no longer send test copies.'));
 
         $mergeData = $renderer->testData($request->string('to')->value(), now());
+        $email->forceFill([
+            'last_test_status' => TestSendStatus::Queued,
+            'last_test_recipient' => $request->string('to')->value(),
+            'last_test_error' => null,
+        ])->save();
 
         SendCampaignTestEmail::dispatch(
             $email->id,
@@ -657,6 +665,22 @@ class EmailController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Campaign deleted.')]);
 
         return to_route('emails.index', ['current_team' => $currentTeam]);
+    }
+
+    /**
+     * The latest test copy's real outcome, so the page can say it arrived or
+     * why it did not; null before the first test.
+     *
+     * @return array{status: string, recipient: string|null, error: string|null, tested_at: string|null}|null
+     */
+    private function lastTestPayload(Email $email): ?array
+    {
+        return $email->last_test_status === null ? null : [
+            'status' => $email->last_test_status->value,
+            'recipient' => $email->last_test_recipient,
+            'error' => $email->last_test_error,
+            'tested_at' => $email->last_tested_at?->toISOString(),
+        ];
     }
 
     private function prepareReport(Team $currentTeam, Email $email): ?RedirectResponse

@@ -309,6 +309,7 @@ export type EmailDetail = {
     audience: string | null;
     segment: string | null;
     last_tested_at: string | null;
+    last_test: LastTestSend | null;
     updated_at: string | null;
     attachments: EmailAttachment[];
 };
@@ -422,6 +423,7 @@ export type TransactionalEmailDetail = {
     variables: TransactionalVariable[];
     slug_frozen: boolean;
     last_tested_at: string | null;
+    last_test: LastTestSend | null;
     updated_at: string | null;
 };
 
@@ -436,4 +438,12 @@ export type SendReadinessCheck = {
 export type SendReadiness = {
     ready: boolean;
     checks: SendReadinessCheck[];
+};
+
+/** How the latest test copy actually went; see the test-send jobs. */
+export type LastTestSend = {
+    status: 'queued' | 'sent' | 'failed';
+    recipient: string | null;
+    error: string | null;
+    tested_at: string | null;
 };

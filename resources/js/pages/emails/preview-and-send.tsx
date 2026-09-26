@@ -18,6 +18,7 @@ import {
 } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import type { SyntheticEvent } from 'react';
+import { LastTestStatus } from '@/components/last-test-status';
 import PreviewWidthTabs from '@/components/preview-width-tabs';
 import type { PreviewWidth } from '@/components/preview-width-tabs';
 import SendTestEmailDialog from '@/components/send-test-email-dialog';
@@ -83,7 +84,7 @@ import {
     edit as editCampaign,
     send,
 } from '@/routes/emails';
-import type { SendReadiness } from '@/types';
+import type { LastTestSend, SendReadiness } from '@/types';
 
 type PreviewRecipient = {
     uuid: string;
@@ -112,6 +113,7 @@ type Props = {
         subject: string;
         from_name: string;
         from_address: string;
+        last_test: LastTestSend | null;
     };
     recipientCount: number;
     sendReadiness: SendReadiness;
@@ -747,6 +749,11 @@ export default function PreviewAndSend({
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
+                        <LastTestStatus
+                            test={campaign.last_test}
+                            pollProp="campaign"
+                            className="hidden max-w-72 truncate lg:block"
+                        />
                         <Button
                             type="button"
                             variant="outline"
