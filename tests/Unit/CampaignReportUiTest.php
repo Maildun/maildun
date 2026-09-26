@@ -271,7 +271,7 @@ test('a retry reports its own progress and the overview lists the send history',
     $report = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/show.tsx');
 
     expect($layout)->toBeString()
-        ->toContain("const isRetryRun = metrics.run_kind === 'retry';")
+        ->toContain("metrics.run_kind === 'retry' || metrics.run_kind === 'resume'")
         ->toContain("'Retrying failed deliveries'")
         ->toContain('aria-valuenow={runProgress}');
 
@@ -318,4 +318,13 @@ test('recipients can be searched, counted per tab and exported', function () {
         ->toContain('data-test="export-recipients"')
         ->toContain('showRecipientExport.url(')
         ->toContain("only: ['recipients', 'filters', 'filterCounts']");
+});
+
+test('recipients a failed loader never reached can be queued from the report', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain('data-test="unqueued-recipients-alert"')
+        ->toContain('data-test="queue-remaining-button"')
+        ->toContain("'Sending to the remaining recipients'");
 });

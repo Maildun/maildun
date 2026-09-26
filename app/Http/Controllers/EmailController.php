@@ -6,6 +6,7 @@ use App\Actions\Emails\BuildCampaignInsights;
 use App\Actions\Emails\BuildSendReadiness;
 use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Actions\Emails\LintCampaignContent;
+use App\Actions\Emails\QueueRemainingRecipients;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\RetryEmailDeliveries;
 use App\Actions\Emails\StartEmailSend;
@@ -581,6 +582,16 @@ class EmailController extends Controller
         return back();
     }
 
+    public function queueRemaining(Team $currentTeam, Email $email, QueueRemainingRecipients $queueRemaining): RedirectResponse
+    {
+        Gate::authorize('send', $email);
+        $queueRemaining->handle($email);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Remaining recipients queued.')]);
+
+        return back();
+    }
+
     public function retryDelivery(Request $request, Team $currentTeam, Email $email, EmailDelivery $delivery, RetryEmailDeliveries $retry): RedirectResponse
     {
         Gate::authorize('send', $email);
@@ -786,6 +797,7 @@ class EmailController extends Controller
                 'complained' => $complainedCount,
                 'failed' => $failedCount,
                 'retrying' => $retryingCount,
+                'unqueued' => app(QueueRemainingRecipients::class)->remainingCount($email),
                 'retryable' => $retryableCount,
                 'unconfirmed' => $unconfirmedRetryableCount,
                 'run_kind' => $currentRun['kind'] ?? null,
@@ -859,7 +871,7 @@ class EmailController extends Controller
     private function sendProgress(Email $email, ?array $currentRun): array
     {
         $deliveries = $email->deliveries()
-            ->when($currentRun !== null && $currentRun['kind'] === EmailSendRunKind::Retry->value, fn (Builder $query) => $query
+            ->when($currentRun !== null && $currentRun['kind'] !== EmailSendRunKind::Initial->value, fn (Builder $query) => $query
                 ->where('email_send_run_id', $email->sendRuns()->latest('id')->value('id')));
         $finished = (clone $deliveries)->whereNotIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending]);
         $lastActivity = (clone $finished)->max('updated_at');

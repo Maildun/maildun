@@ -149,7 +149,11 @@ function SendHistory({ runs }: { runs: CampaignSendRun[] }) {
                             className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
                         >
                             <span className="font-medium">
-                                {run.kind === 'retry' ? 'Retry' : 'First send'}
+                                {run.kind === 'retry'
+                                    ? 'Retry'
+                                    : run.kind === 'resume'
+                                      ? 'Remaining recipients'
+                                      : 'First send'}
                             </span>
                             <span className="text-muted-foreground tabular-nums">
                                 {run.recipient_count.toLocaleString()}{' '}

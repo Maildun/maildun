@@ -70,6 +70,7 @@ import {
     index,
     links as linksRoute,
     preview as previewRoute,
+    queueRemaining,
     recipients,
     retry,
     show,
@@ -106,11 +107,13 @@ export type CampaignReportMetrics = {
     failed: number;
     /** Queued deliveries whose last send attempt failed; the queue tries them again. */
     retrying: number;
+    /** Recipients never queued because preparing the send failed part-way. */
+    unqueued: number;
     retryable: number;
     /** Retryable deliveries that were handed to the provider but never confirmed. */
     unconfirmed: number;
     /** The newest send run: the first send or a retry. Null for campaigns sent before runs were recorded. */
-    run_kind: 'initial' | 'retry' | null;
+    run_kind: 'initial' | 'retry' | 'resume' | null;
     run_recipient_count: number | null;
     run_processed: number | null;
     run_failed: number | null;
@@ -164,7 +167,7 @@ export type CampaignTrackedLink = {
 };
 
 export type CampaignSendRun = {
-    kind: 'initial' | 'retry';
+    kind: 'initial' | 'retry' | 'resume';
     recipient_count: number;
     processed: number;
     failed: number;
@@ -236,6 +239,7 @@ export function EmailReportLayout({
     const [retryOpen, setRetryOpen] = useState(false);
     const [retrying, setRetrying] = useState(false);
     const [includeUnconfirmed, setIncludeUnconfirmed] = useState(false);
+    const [queueingRemaining, setQueueingRemaining] = useState(false);
 
     setLayoutProps({
         fullscreen: false,
@@ -255,7 +259,9 @@ export function EmailReportLayout({
     const isActive =
         campaign.status === 'queued' || campaign.status === 'sending';
     const wasActive = useRef(isActive);
-    const isRetryRun = metrics.run_kind === 'retry';
+    // Retries and resumed loads report their own progress, not the campaign's.
+    const isRetryRun =
+        metrics.run_kind === 'retry' || metrics.run_kind === 'resume';
     const runRecipients = isRetryRun
         ? (metrics.run_recipient_count ?? 0)
         : campaign.recipient_count;
@@ -376,9 +382,11 @@ export function EmailReportLayout({
                     <Card>
                         <CardHeader>
                             <CardTitle>
-                                {isRetryRun
+                                {metrics.run_kind === 'retry'
                                     ? 'Retrying failed deliveries'
-                                    : 'Sending campaign'}
+                                    : metrics.run_kind === 'resume'
+                                      ? 'Sending to the remaining recipients'
+                                      : 'Sending campaign'}
                             </CardTitle>
                             <CardDescription>
                                 {runProcessed.toLocaleString()} of{' '}
@@ -471,6 +479,62 @@ export function EmailReportLayout({
                             retry them from this report once the campaign
                             finishes.
                         </AlertDescription>
+                    </Alert>
+                )}
+
+                {canManage && !isActive && metrics.unqueued > 0 && (
+                    <Alert
+                        variant="destructive"
+                        data-test="unqueued-recipients-alert"
+                    >
+                        <AlertTitle>
+                            {metrics.unqueued.toLocaleString()}{' '}
+                            {metrics.unqueued === 1
+                                ? 'recipient was'
+                                : 'recipients were'}{' '}
+                            never queued
+                        </AlertTitle>
+                        <AlertDescription>
+                            Preparing this send stopped part-way, so these
+                            recipients never received it. Queue them to continue
+                            where it stopped; nobody who already got the
+                            campaign is sent it again.
+                        </AlertDescription>
+                        <AlertAction>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={queueingRemaining}
+                                data-test="queue-remaining-button"
+                                onClick={() =>
+                                    router.post(
+                                        queueRemaining.url([
+                                            currentTeam.slug,
+                                            campaign.uuid,
+                                        ]),
+                                        {},
+                                        {
+                                            preserveScroll: true,
+                                            onStart: () =>
+                                                setQueueingRemaining(true),
+                                            onFinish: () =>
+                                                setQueueingRemaining(false),
+                                            onError: (errors) =>
+                                                toast.add({
+                                                    type: 'error',
+                                                    title: 'Could not queue the remaining recipients.',
+                                                    description:
+                                                        errors.email ??
+                                                        'Try again in a moment.',
+                                                }),
+                                        },
+                                    )
+                                }
+                            >
+                                Queue remaining
+                            </Button>
+                        </AlertAction>
                     </Alert>
                 )}
 

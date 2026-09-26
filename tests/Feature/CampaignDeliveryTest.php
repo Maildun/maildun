@@ -1070,6 +1070,68 @@ test('finalizing a campaign codes deliveries that never reported back', function
     expect($delivery->fresh()->failure_code)->toBe(EmailFailureCode::NoReport);
 });
 
+test('recipients a failed loader never reached can be queued without resending the rest', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    [$reached, $missedA, $missedB] = Subscriber::factory()->for($audience)->count(3)->create()->sortBy('id')->values()->all();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello</p>',
+        'status' => EmailStatus::Failed,
+        'recipient_count' => 3,
+        'send_started_at' => now()->subHour(),
+        'sent_at' => now()->subHour(),
+    ]);
+    $sent = EmailDelivery::factory()->for($email)->create([
+        'subscriber_id' => $reached->id,
+        'email_address' => $reached->email,
+        'status' => EmailDeliveryStatus::Sent,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page->where('metrics.unqueued', 2));
+
+    $this->actingAs($user)
+        ->post(route('emails.queue-remaining', [$team, $email]))
+        ->assertRedirect();
+
+    $run = $email->sendRuns()->sole();
+    expect($run->kind)->toBe(EmailSendRunKind::Resume)
+        ->and($run->recipient_count)->toBe(2)
+        ->and($email->fresh()->status)->toBe(EmailStatus::Queued);
+    Bus::assertBatched(fn (PendingBatch $batch): bool => $batch->jobs->first() instanceof PrepareEmailSendChunk
+        && $batch->jobs->first()->afterSubscriberId === $reached->id);
+
+    [$loader] = (new PrepareEmailSendChunk($email->id, $reached->id))->withFakeBatch();
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    expect($email->deliveries()->whereIn('subscriber_id', [$missedA->id, $missedB->id])->pluck('email_send_run_id')->unique()->all())->toBe([$run->id])
+        ->and($sent->fresh()->status)->toBe(EmailDeliveryStatus::Sent)
+        ->and($email->deliveries()->count())->toBe(3);
+});
+
+test('a fully prepared campaign has no remaining recipients to queue', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 1,
+    ]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Sent]);
+
+    $this->actingAs($user)
+        ->post(route('emails.queue-remaining', [$user->currentTeam, $email]))
+        ->assertInvalid(['email' => 'Every recipient of this campaign has already been queued.']);
+
+    Bus::assertNothingBatched();
+});
+
 test('a single failed delivery can be retried', function () {
     Bus::fake();
 
