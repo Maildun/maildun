@@ -619,6 +619,9 @@ class EmailController extends Controller
                         'clicks' => $trackingAggregate instanceof EmailLinkTrackingAggregate
                             ? $trackingAggregate->total_clicks_count
                             : 0,
+                        'unique_clicks' => $trackingAggregate instanceof EmailLinkTrackingAggregate
+                            ? $trackingAggregate->unique_clicks_count
+                            : 0,
                     ];
                 }),
         ]);

@@ -141,12 +141,12 @@ function HumanEngagementCard({ insights }: { insights: CampaignInsightsData }) {
             </CardHeader>
             <CardContent className="grid grid-cols-2 divide-x divide-border px-0">
                 <InsightMetric
-                    label="Unique opens"
+                    label="Human opens"
                     value={`${insights.human.open_rate}%`}
                     detail={`${insights.human.opened.toLocaleString()} recipients`}
                 />
                 <InsightMetric
-                    label="Unique clicks"
+                    label="Human clicks"
                     value={`${insights.human.click_rate}%`}
                     detail={`${insights.human.clicked.toLocaleString()} recipients`}
                 />

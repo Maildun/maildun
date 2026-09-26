@@ -228,3 +228,23 @@ test('campaign and delivery badges come from the shared email status module', fu
     'sidebar campaigns' => 'components/nav-campaigns.tsx',
     'subscriber profile' => 'pages/audiences/subscribers/show.tsx',
 ]);
+
+test('report metrics explain what they count and human engagement is labelled as human', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+    $insights = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/campaign-insights.tsx');
+    $links = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/links.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain('aria-label={`About ${label}`}')
+        ->toContain('including privacy proxies and security scanners');
+
+    expect($insights)->toBeString()
+        ->toContain('label="Human opens"')
+        ->toContain('label="Human clicks"');
+
+    expect($links)->toBeString()
+        ->toContain('Unique clicks')
+        ->toContain('Total clicks')
+        ->toContain('Click rate')
+        ->toContain('link.unique_clicks');
+});

@@ -322,7 +322,8 @@ test('the campaign report exposes dedicated overview, recipient, link, and previ
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('emails/links')
-            ->where('links.0.clicks', 1));
+            ->where('links.0.clicks', 1)
+            ->where('links.0.unique_clicks', 1));
 
     $this->actingAs($user)
         ->get(route('emails.preview', [$user->currentTeam, $email]))

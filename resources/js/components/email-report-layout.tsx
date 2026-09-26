@@ -5,6 +5,7 @@ import {
     MouseLeftClick01Icon,
     Refresh03Icon,
     UserGroupIcon,
+    InformationCircleIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { IconSvgElement } from '@hugeicons/react';
@@ -48,6 +49,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from '@/components/ui/toast';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
     CAMPAIGN_STATUS_LABELS,
     campaignStatusVariant,
@@ -135,6 +141,8 @@ export type CampaignTrackedLink = {
     uuid: string;
     url: string;
     clicks: number;
+    /** Recipients who clicked this link at least once. */
+    unique_clicks: number;
 };
 
 export type CampaignReportPage =
@@ -388,6 +396,7 @@ export function EmailReportLayout({
                         label="Recipients"
                         value={campaign.recipient_count.toLocaleString()}
                         detail={`${metrics.processed.toLocaleString()} processed`}
+                        hint="Everyone the campaign was queued for. Processed counts recipients whose send finished, whether it succeeded or not."
                         icon={UserGroupIcon}
                     />
                     <MetricCard
@@ -398,18 +407,21 @@ export function EmailReportLayout({
                                 : `${metrics.delivery_rate}%`
                         }
                         detail={deliveryFeedbackDetail}
+                        hint="Share of Amazon SES recipients whose mail server confirmed receipt. SMTP hands mail off without reporting delivery, so it is left out."
                         icon={MailSend01Icon}
                     />
                     <MetricCard
                         label="Unique opens"
                         value={`${metrics.open_rate}%`}
                         detail={`${metrics.opened.toLocaleString()} recipients`}
+                        hint="Recipients who opened at least once, including privacy proxies and security scanners that load images automatically. Human engagement below counts only confident human opens."
                         icon={MailOpen01Icon}
                     />
                     <MetricCard
                         label="Unique clicks"
                         value={`${metrics.click_rate}%`}
                         detail={`${metrics.clicked.toLocaleString()} recipients`}
+                        hint="Recipients who clicked any tracked link at least once, including link scanners. Human engagement below counts only confident human clicks."
                         icon={MouseLeftClick01Icon}
                     />
                 </div>
@@ -631,17 +643,42 @@ function MetricCard({
     label,
     value,
     detail,
+    hint,
     icon,
 }: {
     label: string;
     value: string;
     detail: string;
+    /** What the metric counts, shown in a tooltip next to the label. */
+    hint: string;
     icon: IconSvgElement;
 }) {
     return (
         <Card>
             <CardHeader>
-                <CardDescription>{label}</CardDescription>
+                <CardDescription className="flex items-center gap-1">
+                    {label}
+                    <Tooltip>
+                        <TooltipTrigger
+                            render={
+                                <button
+                                    type="button"
+                                    aria-label={`About ${label}`}
+                                    className="text-muted-foreground hover:text-foreground"
+                                />
+                            }
+                        >
+                            <HugeiconsIcon
+                                icon={InformationCircleIcon}
+                                className="size-3.5"
+                                aria-hidden
+                            />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-64">
+                            {hint}
+                        </TooltipContent>
+                    </Tooltip>
+                </CardDescription>
                 <CardAction>
                     <div className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                         <HugeiconsIcon
