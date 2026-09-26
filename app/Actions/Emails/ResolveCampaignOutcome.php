@@ -17,6 +17,11 @@ class ResolveCampaignOutcome
      */
     public function handle(Email $email): EmailStatus
     {
+        // A person stopped it; that stays the outcome whatever finished.
+        if ($email->status === EmailStatus::Stopped) {
+            return EmailStatus::Stopped;
+        }
+
         if ($email->deliveries()->count() < $email->recipient_count) {
             return EmailStatus::Failed;
         }

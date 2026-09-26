@@ -14,6 +14,7 @@ export const CAMPAIGN_STATUS_LABELS: Record<EmailCampaignStatus, string> = {
     sent: 'Sent',
     partially_failed: 'Partially failed',
     failed: 'Failed',
+    stopped: 'Stopped',
 };
 
 /**
@@ -47,6 +48,7 @@ export const DELIVERY_STATUS_LABELS: Record<EmailDeliveryStatus, string> = {
     complained: 'Complained',
     rejected: 'Rejected',
     failed: 'Failed',
+    cancelled: 'Not sent',
 };
 
 /**

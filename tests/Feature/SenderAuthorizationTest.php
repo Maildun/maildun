@@ -138,6 +138,7 @@ test('a delivery job refuses a sender proof from an older connection version', f
     Mail::fake();
     [, $team, $integration] = workspaceAuthorizedFor('hello@acme.test');
     $email = campaignSendingFrom($team, 'hello@acme.test');
+    $email->forceFill(['status' => EmailStatus::Sending])->save();
     $delivery = $email->deliveries()->create([
         'email_address' => 'reader@example.com',
         'status' => EmailDeliveryStatus::Queued,

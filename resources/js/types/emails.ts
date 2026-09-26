@@ -235,7 +235,13 @@ export type EmailRecipientRef = {
 };
 
 export type EmailCampaignStatus =
-    'draft' | 'queued' | 'sending' | 'sent' | 'partially_failed' | 'failed';
+    | 'draft'
+    | 'queued'
+    | 'sending'
+    | 'sent'
+    | 'partially_failed'
+    | 'failed'
+    | 'stopped';
 
 export type EmailDeliveryStatus =
     | 'queued'
@@ -246,7 +252,8 @@ export type EmailDeliveryStatus =
     | 'bounced'
     | 'complained'
     | 'rejected'
-    | 'failed';
+    | 'failed'
+    | 'cancelled';
 
 export type CampaignRecipientFilter =
     'retryable' | 'opened' | 'clicked' | EmailDeliveryStatus;

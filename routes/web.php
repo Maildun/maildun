@@ -250,6 +250,8 @@ Route::prefix('{current_team}')
                 ->name('emails.retry');
             Route::post('emails/{email}/queue-remaining', [EmailController::class, 'queueRemaining'])
                 ->name('emails.queue-remaining');
+            Route::post('emails/{email}/stop', [EmailController::class, 'stop'])
+                ->name('emails.stop');
             Route::post('emails/{email}/deliveries/{delivery}/retry', [EmailController::class, 'retryDelivery'])
                 ->name('emails.deliveries.retry');
             Route::get('emails/{email}/deliveries/{delivery}', EmailDeliveryDetailController::class)

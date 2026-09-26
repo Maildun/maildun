@@ -10,6 +10,8 @@ enum EmailStatus: string
     case Sent = 'sent';
     case PartiallyFailed = 'partially_failed';
     case Failed = 'failed';
+    /** Stopped by a person while sending; recipients not yet sent to were cancelled. */
+    case Stopped = 'stopped';
 
     /**
      * Statuses where a send is still in flight.

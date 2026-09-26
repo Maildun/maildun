@@ -4,6 +4,7 @@ namespace App\Actions\Emails;
 
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailFailureCode;
+use App\Enums\EmailStatus;
 use App\Models\Email;
 use App\Models\EmailDeliveryAttempt;
 use Illuminate\Bus\Batch;
@@ -28,6 +29,18 @@ class FinalizeEmailSend
         }
 
         $failureReason = __('The delivery did not report back before the campaign finished.');
+
+        // A loader that checked the campaign just before it was stopped can
+        // still insert rows whose claims then fail; they were never sent.
+        if ($email->status === EmailStatus::Stopped) {
+            $email->deliveries()
+                ->where('status', EmailDeliveryStatus::Queued)
+                ->whereNull('send_attempted_at')
+                ->update([
+                    'status' => EmailDeliveryStatus::Cancelled,
+                    'failure_reason' => __('The campaign was stopped before this recipient was sent to.'),
+                ]);
+        }
 
         DB::transaction(function () use ($email, $failureReason): void {
             // A worker killed after the transport accepted a message leaves the

@@ -6,6 +6,7 @@ import {
     Refresh03Icon,
     UserGroupIcon,
     InformationCircleIcon,
+    StopCircleIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { IconSvgElement } from '@hugeicons/react';
@@ -74,8 +75,9 @@ import {
     recipients,
     retry,
     show,
+    stop,
 } from '@/routes/emails';
-import type { EmailCampaignStatus } from '@/types/emails';
+import type { EmailCampaignStatus, EmailDeliveryStatus } from '@/types/emails';
 
 export type CampaignEmailProvider =
     'smtp' | 'ses' | 'sendgrid' | 'mailgun' | 'resend' | 'postmark' | 'mixed';
@@ -107,6 +109,8 @@ export type CampaignReportMetrics = {
     failed: number;
     /** Queued deliveries whose last send attempt failed; the queue tries them again. */
     retrying: number;
+    /** Recipients never sent to because a person stopped the campaign. */
+    cancelled: number;
     /** Recipients never queued because preparing the send failed part-way. */
     unqueued: number;
     retryable: number;
@@ -147,16 +151,7 @@ export type CampaignReportRecipient = {
     unconfirmed: boolean;
 };
 
-export type CampaignRecipientStatus =
-    | 'queued'
-    | 'sending'
-    | 'sent'
-    | 'delivered'
-    | 'delayed'
-    | 'bounced'
-    | 'complained'
-    | 'rejected'
-    | 'failed';
+export type CampaignRecipientStatus = EmailDeliveryStatus;
 
 export type CampaignTrackedLink = {
     uuid: string;
@@ -240,6 +235,8 @@ export function EmailReportLayout({
     const [retrying, setRetrying] = useState(false);
     const [includeUnconfirmed, setIncludeUnconfirmed] = useState(false);
     const [queueingRemaining, setQueueingRemaining] = useState(false);
+    const [stopOpen, setStopOpen] = useState(false);
+    const [stopping, setStopping] = useState(false);
 
     setLayoutProps({
         fullscreen: false,
@@ -361,6 +358,20 @@ export function EmailReportLayout({
                                   ? `Started ${formatRelativeTime(campaign.send_started_at)}`
                                   : 'Preparing delivery'}
                         </p>
+                        {canManage && isActive && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                data-test="stop-sending-button"
+                                onClick={() => setStopOpen(true)}
+                            >
+                                <HugeiconsIcon
+                                    icon={StopCircleIcon}
+                                    data-icon="inline-start"
+                                />
+                                Stop sending
+                            </Button>
+                        )}
                         {canRetryFailed && (
                             <Button
                                 type="button"
@@ -478,6 +489,20 @@ export function EmailReportLayout({
                             deliveries used up their automatic retries; you can
                             retry them from this report once the campaign
                             finishes.
+                        </AlertDescription>
+                    </Alert>
+                )}
+
+                {campaign.status === 'stopped' && metrics.cancelled > 0 && (
+                    <Alert data-test="campaign-stopped-alert">
+                        <AlertTitle>Sending was stopped</AlertTitle>
+                        <AlertDescription>
+                            {metrics.cancelled.toLocaleString()}{' '}
+                            {metrics.cancelled === 1
+                                ? 'recipient was'
+                                : 'recipients were'}{' '}
+                            not sent this campaign. Everyone already handed to
+                            the provider before the stop received it.
                         </AlertDescription>
                     </Alert>
                 )}
@@ -610,6 +635,58 @@ export function EmailReportLayout({
 
                 {children}
             </div>
+
+            <AlertDialog
+                open={stopOpen}
+                onOpenChange={(open) => !stopping && setStopOpen(open)}
+            >
+                <AlertDialogContent data-test="stop-sending-dialog">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Stop sending?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Recipients who have not been sent to yet will not
+                            receive this campaign, and this cannot be undone.
+                            Messages already handed to the provider cannot be
+                            recalled.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={stopping}>
+                            Keep sending
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            variant="destructive"
+                            data-test="confirm-stop-sending"
+                            disabled={stopping}
+                            onClick={() =>
+                                router.post(
+                                    stop.url([currentTeam.slug, campaign.uuid]),
+                                    {},
+                                    {
+                                        preserveScroll: true,
+                                        onStart: () => setStopping(true),
+                                        onError: (errors) =>
+                                            toast.add({
+                                                type: 'error',
+                                                title: 'Could not stop sending.',
+                                                description:
+                                                    errors.email ??
+                                                    'Try again in a moment.',
+                                            }),
+                                        onFinish: () => {
+                                            setStopping(false);
+                                            setStopOpen(false);
+                                        },
+                                    },
+                                )
+                            }
+                        >
+                            {stopping && <Spinner data-icon="inline-start" />}
+                            Stop sending
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             <AlertDialog open={retryOpen} onOpenChange={setRetryOpen}>
                 <AlertDialogContent>

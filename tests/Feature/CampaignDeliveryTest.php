@@ -395,7 +395,10 @@ test('an SMTP campaign report does not claim delivery feedback', function () {
 
 test('a delivery job sends one tracked message through the configured mailer', function () {
     Mail::fake();
-    $email = Email::factory()->create(['html' => '<a href="https://example.com">Visit</a>']);
+    $email = Email::factory()->create([
+        'html' => '<a href="https://example.com">Visit</a>',
+        'status' => EmailStatus::Sending,
+    ]);
     TeamEmailIntegration::factory()->for($email->team)->ses()->create();
     $delivery = $email->deliveries()->create([
         'email_address' => 'reader@example.com',

@@ -10,6 +10,7 @@ use App\Actions\Emails\QueueRemainingRecipients;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\RetryEmailDeliveries;
 use App\Actions\Emails\StartEmailSend;
+use App\Actions\Emails\StopEmailSend;
 use App\Concerns\FiltersCampaignRecipients;
 use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailDeliveryStatus;
@@ -596,6 +597,19 @@ class EmailController extends Controller
         return back();
     }
 
+    public function stop(Team $currentTeam, Email $email, StopEmailSend $stopEmailSend): RedirectResponse
+    {
+        Gate::authorize('send', $email);
+        $cancelled = $stopEmailSend->handle($email);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => trans_choice(
+            'Sending stopped. :count recipient will not receive this campaign.|Sending stopped. :count recipients will not receive this campaign.',
+            $cancelled,
+        )]);
+
+        return back();
+    }
+
     public function queueRemaining(Team $currentTeam, Email $email, QueueRemainingRecipients $queueRemaining): RedirectResponse
     {
         Gate::authorize('send', $email);
@@ -811,6 +825,7 @@ class EmailController extends Controller
                 'complained' => $complainedCount,
                 'failed' => $failedCount,
                 'retrying' => $retryingCount,
+                'cancelled' => (clone $deliveries)->where('status', EmailDeliveryStatus::Cancelled)->count(),
                 'unqueued' => app(QueueRemainingRecipients::class)->remainingCount($email),
                 'retryable' => $retryableCount,
                 'unconfirmed' => $unconfirmedRetryableCount,

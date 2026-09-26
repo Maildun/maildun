@@ -337,3 +337,14 @@ test('the campaign index refreshes rows while a campaign is sending', function (
         ->toContain("usePoll(4000, { only: ['emails'] }, { mode: 'rest' });")
         ->toContain('email.progress !== null');
 });
+
+test('a sending campaign can be stopped after a confirmation', function () {
+    $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+
+    expect($layout)->toBeString()
+        ->toContain('data-test="stop-sending-button"')
+        ->toContain('data-test="stop-sending-dialog"')
+        ->toContain('data-test="confirm-stop-sending"')
+        ->toContain('data-test="campaign-stopped-alert"')
+        ->toContain('stop.url([currentTeam.slug, campaign.uuid])');
+});

@@ -179,10 +179,14 @@ class SendEmailDelivery implements ShouldQueue
      */
     private function claim(EmailDelivery $delivery): bool
     {
+        // The campaign must still be sending. StopEmailSend flips the campaign
+        // and cancels unclaimed rows in one transaction, so a racing claim
+        // either wins (and sends) or sees the stop (and sends nothing).
         return EmailDelivery::query()
             ->whereKey($delivery->id)
             ->where('status', EmailDeliveryStatus::Queued)
             ->whereNull('send_attempted_at')
+            ->whereIn('email_id', Email::query()->whereIn('status', EmailStatus::active())->select('id'))
             ->update([
                 'status' => EmailDeliveryStatus::Sending,
                 'send_attempted_at' => now(),
