@@ -8,6 +8,7 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -40,6 +41,12 @@ class DeleteCampaignTool extends Tool
         ], [
             'confirm_name.in' => 'The confirmation name must exactly match the campaign name.',
         ]);
+
+        if ($campaign->status->isActive()) {
+            throw ValidationException::withMessages([
+                'uuid' => 'Wait until this campaign finishes sending before deleting it.',
+            ]);
+        }
 
         $deleted = ['uuid' => $campaign->uuid, 'name' => $campaign->name];
         $campaign->loadMissing('attachments');

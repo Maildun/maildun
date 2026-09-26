@@ -2,6 +2,7 @@
 
 use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailEditor;
+use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Jobs\SendCampaignTestEmail;
@@ -1106,6 +1107,20 @@ test('an email can be deleted', function () {
 
     $this->assertSoftDeleted($email);
 });
+
+test('a campaign cannot be deleted while it is queued or sending', function (EmailStatus $status) {
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create(['status' => $status]);
+
+    $this->actingAs($user)
+        ->delete(route('emails.destroy', [$user->currentTeam, $email]))
+        ->assertForbidden();
+
+    $this->assertNotSoftDeleted($email);
+})->with([
+    'queued' => [EmailStatus::Queued],
+    'sending' => [EmailStatus::Sending],
+]);
 
 test('a queued campaign opens its report and cannot be edited', function () {
     $user = User::factory()->create();

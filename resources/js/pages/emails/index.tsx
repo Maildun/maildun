@@ -73,6 +73,14 @@ type Props = {
     canManage: boolean;
 };
 
+/**
+ * A queued or sending campaign is still handing deliveries to the provider,
+ * so it cannot be deleted until it finishes.
+ */
+function isSending(status: EmailSummary['status']): boolean {
+    return status === 'queued' || status === 'sending';
+}
+
 const EDITOR_LABELS: Record<EmailEditorMode, string> = {
     html: 'HTML',
     builder: 'EmailBuilder.js',
@@ -504,27 +512,30 @@ export default function EmailsIndex({
                                                                 : 'View'
                                                             : 'View report'}
                                                     </DropdownMenuItem>
-                                                    {canManage && (
-                                                        <>
-                                                            <DropdownMenuSeparator />
-                                                            <DropdownMenuItem
-                                                                variant="destructive"
-                                                                data-test="delete-email-button"
-                                                                onClick={() =>
-                                                                    setEmailToDelete(
-                                                                        email,
-                                                                    )
-                                                                }
-                                                            >
-                                                                <HugeiconsIcon
-                                                                    icon={
-                                                                        Delete02Icon
+                                                    {canManage &&
+                                                        !isSending(
+                                                            email.status,
+                                                        ) && (
+                                                            <>
+                                                                <DropdownMenuSeparator />
+                                                                <DropdownMenuItem
+                                                                    variant="destructive"
+                                                                    data-test="delete-email-button"
+                                                                    onClick={() =>
+                                                                        setEmailToDelete(
+                                                                            email,
+                                                                        )
                                                                     }
-                                                                />
-                                                                Delete
-                                                            </DropdownMenuItem>
-                                                        </>
-                                                    )}
+                                                                >
+                                                                    <HugeiconsIcon
+                                                                        icon={
+                                                                            Delete02Icon
+                                                                        }
+                                                                    />
+                                                                    Delete
+                                                                </DropdownMenuItem>
+                                                            </>
+                                                        )}
                                                 </DropdownMenuGroup>
                                             </DropdownMenuContent>
                                         </DropdownMenu>

@@ -29,9 +29,13 @@ class EmailPolicy
         return $user->hasTeamPermission($email->team, TeamPermission::ManageCampaign);
     }
 
+    /**
+     * A campaign that is queued or sending cannot be deleted: its deliveries
+     * are still being claimed and handed to the provider.
+     */
     public function delete(User $user, Email $email): bool
     {
-        return $this->update($user, $email);
+        return ! $email->status->isActive() && $this->update($user, $email);
     }
 
     /**
