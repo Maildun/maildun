@@ -57,7 +57,7 @@ class ProcessSesEvent
                 ],
             );
 
-            if (! $event->wasRecentlyCreated || ! in_array($type, ['Delivery', 'Bounce', 'Complaint'], true)) {
+            if (! $event->wasRecentlyCreated || ! in_array($type, ['Delivery', 'Bounce', 'Complaint', 'Reject'], true)) {
                 return;
             }
 
@@ -278,6 +278,7 @@ class ProcessSesEvent
             'Delivery' => $this->deliveryAttributes($subject, $occurredAt),
             'Bounce' => $this->bounceAttributes($subject, $payload, $occurredAt),
             'Complaint' => $this->complaintAttributes($subject, $occurredAt),
+            'Reject' => $this->rejectAttributes($subject, $payload),
             default => [],
         };
 
@@ -344,6 +345,34 @@ class ProcessSesEvent
         return [
             'status' => EmailDeliveryStatus::Complained,
             'complained_at' => $subject->complained_at ?? $occurredAt,
+        ];
+    }
+
+    /**
+     * SES accepted the message but refused to send it, which it does when it
+     * finds a virus. The recipient did nothing wrong, so the address is not
+     * suppressed, and a later outcome for the same message is never undone.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function rejectAttributes(EmailDelivery|EmailDeliveryAttempt|AutomationEmailDelivery $subject, array $payload): array
+    {
+        if (in_array($subject->status, [
+            EmailDeliveryStatus::Delivered,
+            EmailDeliveryStatus::Bounced,
+            EmailDeliveryStatus::Complained,
+        ], true)) {
+            return [];
+        }
+
+        $reason = data_get($payload, 'reject.reason');
+
+        return [
+            'status' => EmailDeliveryStatus::Rejected,
+            'failure_reason' => is_string($reason) && $reason !== ''
+                ? __('Amazon SES rejected the message: :reason', ['reason' => $reason])
+                : __('Amazon SES rejected the message.'),
         ];
     }
 
