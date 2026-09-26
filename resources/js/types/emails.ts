@@ -282,6 +282,8 @@ export type EmailSummary = {
     subject: string;
     editor: EmailEditorMode;
     status: EmailCampaignStatus;
+    /** Percent of recipients processed, only while queued or sending. */
+    progress: number | null;
     audience: EmailRecipientRef | null;
     segment: EmailRecipientRef | null;
     recipient_count: number;

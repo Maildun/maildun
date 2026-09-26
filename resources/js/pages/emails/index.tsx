@@ -10,7 +10,7 @@ import {
     UserGroupIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, usePage, usePoll } from '@inertiajs/react';
 import { useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
 import DeleteEmailModal from '@/components/delete-email-modal';
@@ -85,6 +85,16 @@ function isSending(status: EmailSummary['status']): boolean {
     return status === 'queued' || status === 'sending';
 }
 
+/**
+ * While any listed campaign is queued or sending, refresh only the rows so
+ * status and progress update without a reload.
+ */
+function CampaignRowsPoller() {
+    usePoll(4000, { only: ['emails'] }, { mode: 'rest' });
+
+    return null;
+}
+
 const EDITOR_LABELS: Record<EmailEditorMode, string> = {
     html: 'HTML',
     builder: 'EmailBuilder.js',
@@ -111,6 +121,7 @@ export default function EmailsIndex({
 }: Props) {
     const { currentTeam } = usePage().props;
     const [composeOpen, setComposeOpen] = useState(false);
+    const hasSendingRow = emails.data.some((email) => isSending(email.status));
     const [emailToDelete, setEmailToDelete] = useState<EmailSummary | null>(
         null,
     );
@@ -132,6 +143,7 @@ export default function EmailsIndex({
     return (
         <>
             <Head title="Campaigns" />
+            {hasSendingRow && <CampaignRowsPoller />}
             <div className="flex flex-1 flex-col gap-6">
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                     <div className="flex flex-col gap-1">
@@ -353,6 +365,9 @@ export default function EmailsIndex({
                                                     email.status
                                                 ]
                                             }
+                                            {email.progress !== null
+                                                ? ` · ${email.progress}%`
+                                                : null}
                                         </Badge>
                                     </TableCell>
                                     <TableCell>

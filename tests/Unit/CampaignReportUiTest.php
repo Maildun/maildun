@@ -328,3 +328,12 @@ test('recipients a failed loader never reached can be queued from the report', f
         ->toContain('data-test="queue-remaining-button"')
         ->toContain("'Sending to the remaining recipients'");
 });
+
+test('the campaign index refreshes rows while a campaign is sending', function () {
+    $index = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/index.tsx');
+
+    expect($index)->toBeString()
+        ->toContain('{hasSendingRow && <CampaignRowsPoller />}')
+        ->toContain("usePoll(4000, { only: ['emails'] }, { mode: 'rest' });")
+        ->toContain('email.progress !== null');
+});

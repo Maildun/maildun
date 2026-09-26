@@ -82,6 +82,10 @@ class EmailController extends Controller
                 'sent_at',
                 'updated_at',
             ])
+            ->withCount([
+                'deliveries as processed_count' => fn (Builder $query) => $query
+                    ->whereNotIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending]),
+            ])
             ->with([
                 'audience' => function (Relation $query) use ($currentTeam): void {
                     $query
@@ -148,6 +152,9 @@ class EmailController extends Controller
                         ])->values()->all()
                         : [],
                     'last_tested_at' => $email->last_tested_at?->toISOString(),
+                    'progress' => $status->isActive()
+                        ? (int) min(100, round(((int) $email->getAttribute('processed_count')) / max($email->recipient_count, 1) * 100))
+                        : null,
                     'updated_at' => $email->updated_at?->toISOString(),
                 ];
             });

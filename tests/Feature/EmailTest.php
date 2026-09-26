@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\EmailAddressHealthReason;
+use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
@@ -10,6 +11,7 @@ use App\Mail\ComposedEmailTest;
 use App\Models\Audience;
 use App\Models\Email;
 use App\Models\EmailAddressHealth;
+use App\Models\EmailDelivery;
 use App\Models\EmailTemplate;
 use App\Models\Media;
 use App\Models\Segment;
@@ -1281,4 +1283,22 @@ test('an audience filter from another team matches no campaign', function () {
         ->get(route('emails.index', ['current_team' => $team, 'audience' => $foreign->uuid]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page->has('emails.data', 0));
+});
+
+test('the campaign index shows progress for campaigns that are still sending', function () {
+    $user = User::factory()->create();
+    $sending = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 4,
+        'send_started_at' => now(),
+    ]);
+    EmailDelivery::factory()->for($sending)->create(['status' => EmailDeliveryStatus::Sent]);
+    EmailDelivery::factory()->for($sending)->count(3)->create(['status' => EmailDeliveryStatus::Queued]);
+    Email::factory()->for($user->currentTeam)->create(['status' => EmailStatus::Draft]);
+
+    $this->actingAs($user)
+        ->get(route('emails.index', $user->currentTeam))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('emails.data', fn ($rows) => collect($rows)->firstWhere('uuid', $sending->uuid)['progress'] === 25
+                && collect($rows)->firstWhere('status', 'draft')['progress'] === null));
 });
