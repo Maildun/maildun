@@ -1,4 +1,4 @@
-import { Refresh03Icon } from '@hugeicons/core-free-icons';
+import { Download04Icon, Refresh03Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
@@ -8,6 +8,7 @@ import type {
     CampaignReportMetrics,
     CampaignReportRecipient,
 } from '@/components/email-report-layout';
+import { ListSearch } from '@/components/list-search';
 import { Paginator } from '@/components/paginator';
 import { RecipientDeliverySheet } from '@/components/recipient-delivery-sheet';
 import {
@@ -25,11 +26,19 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
+    CardAction,
     CardContent,
     CardDescription,
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Spinner } from '@/components/ui/spinner';
 import {
     Table,
@@ -53,13 +62,15 @@ import {
 import { formatRelativeTime } from '@/lib/format';
 import { recipients as recipientsRoute } from '@/routes/emails';
 import { retry as retryDelivery } from '@/routes/emails/deliveries';
+import { show as showRecipientExport } from '@/routes/emails/recipients/exports';
 import type { Paginated } from '@/types/audiences';
 import type { CampaignRecipientFilter } from '@/types/emails';
 
 type Props = {
     campaign: CampaignReportCampaign;
     metrics: CampaignReportMetrics;
-    filters: { status: CampaignRecipientFilter | null };
+    filters: { status: CampaignRecipientFilter | null; q: string };
+    filterCounts: Record<(typeof RECIPIENT_FILTERS)[number]['value'], number>;
     recipients: Paginated<CampaignReportRecipient>;
     canManage: boolean;
 };
@@ -78,6 +89,7 @@ export default function EmailRecipients({
     campaign,
     metrics,
     filters,
+    filterCounts,
     recipients,
     canManage,
 }: Props) {
@@ -90,6 +102,11 @@ export default function EmailRecipients({
     if (!currentTeam) {
         return null;
     }
+
+    const exportQuery = {
+        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.q ? { q: filters.q } : {}),
+    };
 
     const retryRecipient = (
         recipient: CampaignReportRecipient,
@@ -130,6 +147,58 @@ export default function EmailRecipients({
         >
             <Card>
                 <CardHeader className="gap-4">
+                    {canManage ? (
+                        <CardAction>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger
+                                    render={
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            data-test="export-recipients"
+                                        />
+                                    }
+                                >
+                                    <HugeiconsIcon
+                                        icon={Download04Icon}
+                                        data-icon="inline-start"
+                                    />
+                                    Export
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuGroup>
+                                        {(['csv', 'xls'] as const).map(
+                                            (format) => (
+                                                <DropdownMenuItem
+                                                    key={format}
+                                                    render={
+                                                        <a
+                                                            href={showRecipientExport.url(
+                                                                [
+                                                                    currentTeam.slug,
+                                                                    campaign.uuid,
+                                                                    format,
+                                                                ],
+                                                                {
+                                                                    query: exportQuery,
+                                                                },
+                                                            )}
+                                                            download
+                                                        />
+                                                    }
+                                                >
+                                                    {format === 'csv'
+                                                        ? 'CSV'
+                                                        : 'Excel'}
+                                                </DropdownMenuItem>
+                                            ),
+                                        )}
+                                    </DropdownMenuGroup>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </CardAction>
+                    ) : null}
                     <div className="flex flex-col gap-1.5">
                         <CardTitle>Recipient activity</CardTitle>
                         <CardDescription>
@@ -143,8 +212,23 @@ export default function EmailRecipients({
                             teamSlug={currentTeam.slug}
                             campaignUuid={campaign.uuid}
                             status={filters.status}
+                            search={filters.q}
+                            counts={filterCounts}
                         />
                     </div>
+                    <ListSearch
+                        key={filters.q}
+                        value={filters.q}
+                        placeholder="Search recipients"
+                        onSearch={(q) =>
+                            visitRecipients(
+                                currentTeam.slug,
+                                campaign.uuid,
+                                filters.status,
+                                q,
+                            )
+                        }
+                    />
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
                     <Table>
@@ -381,14 +465,45 @@ function recipientInitial(recipient: CampaignReportRecipient): string {
     return (recipient.name ?? recipient.email).charAt(0).toUpperCase();
 }
 
+/**
+ * Status tabs and search share one query so a search keeps the tab and a tab
+ * keeps the search.
+ */
+function visitRecipients(
+    teamSlug: string,
+    campaignUuid: string,
+    status: CampaignRecipientFilter | 'all' | null,
+    search: string,
+) {
+    router.get(
+        recipientsRoute.url([teamSlug, campaignUuid], {
+            query: {
+                ...(status && status !== 'all' ? { status } : {}),
+                ...(search ? { q: search } : {}),
+            },
+        }),
+        {},
+        {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+            only: ['recipients', 'filters', 'filterCounts'],
+        },
+    );
+}
+
 function RecipientStatusTabs({
     teamSlug,
     campaignUuid,
     status,
+    search,
+    counts,
 }: {
     teamSlug: string;
     campaignUuid: string;
     status: CampaignRecipientFilter | null;
+    search: string;
+    counts: Record<(typeof RECIPIENT_FILTERS)[number]['value'], number>;
 }) {
     return (
         <Tabs
@@ -402,23 +517,7 @@ function RecipientStatusTabs({
                     return;
                 }
 
-                router.get(
-                    recipientsRoute.url([teamSlug, campaignUuid], {
-                        query:
-                            next === 'all'
-                                ? {}
-                                : {
-                                      status: next,
-                                  },
-                    }),
-                    {},
-                    {
-                        preserveState: true,
-                        preserveScroll: true,
-                        replace: true,
-                        only: ['recipients', 'filters'],
-                    },
-                );
+                visitRecipients(teamSlug, campaignUuid, next, search);
             }}
         >
             <TabsList variant="sliding" aria-label="Filter recipients">
@@ -429,6 +528,9 @@ function RecipientStatusTabs({
                         data-test={`recipient-filter-${filter.value}`}
                     >
                         {filter.label}
+                        <span className="text-muted-foreground tabular-nums">
+                            {counts[filter.value].toLocaleString()}
+                        </span>
                     </TabsTrigger>
                 ))}
             </TabsList>

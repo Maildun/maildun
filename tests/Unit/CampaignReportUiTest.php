@@ -308,3 +308,14 @@ test('a recipient opens a detail sheet with attempts and provider feedback', fun
         ->toContain('Send attempts')
         ->toContain('Provider feedback');
 });
+
+test('recipients can be searched, counted per tab and exported', function () {
+    $recipients = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/recipients.tsx');
+
+    expect($recipients)->toBeString()
+        ->toContain('placeholder="Search recipients"')
+        ->toContain('{counts[filter.value].toLocaleString()}')
+        ->toContain('data-test="export-recipients"')
+        ->toContain('showRecipientExport.url(')
+        ->toContain("only: ['recipients', 'filters', 'filterCounts']");
+});

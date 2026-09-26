@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Concerns\FiltersCampaignRecipients;
+use App\Enums\EmailStatus;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
 use App\Models\Contact;
+use App\Models\Email;
+use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use App\Models\Team;
 use Illuminate\Database\Eloquent\Builder;
@@ -16,6 +20,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ContactExportController extends Controller
 {
+    use FiltersCampaignRecipients;
+
     public function contacts(Request $request, Team $currentTeam, string $format): StreamedResponse
     {
         Gate::authorize('create', [Contact::class, $currentTeam]);
@@ -106,7 +112,43 @@ class ContactExportController extends Controller
     }
 
     /**
-     * @template TModel of Contact|Subscriber
+     * One row per recipient of a sent campaign, following the report's status
+     * tab and search. Managers only: the list is personal data.
+     */
+    public function campaignRecipients(
+        Request $request,
+        Team $currentTeam,
+        Email $email,
+        string $format,
+    ): StreamedResponse {
+        Gate::authorize('update', $email);
+        abort_if($email->status === EmailStatus::Draft, 404);
+
+        $query = $email->deliveries()->getQuery();
+        $this->applyRecipientFilter($query, $this->recipientFilter($request), $currentTeam);
+        $this->applyRecipientSearch($query, $this->recipientSearch($request));
+
+        return $this->download(
+            $format,
+            (Str::slug($email->name) ?: 'campaign').'-recipients-'.now()->format('Y-m-d'),
+            ['Email', 'First name', 'Last name', 'Status', 'Failure', 'Opens', 'Clicks', 'Sent at', 'Delivered at'],
+            $query,
+            fn (EmailDelivery $delivery): array => [
+                $delivery->email_address,
+                $delivery->first_name,
+                $delivery->last_name,
+                $delivery->status->value,
+                $delivery->failure_reason,
+                (string) $delivery->opens_count,
+                (string) $delivery->clicks_count,
+                $delivery->sent_at?->toIso8601String(),
+                $delivery->delivered_at?->toIso8601String(),
+            ],
+        );
+    }
+
+    /**
+     * @template TModel of Contact|Subscriber|EmailDelivery
      *
      * @param  list<string>  $headers
      * @param  Builder<TModel>  $query

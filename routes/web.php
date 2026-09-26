@@ -251,6 +251,9 @@ Route::prefix('{current_team}')
                 ->name('emails.deliveries.retry');
             Route::get('emails/{email}/deliveries/{delivery}', EmailDeliveryDetailController::class)
                 ->name('emails.deliveries.show');
+            Route::get('emails/{email}/recipients/exports/{format}', [ContactExportController::class, 'campaignRecipients'])
+                ->middleware('throttle:10,1')
+                ->name('emails.recipients.exports.show');
             Route::post('emails/{email}/test', [EmailController::class, 'sendTest'])
                 ->middleware('throttle:6,1')
                 ->name('emails.test');

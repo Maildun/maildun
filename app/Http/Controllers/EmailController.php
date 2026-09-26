@@ -9,6 +9,7 @@ use App\Actions\Emails\LintCampaignContent;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\RetryEmailDeliveries;
 use App\Actions\Emails\StartEmailSend;
+use App\Concerns\FiltersCampaignRecipients;
 use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
@@ -56,6 +57,8 @@ use Inertia\Response;
 
 class EmailController extends Controller
 {
+    use FiltersCampaignRecipients;
+
     public function index(Request $request, Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [Email::class, $currentTeam]);
@@ -611,13 +614,16 @@ class EmailController extends Controller
 
         $props = $this->campaignReportProps($email);
         $recipientFilter = $this->recipientFilter($request);
+        $search = $this->recipientSearch($request);
 
         return Inertia::render('emails/recipients', [
             ...$props,
             'filters' => [
                 'status' => $recipientFilter,
+                'q' => $search,
             ],
-            'recipients' => $this->recipientsPaginator($email, $recipientFilter, $props['canManage']),
+            'filterCounts' => $this->recipientFilterCounts($email, $search),
+            'recipients' => $this->recipientsPaginator($email, $recipientFilter, $props['canManage'], $search),
         ]);
     }
 
@@ -917,11 +923,12 @@ class EmailController extends Controller
     /**
      * @return LengthAwarePaginator<int, covariant array{uuid: string, avatar: string|null, email: string, name: string|null, status: string, opens: int, clicks: int, failure_reason: string|null, sent_at: string|null, can_retry: bool, retry_blocked_reason: string|null, unconfirmed: bool}>
      */
-    private function recipientsPaginator(Email $email, ?string $recipientFilter, bool $canManage): LengthAwarePaginator
+    private function recipientsPaginator(Email $email, ?string $recipientFilter, bool $canManage, string $search = ''): LengthAwarePaginator
     {
         $recipients = $email->deliveries()
             ->with(['subscriber:id,uuid,status,subscribed_at'])
             ->tap(fn (Builder $query) => $this->applyRecipientFilter($query, $recipientFilter, $email->team))
+            ->tap(fn (Builder $query) => $this->applyRecipientSearch($query, $search))
             ->latest()
             ->paginate(25)
             ->withQueryString();
@@ -1252,31 +1259,22 @@ class EmailController extends Controller
     }
 
     /**
-     * @param  Builder<EmailDelivery>  $query
-     * @return Builder<EmailDelivery>
+     * How many recipients each tab would show for the current search.
+     *
+     * @return array<string, int>
      */
-    protected function applyRecipientFilter(Builder $query, ?string $filter, Team $team): Builder
+    private function recipientFilterCounts(Email $email, string $search): array
     {
-        return match ($filter) {
-            'retryable' => $query->retryableFor($team),
-            'opened' => $query->where('opens_count', '>', 0),
-            'clicked' => $query->where('clicks_count', '>', 0),
-            null => $query,
-            default => $query->where('status', $filter),
-        };
-    }
+        $counts = [];
 
-    protected function recipientFilter(Request $request): ?string
-    {
-        $status = $request->string('status')->toString();
-        $allowed = [
-            'retryable',
-            'opened',
-            'clicked',
-            ...array_column(EmailDeliveryStatus::cases(), 'value'),
-        ];
+        foreach (['all', 'opened', 'clicked', 'retryable', 'failed', 'bounced', 'complained'] as $filter) {
+            $counts[$filter] = $this->applyRecipientSearch(
+                $this->applyRecipientFilter($email->deliveries()->getQuery(), $filter === 'all' ? null : $filter, $email->team),
+                $search,
+            )->count();
+        }
 
-        return in_array($status, $allowed, true) ? $status : null;
+        return $counts;
     }
 
     protected function resolveAudienceId(Team $team, ?string $uuid): ?int
