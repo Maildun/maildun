@@ -1,5 +1,4 @@
 import {
-    Alert02Icon,
     ArrowLeft01Icon,
     ArrowRight01Icon,
     InformationCircleIcon,
@@ -224,16 +223,17 @@ function findPreviewAnchor(
 function MissingUnsubscribeCallout({ className }: { className?: string }) {
     return (
         <Alert
-            variant="warning"
             className={className}
             data-test="campaign-preview-missing-unsubscribe"
         >
-            <HugeiconsIcon icon={Alert02Icon} />
-            <AlertTitle>Warning</AlertTitle>
+            <HugeiconsIcon icon={InformationCircleIcon} />
+            <AlertTitle>Maildun will add an unsubscribe footer</AlertTitle>
             <AlertDescription>
-                This campaign has no unsubscribe link. Add{' '}
-                <code className="font-mono">{'{{ unsubscribe_url }}'}</code> to
-                the body — missing one can lower delivery rates.
+                The body has no{' '}
+                <code className="font-mono">{'{{ unsubscribe_url }}'}</code>{' '}
+                link, so every recipient still gets one in a standard footer.
+                Placing the link in your own design usually looks better and can
+                help inbox placement.
             </AlertDescription>
         </Alert>
     );
