@@ -23,6 +23,7 @@ use App\Jobs\SendTransactionalEmailDelivery;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Contact;
+use App\Models\EmailAddressHealth;
 use App\Models\SubscribeForm;
 use App\Models\Subscriber;
 use App\Models\TeamEmailIntegration;
@@ -294,6 +295,34 @@ test('a double opt-in signup is kept when the confirmation email cannot be queue
     'no email provider is connected' => [false, TransactionalEmailStatus::Published],
     'the confirmation email was unpublished' => [true, TransactionalEmailStatus::Draft],
 ]);
+
+test('a double opt-in signup is kept when the address is suppressed', function () {
+    $audience = Audience::factory()->create();
+    TeamEmailIntegration::factory()->for($audience->team)->ses()->create();
+    $transactionalEmail = TransactionalEmail::factory()->for($audience->team)->published()->create();
+    $audience->update([
+        'double_opt_in' => true,
+        'double_opt_in_email_id' => $transactionalEmail->id,
+    ]);
+    EmailAddressHealth::factory()->for($audience->team)->suppressed()->create(['email' => 'person@example.com']);
+    $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
+    Queue::fake();
+    Log::spy();
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+        'website' => '',
+    ])->assertOk()->assertExactJson(['message' => $subscribeForm->success_message]);
+
+    expect($audience->subscribers()->sole()->subscribed_at)->toBeNull()
+        ->and($transactionalEmail->deliveries()->count())->toBe(0);
+
+    Queue::assertNothingPushed();
+    Log::shouldHaveReceived('warning')
+        ->withArgs(fn (string $message, array $context): bool => $context['audience_id'] === $audience->id)
+        ->once();
+});
 
 test('a signed double opt-in link confirms a pending subscriber', function () {
     $audience = Audience::factory()->create(['double_opt_in' => true]);
