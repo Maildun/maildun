@@ -22,8 +22,12 @@ import {
     useForm,
     useHttp,
 } from '@inertiajs/react';
+import type {
+    EmailEditorHandle,
+    ImageResult,
+} from '@maildun/email-builder/editor';
 import type { FormEvent } from 'react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteEmailModal from '@/components/delete-email-modal';
 import { EmailBuilderEditor } from '@/components/email-builder-editor';
@@ -87,6 +91,7 @@ import {
     EMPTY_BUILDER_DOCUMENT,
     getChildrenIds,
     htmlToBuilderDocument,
+    insertBuilderMedia,
     isSourceEditor,
     renderBuilderHtml,
     renderSourceHtml,
@@ -113,6 +118,7 @@ import type {
     EmailSenderDefaults,
     EmailSenderOption,
     MediaLibraryData,
+    MediaItem,
     SendReadiness,
 } from '@/types';
 
@@ -231,6 +237,10 @@ export default function EmailEdit({
     const [linkCheckResult, setLinkCheckResult] =
         useState<LinkCheckResponse | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const builderRef = useRef<EmailEditorHandle>(null);
+    const imagePickerResolve = useRef<
+        ((image: ImageResult | null) => void) | null
+    >(null);
     const uploadToast = useUploadToast();
     const linkCheck = useHttp<Record<string, never>, LinkCheckResponse>({});
     const [templateBody, setTemplateBody] = useState<{
@@ -284,6 +294,68 @@ export default function EmailEdit({
     const selectedSegment = selectedAudience?.segments.find(
         (segment) => segment.uuid === form.data.segment,
     );
+
+    useEffect(() => {
+        return () => imagePickerResolve.current?.(null);
+    }, []);
+
+    const changeMediaDialogOpen = (open: boolean) => {
+        if (!open) {
+            imagePickerResolve.current?.(null);
+            imagePickerResolve.current = null;
+        }
+
+        setMediaDialogOpen(open);
+    };
+
+    const pickBuilderImage = (): Promise<ImageResult | null> => {
+        if (!canManage || form.processing || !mediaLibrary) {
+            return Promise.resolve(null);
+        }
+
+        imagePickerResolve.current?.(null);
+
+        return new Promise((resolve) => {
+            imagePickerResolve.current = resolve;
+            setMediaDialogOpen(true);
+        });
+    };
+
+    const insertMedia = (image: MediaItem): boolean => {
+        if (
+            !canManage ||
+            form.processing ||
+            image.status !== 'ready' ||
+            !image.absolute_url
+        ) {
+            return false;
+        }
+
+        if (imagePickerResolve.current) {
+            imagePickerResolve.current({
+                url: image.absolute_url,
+                alt: image.alt ?? image.name,
+            });
+            imagePickerResolve.current = null;
+
+            return true;
+        }
+
+        if (!builderRef.current) {
+            return false;
+        }
+
+        const inserted = insertBuilderMedia(builderRef.current.store, image);
+
+        if (!inserted) {
+            toast.add({
+                type: 'error',
+                title: 'Could not insert this image. Try again.',
+            });
+        }
+
+        return inserted;
+    };
 
     const uploadAttachments = (files: FileList) => {
         if (files.length === 0 || uploadingAttachments) {
@@ -703,6 +775,12 @@ export default function EmailEdit({
                             {email.editor === 'builder' ? (
                                 <>
                                     <EmailBuilderEditor
+                                        ref={builderRef}
+                                        onPickImage={
+                                            mediaLibrary
+                                                ? pickBuilderImage
+                                                : undefined
+                                        }
                                         document={
                                             form.data.design ??
                                             EMPTY_BUILDER_DOCUMENT
@@ -1080,7 +1158,9 @@ export default function EmailEdit({
                     teamSlug={currentTeam.slug}
                     library={mediaLibrary}
                     open={mediaDialogOpen}
-                    onOpenChange={setMediaDialogOpen}
+                    onOpenChange={changeMediaDialogOpen}
+                    onInsert={canManage && designing ? insertMedia : undefined}
+                    insertDisabled={form.processing}
                 />
             ) : null}
 

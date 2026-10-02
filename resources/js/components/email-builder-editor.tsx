@@ -1,5 +1,10 @@
 import { EmailEditor } from '@maildun/email-builder/editor';
-import type { MergeTag } from '@maildun/email-builder/editor';
+import type {
+    EmailEditorHandle,
+    ImageResult,
+    MergeTag,
+} from '@maildun/email-builder/editor';
+import type { Ref } from 'react';
 import { useMounted } from '@/hooks/use-mounted';
 import { BUILDER_MERGE_TAGS, toEmailDocument } from '@/lib/email-builder';
 import type { EmailBuilderDocument } from '@/types/emails';
@@ -11,6 +16,8 @@ type Props = {
     disabled?: boolean;
     fill?: boolean;
     mergeTags?: MergeTag[];
+    ref?: Ref<EmailEditorHandle>;
+    onPickImage?: () => Promise<ImageResult | null>;
 };
 
 export function EmailBuilderEditor({
@@ -19,6 +26,8 @@ export function EmailBuilderEditor({
     disabled = false,
     fill = false,
     mergeTags = BUILDER_MERGE_TAGS,
+    ref,
+    onPickImage,
 }: Props) {
     const mounted = useMounted();
 
@@ -30,10 +39,12 @@ export function EmailBuilderEditor({
         >
             {mounted ? (
                 <EmailEditor
+                    ref={ref}
                     value={toEmailDocument(document)}
                     onChange={onChange}
                     readOnly={disabled}
                     mergeTags={mergeTags}
+                    onPickImage={onPickImage}
                 />
             ) : (
                 <div className="size-full bg-muted" aria-hidden="true" />

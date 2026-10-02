@@ -183,17 +183,25 @@ test('campaign personalization tags open a dialog with sample values', function 
         ->toContain('selectedAudience?.attributes');
 });
 
-test('campaign media dialog supports upload search and copy link', function () {
+test('campaign media dialog supports upload search copy link and image insertion', function () {
     $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/media-library-dialog.tsx');
+    $page = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/edit.tsx');
 
     expect($source)->toBeString()
         ->toContain('data-test="builder-media-dialog"')
         ->toContain('data-test="upload-builder-media"')
         ->toContain('data-test="builder-media-file-input"')
         ->toContain('data-test="copy-builder-media-link"')
+        ->toContain('data-test="insert-builder-media"')
         ->toContain("only: ['mediaLibrary']")
         ->toContain('Search recent media')
-        ->toContain('paste the link into');
+        ->toContain('click Insert')
+        ->toContain("item.status !== 'ready'");
+
+    expect($page)->toBeString()
+        ->toContain('onInsert={canManage && designing ? insertMedia : undefined}')
+        ->toContain('insertDisabled={form.processing}')
+        ->toContain('pickBuilderImage');
 });
 
 test('campaign draft saves each section and keeps template creation in campaign actions', function () {

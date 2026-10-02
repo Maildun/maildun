@@ -39,6 +39,8 @@ type Props = {
     library: MediaLibraryData;
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    onInsert?: (item: MediaItem) => boolean;
+    insertDisabled?: boolean;
 };
 
 export default function MediaLibraryDialog({
@@ -46,6 +48,8 @@ export default function MediaLibraryDialog({
     library,
     open,
     onOpenChange,
+    onInsert,
+    insertDisabled = false,
 }: Props) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [search, setSearch] = useState('');
@@ -144,7 +148,7 @@ export default function MediaLibraryDialog({
                                 </Badge>
                             ) : null}
                         </div>
-                        <div className="flex min-w-0 items-center gap-2 px-1 pb-1">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2 px-1 pb-1">
                             <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-medium">
                                     {item.name}
@@ -175,6 +179,26 @@ export default function MediaLibraryDialog({
                                 />
                                 Copy link
                             </Button>
+                            {onInsert ? (
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    disabled={
+                                        insertDisabled ||
+                                        item.status !== 'ready' ||
+                                        !item.absolute_url
+                                    }
+                                    aria-label={`Insert ${item.name}`}
+                                    data-test="insert-builder-media"
+                                    onClick={() => {
+                                        if (onInsert(item)) {
+                                            onOpenChange(false);
+                                        }
+                                    }}
+                                >
+                                    Insert
+                                </Button>
+                            ) : null}
                         </div>
                     </div>
                 ))}
@@ -193,7 +217,9 @@ export default function MediaLibraryDialog({
                     <EmptyDescription>
                         {search.trim() === ''
                             ? library.canUpload
-                                ? 'Upload an image to copy its link into your email.'
+                                ? onInsert
+                                    ? 'Upload an image to insert into your email.'
+                                    : 'Upload an image to copy its link into your email.'
                                 : 'Files uploaded by your team will appear here.'
                             : 'Try another search term.'}
                     </EmptyDescription>
@@ -217,8 +243,9 @@ export default function MediaLibraryDialog({
                 <DialogHeader className="px-6 pt-6 pr-14 pb-4">
                     <DialogTitle>Media library</DialogTitle>
                     <DialogDescription>
-                        Upload an image, copy its link, then paste the link into
-                        an image block.
+                        {onInsert
+                            ? 'Choose an image and click Insert to add it to your email or replace the selected image.'
+                            : 'Upload an image, copy its link, then paste the link into an image block.'}
                     </DialogDescription>
                 </DialogHeader>
 

@@ -1,15 +1,22 @@
-import { emptyDocument, renderEmail } from '@maildun/email-builder';
+import {
+    canContain,
+    emptyDocument,
+    findParent,
+    hasChildren,
+    renderEmail,
+} from '@maildun/email-builder';
 import type { EmailDocument } from '@maildun/email-builder';
 import {
     fromEmailBuilderJs,
     isEmailBuilderJsDocument,
 } from '@maildun/email-builder/compat';
-import type { MergeTag } from '@maildun/email-builder/editor';
+import type { EditorStore, MergeTag } from '@maildun/email-builder/editor';
 import type {
     EmailBuilderDocument,
     EmailEditorMode,
     EmailSourceMode,
 } from '@/types/emails';
+import type { MediaItem } from '@/types/media';
 
 export function isSourceEditor(
     editor: EmailEditorMode,
@@ -170,4 +177,55 @@ export function renderSourceHtml(
 
 export function getChildrenIds(document: EmailBuilderDocument): string[] {
     return document.root ?? [];
+}
+
+export function insertBuilderMedia(
+    store: EditorStore,
+    image: MediaItem,
+): boolean {
+    if (image.status !== 'ready' || !image.absolute_url) {
+        return false;
+    }
+
+    const { document, selectedId } = store.getState();
+    const selected = selectedId ? document.blocks[selectedId] : undefined;
+    const props = { src: image.absolute_url, alt: image.alt ?? image.name };
+
+    if (selectedId && selected?.type === 'image') {
+        return store.apply({ op: 'update', id: selectedId, props }).ok;
+    }
+
+    let parentId = 'root';
+    let index = document.root.length;
+
+    if (selectedId && selected) {
+        if (hasChildren(selected) && canContain(selected.type, 'image')) {
+            parentId = selectedId;
+            index = selected.children.length;
+        } else {
+            const parent = findParent(document, selectedId);
+            const parentType =
+                parent?.parentId === 'root'
+                    ? 'root'
+                    : document.blocks[parent?.parentId ?? '']?.type;
+
+            if (parent && parentType && canContain(parentType, 'image')) {
+                parentId = parent.parentId;
+                index = parent.index + 1;
+            }
+        }
+    }
+
+    const result = store.apply({
+        op: 'insert',
+        parentId,
+        index,
+        blocks: [{ type: 'image', props }],
+    });
+
+    if (result.ok && result.inserted[0]) {
+        store.select(result.inserted[0]);
+    }
+
+    return result.ok;
 }
