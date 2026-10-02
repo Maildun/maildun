@@ -23,7 +23,6 @@ import { LastTestStatus } from '@/components/last-test-status';
 import PreviewWidthTabs from '@/components/preview-width-tabs';
 import type { PreviewWidth } from '@/components/preview-width-tabs';
 import SendTestEmailDialog from '@/components/send-test-email-dialog';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -37,6 +36,12 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
+import {
+    Callout,
+    CalloutContent,
+    CalloutHeading,
+    CalloutText,
+} from '@/components/ui/callout';
 import {
     Combobox,
     ComboboxContent,
@@ -263,20 +268,24 @@ function findPreviewAnchor(
 
 function MissingUnsubscribeCallout({ className }: { className?: string }) {
     return (
-        <Alert
+        <Callout
+            icon={InformationCircleIcon}
             className={className}
             data-test="campaign-preview-missing-unsubscribe"
         >
-            <HugeiconsIcon icon={InformationCircleIcon} />
-            <AlertTitle>Maildun will add an unsubscribe footer</AlertTitle>
-            <AlertDescription>
-                The body has no{' '}
-                <code className="font-mono">{'{{ unsubscribe_url }}'}</code>{' '}
-                link, so every recipient still gets one in a standard footer.
-                Placing the link in your own design usually looks better and can
-                help inbox placement.
-            </AlertDescription>
-        </Alert>
+            <CalloutContent>
+                <CalloutHeading>
+                    Maildun will add an unsubscribe footer
+                </CalloutHeading>
+                <CalloutText>
+                    The body has no{' '}
+                    <code className="font-mono">{'{{ unsubscribe_url }}'}</code>{' '}
+                    link, so every recipient still gets one in a standard
+                    footer. Placing the link in your own design usually looks
+                    better and can help inbox placement.
+                </CalloutText>
+            </CalloutContent>
+        </Callout>
     );
 }
 
@@ -286,28 +295,30 @@ function SuppressedRecipientsCallout({
     suppressed: SuppressedRecipients;
 }) {
     return (
-        <Alert
+        <Callout
+            icon={InformationCircleIcon}
             className="mx-auto w-full max-w-3xl shrink-0"
             data-test="campaign-preview-suppressed"
         >
-            <HugeiconsIcon icon={InformationCircleIcon} />
-            <AlertTitle>
-                Skipping {suppressed.count} suppressed{' '}
-                {suppressed.count === 1 ? 'recipient' : 'recipients'}
-            </AlertTitle>
-            <AlertDescription>
-                <p>
-                    {suppressed.count === 1
-                        ? "This address bounced permanently or reported spam before, so Maildun won't email it again."
-                        : "These addresses bounced permanently or reported spam before, so Maildun won't email them again."}
-                </p>
-                <p className="tabular-nums">
-                    {suppressed.reasons
-                        .map((reason) => `${reason.label}: ${reason.count}`)
-                        .join(' · ')}
-                </p>
-            </AlertDescription>
-        </Alert>
+            <CalloutContent>
+                <CalloutHeading>
+                    Skipping {suppressed.count} suppressed{' '}
+                    {suppressed.count === 1 ? 'recipient' : 'recipients'}
+                </CalloutHeading>
+                <CalloutText>
+                    <p>
+                        {suppressed.count === 1
+                            ? "This address bounced permanently or reported spam before, so Maildun won't email it again."
+                            : "These addresses bounced permanently or reported spam before, so Maildun won't email them again."}
+                    </p>
+                    <p className="tabular-nums">
+                        {suppressed.reasons
+                            .map((reason) => `${reason.label}: ${reason.count}`)
+                            .join(' · ')}
+                    </p>
+                </CalloutText>
+            </CalloutContent>
+        </Callout>
     );
 }
 
@@ -324,25 +335,27 @@ function ContentIssuesCallout({ issues }: { issues: ContentIssue[] }) {
     );
 
     return (
-        <Alert
-            variant={hasWarning ? 'warning' : 'default'}
+        <Callout
+            variant={hasWarning ? 'warning' : 'secondary'}
+            icon={InformationCircleIcon}
             className="mx-auto w-full max-w-3xl shrink-0"
             data-test="campaign-preview-content-issues"
         >
-            <HugeiconsIcon icon={InformationCircleIcon} />
-            <AlertTitle>
-                {issues.length === 1
-                    ? '1 thing to check before sending'
-                    : `${issues.length} things to check before sending`}
-            </AlertTitle>
-            <AlertDescription>
-                <ul className="flex list-disc flex-col gap-1 pl-4">
-                    {sorted.map((issue) => (
-                        <li key={issue.code}>{issue.message}</li>
-                    ))}
-                </ul>
-            </AlertDescription>
-        </Alert>
+            <CalloutContent>
+                <CalloutHeading>
+                    {issues.length === 1
+                        ? '1 thing to check before sending'
+                        : `${issues.length} things to check before sending`}
+                </CalloutHeading>
+                <CalloutText>
+                    <ul className="flex list-disc flex-col gap-1 pl-4">
+                        {sorted.map((issue) => (
+                            <li key={issue.code}>{issue.message}</li>
+                        ))}
+                    </ul>
+                </CalloutText>
+            </CalloutContent>
+        </Callout>
     );
 }
 
@@ -390,49 +403,54 @@ function SesQuotaWarning({
 
 function BrokenLinksCallout({ links }: { links: BrokenLink[] }) {
     return (
-        <Alert
-            variant="destructive"
+        <Callout
+            variant="danger"
+            icon={InformationCircleIcon}
+            role="alert"
             className="mx-auto w-full max-w-3xl shrink-0"
             data-test="campaign-preview-broken-links"
         >
-            <HugeiconsIcon icon={InformationCircleIcon} />
-            <AlertTitle>
-                {links.length === 1
-                    ? '1 link looks broken'
-                    : `${links.length} links look broken`}
-            </AlertTitle>
-            <AlertDescription>
-                <ul className="flex flex-col gap-1">
-                    {links.map((link) => (
-                        <li key={link.url} className="break-all">
-                            <span className="font-medium">{link.url}</span>
-                            {' — '}
-                            {link.reason}
-                        </li>
-                    ))}
-                </ul>
-            </AlertDescription>
-        </Alert>
+            <CalloutContent>
+                <CalloutHeading>
+                    {links.length === 1
+                        ? '1 link looks broken'
+                        : `${links.length} links look broken`}
+                </CalloutHeading>
+                <CalloutText>
+                    <ul className="flex flex-col gap-1">
+                        {links.map((link) => (
+                            <li key={link.url} className="break-all">
+                                <span className="font-medium">{link.url}</span>
+                                {' — '}
+                                {link.reason}
+                            </li>
+                        ))}
+                    </ul>
+                </CalloutText>
+            </CalloutContent>
+        </Callout>
     );
 }
 
 function UnconfirmedRecipientsCallout({ count }: { count: number }) {
     return (
-        <Alert
+        <Callout
+            icon={InformationCircleIcon}
             className="mx-auto w-full max-w-3xl shrink-0"
             data-test="campaign-preview-unconfirmed"
         >
-            <HugeiconsIcon icon={InformationCircleIcon} />
-            <AlertTitle>
-                Skipping {count} unconfirmed{' '}
-                {count === 1 ? 'recipient' : 'recipients'}
-            </AlertTitle>
-            <AlertDescription>
-                {count === 1
-                    ? "This person signed up but hasn't clicked the double opt-in confirmation link yet."
-                    : "These people signed up but haven't clicked the double opt-in confirmation link yet."}
-            </AlertDescription>
-        </Alert>
+            <CalloutContent>
+                <CalloutHeading>
+                    Skipping {count} unconfirmed{' '}
+                    {count === 1 ? 'recipient' : 'recipients'}
+                </CalloutHeading>
+                <CalloutText>
+                    {count === 1
+                        ? "This person signed up but hasn't clicked the double opt-in confirmation link yet."
+                        : "These people signed up but haven't clicked the double opt-in confirmation link yet."}
+                </CalloutText>
+            </CalloutContent>
+        </Callout>
     );
 }
 
@@ -1110,24 +1128,28 @@ export default function PreviewAndSend({
                         {previewError || sendError ? (
                             <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-3">
                                 {previewError ? (
-                                    <Alert variant="destructive">
-                                        <AlertTitle>
-                                            Preview unavailable
-                                        </AlertTitle>
-                                        <AlertDescription>
-                                            {previewError}
-                                        </AlertDescription>
-                                    </Alert>
+                                    <Callout variant="danger" role="alert">
+                                        <CalloutContent>
+                                            <CalloutHeading>
+                                                Preview unavailable
+                                            </CalloutHeading>
+                                            <CalloutText>
+                                                {previewError}
+                                            </CalloutText>
+                                        </CalloutContent>
+                                    </Callout>
                                 ) : null}
                                 {sendError ? (
-                                    <Alert variant="destructive">
-                                        <AlertTitle>
-                                            Campaign not queued
-                                        </AlertTitle>
-                                        <AlertDescription>
-                                            {sendError}
-                                        </AlertDescription>
-                                    </Alert>
+                                    <Callout variant="danger" role="alert">
+                                        <CalloutContent>
+                                            <CalloutHeading>
+                                                Campaign not queued
+                                            </CalloutHeading>
+                                            <CalloutText>
+                                                {sendError}
+                                            </CalloutText>
+                                        </CalloutContent>
+                                    </Callout>
                                 ) : null}
                             </div>
                         ) : null}

@@ -19,7 +19,6 @@ import EditMemberModal from '@/components/edit-member-modal';
 import InviteMemberModal from '@/components/invite-member-modal';
 import RemoveMemberModal from '@/components/remove-member-modal';
 import { SettingsPageHeader } from '@/components/settings-page-header';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -34,6 +33,12 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
+import {
+    Callout,
+    CalloutContent,
+    CalloutHeading,
+    CalloutText,
+} from '@/components/ui/callout';
 import {
     Dialog,
     DialogClose,
@@ -551,16 +556,17 @@ export default function TeamMembers({
                         </DialogDescription>
                     </DialogHeader>
 
-                    <Alert>
-                        <HugeiconsIcon icon={Key01Icon} />
-                        <AlertTitle>
-                            This password is shown only once
-                        </AlertTitle>
-                        <AlertDescription>
-                            It cannot be viewed again after you close this
-                            dialog. Never send it by email or chat.
-                        </AlertDescription>
-                    </Alert>
+                    <Callout icon={Key01Icon}>
+                        <CalloutContent>
+                            <CalloutHeading>
+                                This password is shown only once
+                            </CalloutHeading>
+                            <CalloutText>
+                                It cannot be viewed again after you close this
+                                dialog. Never send it by email or chat.
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
 
                     <code className="block rounded-md bg-muted px-3 py-3 text-xs break-all">
                         {generatedMemberPassword?.password}

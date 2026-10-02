@@ -9,9 +9,14 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { usePoll } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import MediaDropzone from '@/components/media-dropzone';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    Callout,
+    CalloutContent,
+    CalloutHeading,
+    CalloutText,
+} from '@/components/ui/callout';
 import {
     Dialog,
     DialogContent,
@@ -279,17 +284,21 @@ export default function MediaLibraryDialog({
                     </div>
 
                     {library.canManage && library.atLimit ? (
-                        <Alert variant="destructive">
-                            <HugeiconsIcon
-                                icon={Alert01Icon}
-                                aria-hidden="true"
-                            />
-                            <AlertTitle>Media storage is full</AlertTitle>
-                            <AlertDescription>
-                                Remove unused files from Media before uploading
-                                more.
-                            </AlertDescription>
-                        </Alert>
+                        <Callout
+                            variant="danger"
+                            icon={Alert01Icon}
+                            role="alert"
+                        >
+                            <CalloutContent>
+                                <CalloutHeading>
+                                    Media storage is full
+                                </CalloutHeading>
+                                <CalloutText>
+                                    Remove unused files from Media before
+                                    uploading more.
+                                </CalloutText>
+                            </CalloutContent>
+                        </Callout>
                     ) : null}
 
                     {library.hasMore ? (

@@ -25,7 +25,6 @@ import {
     SlidingUnderlineList,
     slidingUnderlineInactiveClassName,
 } from '@/components/sliding-underline-list';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -408,30 +407,31 @@ function DashboardSidebar({
                         </CalloutContent>
                     </Callout>
                 ) : setupCopy ? (
-                    <Alert>
-                        <HugeiconsIcon icon={Alert02Icon} />
-                        <AlertTitle>{setupCopy.title}</AlertTitle>
-                        <AlertDescription>
-                            {setupCopy.description}{' '}
-                            <Link
-                                href={setupCopy.href(teamSlug)}
-                                className="font-medium"
-                            >
-                                {setupCopy.action}
-                            </Link>
-                        </AlertDescription>
-                    </Alert>
+                    <Callout icon={Alert02Icon}>
+                        <CalloutContent>
+                            <CalloutHeading>{setupCopy.title}</CalloutHeading>
+                            <CalloutText>
+                                {setupCopy.description}{' '}
+                                <Link
+                                    href={setupCopy.href(teamSlug)}
+                                    className="font-medium"
+                                >
+                                    {setupCopy.action}
+                                </Link>
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 ) : (
-                    <Alert>
-                        <HugeiconsIcon
-                            icon={CheckmarkCircle02Icon}
-                            className="text-success"
-                        />
-                        <AlertTitle>Delivery looks healthy</AlertTitle>
-                        <AlertDescription>
-                            No sending issues in this period.
-                        </AlertDescription>
-                    </Alert>
+                    <Callout variant="success" icon={CheckmarkCircle02Icon}>
+                        <CalloutContent>
+                            <CalloutHeading>
+                                Delivery looks healthy
+                            </CalloutHeading>
+                            <CalloutText>
+                                No sending issues in this period.
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 )}
 
                 <Separator />

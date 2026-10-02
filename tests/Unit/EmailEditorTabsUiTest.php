@@ -75,7 +75,7 @@ test('campaign delivery opens one dedicated recipient-personalized preview page'
         ->toContain('data-test="campaign-preview-subscribe"')
         ->toContain('data-test="campaign-preview-missing-unsubscribe"')
         ->toContain('Maildun will add an unsubscribe footer')
-        ->toContain('every recipient still gets one in a standard footer')
+        ->toContain('every recipient still gets one in a standard')
         ->not->toContain('This campaign has no unsubscribe link')
         ->toContain("{'{{ unsubscribe_url }}'}")
         ->toContain('pointer-events-none block origin-top-left overflow-hidden border-0 bg-background')

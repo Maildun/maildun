@@ -36,9 +36,15 @@ import { EmailSourceEditor } from '@/components/email-source-editor';
 import MediaLibraryDialog from '@/components/media-library-dialog';
 import PersonalizationTagsDialog from '@/components/personalization-tags-dialog';
 import SaveEmailAsTemplateDialog from '@/components/save-email-as-template-dialog';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
+import {
+    Callout,
+    CalloutActions,
+    CalloutContent,
+    CalloutHeading,
+    CalloutText,
+} from '@/components/ui/callout';
 import {
     Dialog,
     DialogContent,
@@ -975,84 +981,97 @@ export default function EmailEdit({
                             </div>
                         </div>
                         {email.scheduled_at ? (
-                            <Alert data-test="campaign-scheduled">
-                                <HugeiconsIcon icon={Clock01Icon} />
-                                <AlertTitle>
-                                    Scheduled to send{' '}
-                                    {new Date(
-                                        email.scheduled_at,
-                                    ).toLocaleString(undefined, {
-                                        dateStyle: 'medium',
-                                        timeStyle: 'short',
-                                    })}
-                                </AlertTitle>
-                                <AlertDescription>
-                                    <p>
+                            <Callout
+                                variant="success"
+                                icon={Clock01Icon}
+                                inline
+                                data-test="campaign-scheduled"
+                            >
+                                <CalloutContent>
+                                    <CalloutHeading>
+                                        Scheduled to send{' '}
+                                        {new Date(
+                                            email.scheduled_at,
+                                        ).toLocaleString(undefined, {
+                                            dateStyle: 'medium',
+                                            timeStyle: 'short',
+                                        })}
+                                    </CalloutHeading>
+                                    <CalloutText>
                                         Maildun starts the send at this time
                                         (shown in your browser's time zone).
                                         Edits you save before then are included.
-                                    </p>
-                                    {canManage ? (
+                                    </CalloutText>
+                                </CalloutContent>
+                                {canManage ? (
+                                    <CalloutActions>
                                         <Button
                                             type="button"
                                             variant="outline"
                                             size="sm"
-                                            className="mt-2"
                                             data-test="cancel-schedule-button"
                                             disabled={cancellingSchedule}
                                             onClick={cancelSchedule}
                                         >
                                             Cancel schedule
                                         </Button>
-                                    ) : null}
-                                </AlertDescription>
-                            </Alert>
+                                    </CalloutActions>
+                                ) : null}
+                            </Callout>
                         ) : null}
                         {email.schedule_error ? (
-                            <Alert
-                                variant="destructive"
+                            <Callout
+                                variant="danger"
+                                icon={Alert01Icon}
+                                role="alert"
                                 data-test="campaign-schedule-error"
                             >
-                                <HugeiconsIcon icon={Alert01Icon} />
-                                <AlertTitle>
-                                    The scheduled send did not start
-                                </AlertTitle>
-                                <AlertDescription>
-                                    {email.schedule_error} Fix the problem, then
-                                    send or schedule the campaign again.
-                                </AlertDescription>
-                            </Alert>
+                                <CalloutContent>
+                                    <CalloutHeading>
+                                        The scheduled send did not start
+                                    </CalloutHeading>
+                                    <CalloutText>
+                                        {email.schedule_error} Fix the problem,
+                                        then send or schedule the campaign
+                                        again.
+                                    </CalloutText>
+                                </CalloutContent>
+                            </Callout>
                         ) : null}
                         {canManage && setupProblems.length > 0 ? (
-                            <Alert
+                            <Callout
                                 variant="warning"
+                                icon={Alert01Icon}
                                 data-test="campaign-setup-problems"
                             >
-                                <HugeiconsIcon icon={Alert01Icon} />
-                                <AlertTitle>
-                                    This workspace cannot send yet
-                                </AlertTitle>
-                                <AlertDescription>
-                                    <ul className="flex flex-col gap-1">
-                                        {setupProblems.map((check) => (
-                                            <li key={check.key}>
-                                                {check.message}{' '}
-                                                {check.action_url ? (
-                                                    <a
-                                                        href={check.action_url}
-                                                        className="font-medium text-foreground underline underline-offset-4"
-                                                    >
-                                                        {check.key ===
-                                                        'provider'
-                                                            ? 'Set up email delivery'
-                                                            : 'Manage senders'}
-                                                    </a>
-                                                ) : null}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </AlertDescription>
-                            </Alert>
+                                <CalloutContent>
+                                    <CalloutHeading>
+                                        This workspace cannot send yet
+                                    </CalloutHeading>
+                                    <CalloutText>
+                                        <ul className="flex flex-col gap-1">
+                                            {setupProblems.map((check) => (
+                                                <li key={check.key}>
+                                                    {check.message}{' '}
+                                                    {check.action_url ? (
+                                                        <a
+                                                            href={
+                                                                check.action_url
+                                                            }
+                                                            className="font-medium text-foreground underline underline-offset-4"
+                                                        >
+                                                            {check.key ===
+                                                            'provider'
+                                                                ? 'Set up email delivery'
+                                                                : 'Manage senders'}
+                                                        </a>
+                                                    ) : null}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </CalloutText>
+                                </CalloutContent>
+                            </Callout>
                         ) : null}
                         <div className="overflow-hidden rounded-2xl border bg-card">
                             <div className="divide-y">
@@ -1598,45 +1617,51 @@ export default function EmailEdit({
                             ) : null}
 
                             {linkCheckResult && !form.isDirty ? (
-                                <Alert
+                                <Callout
                                     variant={
                                         linkCheckResult.broken.length > 0
-                                            ? 'destructive'
-                                            : 'default'
+                                            ? 'danger'
+                                            : 'success'
+                                    }
+                                    icon={
+                                        linkCheckResult.broken.length > 0
+                                            ? Alert01Icon
+                                            : CheckmarkCircle02Icon
+                                    }
+                                    role={
+                                        linkCheckResult.broken.length > 0
+                                            ? 'alert'
+                                            : undefined
                                     }
                                 >
-                                    <HugeiconsIcon
-                                        icon={
-                                            linkCheckResult.broken.length > 0
-                                                ? Alert01Icon
-                                                : CheckmarkCircle02Icon
-                                        }
-                                    />
-                                    <AlertTitle>
-                                        {linkCheckResult.broken.length > 0
-                                            ? `${linkCheckResult.broken.length} broken or unreachable link${linkCheckResult.broken.length === 1 ? '' : 's'}`
-                                            : `${linkCheckResult.checked} link${linkCheckResult.checked === 1 ? '' : 's'} checked`}
-                                    </AlertTitle>
-                                    <AlertDescription>
-                                        {linkCheckResult.broken.length > 0 ? (
-                                            <ul className="flex flex-col gap-1">
-                                                {linkCheckResult.broken.map(
-                                                    (result) => (
-                                                        <li
-                                                            key={result.url}
-                                                            className="break-all"
-                                                        >
-                                                            {result.url} —{' '}
-                                                            {result.reason}
-                                                        </li>
-                                                    ),
-                                                )}
-                                            </ul>
-                                        ) : (
-                                            'No broken links were found.'
-                                        )}
-                                    </AlertDescription>
-                                </Alert>
+                                    <CalloutContent>
+                                        <CalloutHeading>
+                                            {linkCheckResult.broken.length > 0
+                                                ? `${linkCheckResult.broken.length} broken or unreachable link${linkCheckResult.broken.length === 1 ? '' : 's'}`
+                                                : `${linkCheckResult.checked} link${linkCheckResult.checked === 1 ? '' : 's'} checked`}
+                                        </CalloutHeading>
+                                        <CalloutText>
+                                            {linkCheckResult.broken.length >
+                                            0 ? (
+                                                <ul className="flex flex-col gap-1">
+                                                    {linkCheckResult.broken.map(
+                                                        (result) => (
+                                                            <li
+                                                                key={result.url}
+                                                                className="break-all"
+                                                            >
+                                                                {result.url} —{' '}
+                                                                {result.reason}
+                                                            </li>
+                                                        ),
+                                                    )}
+                                                </ul>
+                                            ) : (
+                                                'No broken links were found.'
+                                            )}
+                                        </CalloutText>
+                                    </CalloutContent>
+                                </Callout>
                             ) : null}
 
                             <Field

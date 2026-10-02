@@ -74,7 +74,9 @@ export function MetricCard({
                         </div>
                     ) : null}
                 </div>
-                <p className="text-xs text-muted-foreground">{detail}</p>
+                <p className="mt-auto text-xs text-muted-foreground">
+                    {detail}
+                </p>
             </CardContent>
         </Card>
     );

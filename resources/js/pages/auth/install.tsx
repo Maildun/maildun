@@ -1,11 +1,15 @@
 import { Alert02Icon, CheckmarkCircle02Icon } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon } from '@hugeicons/react';
 import { Form, Head, Link, usePage } from '@inertiajs/react';
 import InstallationController from '@/actions/App/Http/Controllers/InstallationController';
 import PasswordInput from '@/components/password-input';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    Callout,
+    CalloutContent,
+    CalloutHeading,
+    CalloutText,
+} from '@/components/ui/callout';
 import {
     Card,
     CardContent,
@@ -102,14 +106,17 @@ export default function Install({
                 </Card>
 
                 {!ready && (
-                    <Alert variant="destructive">
-                        <HugeiconsIcon icon={Alert02Icon} />
-                        <AlertTitle>Deployment is not ready</AlertTitle>
-                        <AlertDescription>
-                            Run app:install again after correcting the failed
-                            service in Forge or Laravel Cloud.
-                        </AlertDescription>
-                    </Alert>
+                    <Callout variant="danger" icon={Alert02Icon} role="alert">
+                        <CalloutContent>
+                            <CalloutHeading>
+                                Deployment is not ready
+                            </CalloutHeading>
+                            <CalloutText>
+                                Run app:install again after correcting the
+                                failed service in Forge or Laravel Cloud.
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 )}
 
                 <Form
@@ -122,15 +129,20 @@ export default function Install({
                     {({ errors, processing }) => (
                         <FieldGroup>
                             {errors.installation && (
-                                <Alert variant="destructive">
-                                    <HugeiconsIcon icon={Alert02Icon} />
-                                    <AlertTitle>
-                                        Installation unavailable
-                                    </AlertTitle>
-                                    <AlertDescription>
-                                        {errors.installation}
-                                    </AlertDescription>
-                                </Alert>
+                                <Callout
+                                    variant="danger"
+                                    icon={Alert02Icon}
+                                    role="alert"
+                                >
+                                    <CalloutContent>
+                                        <CalloutHeading>
+                                            Installation unavailable
+                                        </CalloutHeading>
+                                        <CalloutText>
+                                            {errors.installation}
+                                        </CalloutText>
+                                    </CalloutContent>
+                                </Callout>
                             )}
 
                             <Field data-invalid={Boolean(errors.name)}>
@@ -206,19 +218,20 @@ export default function Install({
                                 </FieldError>
                             </Field>
 
-                            <Alert>
-                                <HugeiconsIcon icon={CheckmarkCircle02Icon} />
-                                <AlertTitle>
-                                    {registrationOpen
-                                        ? 'Public registration is open'
-                                        : 'Registration is invitation-only'}
-                                </AlertTitle>
-                                <AlertDescription>
-                                    This follows REGISTRATION_ENABLED in the
-                                    hosting environment and can be changed there
-                                    without rebuilding Maildun.
-                                </AlertDescription>
-                            </Alert>
+                            <Callout icon={CheckmarkCircle02Icon}>
+                                <CalloutContent>
+                                    <CalloutHeading>
+                                        {registrationOpen
+                                            ? 'Public registration is open'
+                                            : 'Registration is invitation-only'}
+                                    </CalloutHeading>
+                                    <CalloutText>
+                                        This follows REGISTRATION_ENABLED in the
+                                        hosting environment and can be changed
+                                        there without rebuilding Maildun.
+                                    </CalloutText>
+                                </CalloutContent>
+                            </Callout>
 
                             <Button
                                 type="submit"
