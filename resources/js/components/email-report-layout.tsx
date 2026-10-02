@@ -1,4 +1,5 @@
 import {
+    Alert02Icon,
     ArrowLeft02Icon,
     MailOpen01Icon,
     MailSend01Icon,
@@ -43,6 +44,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    Callout,
+    CalloutActions,
+    CalloutContent,
+    CalloutHeading,
+    CalloutText,
+} from '@/components/ui/callout';
 import {
     Card,
     CardContent,
@@ -557,21 +565,29 @@ export function EmailReportLayout({
                 )}
 
                 {canRetryFailed && (
-                    <Alert
-                        variant="destructive"
+                    <Callout
+                        variant="danger"
+                        icon={Alert02Icon}
+                        inline
+                        role="alert"
                         data-test="failed-deliveries-alert"
                     >
-                        <AlertTitle>Some deliveries need attention</AlertTitle>
-                        <AlertDescription>
-                            {metrics.retryable.toLocaleString()}{' '}
-                            {metrics.retryable === 1
-                                ? 'recipient can be retried'
-                                : 'recipients can be retried'}
-                            {metrics.unconfirmed > 0 &&
-                                `, including ${metrics.unconfirmed.toLocaleString()} unconfirmed that may already have arrived`}
-                            . Permanent bounces and complaints are not retried.
-                        </AlertDescription>
-                        <AlertAction>
+                        <CalloutContent>
+                            <CalloutHeading>
+                                Some deliveries need attention
+                            </CalloutHeading>
+                            <CalloutText>
+                                {metrics.retryable.toLocaleString()}{' '}
+                                {metrics.retryable === 1
+                                    ? 'recipient can be retried'
+                                    : 'recipients can be retried'}
+                                {metrics.unconfirmed > 0 &&
+                                    `, including ${metrics.unconfirmed.toLocaleString()} unconfirmed that may already have arrived`}
+                                . Permanent bounces and complaints are not
+                                retried.
+                            </CalloutText>
+                        </CalloutContent>
+                        <CalloutActions>
                             <Button
                                 type="button"
                                 size="sm"
@@ -581,8 +597,8 @@ export function EmailReportLayout({
                             >
                                 Retry
                             </Button>
-                        </AlertAction>
-                    </Alert>
+                        </CalloutActions>
+                    </Callout>
                 )}
 
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

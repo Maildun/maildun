@@ -1,0 +1,23 @@
+.campaign-engagement-map .maplibregl-map {
+    position: absolute;
+    inset: 0;
+}
+
+.campaign-engagement-map .maplibregl-ctrl-attrib {
+    background: var(--background);
+    color: var(--muted-foreground);
+    font-family: inherit;
+    font-size: 10px;
+}
+
+.campaign-engagement-map .maplibregl-ctrl-attrib a {
+    color: inherit;
+}
+
+.campaign-engagement-map .maplibregl-ctrl-attrib-button {
+    background-color: var(--background);
+}
+
+.dark .campaign-engagement-map .maplibregl-ctrl-attrib-button {
+    filter: invert(1);
+}

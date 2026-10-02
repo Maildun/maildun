@@ -27,7 +27,7 @@ export function MetricCard({
 }) {
     return (
         <Card className="gap-0 py-0">
-            <CardContent className="flex flex-col gap-3">
+            <CardContent className="flex flex-1 flex-col gap-3">
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 flex-col gap-2">
                         <p className="flex items-center gap-1 text-sm text-muted-foreground">

@@ -49,7 +49,9 @@ Flag artwork comes from the [flag-icons](https://github.com/lipis/flag-icons) pr
 
 ## Map data
 
-`resources/js/lib/world-map-paths.ts` is derived from Natural Earth 1:110m Admin 0 country and tiny-country data. [Natural Earth data is public domain](https://www.naturalearthdata.com/about/terms-of-use/). Natural Earth requests, but does not require, a courtesy credit.
+Campaign geography uses [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js), distributed under the BSD-3-Clause license, with [OpenFreeMap](https://openfreemap.org/) basemap tiles. OpenFreeMap's software is MIT licensed; its basemap includes OpenMapTiles and OpenStreetMap data. Keep the map's built-in OpenMapTiles and OpenStreetMap attribution visible. Public basemap tiles are fetched from OpenFreeMap; campaign engagement totals remain local to the browser.
+
+`resources/js/lib/world-map-countries.geojson` and the fallback map's `resources/js/lib/world-map-paths.ts` are derived from Natural Earth 1:110m Admin 0 country and tiny-country data. [Natural Earth data is public domain](https://www.naturalearthdata.com/about/terms-of-use/). Natural Earth requests, but does not require, a courtesy credit.
 
 ## IP geolocation databases
 

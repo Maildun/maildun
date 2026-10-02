@@ -84,6 +84,12 @@ test('campaign insights use compact tabbed views for filtered traffic location a
     $map = file_get_contents(
         dirname(__DIR__, 2).'/resources/js/components/campaign-insights-map.tsx',
     );
+    $interactiveMap = file_get_contents(
+        dirname(__DIR__, 2).'/resources/js/components/campaign-insights-map-interactive.tsx',
+    );
+    $fallbackMap = file_get_contents(
+        dirname(__DIR__, 2).'/resources/js/components/campaign-insights-map-fallback.tsx',
+    );
     $mapPaths = file_get_contents(
         dirname(__DIR__, 2).'/resources/js/lib/world-map-paths.ts',
     );
@@ -141,9 +147,18 @@ test('campaign insights use compact tabbed views for filtered traffic location a
         ->not->toContain('data-starting-style:translate-y-1')
         ->not->toContain('insightPanelClassName')
         ->and($map)->toBeString()
+        ->toContain('useMounted()')
+        ->toContain('CampaignInsightsMapFallback')
+        ->toContain('<Suspense fallback={placeholder}>')
+        ->and($interactiveMap)->toBeString()
         ->toContain('campaign-insights-world-map')
         ->toContain('World map shaded by unique human')
         ->toContain('metric: CampaignInsightMetric')
+        ->toContain("from 'maplibre-gl'")
+        ->toContain('tiles.openfreemap.org/styles/')
+        ->toContain('aria-label="Zoom in"')
+        ->toContain('aria-label="Reset map"')
+        ->and($fallbackMap)->toBeString()
         ->toContain('tabIndex={row ? 0 : undefined}')
         ->toContain('WORLD_MAP_TINY_COUNTRIES')
         ->and($mapPaths)->toBeString()
