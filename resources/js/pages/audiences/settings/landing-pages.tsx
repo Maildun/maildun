@@ -35,7 +35,7 @@ export default function AudienceLandingPageSettings({ audience }: Props) {
             <div className="flex flex-col gap-8">
                 <Heading
                     title="Landing pages"
-                    description="Send people to your own pages after they subscribe or unsubscribe."
+                    description="Send people to your own page after they unsubscribe."
                 />
 
                 <Form
@@ -50,64 +50,6 @@ export default function AudienceLandingPageSettings({ audience }: Props) {
                             description="Paste a link for now. Custom pages will come later."
                         >
                             <FieldGroup className="p-6 sm:p-7">
-                                <Field
-                                    data-invalid={Boolean(
-                                        errors.subscribed_url,
-                                    )}
-                                >
-                                    <FieldLabel htmlFor="subscribed_url">
-                                        When someone subscribes
-                                    </FieldLabel>
-                                    <Input
-                                        id="subscribed_url"
-                                        name="subscribed_url"
-                                        type="url"
-                                        data-test="audience-subscribed-url"
-                                        placeholder="https://example.com/thanks"
-                                        defaultValue={
-                                            audience.subscribed_url ?? ''
-                                        }
-                                        aria-invalid={Boolean(
-                                            errors.subscribed_url,
-                                        )}
-                                    />
-                                    <FieldDescription>
-                                        Shown after a successful subscribe.
-                                    </FieldDescription>
-                                    <FieldError>
-                                        {errors.subscribed_url}
-                                    </FieldError>
-                                </Field>
-                                <Field
-                                    data-invalid={Boolean(
-                                        errors.already_subscribed_url,
-                                    )}
-                                >
-                                    <FieldLabel htmlFor="already_subscribed_url">
-                                        When the email was already subscribed
-                                    </FieldLabel>
-                                    <Input
-                                        id="already_subscribed_url"
-                                        name="already_subscribed_url"
-                                        type="url"
-                                        data-test="audience-already-subscribed-url"
-                                        placeholder="https://example.com/already-subscribed"
-                                        defaultValue={
-                                            audience.already_subscribed_url ??
-                                            ''
-                                        }
-                                        aria-invalid={Boolean(
-                                            errors.already_subscribed_url,
-                                        )}
-                                    />
-                                    <FieldDescription>
-                                        Used when that address is already on the
-                                        list.
-                                    </FieldDescription>
-                                    <FieldError>
-                                        {errors.already_subscribed_url}
-                                    </FieldError>
-                                </Field>
                                 <Field
                                     data-invalid={Boolean(
                                         errors.unsubscribed_url,

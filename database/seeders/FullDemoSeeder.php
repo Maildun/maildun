@@ -266,8 +266,6 @@ class FullDemoSeeder extends Seeder
                 'from_address' => 'hello@maildun.test',
                 'reply_to' => 'support@maildun.test',
                 'notification_email' => 'notifications@maildun.test',
-                'subscribed_url' => 'https://maildun.test/welcome',
-                'already_subscribed_url' => 'https://maildun.test/already-subscribed',
                 'unsubscribed_url' => 'https://maildun.test/unsubscribed',
             ]),
             'customers' => $this->audience($team, 'Customer updates', [

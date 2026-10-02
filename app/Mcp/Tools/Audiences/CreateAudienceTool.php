@@ -45,8 +45,6 @@ class CreateAudienceTool extends Tool
             'from_address' => ['nullable', 'email:rfc', 'max:255', new AuthorizedSenderAddress($team)],
             'reply_to' => ['nullable', 'email:rfc', 'max:255'],
             'notification_email' => ['nullable', 'email:rfc', 'max:255'],
-            'subscribed_url' => ['nullable', 'url:http,https', 'max:2048'],
-            'already_subscribed_url' => ['nullable', 'url:http,https', 'max:2048'],
             'unsubscribed_url' => ['nullable', 'url:http,https', 'max:2048'],
         ]);
 
@@ -56,8 +54,6 @@ class CreateAudienceTool extends Tool
             'from_address',
             'reply_to',
             'notification_email',
-            'subscribed_url',
-            'already_subscribed_url',
             'unsubscribed_url',
         ]);
 
@@ -88,8 +84,6 @@ class CreateAudienceTool extends Tool
             'from_address' => $schema->string()->description('Default authorized sender email address.')->format('email')->max(255),
             'reply_to' => $schema->string()->description('Default reply-to email address.')->format('email')->max(255),
             'notification_email' => $schema->string()->description('Subscription notification email address.')->format('email')->max(255),
-            'subscribed_url' => $schema->string()->description('Redirect after subscribing.')->format('uri')->max(2048),
-            'already_subscribed_url' => $schema->string()->description('Redirect when already subscribed.')->format('uri')->max(2048),
             'unsubscribed_url' => $schema->string()->description('Redirect after unsubscribing.')->format('uri')->max(2048),
         ];
     }

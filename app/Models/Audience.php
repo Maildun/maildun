@@ -34,8 +34,6 @@ use Illuminate\Support\Str;
  * @property string|null $from_address
  * @property string|null $reply_to
  * @property string|null $notification_email
- * @property string|null $subscribed_url
- * @property string|null $already_subscribed_url
  * @property string|null $unsubscribed_url
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -64,8 +62,6 @@ use Illuminate\Support\Str;
     'from_address',
     'reply_to',
     'notification_email',
-    'subscribed_url',
-    'already_subscribed_url',
     'unsubscribed_url',
 ])]
 class Audience extends Model

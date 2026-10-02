@@ -211,8 +211,6 @@ class AudienceController extends Controller
      *     from_address: string|null,
      *     reply_to: string|null,
      *     notification_email: string|null,
-     *     subscribed_url: string|null,
-     *     already_subscribed_url: string|null,
      *     unsubscribed_url: string|null
      * }
      */
@@ -234,8 +232,6 @@ class AudienceController extends Controller
             'from_address' => $audience->from_address,
             'reply_to' => $audience->reply_to,
             'notification_email' => $audience->notification_email,
-            'subscribed_url' => $audience->subscribed_url,
-            'already_subscribed_url' => $audience->already_subscribed_url,
             'unsubscribed_url' => $audience->unsubscribed_url,
         ];
     }
