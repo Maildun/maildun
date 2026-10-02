@@ -2,6 +2,7 @@
 
 use App\Enums\AudienceAttributeType;
 use App\Enums\SubscribeFormFieldMode;
+use App\Enums\SubscriberLanguage;
 use App\Enums\TeamRole;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
@@ -62,11 +63,42 @@ test('team owners can configure the main subscriber fields in attribute settings
         ->patch(route('audiences.update', [$team, $audience]), [
             'first_name_mode' => SubscribeFormFieldMode::Required->value,
             'last_name_mode' => SubscribeFormFieldMode::Hidden->value,
+            'language_mode' => SubscribeFormFieldMode::Optional->value,
+            'allowed_languages' => [
+                SubscriberLanguage::English->value,
+                SubscriberLanguage::Indonesian->value,
+            ],
+            'default_language' => SubscriberLanguage::English->value,
         ])
         ->assertRedirect();
 
     expect($audience->fresh()->first_name_mode)->toBe(SubscribeFormFieldMode::Required)
-        ->and($audience->fresh()->last_name_mode)->toBe(SubscribeFormFieldMode::Hidden);
+        ->and($audience->fresh()->last_name_mode)->toBe(SubscribeFormFieldMode::Hidden)
+        ->and($audience->fresh()->language_mode)->toBe(SubscribeFormFieldMode::Optional)
+        ->and($audience->fresh()->allowed_languages)->toBe(['en', 'id'])
+        ->and($audience->fresh()->default_language)->toBe(SubscriberLanguage::English);
+});
+
+test('visible language fields require allowed choices and a default from that list', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->patch(route('audiences.update', [$team, $audience]), [
+            'language_mode' => SubscribeFormFieldMode::Required->value,
+            'allowed_languages' => [],
+            'default_language' => null,
+        ])
+        ->assertInvalid(['allowed_languages', 'default_language']);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.update', [$team, $audience]), [
+            'language_mode' => SubscribeFormFieldMode::Optional->value,
+            'allowed_languages' => [SubscriberLanguage::English->value],
+            'default_language' => SubscriberLanguage::Indonesian->value,
+        ])
+        ->assertInvalid('default_language');
 });
 
 test('attribute keys are generated from the name and stay unique in the audience', function () {
@@ -94,18 +126,18 @@ test('attribute keys are generated from the name and stay unique in the audience
         ->assertInvalid('key');
 });
 
-test('reserved subscriber fields cannot be used as attribute keys', function () {
+test('reserved subscriber fields cannot be used as attribute keys', function (string $name) {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $audience = Audience::factory()->for($team)->create();
 
     $this->actingAs($user)
         ->post(route('audiences.attributes.store', [$team, $audience]), [
-            'name' => 'Email',
+            'name' => $name,
             'type' => AudienceAttributeType::Text->value,
         ])
         ->assertInvalid('key');
-});
+})->with(['Email', 'Language']);
 
 test('members cannot manage audience attributes', function () {
     $owner = User::factory()->create();
@@ -181,6 +213,11 @@ test('attribute and sender settings pages receive their own props', function () 
             ->component('audiences/settings/attributes')
             ->where('audience.first_name_mode', 'optional')
             ->where('audience.last_name_mode', 'optional')
+            ->where('audience.language_mode', 'hidden')
+            ->where('audience.allowed_languages', [])
+            ->where('audience.default_language', null)
+            ->where('languages.3.value', 'en')
+            ->where('languages.7.value', 'id')
             ->has('attributes', 1)
             ->where('attributes.0.uuid', $attribute->uuid)
             ->where('attributes.0.key', 'company')

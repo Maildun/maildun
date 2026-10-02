@@ -2,6 +2,7 @@
 
 namespace App\Actions\Emails;
 
+use App\Services\DbIpDatabasePath;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
@@ -63,9 +64,7 @@ class LookupEmailTrackingLocation
 
     private function configuredPath(string $key): ?string
     {
-        $path = config($key);
-
-        return is_string($path) ? $path : null;
+        return DbIpDatabasePath::resolve(config($key));
     }
 
     private function countryCode(mixed $value): ?string

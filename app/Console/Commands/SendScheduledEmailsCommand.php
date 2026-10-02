@@ -22,12 +22,13 @@ class SendScheduledEmailsCommand extends Command
         $started = 0;
         $failed = 0;
 
+        // Claiming a draft takes it out of this query, so page by id: offset
+        // paging would skip every draft that moves up into a finished page.
         Email::query()
             ->where('status', EmailStatus::Draft)
             ->whereNotNull('scheduled_at')
             ->where('scheduled_at', '<=', now())
-            ->orderBy('scheduled_at')
-            ->each(function (Email $email) use ($schedules, $startEmailSend, &$started, &$failed): void {
+            ->eachById(function (Email $email) use ($schedules, $startEmailSend, &$started, &$failed): void {
                 if (! $schedules->claimDue($email)) {
                     return;
                 }
@@ -43,7 +44,7 @@ class SendScheduledEmailsCommand extends Command
                     $this->recordFailure($email, __('The campaign could not be started. Try sending it again.'));
                     $failed++;
                 }
-            });
+            }, 100);
 
         $this->components->info("Started {$started} scheduled campaigns; {$failed} could not start.");
 

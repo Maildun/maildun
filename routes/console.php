@@ -25,6 +25,13 @@ Schedule::command('emails:dispatch-tracking-events')->everyMinute()->withoutOver
 // Detailed events expire; durable campaign aggregates remain available.
 Schedule::command('emails:prune-tracking')->daily()->withoutOverlapping();
 
+// DB-IP Lite publishes monthly. Daily checks are cheap because current local
+// MMDB metadata skips the download, while a missed release retries next day.
+Schedule::command('emails:update-geolocation-databases')
+    ->dailyAt('02:30')
+    ->withoutOverlapping(360)
+    ->onOneServer();
+
 // Recovers delayed runs whose queued job was lost. withoutOverlapping so a slow
 // sweep cannot stack a second copy on top of itself.
 Schedule::command('automations:resume')->everyFiveMinutes()->withoutOverlapping();
@@ -35,4 +42,4 @@ Schedule::command('emails:resume')->everyFiveMinutes()->withoutOverlapping();
 
 // Starts campaigns whose scheduled time has come. withoutOverlapping plus the
 // per-campaign claim in ScheduleEmailSend::claimDue mean each starts once.
-Schedule::command('emails:send-scheduled')->everyMinute()->withoutOverlapping();
+Schedule::command('emails:send-scheduled')->everyMinute()->withoutOverlapping(10);

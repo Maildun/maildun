@@ -20,7 +20,7 @@ class SubscribeToAudience
         private ManageContact $manageContact,
     ) {}
 
-    /** @param array{email: string, first_name?: string|null, last_name?: string|null, attributes?: array<string, string|int|float|null>} $data */
+    /** @param array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, attributes?: array<string, string|int|float|null>} $data */
     public function handle(SubscribeForm $subscribeForm, array $data, ?string $ipAddress): Subscriber
     {
         $trigger = null;
@@ -60,6 +60,7 @@ class SubscribeToAudience
                 'email' => $contact->email,
                 'first_name' => $contact->first_name,
                 'last_name' => $contact->last_name,
+                'language' => $data['language'] ?? $audience->default_language?->value,
                 'subscribe_form_id' => $subscribeForm->id,
                 'status' => SubscriberStatus::Subscribed,
                 'source' => SubscriberSource::Form,

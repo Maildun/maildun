@@ -67,8 +67,8 @@ class SaveEmailTemplateRequest extends FormRequest
                 'max:2000000',
             ],
             'source' => ['nullable', 'string', 'max:2000000'],
-            'design' => ['nullable', 'array'],
-            'design.root' => ['required_with:design', 'array'],
+            'design' => ['nullable', 'array', 'required_array_keys:root'],
+            'design.root' => ['array'],
         ];
     }
 

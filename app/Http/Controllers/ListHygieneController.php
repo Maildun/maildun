@@ -70,6 +70,24 @@ class ListHygieneController extends Controller
         return back();
     }
 
+    public function destroyUndeliverable(
+        Team $currentTeam,
+        BulkListHygieneRequest $request,
+        ManageAudienceHygiene $hygiene,
+    ): RedirectResponse {
+        $deleted = $hygiene->deleteTeamUndeliverable(
+            $currentTeam,
+            $request->subscriberUuids(),
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Removed :count undeliverable subscriber(s). The address remains suppressed.', ['count' => $deleted]),
+        ]);
+
+        return back();
+    }
+
     /** @return array{kind: string, audience: string, search: string} */
     private function filters(Request $request, Team $team): array
     {
@@ -77,7 +95,7 @@ class ListHygieneController extends Controller
         $audience = $request->string('audience')->toString();
 
         return [
-            'kind' => in_array($kind, ['unconfirmed', 'inactive'], true)
+            'kind' => in_array($kind, ['unconfirmed', 'inactive', 'undeliverable'], true)
                 ? $kind
                 : 'unconfirmed',
             'audience' => $audience !== ''

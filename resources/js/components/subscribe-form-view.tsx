@@ -30,6 +30,14 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+    Select,
+    SelectContent,
+    SelectGroup,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { subscribeFormThemeStyle } from '@/lib/team-brand-theme';
 import { cn } from '@/lib/utils';
@@ -48,6 +56,8 @@ import type {
     SubscribeFormPoweredByPosition,
     SubscribeFormStyle,
     SubscribeFormTextAlignment,
+    SubscriberLanguage,
+    SubscriberLanguageOption,
 } from '@/types/audiences';
 
 const ATTRIBUTE_DATE_FORMAT = 'yyyy-MM-dd';
@@ -76,6 +86,9 @@ export type SubscribeFormAppearance = {
     card_padding: SubscribeFormCardPadding;
     first_name_mode: SubscribeFormFieldMode;
     last_name_mode: SubscribeFormFieldMode;
+    language_mode: SubscribeFormFieldMode;
+    default_language: SubscriberLanguage | null;
+    languages: SubscriberLanguageOption[];
     attributes: AudienceAttribute[];
 };
 
@@ -83,6 +96,7 @@ export type SubscribeFormValues = {
     email: string;
     first_name: string;
     last_name: string;
+    language: SubscriberLanguage | '';
     consent: boolean;
     attributes: Record<string, string>;
     website?: string;
@@ -828,6 +842,10 @@ function SubscribeFormFields({
     onAttributeChange?: (key: string, value: string) => void;
 }) {
     const disabled = preview;
+    const languageItems = [
+        { value: null, label: 'Select a language' },
+        ...form.languages,
+    ];
 
     return (
         <FieldGroup className={fieldSpacingClasses[form.card_padding]}>
@@ -873,6 +891,49 @@ function SubscribeFormFields({
                         autoComplete="family-name"
                     />
                     <FieldError>{errors.last_name}</FieldError>
+                </Field>
+            )}
+            {form.language_mode !== 'hidden' && (
+                <Field data-invalid={Boolean(errors.language)}>
+                    <FieldLabel htmlFor="language">
+                        Language
+                        {form.language_mode === 'optional' && (
+                            <Badge>Optional</Badge>
+                        )}
+                    </FieldLabel>
+                    <Select
+                        items={languageItems}
+                        value={values?.language || form.default_language}
+                        onValueChange={(value) =>
+                            onChange?.(
+                                'language',
+                                (value ?? '') as SubscriberLanguage | '',
+                            )
+                        }
+                        disabled={disabled}
+                        required={!preview && form.language_mode === 'required'}
+                    >
+                        <SelectTrigger
+                            id="language"
+                            className="w-full"
+                            aria-invalid={Boolean(errors.language)}
+                        >
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectGroup>
+                                {languageItems.map((language) => (
+                                    <SelectItem
+                                        key={language.value ?? 'unset'}
+                                        value={language.value}
+                                    >
+                                        {language.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectGroup>
+                        </SelectContent>
+                    </Select>
+                    <FieldError>{errors.language}</FieldError>
                 </Field>
             )}
             {form.attributes.map((attribute) => (

@@ -154,7 +154,11 @@ export default function AutomationsIndex({ automations, canManage }: Props) {
                         )}
                     </Empty>
                 ) : (
-                    <Table>
+                    <Table
+                        footer={
+                            <Paginator paginator={automations} showSummary />
+                        }
+                    >
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Status</TableHead>
@@ -347,8 +351,9 @@ export default function AutomationsIndex({ automations, canManage }: Props) {
                         </TableBody>
                     </Table>
                 )}
-
-                <Paginator paginator={automations} />
+                {automations.data.length === 0 && (
+                    <Paginator paginator={automations} />
+                )}
             </div>
 
             {canManage && (

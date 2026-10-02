@@ -104,6 +104,9 @@ export type Audience = Pick<
 > & {
     first_name_mode: SubscribeFormFieldMode;
     last_name_mode: SubscribeFormFieldMode;
+    language_mode: SubscribeFormFieldMode;
+    allowed_languages: SubscriberLanguage[];
+    default_language: SubscriberLanguage | null;
     double_opt_in: boolean;
     double_opt_in_email_uuid: string | null;
     from_name: string | null;
@@ -128,6 +131,31 @@ export type AudienceAttribute = {
     key: string;
     type: AudienceAttributeType;
     required: boolean;
+};
+
+export type SubscriberLanguage =
+    | 'ar'
+    | 'zh'
+    | 'nl'
+    | 'en'
+    | 'fr'
+    | 'de'
+    | 'hi'
+    | 'id'
+    | 'it'
+    | 'ja'
+    | 'ko'
+    | 'ms'
+    | 'pt'
+    | 'ru'
+    | 'es'
+    | 'th'
+    | 'tr'
+    | 'vi';
+
+export type SubscriberLanguageOption = {
+    value: SubscriberLanguage;
+    label: string;
 };
 
 export type AudienceSenderFallbacks = {

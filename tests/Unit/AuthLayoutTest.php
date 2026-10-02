@@ -18,6 +18,7 @@ test('auth pages use a centered form layout on a grainy muted background', funct
         ->toContain('aria-label={name}')
         ->toContain('self-start')
         ->toContain('text-left')
+        ->toContain('font-heading text-lg font-medium')
         ->toContain("import { AnimatePresence, motion } from 'motion/react';")
         ->toContain('<AnimatePresence mode="wait" initial={false}>')
         ->toContain('key={component}')

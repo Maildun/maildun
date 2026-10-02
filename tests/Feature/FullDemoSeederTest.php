@@ -149,8 +149,14 @@ test('the seeded workspace has populated dashboard and feature pages', function 
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('dashboard')
-            ->where('dashboard.overview.activeAutomations', 1)
-            ->has('dashboard.subscriberGrowth', 30)
+            ->where('dashboard.overview.subscribers', 113)
+            // The rates are derived from sent_at inside the rolling period, so
+            // assert they are present rather than pinning values that shift as
+            // the seeded dates age past the window.
+            ->has('dashboard.overview.deliveryRate')
+            ->has('dashboard.overview.openRate')
+            ->has('dashboard.overview.clickRate')
+            ->has('dashboard.performance', 30)
             ->has('dashboard.recentCampaigns', 4));
 
     $this->actingAs($owner)

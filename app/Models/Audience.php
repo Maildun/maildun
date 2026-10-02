@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\SubscribeFormFieldMode;
+use App\Enums\SubscriberLanguage;
 use App\Services\DiceBearAvatarGenerator;
 use Database\Factories\AudienceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -24,6 +25,9 @@ use Illuminate\Support\Str;
  * @property string|null $description
  * @property SubscribeFormFieldMode $first_name_mode
  * @property SubscribeFormFieldMode $last_name_mode
+ * @property SubscribeFormFieldMode $language_mode
+ * @property list<string>|null $allowed_languages
+ * @property SubscriberLanguage|null $default_language
  * @property bool $double_opt_in
  * @property int|null $double_opt_in_email_id
  * @property string|null $from_name
@@ -51,6 +55,9 @@ use Illuminate\Support\Str;
     'description',
     'first_name_mode',
     'last_name_mode',
+    'language_mode',
+    'allowed_languages',
+    'default_language',
     'double_opt_in',
     'double_opt_in_email_id',
     'from_name',
@@ -72,6 +79,7 @@ class Audience extends Model
     protected $attributes = [
         'first_name_mode' => SubscribeFormFieldMode::Optional->value,
         'last_name_mode' => SubscribeFormFieldMode::Optional->value,
+        'language_mode' => SubscribeFormFieldMode::Hidden->value,
         'double_opt_in' => false,
     ];
 
@@ -129,12 +137,26 @@ class Audience extends Model
         return 'uuid';
     }
 
+    /** @return list<array{value: string, label: string}> */
+    public function languageOptions(): array
+    {
+        $allowedLanguages = $this->allowed_languages ?? [];
+
+        return array_values(array_filter(
+            SubscriberLanguage::options(),
+            fn (array $option): bool => in_array($option['value'], $allowedLanguages, true),
+        ));
+    }
+
     /** @return array<string, string> */
     protected function casts(): array
     {
         return [
             'first_name_mode' => SubscribeFormFieldMode::class,
             'last_name_mode' => SubscribeFormFieldMode::class,
+            'language_mode' => SubscribeFormFieldMode::class,
+            'allowed_languages' => 'array',
+            'default_language' => SubscriberLanguage::class,
             'double_opt_in' => 'boolean',
         ];
     }

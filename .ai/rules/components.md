@@ -62,9 +62,6 @@ The account color-mode selector is a controlled shared Tabs group with TabsList 
 ## Getting started card toggles from its full summary
 The whole Getting Started summary row is the CollapsibleTrigger, not a standalone arrow button. Opening and closing should animate the measured panel height, and each checklist step should enter with a short stagger; keep motion-safe/motion-reduce handling so reduced-motion users get an immediate reveal.
 
-## Contain the builder below its combined panel width
-EmailBuilder.js has a 370px canvas minimum plus a 320px inspector. Keep `.email-builder-js` as an inline-size container constrained to 100%, and below 43rem remove the main stack's inspector margin so the absolutely positioned inspector overlays instead of widening the compose form.
-
 ## Keep sidebar navigation grouped by workflow
 Keep Dashboard under Overview; Audiences and List Hygiene under Manage audience; and Campaigns, Transactional, Automations, Templates, and Media under Manage campaign. The dynamic campaign list is a separate Recent campaigns group.
 

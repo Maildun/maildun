@@ -2,6 +2,7 @@ import {
     Add01Icon,
     Delete02Icon,
     Edit03Icon,
+    FoldersIcon,
     MailAtSign02Icon,
     MoreHorizontalIcon,
     PieChartIcon,
@@ -57,6 +58,7 @@ import {
     campaignStatusVariant,
 } from '@/lib/email-status';
 import { formatRelativeTime } from '@/lib/format';
+import { index as campaignSeriesIndex } from '@/routes/campaign_series';
 import { index as templatesIndex } from '@/routes/email_templates';
 import { edit, index, show } from '@/routes/emails';
 import type {
@@ -102,7 +104,7 @@ function CampaignRowsPoller() {
 
 const EDITOR_LABELS: Record<EmailEditorMode, string> = {
     html: 'HTML',
-    builder: 'EmailBuilder.js',
+    builder: 'Email Builder',
     plain_text: 'Plain text',
     markdown: 'Markdown',
 };
@@ -124,8 +126,13 @@ export default function EmailsIndex({
     defaultEditor,
     canManage,
 }: Props) {
-    const { currentTeam } = usePage().props;
-    const [composeOpen, setComposeOpen] = useState(false);
+    const page = usePage();
+    const { currentTeam } = page.props;
+    const [composeOpen, setComposeOpen] = useState(
+        () =>
+            new URLSearchParams(page.url.split('?')[1] ?? '').get('compose') ===
+            '1',
+    );
     const hasSendingRow = emails.data.some((email) => isSending(email.status));
     const [emailToDelete, setEmailToDelete] = useState<EmailSummary | null>(
         null,
@@ -161,6 +168,22 @@ export default function EmailsIndex({
                         </p>
                     </div>
                     <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            nativeButton={false}
+                            render={
+                                <Link
+                                    href={campaignSeriesIndex(currentTeam.slug)}
+                                    prefetch
+                                />
+                            }
+                        >
+                            <HugeiconsIcon
+                                icon={FoldersIcon}
+                                data-icon="inline-start"
+                            />
+                            Series
+                        </Button>
                         <Button
                             variant="outline"
                             nativeButton={false}
@@ -338,7 +361,9 @@ export default function EmailsIndex({
                         )}
                     </Empty>
                 ) : (
-                    <Table>
+                    <Table
+                        footer={<Paginator paginator={emails} showSummary />}
+                    >
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Status</TableHead>
@@ -556,8 +581,7 @@ export default function EmailsIndex({
                         </TableBody>
                     </Table>
                 )}
-
-                <Paginator paginator={emails} />
+                {emails.data.length === 0 && <Paginator paginator={emails} />}
             </div>
 
             {canManage && (

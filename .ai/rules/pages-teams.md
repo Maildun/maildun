@@ -24,10 +24,10 @@ The editable workspace logo is circular. Keep its clickable wrapper, Avatar, fal
 ## Pending invitation cancellation is a text action
 In Pending invitations, use the small secondary Cancel button with no icon. Keep it wired to the existing cancellation-confirmation dialog rather than restoring an icon-only X action.
 
-## Tags table follows the Members table density
-Use the same inset p-3 sm:p-4 table wrapper, h-12 px-5 headers, px-5 py-4 cells, and a compact overflow action column as the Members settings table. Keep the square color swatch next to the tag name, but display only Tag and Subscribers columns; do not add standalone Color or Created columns.
+## Tags table follows the Members table
+Render the shared Table directly in the page flow, without a SettingsPanel, with a compact overflow action column, as the Members settings table does. Keep the square color swatch next to the tag name, but display only Tag and Subscribers columns; do not add standalone Color or Created columns.
 
 ## Sender list is a table, not pills
-Workspace senders render in the same table as Members and Tags: inset p-3 sm:p-4 wrapper, h-12 px-5 headers, px-5 py-4 cells, h-20 rows, compact right-aligned overflow action column. Columns are Sender (name over email, Default badge inline), Reply-to (hidden sm:table-cell), and Status (Badge success=Verified / orange=Pending). Do not go back to the rounded-full SenderTag pills.
+Workspace senders render in a table inside the Senders SettingsPanel: inset p-3 sm:p-4 wrapper, h-12 px-5 headers, px-5 py-4 cells, h-20 rows, compact right-aligned overflow action column. Columns are Sender (name over email, Default badge inline), Reply-to (hidden sm:table-cell), and Status (Badge success=Verified / orange=Pending). Do not go back to the rounded-full SenderTag pills.
 
 The row MoreHorizontal dropdown owns Edit, Resend verification (unverified only), Use as default (verified and not default), and a destructive Remove that opens a confirmation dialog. The Edit dialog is a pure name/reply-to form — keep those actions out of it. Empty state uses the Empty component and moves the Add sender button into EmptyContent, matching tags.tsx.

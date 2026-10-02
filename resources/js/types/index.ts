@@ -1,5 +1,6 @@
 export type * from './automations';
 export type * from './app-update';
+export type * from './campaign-series';
 export type * from './auth';
 export type * from './emails';
 export type * from './media';

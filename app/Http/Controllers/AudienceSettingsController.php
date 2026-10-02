@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AudienceAttributeType;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
 use App\Enums\TransactionalEmailStatus;
 use App\Http\Requests\SaveAudienceRequest;
@@ -135,6 +136,7 @@ class AudienceSettingsController extends Controller
                     'required' => $attribute->required,
                 ]),
             'attributeTypes' => AudienceAttributeType::options(),
+            'languages' => SubscriberLanguage::options(),
         ]);
     }
 
@@ -170,6 +172,9 @@ class AudienceSettingsController extends Controller
      *     description: string|null,
      *     first_name_mode: string,
      *     last_name_mode: string,
+     *     language_mode: string,
+     *     allowed_languages: list<string>,
+     *     default_language: string|null,
      *     double_opt_in: bool,
      *     double_opt_in_email_uuid: string|null,
      *     avatar: string,
@@ -190,6 +195,9 @@ class AudienceSettingsController extends Controller
             'description' => $audience->description,
             'first_name_mode' => $audience->first_name_mode->value,
             'last_name_mode' => $audience->last_name_mode->value,
+            'language_mode' => $audience->language_mode->value,
+            'allowed_languages' => $audience->allowed_languages ?? [],
+            'default_language' => $audience->default_language?->value,
             'double_opt_in' => $audience->double_opt_in,
             'double_opt_in_email_uuid' => $audience->doubleOptInEmail?->uuid,
             'avatar' => $audience->avatar,

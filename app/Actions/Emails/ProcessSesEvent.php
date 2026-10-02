@@ -14,6 +14,7 @@ use App\Models\EmailDeliveryAttempt;
 use App\Models\EmailProviderEvent;
 use App\Models\Subscriber;
 use App\Models\Team;
+use App\Models\TransactionalEmailDelivery;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -36,10 +37,15 @@ class ProcessSesEvent
             $type = (string) ($payload['eventType'] ?? $payload['notificationType'] ?? 'Unknown');
             $mail = is_array($payload['mail'] ?? null) ? $payload['mail'] : [];
             $attempt = $this->findAttempt($mail, $topicArnHash);
-            $automationDelivery = $attempt === null
+            $transactionalDelivery = $attempt === null
+                ? $this->findTransactionalDelivery($mail, $topicArnHash)
+                : null;
+            $automationDelivery = $attempt === null && $transactionalDelivery === null
                 ? $this->findAutomationDelivery($mail, $topicArnHash)
                 : null;
-            $legacyDelivery = $attempt === null && $automationDelivery === null
+            $legacyDelivery = $attempt === null
+                && $transactionalDelivery === null
+                && $automationDelivery === null
                 ? $this->findLegacyPlatformDelivery($mail, $topicArnHash)
                 : null;
             $deliveryId = $attempt instanceof EmailDeliveryAttempt
@@ -53,6 +59,7 @@ class ProcessSesEvent
                     'ses_sns_topic_arn_hash' => $topicArnHash,
                     'email_delivery_id' => $deliveryId,
                     'email_delivery_attempt_id' => $attempt?->id,
+                    'transactional_email_delivery_id' => $transactionalDelivery?->id,
                     'automation_email_delivery_id' => $automationDelivery?->id,
                     'type' => $type,
                     'payload' => $payload,
@@ -100,6 +107,21 @@ class ProcessSesEvent
                 if ($this->shouldUnsubscribe($type, $payload)) {
                     $unsubscribed = $this->unsubscribeSubscriber($delivery);
                 }
+
+                return;
+            }
+
+            if ($transactionalDelivery instanceof TransactionalEmailDelivery) {
+                $this->applyFeedback($transactionalDelivery, $type, $payload, $occurredAt);
+                $transactionalDelivery->loadMissing('team');
+                $this->recordHealth(
+                    $transactionalDelivery->team,
+                    $transactionalDelivery->to_address,
+                    EmailProvider::tryFrom($transactionalDelivery->provider) ?? EmailProvider::AmazonSes,
+                    $type,
+                    $payload,
+                    $occurredAt,
+                );
 
                 return;
             }
@@ -153,6 +175,36 @@ class ProcessSesEvent
         if ($unsubscribed !== null) {
             event(new SubscriberLifecycleOccurred(AutomationTrigger::Unsubscribed, $unsubscribed));
         }
+    }
+
+    /** @param array<string, mixed> $mail */
+    private function findTransactionalDelivery(array $mail, string $topicArnHash): ?TransactionalEmailDelivery
+    {
+        $tags = is_array($mail['tags'] ?? null) ? $mail['tags'] : [];
+        $deliveryUuid = $this->firstTag($tags, 'transactional_delivery_uuid');
+
+        if ($deliveryUuid !== null) {
+            $delivery = TransactionalEmailDelivery::query()
+                ->where('uuid', $deliveryUuid)
+                ->where('provider', EmailProvider::AmazonSes)
+                ->where('ses_sns_topic_arn_hash', $topicArnHash)
+                ->lockForUpdate()
+                ->first();
+
+            if ($delivery !== null) {
+                return $delivery;
+            }
+        }
+
+        $messageId = is_string($mail['messageId'] ?? null) ? $mail['messageId'] : null;
+
+        return $messageId === null ? null : TransactionalEmailDelivery::query()
+            ->where('provider', EmailProvider::AmazonSes)
+            ->where('provider_message_id', $messageId)
+            ->where('ses_sns_topic_arn_hash', $topicArnHash)
+            ->latest('id')
+            ->lockForUpdate()
+            ->first();
     }
 
     /** @param array<string, mixed> $mail */
@@ -277,7 +329,7 @@ class ProcessSesEvent
 
     /** @param array<string, mixed> $payload */
     private function applyFeedback(
-        EmailDelivery|EmailDeliveryAttempt|AutomationEmailDelivery $subject,
+        EmailDelivery|EmailDeliveryAttempt|TransactionalEmailDelivery|AutomationEmailDelivery $subject,
         string $type,
         array $payload,
         CarbonInterface $occurredAt,
@@ -296,7 +348,7 @@ class ProcessSesEvent
     }
 
     /** @return array<string, mixed> */
-    private function deliveryAttributes(EmailDelivery|EmailDeliveryAttempt|AutomationEmailDelivery $subject, CarbonInterface $occurredAt): array
+    private function deliveryAttributes(EmailDelivery|EmailDeliveryAttempt|TransactionalEmailDelivery|AutomationEmailDelivery $subject, CarbonInterface $occurredAt): array
     {
         if (in_array($subject->status, [EmailDeliveryStatus::Bounced, EmailDeliveryStatus::Complained], true)) {
             return [];
@@ -313,7 +365,7 @@ class ProcessSesEvent
      * @return array<string, mixed>
      */
     private function bounceAttributes(
-        EmailDelivery|EmailDeliveryAttempt|AutomationEmailDelivery $subject,
+        EmailDelivery|EmailDeliveryAttempt|TransactionalEmailDelivery|AutomationEmailDelivery $subject,
         array $payload,
         CarbonInterface $occurredAt,
     ): array {
@@ -349,7 +401,7 @@ class ProcessSesEvent
     }
 
     /** @return array<string, mixed> */
-    private function complaintAttributes(EmailDelivery|EmailDeliveryAttempt|AutomationEmailDelivery $subject, CarbonInterface $occurredAt): array
+    private function complaintAttributes(EmailDelivery|EmailDeliveryAttempt|TransactionalEmailDelivery|AutomationEmailDelivery $subject, CarbonInterface $occurredAt): array
     {
         return [
             'status' => EmailDeliveryStatus::Complained,
@@ -365,7 +417,7 @@ class ProcessSesEvent
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
-    private function rejectAttributes(EmailDelivery|EmailDeliveryAttempt|AutomationEmailDelivery $subject, array $payload): array
+    private function rejectAttributes(EmailDelivery|EmailDeliveryAttempt|TransactionalEmailDelivery|AutomationEmailDelivery $subject, array $payload): array
     {
         if (in_array($subject->status, [
             EmailDeliveryStatus::Delivered,

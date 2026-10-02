@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\AudienceAttributeType;
 use App\Enums\SubscribeFormFieldMode;
+use App\Enums\SubscriberLanguage;
 use App\Models\AudienceAttribute;
 use App\Models\SubscribeForm;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -45,6 +46,13 @@ class PublicSubscribeRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:255',
+            ],
+            'language' => [
+                Rule::requiredIf($subscribeForm->audience->language_mode === SubscribeFormFieldMode::Required),
+                Rule::prohibitedIf($subscribeForm->audience->language_mode === SubscribeFormFieldMode::Hidden),
+                'nullable',
+                Rule::enum(SubscriberLanguage::class),
+                Rule::in($subscribeForm->audience->allowed_languages ?? []),
             ],
             'consent' => ['accepted'],
             'website' => ['nullable', 'string', 'max:0'],

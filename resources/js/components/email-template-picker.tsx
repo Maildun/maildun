@@ -13,11 +13,21 @@ import {
 } from '@/components/ui/dialog';
 import {
     Field,
+    FieldDescription,
     FieldError,
     FieldGroup,
     FieldLabel,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectGroup,
+    SelectItem,
+    SelectLabel,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { store } from '@/routes/emails';
@@ -39,11 +49,12 @@ type Props = {
     namePlaceholder?: string;
     nameTestId?: string;
     submitTestId?: string;
+    campaignSeries?: string | null;
 };
 
 const EDITOR_LABELS: Record<EmailEditorMode, string> = {
     html: 'HTML',
-    builder: 'EmailBuilder.js',
+    builder: 'Email Builder',
     plain_text: 'Plain text',
     markdown: 'Markdown',
 };
@@ -63,10 +74,16 @@ export default function EmailTemplatePicker({
     namePlaceholder = 'March newsletter',
     nameTestId = 'email-name-input',
     submitTestId = 'create-email-submit',
+    campaignSeries = null,
 }: Props) {
-    const form = useForm<{ name: string; template: string | null }>({
+    const form = useForm<{
+        name: string;
+        template: string | null;
+        campaign_series: string | null;
+    }>({
         name: '',
         template: initialTemplate,
+        campaign_series: campaignSeries,
     });
 
     const submit = (event: FormEvent) => {
@@ -87,30 +104,30 @@ export default function EmailTemplatePicker({
     const starters = templates.filter((template) => template.is_starter);
     const saved = templates.filter((template) => !template.is_starter);
 
+    const selectedTemplate = templates.find(
+        (template) => template.uuid === form.data.template,
+    );
+    const templateItems = [
+        { value: 'empty', label: emptyLabel },
+        ...templates.map((template) => ({
+            value: template.uuid,
+            label: template.name,
+        })),
+    ];
+
     const renderOption = (template: EmailTemplateSummary) => (
-        <button
+        <SelectItem
             key={template.uuid}
-            type="button"
+            value={template.uuid}
             data-test="template-option"
-            onClick={() => form.setData('template', template.uuid)}
-            className={cn(
-                'flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors hover:bg-accent',
-                form.data.template === template.uuid &&
-                    'border-primary ring-1 ring-primary',
-            )}
         >
             <span className="flex w-full items-center justify-between gap-2">
-                <span className="text-sm font-medium">{template.name}</span>
+                <span>{template.name}</span>
                 <Badge variant="secondary">
                     {EDITOR_LABELS[template.editor]}
                 </Badge>
             </span>
-            {template.description ? (
-                <span className="text-xs text-muted-foreground">
-                    {template.description}
-                </span>
-            ) : null}
-        </button>
+        </SelectItem>
     );
 
     return (
@@ -151,56 +168,78 @@ export default function EmailTemplatePicker({
 
                         {!templateIsLocked && (
                             <Field data-invalid={Boolean(form.errors.template)}>
-                                <FieldLabel>Start from</FieldLabel>
-
-                                <button
-                                    type="button"
-                                    data-test="template-option"
-                                    onClick={() =>
-                                        form.setData('template', null)
-                                    }
-                                    className={cn(
-                                        'flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors hover:bg-accent',
-                                        form.data.template === null &&
-                                            'border-primary ring-1 ring-primary',
-                                    )}
+                                <FieldLabel htmlFor="email-template">
+                                    Start from
+                                </FieldLabel>
+                                <Select
+                                    items={templateItems}
+                                    value={form.data.template ?? 'empty'}
+                                    onValueChange={(value) => {
+                                        if (value !== null) {
+                                            form.setData(
+                                                'template',
+                                                value === 'empty'
+                                                    ? null
+                                                    : value,
+                                            );
+                                        }
+                                    }}
                                 >
-                                    <span className="flex w-full items-center justify-between gap-2">
-                                        <span className="text-sm font-medium">
-                                            {emptyLabel}
-                                        </span>
-                                        <Badge variant="secondary">
-                                            {EDITOR_LABELS[defaultEditor]}
-                                        </Badge>
-                                    </span>
-                                    <span className="text-xs text-muted-foreground">
-                                        Uses the team&apos;s default editor.
-                                    </span>
-                                </button>
-
-                                {starters.length > 0 && (
-                                    <>
-                                        <p className="mt-2 text-xs font-medium text-muted-foreground">
-                                            Starter templates
-                                        </p>
-                                        <div className="grid gap-2 sm:grid-cols-2">
-                                            {starters.map(renderOption)}
-                                        </div>
-                                    </>
-                                )}
-
-                                {saved.length > 0 && (
-                                    <>
-                                        <p className="mt-2 text-xs font-medium text-muted-foreground">
-                                            Your templates
-                                        </p>
-                                        <div className="grid gap-2 sm:grid-cols-2">
-                                            {saved.map(renderOption)}
-                                        </div>
-                                    </>
-                                )}
-
-                                <FieldError>{form.errors.template}</FieldError>
+                                    <SelectTrigger
+                                        id="email-template"
+                                        data-test="template-select"
+                                        className="w-full"
+                                        aria-invalid={Boolean(
+                                            form.errors.template,
+                                        )}
+                                        aria-describedby="email-template-description email-template-error"
+                                    >
+                                        <SelectValue placeholder="Select a template" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectGroup>
+                                            <SelectItem
+                                                value="empty"
+                                                data-test="template-option"
+                                            >
+                                                <span className="flex w-full items-center justify-between gap-2">
+                                                    <span>{emptyLabel}</span>
+                                                    <Badge variant="secondary">
+                                                        {
+                                                            EDITOR_LABELS[
+                                                                defaultEditor
+                                                            ]
+                                                        }
+                                                    </Badge>
+                                                </span>
+                                            </SelectItem>
+                                        </SelectGroup>
+                                        {starters.length > 0 && (
+                                            <SelectGroup>
+                                                <SelectLabel>
+                                                    Starter templates
+                                                </SelectLabel>
+                                                {starters.map(renderOption)}
+                                            </SelectGroup>
+                                        )}
+                                        {saved.length > 0 && (
+                                            <SelectGroup>
+                                                <SelectLabel>
+                                                    Your templates
+                                                </SelectLabel>
+                                                {saved.map(renderOption)}
+                                            </SelectGroup>
+                                        )}
+                                    </SelectContent>
+                                </Select>
+                                <FieldDescription id="email-template-description">
+                                    {form.data.template === null
+                                        ? "Uses the team's default editor."
+                                        : selectedTemplate?.description}
+                                </FieldDescription>
+                                <FieldError id="email-template-error">
+                                    {form.errors.template}
+                                </FieldError>
                             </Field>
                         )}
                     </FieldGroup>

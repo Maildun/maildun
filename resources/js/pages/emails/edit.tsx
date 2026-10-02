@@ -22,7 +22,6 @@ import {
     useForm,
     useHttp,
 } from '@inertiajs/react';
-import { Reader } from '@usewaypoint/email-builder';
 import type { FormEvent } from 'react';
 import { useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
@@ -84,15 +83,14 @@ import {
     useUploadToast,
 } from '@/hooks/use-upload-toast';
 import {
+    BUILDER_MERGE_TAGS,
     EMPTY_BUILDER_DOCUMENT,
-    ROOT_BLOCK_ID,
     getChildrenIds,
     htmlToBuilderDocument,
     isSourceEditor,
     renderBuilderHtml,
     renderSourceHtml,
-    sourceToBuilderDocument,
-    toReaderDocument,
+    toBuilderDocument,
 } from '@/lib/email-builder';
 import { cn } from '@/lib/utils';
 import {
@@ -180,35 +178,22 @@ function CampaignDesignPreview({
     html: string;
     source: string;
 }) {
-    let preview = null;
-
-    if (editor === 'builder' && design) {
-        preview = (
-            <Reader
-                document={toReaderDocument(design)}
-                rootBlockId={ROOT_BLOCK_ID}
-            />
-        );
-    } else if (isSourceEditor(editor) && source.trim() !== '') {
-        preview = (
-            <Reader
-                document={toReaderDocument(
-                    sourceToBuilderDocument(source, editor),
-                )}
-                rootBlockId={ROOT_BLOCK_ID}
-            />
-        );
-    } else if (html.trim() !== '') {
-        preview = (
+    const previewHtml =
+        editor === 'builder' && design
+            ? renderBuilderHtml(toBuilderDocument(design))
+            : isSourceEditor(editor) && source.trim() !== ''
+              ? renderSourceHtml(source, editor)
+              : html;
+    const preview =
+        previewHtml.trim() !== '' ? (
             <iframe
                 title="Campaign design preview"
                 sandbox=""
-                srcDoc={html}
+                srcDoc={previewHtml}
                 tabIndex={-1}
                 className="pointer-events-none h-full w-full border-0 bg-background"
             />
-        );
-    }
+        ) : null;
 
     if (!preview) {
         return null;
@@ -285,7 +270,9 @@ export default function EmailEdit({
         attachments: '',
         design:
             email.editor === 'builder'
-                ? (email.design ?? htmlToBuilderDocument(email.html ?? ''))
+                ? email.design
+                    ? toBuilderDocument(email.design)
+                    : htmlToBuilderDocument(email.html ?? '')
                 : null,
         audience: email.audience,
         segment: email.segment,
@@ -722,6 +709,16 @@ export default function EmailEdit({
                                         }
                                         disabled={!canManage}
                                         fill
+                                        mergeTags={[
+                                            ...BUILDER_MERGE_TAGS,
+                                            ...(
+                                                selectedAudience?.attributes ??
+                                                []
+                                            ).map((attribute) => ({
+                                                key: attribute.key,
+                                                label: attribute.name,
+                                            })),
+                                        ]}
                                         onChange={(design) =>
                                             form.setData('design', design)
                                         }

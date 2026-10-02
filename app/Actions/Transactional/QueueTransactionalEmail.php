@@ -2,6 +2,8 @@
 
 namespace App\Actions\Transactional;
 
+use App\Actions\Emails\RecordEmailAddressHealth;
+use App\Exceptions\EmailAddressSuppressedException;
 use App\Exceptions\EmailTransportException;
 use App\Jobs\SendTransactionalEmailDelivery;
 use App\Models\Team;
@@ -21,6 +23,7 @@ class QueueTransactionalEmail
     public function __construct(
         private RenderTransactionalContent $renderer,
         private TeamMailer $teamMailer,
+        private RecordEmailAddressHealth $emailHealth,
     ) {}
 
     /**
@@ -64,6 +67,13 @@ class QueueTransactionalEmail
             ], 503));
         }
 
+        if ($this->emailHealth->isSuppressed($apiKey->team, $payload['to'])) {
+            throw new HttpResponseException(response()->json([
+                'message' => __(EmailAddressSuppressedException::MESSAGE),
+                'code' => 'address_suppressed',
+            ], 422));
+        }
+
         try {
             $delivery = $this->queueDelivery(
                 $apiKey->team,
@@ -105,6 +115,10 @@ class QueueTransactionalEmail
 
         if (! $transport->allowsSender($email->resolvedFromAddress())) {
             throw EmailTransportException::unauthorizedSender();
+        }
+
+        if ($this->emailHealth->isSuppressed($team, $payload['to'])) {
+            throw new EmailAddressSuppressedException;
         }
 
         return $this->queueDelivery($team, $email, $payload, $transport);

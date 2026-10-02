@@ -16,7 +16,7 @@ enum EmailEditor: string
     {
         return match ($this) {
             self::Html => 'HTML',
-            self::Builder => 'EmailBuilder.js',
+            self::Builder => 'Email Builder',
             self::PlainText => 'Plain text',
             self::Markdown => 'Markdown',
         };

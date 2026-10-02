@@ -11,9 +11,30 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { IconSvgElement } from '@hugeicons/react';
 import { Link, usePage } from '@inertiajs/react';
+import { useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import {
+    Sheet,
+    SheetContent,
+    SheetDescription,
+    SheetHeader,
+    SheetTitle,
+    SheetTrigger,
+} from '@/components/ui/sheet';
+import {
+    Sidebar,
+    SidebarContent,
+    SidebarGroup,
+    SidebarGroupContent,
+    SidebarGroupLabel,
+    SidebarHeader,
+    SidebarMenu,
+    SidebarMenuButton,
+    SidebarMenuItem,
+    SidebarTrigger,
+} from '@/components/ui/sidebar';
 import { useCurrentUrl } from '@/hooks/use-current-url';
 import { toUrl } from '@/lib/utils';
 import { edit, show } from '@/routes/audiences';
@@ -35,12 +56,20 @@ type NavItem = {
     icon: IconSvgElement;
 };
 
-export default function AudienceSettingsLayout({
-    audience,
-    children,
-}: PropsWithChildren<{
+type AudienceSettingsLayoutProps = PropsWithChildren<{
     audience: Pick<Audience, 'uuid' | 'name' | 'avatar'>;
-}>) {
+}>;
+
+export default function AudienceSettingsLayout({
+    children,
+}: AudienceSettingsLayoutProps) {
+    return <div className="min-w-0">{children}</div>;
+}
+
+export function AudienceSettingsSidebar({
+    audience,
+}: Pick<AudienceSettingsLayoutProps, 'audience'>) {
+    const [openMobile, setOpenMobile] = useState(false);
     const { currentTeam } = usePage().props;
     const { isCurrentUrl } = useCurrentUrl();
 
@@ -100,58 +129,109 @@ export default function AudienceSettingsLayout({
         },
     ];
 
-    return (
-        <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-12">
-            <aside className="flex flex-col gap-6 lg:sticky lg:top-10 lg:w-52 lg:shrink-0">
-                <div className="flex items-center gap-3">
-                    <Avatar className="size-10 rounded-md after:rounded-md">
-                        <AvatarImage
-                            src={audience.avatar}
-                            alt=""
-                            className="rounded-md"
-                        />
-                        <AvatarFallback className="rounded-md">
-                            {audience.name.charAt(0).toUpperCase()}
-                        </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">
-                            {audience.name}
-                        </p>
-                        <Link
-                            href={show(routeArgs)}
-                            prefetch
-                            className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-                        >
-                            View audience
-                        </Link>
-                    </div>
-                </div>
-
-                <nav className="flex flex-wrap gap-1 lg:flex-col">
-                    {items.map((item) => (
-                        <Button
-                            key={item.key}
-                            variant={
-                                isCurrentUrl(item.href) ? 'secondary' : 'ghost'
-                            }
-                            size="sm"
-                            className="justify-start lg:w-full"
-                            nativeButton={false}
-                            data-test={`audience-settings-nav-${item.key}`}
-                            render={<Link href={item.href} prefetch />}
-                        >
-                            <HugeiconsIcon
-                                icon={item.icon}
-                                data-icon="inline-start"
-                            />
-                            {item.title}
-                        </Button>
-                    ))}
-                </nav>
-            </aside>
-
-            <div className="min-w-0 flex-1 lg:max-w-3xl">{children}</div>
+    const audienceHeader = (
+        <div className="flex min-w-0 items-center gap-3">
+            <Avatar className="size-10 rounded-md after:rounded-md">
+                <AvatarImage
+                    src={audience.avatar}
+                    alt=""
+                    className="rounded-md"
+                />
+                <AvatarFallback className="rounded-md">
+                    {audience.name.charAt(0).toUpperCase()}
+                </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{audience.name}</p>
+                <Link
+                    href={show(routeArgs)}
+                    prefetch
+                    onClick={() => setOpenMobile(false)}
+                    className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                >
+                    View audience
+                </Link>
+            </div>
         </div>
+    );
+
+    const navigation = (
+        <SidebarContent>
+            <SidebarGroup>
+                <SidebarGroupLabel>Audience settings</SidebarGroupLabel>
+                <SidebarGroupContent>
+                    <nav aria-label="Audience settings">
+                        <SidebarMenu>
+                            {items.map((item) => {
+                                const isActive = isCurrentUrl(item.href);
+
+                                return (
+                                    <SidebarMenuItem key={item.key}>
+                                        <SidebarMenuButton
+                                            isActive={isActive}
+                                            aria-current={
+                                                isActive ? 'page' : undefined
+                                            }
+                                            className="text-sidebar-foreground/70"
+                                            data-test={`audience-settings-nav-${item.key}`}
+                                            render={
+                                                <Link
+                                                    href={item.href}
+                                                    prefetch
+                                                    onClick={() =>
+                                                        setOpenMobile(false)
+                                                    }
+                                                />
+                                            }
+                                        >
+                                            <HugeiconsIcon icon={item.icon} />
+                                            <span>{item.title}</span>
+                                        </SidebarMenuButton>
+                                    </SidebarMenuItem>
+                                );
+                            })}
+                        </SidebarMenu>
+                    </nav>
+                </SidebarGroupContent>
+            </SidebarGroup>
+        </SidebarContent>
+    );
+
+    return (
+        <>
+            <Sidebar
+                collapsible="none"
+                className="hidden w-60 shrink-0 border-r md:flex"
+                aria-label="Audience settings sidebar"
+            >
+                <SidebarHeader className="gap-4 border-b p-4">
+                    {audienceHeader}
+                </SidebarHeader>
+                {navigation}
+            </Sidebar>
+
+            <div className="flex h-12 shrink-0 items-center gap-2 border-b px-4 md:hidden">
+                <SidebarTrigger />
+                <Sheet open={openMobile} onOpenChange={setOpenMobile}>
+                    <SheetTrigger render={<Button variant="ghost" size="sm" />}>
+                        <HugeiconsIcon
+                            icon={Settings02Icon}
+                            data-icon="inline-start"
+                        />
+                        Audience settings
+                    </SheetTrigger>
+                    <SheetContent side="left" className="gap-0 p-0">
+                        <SheetHeader>
+                            <SheetTitle>Audience settings</SheetTitle>
+                            <SheetDescription>{audience.name}</SheetDescription>
+                        </SheetHeader>
+                        <SidebarHeader className="border-b p-4">
+                            {audienceHeader}
+                        </SidebarHeader>
+                        {navigation}
+                    </SheetContent>
+                </Sheet>
+            </div>
+        </>
     );
 }

@@ -9,4 +9,4 @@ paths:
 Settings and team-settings pages intentionally use SettingsPanel variant="flat" with no outer card surface. Keep the card variant as the default for authentication, audience, and media consumers.
 
 ## Settings use inset-card panels
-Supersedes the former flat treatment: settings and team-settings pages use SettingsPanel variant="inset". It has a muted padded outer shell and a subtle bordered inner surface; keep the default card variant for other consumers.
+Supersedes the former flat treatment: settings and team-settings pages use SettingsPanel variant="inset". SettingsPanel renders a Card for every variant and keeps the variant as a data-variant attribute; Members and Tags render the shared Table directly instead of a SettingsPanel.

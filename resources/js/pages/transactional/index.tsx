@@ -69,7 +69,7 @@ const STATUS_LABELS: Record<TransactionalEmailSummary['status'], string> = {
 
 const EDITOR_LABELS: Record<EmailEditorMode, string> = {
     html: 'HTML',
-    builder: 'EmailBuilder.js',
+    builder: 'Email Builder',
     plain_text: 'Plain text',
     markdown: 'Markdown',
 };
@@ -249,7 +249,9 @@ export default function TransactionalIndex({
                         )}
                     </Empty>
                 ) : (
-                    <Table>
+                    <Table
+                        footer={<Paginator paginator={emails} showSummary />}
+                    >
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Status</TableHead>
@@ -391,8 +393,7 @@ export default function TransactionalIndex({
                         </TableBody>
                     </Table>
                 )}
-
-                <Paginator paginator={emails} />
+                {emails.data.length === 0 && <Paginator paginator={emails} />}
             </div>
 
             {canManage && (

@@ -23,6 +23,9 @@ use Illuminate\Support\Str;
  * @property array<string, mixed> $settings
  * @property Carbon|null $connected_at
  * @property Carbon|null $last_tested_at
+ * @property Carbon|null $test_requested_at
+ * @property Carbon|null $test_failed_at
+ * @property string|null $test_failure
  * @property int $verification_version
  * @property string|null $test_from_address
  * @property bool $trust_provider_senders
@@ -87,6 +90,8 @@ class TeamEmailIntegration extends Model
             'settings' => 'encrypted:array',
             'connected_at' => 'datetime',
             'last_tested_at' => 'datetime',
+            'test_requested_at' => 'datetime',
+            'test_failed_at' => 'datetime',
             'verification_version' => 'integer',
             'trust_provider_senders' => 'boolean',
         ];

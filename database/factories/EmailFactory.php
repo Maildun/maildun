@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Enums\EmailEditor;
 use App\Models\Email;
+use App\Models\EmailTemplate;
 use App\Models\Team;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -38,16 +39,9 @@ class EmailFactory extends Factory
         return $this->state(fn () => [
             'editor' => EmailEditor::Builder,
             'html' => '<p>rendered</p>',
-            'design' => [
-                'root' => [
-                    'type' => 'EmailLayout',
-                    'data' => ['childrenIds' => ['block-1']],
-                ],
-                'block-1' => [
-                    'type' => 'Text',
-                    'data' => ['props' => ['text' => fake()->sentence()]],
-                ],
-            ],
+            'design' => EmailTemplate::builderDesign([
+                'block-1' => ['type' => 'text', 'props' => ['markdown' => fake()->sentence()]],
+            ]),
         ]);
     }
 }

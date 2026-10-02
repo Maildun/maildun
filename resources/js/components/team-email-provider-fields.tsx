@@ -25,6 +25,8 @@ export type EmailProviderIntegration = {
     has_secret: boolean;
     connected_at: string | null;
     last_tested_at: string | null;
+    test_status: 'pending' | 'failed' | null;
+    test_failure: string | null;
     test_from_address: string | null;
     trust_provider_senders: boolean;
     delivery_is_verified: boolean;

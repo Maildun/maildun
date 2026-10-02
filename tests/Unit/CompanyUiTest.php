@@ -40,7 +40,8 @@ test('company contacts use the shared contact hover card', function () {
         ->toContain('showContact.url([teamSlug, contact.uuid])')
         ->toContain('onEdit={canManage ? openEdit : undefined}')
         ->toContain('<ContactDialog')
-        ->toContain('className="max-w-0"');
+        ->toContain('className="table-fixed"')
+        ->toContain('className="max-w-80"');
 });
 
 test('company contact table mirrors the useful contact list columns', function () {
@@ -49,10 +50,10 @@ test('company contact table mirrors the useful contact list columns', function (
     );
 
     expect($page)->toBeString()
-        ->toContain('<TableHead>Contact</TableHead>')
+        ->toContain('className="w-80"')
         ->toContain('<TableHead>Tags</TableHead>')
         ->toContain('<TableHead>Audiences</TableHead>')
-        ->toContain('<TableHead>Created</TableHead>')
+        ->toContain('className="w-28"')
         ->toContain('contact.tags.slice(0, 3)')
         ->toContain('contact.audiences')
         ->toContain(".join(', ')")

@@ -208,6 +208,25 @@ test('the block editor requires a document', function () {
         ->assertInvalid('design');
 });
 
+test('a block transactional email can be saved with every block removed', function () {
+    $user = User::factory()->create();
+    $user->currentTeam->update(['email_editor' => EmailEditor::Builder]);
+    $email = TransactionalEmail::factory()->for($user->currentTeam)->builder()->create();
+
+    $this->actingAs($user)
+        ->patch(route('transactional_emails.update', [$user->currentTeam, $email]), [
+            'name' => $email->name,
+            'slug' => $email->slug,
+            'subject' => $email->subject,
+            'html' => '<p></p>',
+            'design' => EmailTemplate::builderDesign([]),
+        ])
+        ->assertValid('design')
+        ->assertRedirect();
+
+    expect($email->fresh()->design)->toHaveKey('root', []);
+});
+
 test('saving uses the team editor and drops an incompatible block document', function () {
     $user = User::factory()->create();
     $email = TransactionalEmail::factory()->for($user->currentTeam)->builder()->create();

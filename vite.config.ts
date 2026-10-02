@@ -69,15 +69,7 @@ export default defineConfig(({ mode }) => {
             inertia(),
             react({
                 babel: {
-                    plugins: [
-                        [
-                            'babel-plugin-react-compiler',
-                            {
-                                sources: (filename: string) =>
-                                    !filename.includes('/email-builder/'),
-                            },
-                        ],
-                    ],
+                    plugins: ['babel-plugin-react-compiler'],
                 },
             }),
             tailwindcss(),

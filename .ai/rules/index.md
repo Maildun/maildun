@@ -50,7 +50,6 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/css/app.css | .ai/rules/css.md |
 | database/migrations/** | .ai/rules/database-migrations.md |
 | resources/js/{pages/settings,pages/teams,components/delete-user,components/settings-panel}.tsx | .ai/rules/delete-usercomponents.md |
-| resources/js/email-builder/App/** | .ai/rules/email-builder-app.md |
 | database/seeders/InstallSeeder.php | .ai/rules/email-templates-seeders.md |
 | resources/js/pages/email-templates/edit.tsx, resources/js/pages/email-templates/index.tsx | .ai/rules/email-templates.md |
 | app/{Actions/Emails,Http/Controllers,Models}/** | .ai/rules/emails-http-controllers-models.md |
@@ -86,7 +85,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/js/**/*.tsx, resources/js/app.tsx | .ai/rules/js.md |
 | resources/js/{components/campaign-insights*.tsx,lib/world-map-paths.ts}, resources/js/{components/country-flag.tsx,lib/country-flags.ts,components/campaign-insights*.tsx}, resources/js/{components/client-icon.tsx,lib/brand-icon-paths.ts,components/campaign-insights*.tsx} | .ai/rules/jscomponents.md |
 | resources/js/layouts/settings/layout.tsx | .ai/rules/layouts-settings.md |
-| resources/js/email-builder/**,resources/js/components/email-builder-editor.tsx,resources/js/lib/email-builder.ts | .ai/rules/lib.md |
+| resources/js/components/email-builder-editor.tsx,resources/js/lib/email-builder.ts | .ai/rules/lib.md |
 | resources/js/pages/list-hygiene/** | .ai/rules/list-hygiene.md |
 | {app/Mcp/**,routes/ai.php,.mcp.json} | .ai/rules/mcp.md |
 | {config/filesystems.php,app/{Actions/Media,Jobs,Http/Controllers,Models}/**} | .ai/rules/media-jobs-http-controllers-models.md |

@@ -19,18 +19,17 @@ The sections below cover assets and vendored code that a manifest scan does not 
 
 ## Fonts
 
-Both families are self-hosted: they are written into `public/build` and served from this application, so they are redistributed with any deployment.
+All three families are self-hosted: they are written into `public/build` and served from this application, so they are redistributed with any deployment.
 
 | Font | Source | License |
 | --- | --- | --- |
 | Inter | `@fontsource-variable/inter`, imported by `resources/css/app.css` | SIL Open Font License 1.1 |
 | Instrument Sans | Fetched at build time from Bunny Fonts by the Laravel Vite plugin (`vite.config.ts`) | SIL Open Font License 1.1 |
+| Familjen Grotesk | `@fontsource-variable/familjen-grotesk`, imported by `resources/css/app.css` (headings) | SIL Open Font License 1.1 |
 
 ## Icons
 
 Hugeicons supplies the interface icon set. `@hugeicons/core-free-icons` and `@hugeicons/react` are MIT licensed and are the public default. `HUGEICONS_ICON_STYLE` can alias the free package to a Hugeicons Pro package at build time; Pro packages are never installed, committed, or distributed by this repository, and using one requires your own Hugeicons license.
-
-Material Design icons reach the application through `@mui/icons-material` (MIT) as part of the vendored email builder; they are not used elsewhere in the interface.
 
 ## Simple Icons brand glyphs
 
@@ -54,7 +53,7 @@ Flag artwork comes from the [flag-icons](https://github.com/lipis/flag-icons) pr
 
 ## IP geolocation databases
 
-Campaign insights derive country, city, and ASN from local DB-IP Lite `.mmdb` files. **These databases are not included in this repository**; operators download them separately from [db-ip.com](https://db-ip.com) and are bound by DB-IP's terms for the edition they obtain. The DB-IP Lite databases are distributed under Creative Commons Attribution 4.0 International, which requires visible attribution.
+Campaign insights derive country, city, and ASN from local DB-IP Lite `.mmdb` files. **These databases are not included in this repository**; operators download them separately from [db-ip.com](https://db-ip.com), or opt in to `emails:update-geolocation-databases` (`MAIL_TRACKING_GEOLOCATION_AUTO_UPDATE_ENABLED`), which fetches the Lite editions on their behalf, and are bound by DB-IP's terms for the edition they obtain. The DB-IP Lite databases are distributed under Creative Commons Attribution 4.0 International, which requires visible attribution.
 
 Maildun surfaces that credit in the campaign insights payload (`app/Actions/Emails/BuildCampaignInsights.php`). Keep the DB-IP Lite attribution visible in any interface you build on top of this data.
 
@@ -73,11 +72,11 @@ Maildun generates local fallback avatars using DiceBear. The application current
 
 DiceBear and the individual avatar styles retain their respective rights. See the `dicebear/styles` package for complete license and source details.
 
-## Waypoint email builder
+## Email builder
 
-The email editor uses packages published by Waypoint (Metaccountant, Inc.) under the MIT License, and also vendors Waypoint source code into `resources/js/email-builder/`. That directory keeps its own `LICENSE` file — MIT License, Copyright (c) 2024 Waypoint (Metaccountant, Inc.) — which must stay with the source. Copyright remains with Waypoint and its contributors.
+The block editor and the email renderer are `@maildun/email-builder` (MIT), published from [Maildun/email-builder](https://github.com/Maildun/email-builder). Its own `THIRD_PARTY_NOTICES.md` lists the material it builds on, including the EmailBuilder.js (Waypoint, MIT) importer and font presets.
 
-The vendored editor brings its own dependencies, notably MUI (`@mui/material`, `@mui/icons-material`, MIT), Emotion (MIT) as MUI's style engine, and highlight.js (BSD-3-Clause).
+Earlier versions of this application vendored Waypoint's EmailBuilder.js editor into `resources/js/email-builder/`. That source was removed when the package was adopted. Designs saved in the EmailBuilder.js format are converted when they are opened.
 
 ## Laravel React starter kit
 

@@ -20,6 +20,10 @@ return [
         'asn_database' => env('MAIL_TRACKING_ASN_DATABASE')
             ?: storage_path('app/private/geoip/dbip-asn-lite.mmdb'),
         'source' => 'db-ip-lite',
+        'auto_update' => [
+            'enabled' => env('MAIL_TRACKING_GEOLOCATION_AUTO_UPDATE_ENABLED', false),
+            'download_base_url' => 'https://download.db-ip.com/free',
+        ],
     ],
 
     /*

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Audiences\AddContactToAudiences;
 use App\Enums\ContactCompanyAssignmentMode;
+use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberStatus;
 use App\Http\Requests\DeleteContactRequest;
 use App\Http\Requests\LookupContactRequest;
@@ -299,6 +300,7 @@ class ContactController extends Controller
     private function activity(Contact $contact): array
     {
         $stats = $contact->deliveries()
+            ->whereNot('status', EmailDeliveryStatus::Cancelled)
             ->toBase()
             ->selectRaw('count(*) as received')
             ->selectRaw('sum(case when opens_count > 0 then 1 else 0 end) as opened')

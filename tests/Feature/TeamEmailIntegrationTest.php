@@ -1,14 +1,19 @@
 <?php
 
 use App\Enums\EmailProvider;
+use App\Exceptions\EmailTransportException;
+use App\Jobs\SendTeamEmailIntegrationTest;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
 use App\Models\User;
+use App\Services\SesFeedbackVerifier;
 use App\Services\TeamMailer;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
+use Symfony\Component\Mailer\Exception\TransportException;
 
 test('the email delivery page exposes one safe connection without leaking secrets', function () {
     $user = User::factory()->create();
@@ -244,6 +249,64 @@ test('members cannot access email delivery settings', function () {
         ->patch(route('teams.email-provider.update', [$team, $integration]), validSmtpConnectionPayload())
         ->assertForbidden();
 });
+
+test('a failed delivery test is shown on the connection page', function () {
+    Queue::fake();
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $integration = TeamEmailIntegration::factory()->untested()->for($team)->ses()->create();
+
+    $this->actingAs($user)
+        ->post(route('teams.email-provider.test', [$team, $integration]), [
+            'from' => 'delivery@example.com',
+            'to' => 'owner@example.com',
+        ])
+        ->assertSessionHasNoErrors();
+
+    $this->actingAs($user)
+        ->get(route('teams.email-provider.show', [$team, $integration]))
+        ->assertInertia(fn (Assert $page) => $page->where('integration.test_status', 'pending'));
+
+    deliveryTestJobFor($integration)->failed(EmailTransportException::fromTransport(
+        new TransportException('Request to AWS SES V2 API failed. Reason: Email address is not verified. The following identities failed the check in region US-EAST-1: delivery@example.com.'),
+    ));
+
+    $this->actingAs($user)
+        ->get(route('teams.email-provider.show', [$team, $integration]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('integration.test_status', 'failed')
+            ->where('integration.test_failure', fn (string $failure): bool => str_contains($failure, 'not verified in this region')
+                && ! str_contains($failure, 'delivery@example.com')));
+});
+
+test('a delivery test that sends but fails the SES feedback check reports why', function () {
+    Mail::fake();
+    fakeSesFeedbackVerification('This connection is missing its configuration set or SNS topic.');
+    $team = Team::factory()->create();
+    $integration = TeamEmailIntegration::factory()->untested()->for($team)->ses()->create();
+
+    deliveryTestJobFor($integration)->handle(app(TeamMailer::class), app(SesFeedbackVerifier::class));
+
+    expect($integration->fresh()->last_tested_at)->toBeNull()
+        ->and($integration->fresh()->test_failed_at)->not->toBeNull()
+        ->and($integration->fresh()->test_failure)->toBe('This connection is missing its configuration set or SNS topic.');
+});
+
+test('unknown transport failures keep the generic message', function () {
+    expect(EmailTransportException::fromTransport(new TransportException('535 user secret-token rejected'))->getMessage())
+        ->toBe(EmailTransportException::MESSAGE);
+});
+
+function deliveryTestJobFor(TeamEmailIntegration $integration): SendTeamEmailIntegrationTest
+{
+    return new SendTeamEmailIntegrationTest(
+        $integration->team_id,
+        $integration->id,
+        'owner@example.com',
+        'delivery@example.com',
+        hash('sha256', serialize([$integration->provider->value, $integration->settings])),
+    );
+}
 
 /** @return array<string, mixed> */
 function validSmtpConnectionPayload(array $overrides = []): array

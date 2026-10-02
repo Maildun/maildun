@@ -5,7 +5,7 @@ test('email index follows the audience plain table presentation', function () {
 
     expect($index)->toBeString()
         ->toContain('<div className="flex flex-1 flex-col gap-6">')
-        ->toContain('<Table>')
+        ->toMatch('/<Table[\s>]/')
         ->toContain('<Head title="Campaigns" />')
         ->toContain("'No campaigns yet'")
         ->toContain('Compose campaign')

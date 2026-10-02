@@ -40,16 +40,9 @@ class EmailTemplateFactory extends Factory
         return $this->state(fn () => [
             'editor' => EmailEditor::Builder,
             'html' => null,
-            'design' => [
-                'root' => [
-                    'type' => 'EmailLayout',
-                    'data' => ['childrenIds' => ['block-1']],
-                ],
-                'block-1' => [
-                    'type' => 'Text',
-                    'data' => ['props' => ['text' => fake()->sentence()]],
-                ],
-            ],
+            'design' => EmailTemplate::builderDesign([
+                'block-1' => ['type' => 'text', 'props' => ['markdown' => fake()->sentence()]],
+            ]),
         ]);
     }
 

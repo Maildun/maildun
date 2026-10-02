@@ -29,9 +29,15 @@ use Illuminate\Support\Str;
  * @property string $provider
  * @property bool $uses_team_email_integration
  * @property string|null $provider_message_id
+ * @property string|null $ses_configuration_set
+ * @property string|null $ses_sns_topic_arn_hash
  * @property string|null $failure_reason
  * @property Carbon|null $send_attempted_at
  * @property Carbon|null $sent_at
+ * @property Carbon|null $delivered_at
+ * @property Carbon|null $delayed_at
+ * @property Carbon|null $bounced_at
+ * @property Carbon|null $complained_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Team $team
@@ -54,9 +60,15 @@ use Illuminate\Support\Str;
     'provider',
     'uses_team_email_integration',
     'provider_message_id',
+    'ses_configuration_set',
+    'ses_sns_topic_arn_hash',
     'failure_reason',
     'send_attempted_at',
     'sent_at',
+    'delivered_at',
+    'delayed_at',
+    'bounced_at',
+    'complained_at',
 ])]
 class TransactionalEmailDelivery extends Model
 {
@@ -100,6 +112,10 @@ class TransactionalEmailDelivery extends Model
             'uses_team_email_integration' => 'boolean',
             'send_attempted_at' => 'datetime',
             'sent_at' => 'datetime',
+            'delivered_at' => 'datetime',
+            'delayed_at' => 'datetime',
+            'bounced_at' => 'datetime',
+            'complained_at' => 'datetime',
         ];
     }
 

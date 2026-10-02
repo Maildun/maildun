@@ -72,6 +72,7 @@ POST /api/v1/audiences/{audience_uuid}/subscribers
   "email": "ada@example.com",
   "first_name": "Ada",
   "last_name": "Lovelace",
+  "language": "en",
   "consent_text": "Signed up during checkout",
   "attributes": {
     "company": "Analytical Engines"
@@ -79,7 +80,7 @@ POST /api/v1/audiences/{audience_uuid}/subscribers
 }
 ```
 
-The operation is idempotent. It creates a subscriber, updates an already subscribed address, or resubscribes an unsubscribed address. Configured required audience attributes are required by the API as well.
+The operation is idempotent. It creates a subscriber, updates an already subscribed address, or resubscribes an unsubscribed address. Configured required audience attributes are required by the API as well. `language` is optional and must be one of the languages the audience allows.
 
 ```json
 {
@@ -88,6 +89,7 @@ The operation is idempotent. It creates a subscriber, updates an already subscri
     "email": "ada@example.com",
     "first_name": "Ada",
     "last_name": "Lovelace",
+    "language": "en",
     "status": "subscribed",
     "subscribed_at": "2026-08-23T03:00:00.000000Z"
   }

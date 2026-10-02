@@ -44,7 +44,7 @@ export default function AuthSimpleLayout({
                                 }}
                             >
                                 <div className="space-y-2 text-left">
-                                    <h1 className="text-lg font-medium">
+                                    <h1 className="font-heading text-lg font-medium">
                                         {title}
                                     </h1>
                                     <p className="text-sm text-muted-foreground">

@@ -171,8 +171,9 @@ test('members settings uses compact paginated tables', function () {
         ->toContain('invitations_per_page')
         ->toContain('PaginationPrevious')
         ->toContain('PaginationNext')
-        ->toContain('p-3 sm:p-4')
-        ->toContain('px-5 py-4')
+        ->toContain('footer={')
+        ->not->toContain('SettingsPanel')
+        ->not->toContain('p-3 sm:p-4')
         ->not->toContain("import { Paginator } from '@/components/paginator'")
         ->not->toContain('overflow-hidden rounded-lg border')
         ->not->toContain('member.uuid');
@@ -236,9 +237,8 @@ test('settings pages share the inset-card workspace, page header, and panel hier
     expect($panel)->toBeString()
         ->toContain("variant?: 'card' | 'inset'")
         ->toContain("variant = 'card'")
-        ->toContain("variant === 'card'")
-        ->toContain('grainy relative overflow-hidden rounded-xl bg-muted p-1 shadow-inner')
-        ->toContain('rounded-lg border bg-card shadow-xs');
+        ->toContain('data-variant={variant}')
+        ->toContain("from '@/components/ui/card'");
 
     expect($header)->toBeString()
         ->toContain('<h1')
@@ -263,8 +263,13 @@ test('settings pages share the inset-card workspace, page header, and panel hier
 
         expect($source)->toBeString()
             ->toContain('SettingsPageHeader')
-            ->toContain('flex flex-col gap-8')
-            ->toContain('variant="inset"');
+            ->toContain('flex flex-col gap-8');
+
+        if (in_array($page, ['teams/members', 'teams/tags'], true)) {
+            expect($source)->not->toContain('SettingsPanel');
+        } else {
+            expect($source)->toContain('variant="inset"');
+        }
     }
 
     expect($deleteUser)->toBeString()->toContain('variant="inset"');
@@ -307,6 +312,12 @@ test('sender settings manages verified workspace identities separately from deli
         ->toContain('TXT name')
         ->toContain('TXT value')
         ->toContain('Check DNS')
+        ->toContain('Export for Cloudflare')
+        ->toContain('Export CSV')
+        ->toContain('export-cloudflare-dns-button')
+        ->toContain('export-dns-csv-button')
+        ->toContain('buildCloudflareZoneFile')
+        ->toContain('buildDnsCsv')
         ->toContain('Delete domain')
         ->toContain('toggle-sender-domain')
         ->toContain('sender-domain-actions')

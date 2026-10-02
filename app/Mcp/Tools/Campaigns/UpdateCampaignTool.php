@@ -68,8 +68,8 @@ class UpdateCampaignTool extends Tool
             'query_string' => ['sometimes', 'nullable', 'string', 'max:2048', 'regex:/^[^\s?#]+$/'],
             'track_clicks' => ['sometimes', 'boolean'],
             'track_opens' => ['sometimes', 'boolean'],
-            'design' => ['sometimes', 'nullable', 'array'],
-            'design.root' => ['required_with:design', 'array'],
+            'design' => ['sometimes', 'nullable', 'array', 'required_array_keys:root'],
+            'design.root' => ['array'],
             'audience_uuid' => ['sometimes', 'nullable', 'uuid', Rule::exists(Audience::class, 'uuid')->where('team_id', $team->id)],
             'segment_uuid' => ['sometimes', 'nullable', 'uuid'],
         ]);
@@ -131,7 +131,7 @@ class UpdateCampaignTool extends Tool
             'query_string' => $schema->string()->description('Tracking query string without a leading question mark.')->max(2048)->nullable(),
             'track_clicks' => $schema->boolean()->description('Whether click tracking is enabled.'),
             'track_opens' => $schema->boolean()->description('Whether open tracking is enabled.'),
-            'design' => $schema->object()->description('EmailBuilder.js design document.')->nullable(),
+            'design' => $schema->object()->description('@maildun/email-builder design document: {version: 1, settings, theme, root: ordered top-level block ids, blocks: map of id => {type, props, style?, children?}}.')->nullable(),
             'audience_uuid' => $schema->string()->description('Audience UUID, or null to clear recipients.')->format('uuid')->nullable(),
             'segment_uuid' => $schema->string()->description('Segment UUID belonging to the selected audience, or null to clear it.')->format('uuid')->nullable(),
         ];

@@ -66,8 +66,9 @@ test('email builder save stays inside the editor form', function () {
     expect($saveButton)->not->toBeFalse()
         ->and($formClose)->not->toBeFalse()
         ->and($saveButton)->toBeLessThan($formClose)
-        ->and($source)->toContain('tabIndex=')
-        ->toContain('role="radiogroup"')
+        ->and($source)->toContain('data-test="editor-select"')
+        ->toContain('htmlFor="email-editor"')
+        ->not->toContain('role="radiogroup"')
         ->not->toContain('email_from_address')
         ->not->toContain('title="Sender"');
 });

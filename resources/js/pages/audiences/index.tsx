@@ -286,7 +286,9 @@ export default function AudiencesIndex({
                         </EmptyHeader>
                     </Empty>
                 ) : (
-                    <Table>
+                    <Table
+                        footer={<Paginator paginator={audiences} showSummary />}
+                    >
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Audience</TableHead>
@@ -382,8 +384,9 @@ export default function AudiencesIndex({
                         </TableBody>
                     </Table>
                 )}
-
-                <Paginator paginator={audiences} />
+                {audiences.data.length === 0 && (
+                    <Paginator paginator={audiences} />
+                )}
             </div>
 
             <QuickEditAudienceDialog

@@ -113,7 +113,6 @@ export default [
             'vite.config.ts',
             'resources/js/actions/**',
             'resources/js/components/ui/*',
-            'resources/js/email-builder/**',
             'resources/js/routes/**',
             'resources/js/wayfinder/**',
         ],

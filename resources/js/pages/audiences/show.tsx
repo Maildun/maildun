@@ -1,12 +1,14 @@
 import {
     Add01Icon,
     ArrowRight01Icon,
+    Copy01Icon,
     Delete02Icon,
     Edit03Icon,
     Mail01Icon,
     MailAtSign02Icon,
     MoreHorizontalIcon,
     StatusIcon,
+    Tick02Icon,
     UserCheck01Icon,
     UserGroupIcon,
     UserIcon,
@@ -83,6 +85,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useClipboard } from '@/hooks/use-clipboard';
 import { useListFilters } from '@/hooks/use-list-filters';
 import { formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
@@ -173,6 +176,7 @@ export default function AudienceShow(props: Props) {
     );
     const [formOpen, setFormOpen] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [copiedText, copy] = useClipboard();
     const {
         visit: visitSubscribers,
         clear: clearSubscriberFilter,
@@ -205,15 +209,38 @@ export default function AudienceShow(props: Props) {
                                 'Manage contacts, segments, and forms.'}
                         </p>
                     </div>
-                    {canManage && (
+                    <div className="flex flex-wrap items-center gap-2">
                         <Button
+                            type="button"
                             variant="outline"
-                            nativeButton={false}
-                            render={<Link href={edit(routeArgs)} prefetch />}
+                            onClick={() => void copy(audience.uuid)}
+                            aria-live="polite"
+                            data-test="copy-audience-id"
                         >
-                            Audience settings
+                            <HugeiconsIcon
+                                icon={
+                                    copiedText === audience.uuid
+                                        ? Tick02Icon
+                                        : Copy01Icon
+                                }
+                                data-icon="inline-start"
+                            />
+                            {copiedText === audience.uuid
+                                ? 'Copied'
+                                : 'Copy audience ID'}
                         </Button>
-                    )}
+                        {canManage && (
+                            <Button
+                                variant="outline"
+                                nativeButton={false}
+                                render={
+                                    <Link href={edit(routeArgs)} prefetch />
+                                }
+                            >
+                                Audience settings
+                            </Button>
+                        )}
+                    </div>
                 </div>
 
                 <Tabs defaultValue="subscribers">
@@ -447,6 +474,7 @@ export default function AudienceShow(props: Props) {
                         ) : (
                             <SubscriberTable
                                 subscribers={subscribers.data}
+                                pagination={subscribers}
                                 routeArgs={routeArgs}
                                 canManage={canManage}
                                 tags={tags}
@@ -454,15 +482,9 @@ export default function AudienceShow(props: Props) {
                                 onSelectedChange={setSelected}
                             />
                         )}
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            {subscribers.total > 0 && (
-                                <p className="text-sm text-muted-foreground">
-                                    Showing {subscribers.from}–{subscribers.to}{' '}
-                                    of {subscribers.total} contacts
-                                </p>
-                            )}
+                        {subscribers.data.length === 0 && (
                             <Paginator paginator={subscribers} />
-                        </div>
+                        )}
                     </TabsContent>
 
                     <TabsContent
@@ -638,6 +660,7 @@ export default function AudienceShow(props: Props) {
 
 function SubscriberTable({
     subscribers,
+    pagination,
     routeArgs,
     canManage,
     tags,
@@ -645,6 +668,7 @@ function SubscriberTable({
     onSelectedChange,
 }: {
     subscribers: Subscriber[];
+    pagination: Paginated<Subscriber>;
     routeArgs: [string, string];
     canManage: boolean;
     tags: Tag[];
@@ -657,7 +681,10 @@ function SubscriberTable({
     const someSelected = pageIds.some((id) => selected.has(id));
 
     return (
-        <Table>
+        <Table
+            className="table-fixed"
+            footer={<Paginator paginator={pagination} showSummary />}
+        >
             <TableHeader>
                 <TableRow>
                     {canManage && (
@@ -683,13 +710,23 @@ function SubscriberTable({
                             />
                         </TableHead>
                     )}
-                    <TableHead>Contact</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Tags</TableHead>
-                    <TableHead>Subscribed</TableHead>
+                    <TableHead className="min-w-0 lg:w-64">Contact</TableHead>
+                    <TableHead className="hidden min-w-0 lg:table-cell">
+                        Source
+                    </TableHead>
+                    <TableHead className="hidden w-28 sm:table-cell">
+                        Status
+                    </TableHead>
+                    <TableHead className="hidden min-w-0 lg:table-cell">
+                        Tags
+                    </TableHead>
+                    <TableHead className="hidden w-28 lg:table-cell">
+                        Subscribed
+                    </TableHead>
                     {canManage && (
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead className="w-12 px-1 text-right">
+                            <span className="sr-only">Actions</span>
+                        </TableHead>
                     )}
                 </TableRow>
             </TableHeader>
@@ -777,23 +814,25 @@ function SubscriberRow({
                     }}
                 />
             </TableCell>
-            <TableCell>
-                <div className="flex items-center gap-1.5 text-muted-foreground">
+            <TableCell className="hidden max-w-0 lg:table-cell">
+                <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
                     <HugeiconsIcon
                         icon={subscriberSourceIcon(subscriber)}
-                        className="size-3.5"
+                        className="size-3.5 shrink-0"
                     />
-                    {subscriberSourceLabel(subscriber)}
+                    <span className="truncate">
+                        {subscriberSourceLabel(subscriber)}
+                    </span>
                 </div>
             </TableCell>
-            <TableCell>
+            <TableCell className="hidden sm:table-cell">
                 {subscriber.status === 'subscribed' ? (
                     <Badge variant="success">Subscribed</Badge>
                 ) : (
                     <Badge variant="secondary">Unsubscribed</Badge>
                 )}
             </TableCell>
-            <TableCell className="min-w-40">
+            <TableCell className="hidden max-w-0 lg:table-cell">
                 {subscriber.tags.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                         {subscriber.tags
@@ -823,7 +862,7 @@ function SubscriberRow({
                 )}
             </TableCell>
             <TableCell
-                className="text-muted-foreground"
+                className="hidden text-muted-foreground lg:table-cell"
                 title={
                     subscriber.subscribed_at
                         ? new Date(subscriber.subscribed_at).toLocaleString()
@@ -835,7 +874,7 @@ function SubscriberRow({
                     : '—'}
             </TableCell>
             {canManage && (
-                <TableCell className="text-right">
+                <TableCell className="px-1 text-right">
                     <SubscriberActions
                         subscriber={subscriber}
                         routeArgs={routeArgs}
@@ -879,10 +918,18 @@ function SegmentTable({
                 {segments.map((segment) => (
                     <TableRow key={segment.uuid} data-test="segment-row">
                         <TableCell>
-                            <div className="flex flex-col">
-                                <span className="font-medium">
+                            <div className="flex min-w-0 flex-col">
+                                <Link
+                                    href={showSegment([
+                                        ...routeArgs,
+                                        segment.uuid,
+                                    ])}
+                                    prefetch
+                                    className="font-medium underline-offset-4 hover:underline"
+                                    data-test="segment-name-link"
+                                >
                                     {segment.name}
-                                </span>
+                                </Link>
                                 {segment.description && (
                                     <span className="text-muted-foreground">
                                         {segment.description}
@@ -994,8 +1041,18 @@ function SubscribeFormTable({
                 {forms.map((form) => (
                     <TableRow key={form.uuid} data-test="subscribe-form-row">
                         <TableCell>
-                            <div className="flex flex-col">
-                                <span className="font-medium">{form.name}</span>
+                            <div className="flex min-w-0 flex-col">
+                                <Link
+                                    href={editSubscribeForm([
+                                        ...routeArgs,
+                                        form.uuid,
+                                    ])}
+                                    prefetch
+                                    className="font-medium underline-offset-4 hover:underline"
+                                    data-test="subscribe-form-name-link"
+                                >
+                                    {form.name}
+                                </Link>
                                 <span className="text-muted-foreground">
                                     {form.headline}
                                 </span>

@@ -295,6 +295,36 @@ test('the link checker follows redirects and reports where they end', function (
     Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'internal.example'));
 });
 
+test('a redirect to a malformed address is reported without stopping the check', function () {
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://garbled.example/go' => Http::response('', 302, ['Location' => 'http:///not-a-host']),
+        'https://fine.example/page' => Http::response('', 200),
+    ]);
+
+    $resolver = Mockery::mock(DnsResolver::class);
+    $resolver->shouldReceive('resolve')->with('garbled.example')->andReturn(['93.184.216.34']);
+    $resolver->shouldReceive('resolve')->with('fine.example')->andReturn(['93.184.216.34']);
+    $this->app->instance(DnsResolver::class, $resolver);
+
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'html' => <<<'HTML'
+            <a href="https://garbled.example/go">Garbled</a>
+            <a href="https://fine.example/page">Fine</a>
+            HTML,
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('emails.check-links', [$user->currentTeam, $email]))
+        ->assertOk()
+        ->assertJsonPath('checked', 2)
+        ->assertJsonCount(1, 'broken')
+        ->assertJsonPath('broken.0.url', 'https://garbled.example/go')
+        ->assertJsonPath('broken.0.status', 302)
+        ->assertJsonPath('broken.0.reason', 'Redirects to an address that is not valid.');
+});
+
 test('the link checker retries with GET when a server refuses HEAD', function () {
     Http::preventStrayRequests();
     Http::fake(function ($request) {

@@ -4,7 +4,8 @@ test('email templates are presented as a preview gallery with clear ownership an
     $templates = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/email-templates/index.tsx');
 
     expect($templates)->toBeString()
-        ->toContain("import { Reader } from '@usewaypoint/email-builder';")
+        ->toContain('renderBuilderHtml(')
+        ->toContain('toBuilderDocument(template.design)')
         ->toContain('function TemplatePreview')
         ->toContain('function ScaledEmailFrame')
         ->toContain('justify-center')

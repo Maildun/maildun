@@ -108,6 +108,8 @@ import type {
     SubscribeFormPoweredByPosition,
     SubscribeFormStyle,
     SubscribeFormTextAlignment,
+    SubscriberLanguage,
+    SubscriberLanguageOption,
 } from '@/types/audiences';
 import type {
     TeamBrandColor,
@@ -136,6 +138,8 @@ type Props = {
         name: string;
         first_name_mode: SubscribeFormFieldMode;
         last_name_mode: SubscribeFormFieldMode;
+        language_mode: SubscribeFormFieldMode;
+        default_language: SubscriberLanguage | null;
     };
     subscribeForm: SubscribeForm;
     styles: StyleOption[];
@@ -143,6 +147,7 @@ type Props = {
     brandColors: BrandOption[];
     brandFonts: BrandOption[];
     brandInputStyles: BrandOption[];
+    languages: SubscriberLanguageOption[];
     attributes: AudienceAttribute[];
     canManage: boolean;
     currentTeam: { slug: string };
@@ -202,6 +207,7 @@ export default function SubscribeFormEdit({
     brandColors,
     brandFonts,
     brandInputStyles,
+    languages,
     attributes,
     canManage,
     currentTeam,
@@ -779,6 +785,9 @@ export default function SubscribeFormEdit({
                                     logo: displayedLogo,
                                     first_name_mode: audience.first_name_mode,
                                     last_name_mode: audience.last_name_mode,
+                                    language_mode: audience.language_mode,
+                                    default_language: audience.default_language,
+                                    languages,
                                     attributes,
                                 }}
                                 preview

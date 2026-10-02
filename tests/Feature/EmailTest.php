@@ -928,6 +928,29 @@ test('the block editor requires a document', function () {
         ->assertInvalid('design');
 });
 
+test('a block email can be saved with every block removed but not without a root', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $team->update(['email_editor' => EmailEditor::Builder]);
+    $email = Email::factory()->for($team)->create();
+    $payload = [
+        'name' => $email->name,
+        'subject' => $email->subject,
+        'html' => '<p></p>',
+    ];
+
+    $this->actingAs($user)
+        ->patch(route('emails.update', [$team, $email]), [...$payload, 'design' => EmailTemplate::builderDesign([])])
+        ->assertValid('design')
+        ->assertRedirect();
+
+    expect($email->refresh()->design)->toHaveKey('root', []);
+
+    $this->actingAs($user)
+        ->patch(route('emails.update', [$team, $email]), [...$payload, 'design' => ['version' => 1, 'blocks' => []]])
+        ->assertInvalid('design');
+});
+
 test('a segment must belong to the chosen audience', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

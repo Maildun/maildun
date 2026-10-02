@@ -2,6 +2,7 @@
 
 use App\Actions\Emails\ProcessSesEvent;
 use App\Enums\AutomationTrigger;
+use App\Enums\EmailAddressHealthStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailProvider;
 use App\Enums\SubscriberStatus;
@@ -12,6 +13,8 @@ use App\Models\EmailDeliveryAttempt;
 use App\Models\EmailProviderEvent;
 use App\Models\Subscriber;
 use App\Models\TeamEmailIntegration;
+use App\Models\TransactionalEmail;
+use App\Models\TransactionalEmailDelivery;
 use Aws\Sns\Message;
 use Aws\Sns\MessageValidator;
 use Illuminate\Support\Facades\Event;
@@ -40,6 +43,21 @@ function createSesFeedbackAttempt(
             'ses_sns_topic_arn_hash' => hash('sha256', trim($topicArn)),
             ...$attributes,
         ]);
+}
+
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function createSesTransactionalDelivery(array $attributes = []): TransactionalEmailDelivery
+{
+    $email = TransactionalEmail::factory()->published()->create();
+
+    return TransactionalEmailDelivery::factory()->create([
+        'team_id' => $email->team_id,
+        'transactional_email_id' => $email->id,
+        'provider' => EmailProvider::AmazonSes->value,
+        ...$attributes,
+    ]);
 }
 
 /**
@@ -652,4 +670,80 @@ test('legacy platform bounce feedback still suppresses after a newer SMTP attemp
         ->and(EmailProviderEvent::query()->sole()->email_delivery_attempt_id)->toBeNull();
 
     Event::assertDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('the webhook accepts a topic proven only by a transactional delivery', function () {
+    $topicArn = sesFeedbackTopic('transactional-only');
+    createSesTransactionalDelivery(['ses_sns_topic_arn_hash' => hash('sha256', $topicArn)]);
+    $signedMessage = signedSnsNotification(
+        $topicArn,
+        'sns-transactional-topic',
+        ['eventType' => 'Open', 'mail' => ['timestamp' => now()->toISOString()]],
+    );
+    Http::fake([
+        $signedMessage['certificate_url'] => Http::response($signedMessage['certificate']),
+    ]);
+
+    $this->postJson(route('webhooks.aws.ses'), $signedMessage['envelope'])
+        ->assertNoContent();
+
+    expect(EmailProviderEvent::query()->where('event_id', 'sns-transactional-topic')->exists())->toBeTrue();
+});
+
+test('SES delivery feedback updates a transactional delivery found by its tag', function () {
+    $topicArn = sesFeedbackTopic();
+    $delivery = createSesTransactionalDelivery([
+        'status' => EmailDeliveryStatus::Sent,
+        'provider_message_id' => 'ses-transactional-message',
+        'ses_sns_topic_arn_hash' => hash('sha256', $topicArn),
+        'sent_at' => now(),
+    ]);
+
+    app(ProcessSesEvent::class)->handle('sns-transactional-delivery', [
+        'eventType' => 'Delivery',
+        'mail' => [
+            'messageId' => 'ses-transactional-message',
+            'timestamp' => now()->toISOString(),
+            'tags' => ['transactional_delivery_uuid' => [$delivery->uuid]],
+        ],
+        'delivery' => ['timestamp' => now()->toISOString()],
+    ], $topicArn);
+
+    expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Delivered)
+        ->and($delivery->fresh()->delivered_at)->not->toBeNull()
+        ->and(EmailProviderEvent::query()->sole()->transactional_email_delivery_id)->toBe($delivery->id);
+});
+
+test('a permanent bounce on a transactional delivery suppresses the recipient', function () {
+    $topicArn = sesFeedbackTopic();
+    $delivery = createSesTransactionalDelivery([
+        'to_address' => 'Gone@Example.com',
+        'status' => EmailDeliveryStatus::Sent,
+        'provider_message_id' => 'ses-transactional-bounce',
+        'ses_sns_topic_arn_hash' => hash('sha256', $topicArn),
+        'sent_at' => now(),
+    ]);
+
+    app(ProcessSesEvent::class)->handle('sns-transactional-bounce', [
+        'eventType' => 'Bounce',
+        'mail' => [
+            'messageId' => 'ses-transactional-bounce',
+            'timestamp' => now()->toISOString(),
+            'tags' => ['transactional_delivery_uuid' => [$delivery->uuid]],
+        ],
+        'bounce' => [
+            'bounceType' => 'Permanent',
+            'bounceSubType' => 'General',
+            'timestamp' => now()->toISOString(),
+        ],
+    ], $topicArn);
+
+    $health = EmailAddressHealth::query()
+        ->where('team_id', $delivery->team_id)
+        ->where('email', 'gone@example.com')
+        ->first();
+
+    expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Bounced)
+        ->and($delivery->fresh()->bounced_at)->not->toBeNull()
+        ->and($health?->status)->toBe(EmailAddressHealthStatus::Suppressed);
 });

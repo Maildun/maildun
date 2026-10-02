@@ -17,8 +17,11 @@ class ResolveCampaignOutcome
      */
     public function handle(Email $email): EmailStatus
     {
-        // A person stopped it; that stays the outcome whatever finished.
-        if ($email->status === EmailStatus::Stopped) {
+        // A person stopped it; that stays the outcome whatever finished, even
+        // after a retry of the deliveries that failed set the status back to
+        // Sending. The recipients the stop cancelled are what remember it.
+        if ($email->status === EmailStatus::Stopped
+            || $email->deliveries()->where('status', EmailDeliveryStatus::Cancelled)->exists()) {
             return EmailStatus::Stopped;
         }
 

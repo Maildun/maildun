@@ -121,6 +121,48 @@ class EmailTemplate extends Model
     }
 
     /**
+     * A block editor (@maildun/email-builder) document with the default
+     * settings and theme. Blocks are listed in order and all sit at the top
+     * level of the email.
+     *
+     * @param  array<string, array{type: string, props?: array<string, mixed>, style?: array<string, mixed>}>  $blocks
+     * @param  array<string, string>  $colors
+     * @return array<string, mixed>
+     */
+    public static function builderDesign(array $blocks, array $colors = []): array
+    {
+        return [
+            'version' => 1,
+            'settings' => [
+                'width' => 600,
+                'padding' => ['top' => 32, 'right' => 0, 'bottom' => 32, 'left' => 0],
+                'backdropColor' => '$background',
+                'canvasColor' => '$surface',
+                'textColor' => '$text',
+                'linkColor' => '$link',
+                'fontSize' => 16,
+                'lineHeight' => 1.5,
+            ],
+            'theme' => [
+                'colors' => [
+                    'primary' => '#1f6feb',
+                    'secondary' => '#6e40c9',
+                    'text' => '#262626',
+                    'muted' => '#737373',
+                    'background' => '#f5f5f5',
+                    'surface' => '#ffffff',
+                    'border' => '#e5e5e5',
+                    'link' => '#1f6feb',
+                    ...$colors,
+                ],
+                'fonts' => ['body' => 'MODERN_SANS', 'heading' => 'MODERN_SANS'],
+            ],
+            'root' => array_keys($blocks),
+            'blocks' => $blocks,
+        ];
+    }
+
+    /**
      * The templates seeded for every installation.
      *
      * The uuids are fixed so the seeding migration stays idempotent and the
@@ -139,25 +181,13 @@ class EmailTemplate extends Model
                 'preheader' => null,
                 'editor' => EmailEditor::Builder,
                 'html' => null,
-                'design' => [
-                    'root' => [
-                        'type' => 'EmailLayout',
-                        'data' => [
-                            'backdropColor' => '#f5f5f5',
-                            'canvasColor' => '#ffffff',
-                            'textColor' => '#262626',
-                            'fontFamily' => 'MODERN_SANS',
-                            'childrenIds' => ['block-intro'],
-                        ],
-                    ],
+                'design' => self::builderDesign([
                     'block-intro' => [
-                        'type' => 'Text',
-                        'data' => [
-                            'style' => ['padding' => ['top' => 24, 'bottom' => 24, 'left' => 24, 'right' => 24]],
-                            'props' => ['text' => 'Start writing here.'],
-                        ],
+                        'type' => 'text',
+                        'props' => ['markdown' => 'Start writing here.'],
+                        'style' => ['padding' => 24],
                     ],
-                ],
+                ]),
                 'position' => 10,
             ],
             [
@@ -168,78 +198,49 @@ class EmailTemplate extends Model
                 'preheader' => 'Here is what the team has been up to since the last issue.',
                 'editor' => EmailEditor::Builder,
                 'html' => null,
-                'design' => [
-                    'root' => [
-                        'type' => 'EmailLayout',
-                        'data' => [
-                            'backdropColor' => '#f5f5f5',
-                            'canvasColor' => '#ffffff',
-                            'textColor' => '#262626',
-                            'fontFamily' => 'MODERN_SANS',
-                            'childrenIds' => [
-                                'block-heading',
-                                'block-intro',
-                                'block-divider',
-                                'block-story',
-                                'block-cta',
-                                'block-footer',
-                            ],
-                        ],
-                    ],
+                'design' => self::builderDesign([
                     'block-heading' => [
-                        'type' => 'Heading',
-                        'data' => [
-                            'style' => ['padding' => ['top' => 32, 'bottom' => 8, 'left' => 24, 'right' => 24]],
-                            'props' => ['text' => 'This month at your company', 'level' => 'h2'],
-                        ],
+                        'type' => 'heading',
+                        'props' => ['text' => 'This month at your company', 'level' => 2],
+                        'style' => ['padding' => ['top' => 32, 'right' => 24, 'bottom' => 8, 'left' => 24]],
                     ],
                     'block-intro' => [
-                        'type' => 'Text',
-                        'data' => [
-                            'style' => ['padding' => ['top' => 0, 'bottom' => 16, 'left' => 24, 'right' => 24]],
-                            'props' => ['text' => 'Hi there — here is what the team has been up to since the last issue.'],
-                        ],
+                        'type' => 'text',
+                        'props' => ['markdown' => 'Hi there — here is what the team has been up to since the last issue.'],
+                        'style' => ['padding' => ['top' => 0, 'right' => 24, 'bottom' => 16, 'left' => 24]],
                     ],
                     'block-divider' => [
-                        'type' => 'Divider',
-                        'data' => [
-                            'style' => ['padding' => ['top' => 0, 'bottom' => 16, 'left' => 24, 'right' => 24]],
-                            'props' => ['lineColor' => '#e5e5e5', 'lineHeight' => 1],
-                        ],
+                        'type' => 'divider',
+                        'props' => ['color' => '#e5e5e5', 'thickness' => 1],
+                        'style' => ['padding' => ['top' => 0, 'right' => 24, 'bottom' => 16, 'left' => 24]],
                     ],
                     'block-story' => [
-                        'type' => 'Text',
-                        'data' => [
-                            'style' => ['padding' => ['top' => 0, 'bottom' => 16, 'left' => 24, 'right' => 24]],
-                            'props' => ['text' => 'Replace this paragraph with the story you want to lead with.'],
-                        ],
+                        'type' => 'text',
+                        'props' => ['markdown' => 'Replace this paragraph with the story you want to lead with.'],
+                        'style' => ['padding' => ['top' => 0, 'right' => 24, 'bottom' => 16, 'left' => 24]],
                     ],
                     'block-cta' => [
-                        'type' => 'Button',
-                        'data' => [
-                            'style' => ['padding' => ['top' => 0, 'bottom' => 24, 'left' => 24, 'right' => 24], 'textAlign' => 'left'],
-                            'props' => [
-                                'text' => 'Read the full update',
-                                'url' => 'https://example.com',
-                                'buttonBackgroundColor' => '#262626',
-                                'buttonTextColor' => '#ffffff',
-                                'buttonStyle' => 'rounded',
-                                'size' => 'medium',
-                            ],
+                        'type' => 'button',
+                        'props' => [
+                            'text' => 'Read the full update',
+                            'href' => 'https://example.com',
+                            'buttonColor' => '#262626',
+                            'textColor' => '#ffffff',
+                            'shape' => 'rounded',
+                            'size' => 'md',
                         ],
+                        'style' => ['padding' => ['top' => 0, 'right' => 24, 'bottom' => 24, 'left' => 24], 'align' => 'left'],
                     ],
                     'block-footer' => [
-                        'type' => 'Text',
-                        'data' => [
-                            'style' => [
-                                'padding' => ['top' => 0, 'bottom' => 32, 'left' => 24, 'right' => 24],
-                                'color' => '#737373',
-                                'fontSize' => 13,
-                            ],
-                            'props' => ['text' => 'You are receiving this because you subscribed to our list.'],
+                        'type' => 'text',
+                        'props' => ['markdown' => 'You are receiving this because you subscribed to our list.'],
+                        'style' => [
+                            'padding' => ['top' => 0, 'right' => 24, 'bottom' => 32, 'left' => 24],
+                            'color' => '$muted',
+                            'fontSize' => 13,
                         ],
                     ],
-                ],
+                ]),
                 'position' => 20,
             ],
             [
@@ -250,46 +251,30 @@ class EmailTemplate extends Model
                 'preheader' => 'Say what changed and why it matters.',
                 'editor' => EmailEditor::Builder,
                 'html' => null,
-                'design' => [
-                    'root' => [
-                        'type' => 'EmailLayout',
-                        'data' => [
-                            'backdropColor' => '#f5f5f5',
-                            'canvasColor' => '#ffffff',
-                            'textColor' => '#262626',
-                            'fontFamily' => 'MODERN_SANS',
-                            'childrenIds' => ['block-heading', 'block-body', 'block-cta'],
-                        ],
-                    ],
+                'design' => self::builderDesign([
                     'block-heading' => [
-                        'type' => 'Heading',
-                        'data' => [
-                            'style' => ['padding' => ['top' => 40, 'bottom' => 12, 'left' => 24, 'right' => 24], 'textAlign' => 'center'],
-                            'props' => ['text' => 'Something new is here', 'level' => 'h1'],
-                        ],
+                        'type' => 'heading',
+                        'props' => ['text' => 'Something new is here', 'level' => 1],
+                        'style' => ['padding' => ['top' => 40, 'right' => 24, 'bottom' => 12, 'left' => 24], 'align' => 'center'],
                     ],
                     'block-body' => [
-                        'type' => 'Text',
-                        'data' => [
-                            'style' => ['padding' => ['top' => 0, 'bottom' => 24, 'left' => 24, 'right' => 24], 'textAlign' => 'center'],
-                            'props' => ['text' => 'Say what changed and why it matters, in a sentence or two.'],
-                        ],
+                        'type' => 'text',
+                        'props' => ['markdown' => 'Say what changed and why it matters, in a sentence or two.'],
+                        'style' => ['padding' => ['top' => 0, 'right' => 24, 'bottom' => 24, 'left' => 24], 'align' => 'center'],
                     ],
                     'block-cta' => [
-                        'type' => 'Button',
-                        'data' => [
-                            'style' => ['padding' => ['top' => 0, 'bottom' => 40, 'left' => 24, 'right' => 24], 'textAlign' => 'center'],
-                            'props' => [
-                                'text' => 'Take a look',
-                                'url' => 'https://example.com',
-                                'buttonBackgroundColor' => '#2563eb',
-                                'buttonTextColor' => '#ffffff',
-                                'buttonStyle' => 'pill',
-                                'size' => 'large',
-                            ],
+                        'type' => 'button',
+                        'props' => [
+                            'text' => 'Take a look',
+                            'href' => 'https://example.com',
+                            'buttonColor' => '#2563eb',
+                            'textColor' => '#ffffff',
+                            'shape' => 'pill',
+                            'size' => 'lg',
                         ],
+                        'style' => ['padding' => ['top' => 0, 'right' => 24, 'bottom' => 40, 'left' => 24], 'align' => 'center'],
                     ],
-                ],
+                ]),
                 'position' => 30,
             ],
             [

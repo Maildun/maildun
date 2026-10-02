@@ -273,14 +273,25 @@ export default function ContactsIndex({
                     </Empty>
                 ) : (
                     <>
-                        <Table>
+                        <Table
+                            className="table-fixed"
+                            footer={
+                                <Paginator paginator={contacts} showSummary />
+                            }
+                        >
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>Contact</TableHead>
+                                    <TableHead className="w-80">
+                                        Contact
+                                    </TableHead>
                                     <TableHead>Company</TableHead>
                                     <TableHead>Tags</TableHead>
-                                    <TableHead>Audiences</TableHead>
-                                    <TableHead>Created</TableHead>
+                                    <TableHead className="w-28">
+                                        Audiences
+                                    </TableHead>
+                                    <TableHead className="w-28">
+                                        Created
+                                    </TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -296,7 +307,6 @@ export default function ContactsIndex({
                                 ))}
                             </TableBody>
                         </Table>
-                        <Paginator paginator={contacts} />
                     </>
                 )}
             </div>
@@ -332,7 +342,7 @@ function ContactRow({
 
     return (
         <TableRow data-test="contact-row">
-            <TableCell className="max-w-0">
+            <TableCell className="max-w-80">
                 <ContactHoverCard
                     contact={contact}
                     href={href}

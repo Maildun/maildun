@@ -4,9 +4,13 @@
 
 @import 'shadcn/tailwind.css';
 
+@import '@maildun/email-builder/core.css';
+
+@import '@fontsource-variable/familjen-grotesk';
 @import '@fontsource-variable/inter';
 
 @source '../views';
+@source '../../node_modules/@maildun/email-builder/dist';
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 
 @custom-variant dark (&:is(.dark *));
@@ -115,9 +119,6 @@
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
     --grain-opacity: 0.18;
-    --wash-base: oklch(0.86 0.05 250);
-    --wash-one: oklch(0.72 0.15 245 / 0.95);
-    --wash-two: oklch(0.76 0.12 350 / 0.92);
 }
 
 .dark {
@@ -161,9 +162,6 @@
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
     --grain-opacity: 0.28;
-    --wash-base: oklch(0.24 0.014 265);
-    --wash-one: oklch(0.55 0.12 245 / 0.62);
-    --wash-two: oklch(0.55 0.1 350 / 0.48);
 }
 
 @layer base {
@@ -203,94 +201,8 @@
     }
 }
 
-/* Ordered (Bayer) dither over the element's own background. The `#ordered-dither`
-   filter — rendered once by GettingStartedChecklist — adds an 8x8 threshold map
-   to the source and then quantises each channel to ten steps, so a smooth wash
-   breaks into banded pixel dots rather than the random film grain of `grainy`.
-   The filter must live in a rendered (not `display:none`) element or Firefox
-   cannot resolve it. Pair with `relative` on static elements. */
-@utility dithered {
-    isolation: isolate;
-
-    &::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        z-index: -1;
-        border-radius: inherit;
-        pointer-events: none;
-        background: inherit;
-        filter: url(#ordered-dither);
-    }
-}
-
-/* Two-tone wash for small artwork surfaces: one hue anchored top-left, the
-   other bottom-right, each fading out well before the opposite corner so they
-   meet in a soft blend rather than a hard seam. Pair with `grainy` (and
-   `relative`) for the sidebar's texture. */
-@property --wash-one-x {
-    syntax: '<percentage>';
-    inherits: false;
-    initial-value: 8%;
-}
-@property --wash-one-y {
-    syntax: '<percentage>';
-    inherits: false;
-    initial-value: 4%;
-}
-@property --wash-two-x {
-    syntax: '<percentage>';
-    inherits: false;
-    initial-value: 94%;
-}
-@property --wash-two-y {
-    syntax: '<percentage>';
-    inherits: false;
-    initial-value: 100%;
-}
-
-/* Drifts the two blobs around each other. Registered properties are what make
-   this interpolate at all — an unregistered custom property would jump between
-   keyframes instead of animating. */
-@keyframes wash-drift {
-    0%,
-    100% {
-        --wash-one-x: 8%;
-        --wash-one-y: 4%;
-        --wash-two-x: 94%;
-        --wash-two-y: 100%;
-    }
-
-    50% {
-        --wash-one-x: 30%;
-        --wash-one-y: 26%;
-        --wash-two-x: 70%;
-        --wash-two-y: 78%;
-    }
-}
-
-@utility soft-wash {
-    background-color: var(--wash-base);
-    background-image:
-        radial-gradient(
-            120% 120% at var(--wash-one-x) var(--wash-one-y),
-            var(--wash-one) 0%,
-            transparent 68%
-        ),
-        radial-gradient(
-            120% 120% at var(--wash-two-x) var(--wash-two-y),
-            var(--wash-two) 0%,
-            transparent 70%
-        );
-    animation: wash-drift 8s ease-in-out infinite;
-
-    @media (prefers-reduced-motion: reduce) {
-        animation: none;
-    }
-}
-
 @theme inline {
-    --font-heading: var(--font-sans);
+    --font-heading: 'Familjen Grotesk Variable', sans-serif;
     --font-sans: 'Inter Variable', sans-serif;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);

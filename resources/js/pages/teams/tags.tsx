@@ -10,7 +10,6 @@ import { Head } from '@inertiajs/react';
 import { useState } from 'react';
 import DeleteTagModal from '@/components/delete-tag-modal';
 import { SettingsPageHeader } from '@/components/settings-page-header';
-import { SettingsPanel } from '@/components/settings-panel';
 import { TagColorSwatch } from '@/components/tag-color-select';
 import TagDialog from '@/components/tag-dialog';
 import { Button } from '@/components/ui/button';
@@ -66,13 +65,13 @@ export default function TeamTags({ team, tags, colors, permissions }: Props) {
             <Head title={`Tags · ${team.name}`} />
 
             <div className="flex flex-col gap-8">
-                <SettingsPageHeader title="Tags" />
-                <SettingsPanel
-                    variant="inset"
+                <SettingsPageHeader
                     title="Tags"
                     description="Labels shared across every audience in this workspace."
-                    actions={
-                        canManage && tags.length > 0 ? (
+                />
+                <div className="flex flex-col gap-4">
+                    {canManage && tags.length > 0 && (
+                        <div className="flex items-center justify-end">
                             <Button
                                 data-test="create-tag-button"
                                 onClick={() => setCreateOpen(true)}
@@ -83,9 +82,8 @@ export default function TeamTags({ team, tags, colors, permissions }: Props) {
                                 />
                                 Create tag
                             </Button>
-                        ) : undefined
-                    }
-                >
+                        </div>
+                    )}
                     {tags.length === 0 ? (
                         <Empty>
                             <EmptyHeader>
@@ -111,9 +109,9 @@ export default function TeamTags({ team, tags, colors, permissions }: Props) {
                             )}
                         </Empty>
                     ) : (
-                        <div className="p-3 sm:p-4">
+                        <div className="flex flex-col gap-4">
                             {canManage && selectedTags.length > 0 && (
-                                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 px-5 py-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/50 px-4 py-3">
                                     <p className="text-sm text-muted-foreground">
                                         {selectedTags.length} selected
                                     </p>
@@ -133,7 +131,7 @@ export default function TeamTags({ team, tags, colors, permissions }: Props) {
                                 <TableHeader>
                                     <TableRow>
                                         {canManage && (
-                                            <TableHead className="h-12 w-[1%] px-5">
+                                            <TableHead className="w-[1%]">
                                                 <Checkbox
                                                     aria-label="Select all"
                                                     data-test="tag-select-all"
@@ -170,14 +168,10 @@ export default function TeamTags({ team, tags, colors, permissions }: Props) {
                                                 />
                                             </TableHead>
                                         )}
-                                        <TableHead className="h-12 px-5">
-                                            Tag
-                                        </TableHead>
-                                        <TableHead className="h-12 px-5">
-                                            Contacts
-                                        </TableHead>
+                                        <TableHead>Tag</TableHead>
+                                        <TableHead>Contacts</TableHead>
                                         {canManage && (
-                                            <TableHead className="h-12 w-[1%] px-5 text-right">
+                                            <TableHead className="w-[1%] text-right">
                                                 <span className="sr-only">
                                                     Actions
                                                 </span>
@@ -190,10 +184,14 @@ export default function TeamTags({ team, tags, colors, permissions }: Props) {
                                         <TableRow
                                             key={tag.uuid}
                                             data-test="tag-row"
-                                            className="h-16"
+                                            data-state={
+                                                selected.has(tag.uuid)
+                                                    ? 'selected'
+                                                    : undefined
+                                            }
                                         >
                                             {canManage && (
-                                                <TableCell className="w-[1%] px-5 py-4">
+                                                <TableCell className="w-[1%]">
                                                     <Checkbox
                                                         aria-label={`Select ${tag.name}`}
                                                         data-test="tag-row-select"
@@ -225,19 +223,24 @@ export default function TeamTags({ team, tags, colors, permissions }: Props) {
                                                     />
                                                 </TableCell>
                                             )}
-                                            <TableCell className="max-w-0 px-5 py-4">
+                                            <TableCell className="max-w-0">
                                                 <span className="flex min-w-56 items-center gap-3 font-medium">
                                                     <TagColorSwatch
                                                         color={tag.color}
                                                     />
-                                                    {tag.name}
+                                                    <span
+                                                        className="truncate"
+                                                        title={tag.name}
+                                                    >
+                                                        {tag.name}
+                                                    </span>
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="px-5 py-4 text-muted-foreground">
+                                            <TableCell className="text-muted-foreground tabular-nums">
                                                 {tag.subscribers_count}
                                             </TableCell>
                                             {canManage && (
-                                                <TableCell className="w-[1%] px-5 py-4 text-right">
+                                                <TableCell className="w-[1%] text-right">
                                                     <DropdownMenu>
                                                         <DropdownMenuTrigger
                                                             render={
@@ -302,7 +305,7 @@ export default function TeamTags({ team, tags, colors, permissions }: Props) {
                             </Table>
                         </div>
                     )}
-                </SettingsPanel>
+                </div>
             </div>
 
             {canManage && (

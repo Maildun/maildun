@@ -18,6 +18,7 @@ import { CampaignInsightsMap } from '@/components/campaign-insights-map';
 import type { CampaignInsightMetric } from '@/components/campaign-insights-map';
 import { ClientIcon } from '@/components/client-icon';
 import { CountryFlag } from '@/components/country-flag';
+import { MetricGauge } from '@/components/metric-gauge';
 import { Badge } from '@/components/ui/badge';
 import {
     Card,
@@ -118,7 +119,7 @@ export function CampaignInsights({
 
     return (
         <div className="flex flex-col gap-4" data-test="campaign-insights">
-            <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+            <div className="grid gap-4 lg:grid-cols-2">
                 <HumanEngagementCard insights={insights} />
                 <TrafficQualityCard rows={insights.traffic} />
             </div>
@@ -136,19 +137,21 @@ export function CampaignInsights({
 function HumanEngagementCard({ insights }: { insights: CampaignInsightsData }) {
     return (
         <Card size="sm">
-            <CardHeader className="border-b">
+            <CardHeader>
                 <CardTitle>Human engagement</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 divide-x divide-border px-0">
-                <InsightMetric
+            <CardContent className="grid flex-1 grid-cols-2 items-center justify-items-center gap-4 py-6">
+                <MetricGauge
                     label="Human opens"
-                    value={`${insights.human.open_rate}%`}
+                    value={insights.human.open_rate}
                     detail={`${insights.human.opened.toLocaleString()} recipients`}
+                    colorClassName="text-amber-500"
                 />
-                <InsightMetric
+                <MetricGauge
                     label="Human clicks"
-                    value={`${insights.human.click_rate}%`}
+                    value={insights.human.click_rate}
                     detail={`${insights.human.clicked.toLocaleString()} recipients`}
+                    colorClassName="text-rose-500"
                 />
             </CardContent>
         </Card>
@@ -164,7 +167,7 @@ function TrafficQualityCard({ rows }: { rows: CampaignTrafficRow[] }) {
 
     return (
         <Card size="sm">
-            <CardHeader className="border-b">
+            <CardHeader>
                 <CardTitle>Traffic quality</CardTitle>
                 <CardAction>
                     <MetricToggle metric={metric} onChange={setMetric} />
@@ -215,7 +218,7 @@ function GeographyCard({ insights }: { insights: CampaignInsightsData }) {
     return (
         <Tabs defaultValue="map" className="h-full min-h-0 gap-0">
             <Card size="sm" className="h-full min-h-[24rem]">
-                <CardHeader className="border-b">
+                <CardHeader>
                     <CardTitle>Geography</CardTitle>
                     <CardAction>
                         <MetricToggle metric={metric} onChange={setMetric} />
@@ -298,7 +301,7 @@ function TechnologyCard({ insights }: { insights: CampaignInsightsData }) {
     return (
         <Tabs defaultValue="client" className="h-full min-h-0 gap-0">
             <Card size="sm" className="h-full min-h-[24rem]">
-                <CardHeader className="border-b">
+                <CardHeader>
                     <CardTitle>Technology and networks</CardTitle>
                     <CardAction>
                         <MetricToggle metric={metric} onChange={setMetric} />
@@ -356,7 +359,7 @@ function PrivacyCard({ insights }: { insights: CampaignInsightsData }) {
 
     return (
         <Card size="sm" data-test="campaign-privacy-card">
-            <CardHeader className="border-b">
+            <CardHeader>
                 <CardTitle>Privacy-safe tracking</CardTitle>
             </CardHeader>
             <CardContent>
@@ -465,24 +468,6 @@ function MetricToggle({
                 <TabsTrigger value="clicks">Clicks</TabsTrigger>
             </TabsList>
         </Tabs>
-    );
-}
-
-function InsightMetric({
-    label,
-    value,
-    detail,
-}: {
-    label: string;
-    value: string;
-    detail: string;
-}) {
-    return (
-        <div className="flex min-w-0 flex-col gap-1 px-4 py-2 first:pl-3 last:pr-3">
-            <p className="truncate text-xs text-muted-foreground">{label}</p>
-            <p className="text-2xl font-semibold tabular-nums">{value}</p>
-            <p className="truncate text-xs text-muted-foreground">{detail}</p>
-        </div>
     );
 }
 

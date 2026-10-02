@@ -1524,46 +1524,34 @@ class FullDemoSeeder extends Seeder
      */
     private function emailDesign(string $heading, string $button): array
     {
-        return [
-            'root' => [
-                'type' => 'EmailLayout',
-                'data' => [
-                    'backdropColor' => '#f8fafc',
-                    'canvasColor' => '#ffffff',
-                    'textColor' => '#172554',
-                    'fontFamily' => 'MODERN_SANS',
-                    'childrenIds' => ['heading', 'copy', 'button'],
-                ],
-            ],
+        return EmailTemplate::builderDesign([
             'heading' => [
-                'type' => 'Heading',
-                'data' => [
-                    'style' => ['padding' => ['top' => 36, 'bottom' => 12, 'left' => 28, 'right' => 28]],
-                    'props' => ['text' => $heading, 'level' => 'h1'],
-                ],
+                'type' => 'heading',
+                'props' => ['text' => $heading, 'level' => 1],
+                'style' => ['padding' => ['top' => 36, 'right' => 28, 'bottom' => 12, 'left' => 28]],
             ],
             'copy' => [
-                'type' => 'Text',
-                'data' => [
-                    'style' => ['padding' => ['top' => 0, 'bottom' => 20, 'left' => 28, 'right' => 28]],
-                    'props' => ['text' => 'A clear, friendly message that helps the reader take the next step.'],
-                ],
+                'type' => 'text',
+                'props' => ['markdown' => 'A clear, friendly message that helps the reader take the next step.'],
+                'style' => ['padding' => ['top' => 0, 'right' => 28, 'bottom' => 20, 'left' => 28]],
             ],
             'button' => [
-                'type' => 'Button',
-                'data' => [
-                    'style' => ['padding' => ['top' => 0, 'bottom' => 36, 'left' => 28, 'right' => 28]],
-                    'props' => [
-                        'text' => $button,
-                        'url' => 'https://maildun.test',
-                        'buttonBackgroundColor' => '#4f46e5',
-                        'buttonTextColor' => '#ffffff',
-                        'buttonStyle' => 'rounded',
-                        'size' => 'medium',
-                    ],
+                'type' => 'button',
+                'props' => [
+                    'text' => $button,
+                    'href' => 'https://maildun.test',
+                    'buttonColor' => '$primary',
+                    'textColor' => '#ffffff',
+                    'shape' => 'rounded',
+                    'size' => 'md',
                 ],
+                'style' => ['padding' => ['top' => 0, 'right' => 28, 'bottom' => 36, 'left' => 28]],
             ],
-        ];
+        ], [
+            'primary' => '#4f46e5',
+            'text' => '#172554',
+            'background' => '#f8fafc',
+        ]);
     }
 
     private function emailHtml(string $heading, string $copy): string

@@ -1,4 +1,11 @@
 import type { PropsWithChildren, ReactNode } from 'react';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 type SettingsPanelProps = PropsWithChildren<{
@@ -18,43 +25,25 @@ export function SettingsPanel({
     children,
 }: SettingsPanelProps) {
     return (
-        <div
-            className={cn(
-                variant === 'card'
-                    ? 'overflow-hidden rounded-2xl border bg-card shadow-xs'
-                    : 'grainy relative overflow-hidden rounded-xl bg-muted p-1 shadow-inner',
-                className,
-            )}
-        >
+        <Card data-variant={variant} className={cn('gap-0 py-1', className)}>
             {title ? (
-                <header
-                    className={cn(
-                        'flex flex-col items-start justify-between gap-x-6 gap-y-3 lg:flex-row lg:items-center',
-                        variant === 'card'
-                            ? 'border-b px-6 py-5 sm:px-7'
-                            : 'px-5 py-4',
-                    )}
-                >
+                <CardHeader className="flex flex-col items-start justify-between gap-x-6 gap-y-3 px-5 py-4 lg:flex-row lg:items-center">
                     <div className="flex flex-col gap-1">
-                        <h2 className="font-heading text-base font-medium tracking-tight">
-                            {title}
-                        </h2>
+                        <CardTitle>
+                            <h2>{title}</h2>
+                        </CardTitle>
                         {description ? (
-                            <p className="max-w-2xl text-sm text-muted-foreground">
+                            <CardDescription className="max-w-2xl">
                                 {description}
-                            </p>
+                            </CardDescription>
                         ) : null}
                     </div>
                     {actions ? <div className="shrink-0">{actions}</div> : null}
-                </header>
+                </CardHeader>
             ) : null}
-            {variant === 'inset' ? (
-                <div className="rounded-lg border bg-card shadow-xs">
-                    {children}
-                </div>
-            ) : (
-                children
-            )}
-        </div>
+            <CardContent className="overflow-hidden p-0">
+                {children}
+            </CardContent>
+        </Card>
     );
 }

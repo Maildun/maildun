@@ -22,11 +22,13 @@ class QueueRemainingRecipients
     /**
      * Recipients a campaign never reached because preparing the send failed
      * part-way: still sendable, no delivery row, and after the last recipient
-     * the loader got to. Zero when the send was fully prepared.
+     * the loader got to. Zero when the send was fully prepared, and zero when
+     * a person stopped it, because the recipients a stop leaves unloaded are
+     * the ones they chose not to send to.
      */
     public function remainingCount(Email $email): int
     {
-        if ($email->status->isActive() || $email->status === EmailStatus::Draft) {
+        if ($email->status->isActive() || in_array($email->status, [EmailStatus::Draft, EmailStatus::Stopped], true)) {
             return 0;
         }
 
@@ -46,6 +48,11 @@ class QueueRemainingRecipients
     {
         $run = DB::transaction(function () use ($email) {
             $lockedEmail = Email::query()->with(['team', 'audience', 'segment'])->lockForUpdate()->findOrFail($email->id);
+
+            if ($lockedEmail->status === EmailStatus::Stopped) {
+                throw ValidationException::withMessages(['email' => __('This campaign was stopped, so its remaining recipients will not be sent to.')]);
+            }
+
             $remaining = $this->remainingCount($lockedEmail);
 
             if ($remaining === 0) {

@@ -16,6 +16,8 @@ import type {
     SubscribeFormPoweredByPosition,
     SubscribeFormStyle,
     SubscribeFormTextAlignment,
+    SubscriberLanguage,
+    SubscriberLanguageOption,
 } from '@/types/audiences';
 import type { TeamBrandTheme } from '@/types/teams';
 
@@ -46,6 +48,9 @@ type PublicForm = {
     card_padding: SubscribeFormCardPadding;
     first_name_mode: SubscribeFormFieldMode;
     last_name_mode: SubscribeFormFieldMode;
+    language_mode: SubscribeFormFieldMode;
+    default_language: SubscriberLanguage | null;
+    languages: SubscriberLanguageOption[];
     attributes: AudienceAttribute[];
 };
 
@@ -71,6 +76,7 @@ export default function PublicSubscribeForm({ subscribeForm }: Props) {
             email: string;
             first_name: string;
             last_name: string;
+            language: SubscriberLanguage | '';
             consent: boolean;
             attributes: Record<string, string>;
             website: string;
@@ -80,6 +86,7 @@ export default function PublicSubscribeForm({ subscribeForm }: Props) {
         email: '',
         first_name: '',
         last_name: '',
+        language: subscribeForm.default_language ?? '',
         consent: false,
         attributes: {},
         website: '',

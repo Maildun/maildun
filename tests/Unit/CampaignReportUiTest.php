@@ -17,16 +17,18 @@ test('campaign delivery has dedicated report pages with performance and responsi
         ->toContain('Cancel01Icon')
         ->toContain('Alert02Icon')
         ->toContain('Clock01Icon')
-        ->toContain('bg-destructive/10')
+        ->toContain("from '@hugeicons/core-free-icons'")
+        ->toContain('bg-rose-500/10 text-rose-600')
+        ->toContain('bg-orange-500/10 text-orange-600')
+        ->toContain('bg-amber-500/10 text-amber-600')
+        ->toContain('bg-blue-500/10 text-blue-600')
         ->not->toContain('<Tabs')
         ->and($recipients)->toContain('activePage="recipients"')
         ->toContain('AvatarImage')
         ->toContain('AvatarFallback')
         ->toContain('RecipientStatusTabs')
         ->toContain('overflow-x-auto overflow-y-hidden')
-        ->toContain('Showing {recipients.from}–{recipients.to}')
-        ->toContain('of{\' \'}')
-        ->toContain('recipients.total} recipients')
+        ->toContain('<Paginator paginator={recipients} showSummary />')
         ->toContain('recipient-filter-${filter.value}')
         ->and($links)->toContain('activePage="links"')
         ->and($preview)->toContain('activePage="preview"')
@@ -46,7 +48,12 @@ test('campaign delivery has dedicated report pages with performance and responsi
         ->toContain('MailSend01Icon')
         ->toContain('MailOpen01Icon')
         ->toContain('MouseLeftClick01Icon')
-        ->toContain('CardAction')
+        ->toContain("from '@hugeicons/core-free-icons'")
+        ->toContain('bg-violet-500/10 text-violet-600')
+        ->toContain('bg-emerald-500/10 text-emerald-600')
+        ->toContain('bg-amber-500/10 text-amber-600')
+        ->toContain('bg-rose-500/10 text-rose-600')
+        ->toContain("from '@/components/metric-card'")
         ->toContain('Amazon SES')
         ->toContain('Mixed providers')
         ->toContain('SMTP is handoff only')
@@ -210,7 +217,7 @@ test('delivery health says SMTP does not report bounces instead of showing zero'
 
     expect($report)->toBeString()
         ->toContain("metrics.delivery_feedback !== 'unavailable'")
-        ->toContain('value={feedbackReported ? metrics.bounced : null}')
+        ->toMatch('/value=\{\s*feedbackReported\s*\?\s*metrics\.bounced\s*:\s*null\s*\}/')
         ->toContain('Not reported by SMTP');
 });
 
@@ -231,11 +238,14 @@ test('campaign and delivery badges come from the shared email status module', fu
 
 test('report metrics explain what they count and human engagement is labelled as human', function () {
     $layout = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-report-layout.tsx');
+    $metricCard = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/metric-card.tsx');
     $insights = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/campaign-insights.tsx');
     $links = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/links.tsx');
 
+    expect($metricCard)->toBeString()
+        ->toContain('aria-label={`About ${label}`}');
+
     expect($layout)->toBeString()
-        ->toContain('aria-label={`About ${label}`}')
         ->toContain('including privacy proxies and security scanners');
 
     expect($insights)->toBeString()

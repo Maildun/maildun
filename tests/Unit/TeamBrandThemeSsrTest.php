@@ -33,6 +33,10 @@ test('the team brand theme stays scoped to subscribe forms', function () {
         ->toContain('.dark [data-subscribe-form-theme]')
         ->toContain("[data-subscribe-form-theme][data-team-input-style='soft']")
         ->toContain('[data-subscribe-date-trigger]')
+        ->toContain("[data-slot='input-group-control']:not(:placeholder-shown)")
+        ->toContain('[data-has-value]')
+        ->toContain('var(--foreground) 7%')
+        ->toContain('box-shadow: none')
         ->not->toContain('html[data-team-input-style');
 
     expect(file_exists($root.'/resources/js/components/team-brand-theme-provider.tsx'))

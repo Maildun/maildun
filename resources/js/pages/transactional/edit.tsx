@@ -11,7 +11,6 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, router, setLayoutProps, useForm } from '@inertiajs/react';
-import { Reader } from '@usewaypoint/email-builder';
 import type { FormEvent } from 'react';
 import { useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
@@ -53,14 +52,12 @@ import { toast } from '@/components/ui/toast';
 import { useClipboard } from '@/hooks/use-clipboard';
 import {
     EMPTY_BUILDER_DOCUMENT,
-    ROOT_BLOCK_ID,
     getChildrenIds,
     htmlToBuilderDocument,
     isSourceEditor,
     renderBuilderHtml,
     renderSourceHtml,
-    sourceToBuilderDocument,
-    toReaderDocument,
+    toBuilderDocument,
 } from '@/lib/email-builder';
 import { cn } from '@/lib/utils';
 import {
@@ -124,35 +121,22 @@ function TransactionalDesignPreview({
     html: string;
     source: string;
 }) {
-    let preview = null;
-
-    if (editor === 'builder' && design) {
-        preview = (
-            <Reader
-                document={toReaderDocument(design)}
-                rootBlockId={ROOT_BLOCK_ID}
-            />
-        );
-    } else if (isSourceEditor(editor) && source.trim() !== '') {
-        preview = (
-            <Reader
-                document={toReaderDocument(
-                    sourceToBuilderDocument(source, editor),
-                )}
-                rootBlockId={ROOT_BLOCK_ID}
-            />
-        );
-    } else if (html.trim() !== '') {
-        preview = (
+    const previewHtml =
+        editor === 'builder' && design
+            ? renderBuilderHtml(toBuilderDocument(design))
+            : isSourceEditor(editor) && source.trim() !== ''
+              ? renderSourceHtml(source, editor)
+              : html;
+    const preview =
+        previewHtml.trim() !== '' ? (
             <iframe
                 title="Transactional email design preview"
                 sandbox=""
-                srcDoc={html}
+                srcDoc={previewHtml}
                 tabIndex={-1}
                 className="pointer-events-none h-full w-full border-0 bg-background"
             />
-        );
-    }
+        ) : null;
 
     if (!preview) {
         return null;
@@ -210,7 +194,9 @@ export default function TransactionalEdit({
         source: email.source,
         design:
             email.editor === 'builder'
-                ? (email.design ?? htmlToBuilderDocument(email.html ?? ''))
+                ? email.design
+                    ? toBuilderDocument(email.design)
+                    : htmlToBuilderDocument(email.html ?? '')
                 : null,
         variables: email.variables,
     });

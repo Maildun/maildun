@@ -2,8 +2,10 @@
 
 namespace App\Actions\Audiences;
 
+use App\Enums\EmailAddressHealthStatus;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
+use App\Models\EmailAddressHealth;
 use App\Models\Subscriber;
 use App\Models\Team;
 use Illuminate\Database\Eloquent\Builder;
@@ -38,7 +40,8 @@ class ManageAudienceHygiene
      *     avatar: string,
      *     subscribers_count: int,
      *     unconfirmed_count: int,
-     *     inactive_count: int
+     *     inactive_count: int,
+     *     undeliverable_count: int
      * }>
      */
     public function forTeam(Team $team): array
@@ -49,6 +52,7 @@ class ManageAudienceHygiene
                 'subscribers',
                 'subscribers as unconfirmed_count' => fn (Builder $query): Builder => $this->applyUnconfirmedCriteria($query),
                 'subscribers as inactive_count' => fn (Builder $query): Builder => $this->applyInactiveCriteria($query),
+                'subscribers as undeliverable_count' => fn (Builder $query): Builder => $this->applyUndeliverableCriteria($query, $team),
             ])
             ->orderBy('name')
             ->get()
@@ -59,6 +63,7 @@ class ManageAudienceHygiene
                 'subscribers_count' => (int) $audience->getAttribute('subscribers_count'),
                 'unconfirmed_count' => (int) $audience->getAttribute('unconfirmed_count'),
                 'inactive_count' => (int) $audience->getAttribute('inactive_count'),
+                'undeliverable_count' => (int) $audience->getAttribute('undeliverable_count'),
             ])
             ->all());
     }
@@ -72,7 +77,10 @@ class ManageAudienceHygiene
      *     last_name: string|null,
      *     audience: array{uuid: string, name: string, avatar: string},
      *     created_at: string|null,
-     *     last_sent_at: string|null
+     *     last_sent_at: string|null,
+     *     health_reason: string|null,
+     *     health_detail: string|null,
+     *     health_event_at: string|null
      * }>
      */
     public function paginateForTeam(
@@ -96,6 +104,23 @@ class ManageAudienceHygiene
                 'deliveries as last_sent_at' => fn (Builder $query): Builder => $query
                     ->whereNotNull('sent_at'),
             ], 'sent_at')
+            ->addSelect([
+                'health_reason' => EmailAddressHealth::query()
+                    ->select('reason')
+                    ->whereColumn('email_address_healths.email', 'subscribers.email')
+                    ->where('email_address_healths.team_id', $team->id)
+                    ->limit(1),
+                'health_detail' => EmailAddressHealth::query()
+                    ->select('detail')
+                    ->whereColumn('email_address_healths.email', 'subscribers.email')
+                    ->where('email_address_healths.team_id', $team->id)
+                    ->limit(1),
+                'health_event_at' => EmailAddressHealth::query()
+                    ->select('suppressed_at')
+                    ->whereColumn('email_address_healths.email', 'subscribers.email')
+                    ->where('email_address_healths.team_id', $team->id)
+                    ->limit(1),
+            ])
             ->whereIn(
                 'audience_id',
                 $team->audiences()
@@ -113,9 +138,11 @@ class ManageAudienceHygiene
                     ->orWhereRaw('LOWER(last_name) LIKE ?', [$search]));
             });
 
-        $query = $kind === 'inactive'
-            ? $this->applyInactiveCriteria($query)
-            : $this->applyUnconfirmedCriteria($query);
+        $query = match ($kind) {
+            'inactive' => $this->applyInactiveCriteria($query),
+            'undeliverable' => $this->applyUndeliverableCriteria($query, $team),
+            default => $this->applyUnconfirmedCriteria($query),
+        };
 
         return $query
             ->latest()
@@ -137,6 +164,15 @@ class ManageAudienceHygiene
     {
         return $this->applyInactiveCriteria(
             $this->teamSubscribersQuery($team, $subscriberUuids),
+        )->delete();
+    }
+
+    /** @param list<string> $subscriberUuids */
+    public function deleteTeamUndeliverable(Team $team, array $subscriberUuids): int
+    {
+        return $this->applyUndeliverableCriteria(
+            $this->teamSubscribersQuery($team, $subscriberUuids),
+            $team,
         )->delete();
     }
 
@@ -184,6 +220,21 @@ class ManageAudienceHygiene
     }
 
     /**
+     * @param  Builder<Subscriber>  $query
+     * @return Builder<Subscriber>
+     */
+    private function applyUndeliverableCriteria(Builder $query, Team $team): Builder
+    {
+        return $query->whereExists(function ($health) use ($team): void {
+            $health->selectRaw('1')
+                ->from((new EmailAddressHealth)->getTable())
+                ->whereColumn('email_address_healths.email', 'subscribers.email')
+                ->where('email_address_healths.team_id', $team->id)
+                ->where('email_address_healths.status', EmailAddressHealthStatus::Suppressed->value);
+        });
+    }
+
+    /**
      * @param  list<string>  $subscriberUuids
      * @return Builder<Subscriber>
      */
@@ -215,7 +266,10 @@ class ManageAudienceHygiene
      *     last_name: string|null,
      *     audience: array{uuid: string, name: string, avatar: string},
      *     created_at: string|null,
-     *     last_sent_at: string|null
+     *     last_sent_at: string|null,
+     *     health_reason: string|null,
+     *     health_detail: string|null,
+     *     health_event_at: string|null
      * }
      */
     private function subscriberPayload(Subscriber $subscriber): array
@@ -233,6 +287,9 @@ class ManageAudienceHygiene
             ],
             'created_at' => $subscriber->created_at?->toISOString(),
             'last_sent_at' => $this->dateToIsoString($subscriber->getAttribute('last_sent_at')),
+            'health_reason' => $subscriber->getAttribute('health_reason'),
+            'health_detail' => $subscriber->getAttribute('health_detail'),
+            'health_event_at' => $this->dateToIsoString($subscriber->getAttribute('health_event_at')),
         ];
     }
 }

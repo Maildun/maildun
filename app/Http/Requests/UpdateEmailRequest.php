@@ -88,8 +88,8 @@ class UpdateEmailRequest extends FormRequest
             'query_string' => ['nullable', 'string', 'max:2048', 'regex:/^[^\s?#]+$/'],
             'track_clicks' => ['sometimes', 'boolean'],
             'track_opens' => ['sometimes', 'boolean'],
-            'design' => ['nullable', 'array'],
-            'design.root' => ['required_with:design', 'array'],
+            'design' => ['nullable', 'array', 'required_array_keys:root'],
+            'design.root' => ['array'],
             'audience' => [
                 'nullable',
                 'string',

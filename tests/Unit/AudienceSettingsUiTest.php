@@ -63,6 +63,12 @@ test('audience settings keep save inside the card with small overview icons and 
         ->toContain('<TableHead>Required</TableHead>')
         ->toContain('title="Subscriber fields"')
         ->toContain('Email')
+        ->toContain('Language')
+        ->toContain('name="language_mode"')
+        ->toContain('Available languages')
+        ->toContain('name="allowed_languages[]"')
+        ->toContain('name="default_language"')
+        ->toContain('placeholder="Add languages"')
         ->toContain('data-test="save-subscriber-fields"');
 
     expect($danger)->toBeString()

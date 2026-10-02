@@ -29,6 +29,7 @@ use App\Http\Requests\UpdateEmailRequest;
 use App\Jobs\SendCampaignTestEmail;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
+use App\Models\CampaignSeries;
 use App\Models\Email;
 use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
@@ -203,6 +204,12 @@ class EmailController extends Controller
             : EmailTemplate::blankBodyFor($editor);
 
         $email = $currentTeam->emails()->create([
+            'campaign_series_id' => $request->filled('campaign_series')
+                ? CampaignSeries::query()
+                    ->whereBelongsTo($currentTeam)
+                    ->where('uuid', $request->string('campaign_series'))
+                    ->value('id')
+                : null,
             'email_template_id' => $template?->id,
             'name' => $request->string('name'),
             'subject' => filled($template?->subject)
@@ -287,11 +294,6 @@ class EmailController extends Controller
                 ])->values(),
             ],
             'sendReadiness' => $sendReadiness->handle($email),
-            // Deferred: the SES quota needs an AWS call the page must not wait on.
-            'sesQuota' => Inertia::defer(fn (): ?array => ($integration = $currentTeam->emailIntegration()->first()) instanceof TeamEmailIntegration
-                && $integration->isVerified()
-                ? app(SesAccountLimits::class)->fetch($integration)
-                : null),
             'audiences' => $currentTeam->audiences()
                 ->withCount($this->subscribedCount($currentTeam))
                 ->with([
@@ -491,6 +493,11 @@ class EmailController extends Controller
                 'scheduled_at' => $email->scheduled_at?->toISOString(),
             ],
             'sendReadiness' => $sendReadiness->handle($email),
+            // Deferred: the SES quota needs an AWS call the page must not wait on.
+            'sesQuota' => Inertia::defer(fn (): ?array => ($integration = $currentTeam->emailIntegration()->first()) instanceof TeamEmailIntegration
+                && $integration->isVerified()
+                ? app(SesAccountLimits::class)->fetch($integration)
+                : null),
             'recipientCount' => (clone $recipientQuery)->count(),
             'suppressedRecipients' => $this->suppressedRecipients($email),
             'unconfirmedRecipients' => $this->campaignSubscribers($email)

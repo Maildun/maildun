@@ -4,6 +4,7 @@ namespace App\Actions\Audiences;
 
 use App\Actions\Transactional\QueueTransactionalEmail;
 use App\Enums\TransactionalEmailStatus;
+use App\Exceptions\EmailAddressSuppressedException;
 use App\Exceptions\EmailTransportException;
 use App\Models\Audience;
 use App\Models\Subscriber;
@@ -26,8 +27,9 @@ class QueueAudienceConfirmationEmail
     /**
      * Queue the double opt-in confirmation for a pending subscriber. This runs
      * inside the signup transaction, so a workspace that cannot send right
-     * now (no verified provider, an unauthorized sender, or an unpublished
-     * confirmation email) must not roll the signup back. The subscriber stays
+     * now (no verified provider, an unauthorized sender, an unpublished
+     * confirmation email, or an address the workspace suppressed) must not
+     * roll the signup back. The subscriber stays
      * pending and the operator gets a warning in the log instead.
      */
     public function handle(Audience $audience, Subscriber $subscriber): ?TransactionalEmailDelivery
@@ -69,7 +71,7 @@ class QueueAudienceConfirmationEmail
                     ],
                 ],
             );
-        } catch (EmailTransportException $exception) {
+        } catch (EmailTransportException|EmailAddressSuppressedException $exception) {
             $this->warn($audience, $subscriber, $exception->getMessage());
 
             return null;

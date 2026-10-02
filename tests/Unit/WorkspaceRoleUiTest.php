@@ -1,13 +1,14 @@
 <?php
 
-test('workspace roles use the shared settings table treatment and overflow actions', function () {
+test('workspace roles use the main app table treatment and overflow actions', function () {
     $page = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/teams/roles.tsx');
 
     expect($page)->toBeString()
-        ->toContain('variant="inset"')
-        ->toContain('<div className="p-3 sm:p-4">')
-        ->toContain('className="h-12 px-5"')
-        ->toContain('className="h-16"')
+        ->toContain('<SettingsPageHeader')
+        ->toContain('<Table>')
+        ->not->toContain('SettingsPanel')
+        ->not->toContain('p-3 sm:p-4')
+        ->not->toContain('h-12 px-5')
         ->toContain('MoreHorizontalIcon')
         ->toContain('data-test="workspace-role-actions"')
         ->toContain('data-test="edit-workspace-role"')

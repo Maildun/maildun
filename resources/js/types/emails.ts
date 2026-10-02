@@ -1,197 +1,23 @@
+import type { EmailDocument } from '@maildun/email-builder';
+
+export type EmailBuilderBlock = {
+    type: string;
+    props?: object;
+    style?: object;
+    children?: string[];
+};
+
 /**
- * The document format used by @usewaypoint/email-builder: a flat map of block
- * ids, with `root` holding the layout and the ordered list of child ids.
+ * The block editor's document (@maildun/email-builder): settings, a theme, a
+ * flat map of blocks and the ordered ids of the top-level blocks in `root`.
+ *
+ * Blocks stay loosely typed here because Inertia's useForm inference recurses
+ * into the package's full block union past TypeScript's depth limit. Hand it
+ * to the package through toEmailDocument().
  */
-export type EmailBuilderFontFamily =
-    | 'MODERN_SANS'
-    | 'BOOK_SANS'
-    | 'ORGANIC_SANS'
-    | 'GEOMETRIC_SANS'
-    | 'HEAVY_SANS'
-    | 'ROUNDED_SANS'
-    | 'MODERN_SERIF'
-    | 'BOOK_SERIF'
-    | 'MONOSPACE';
-
-export type EmailBuilderTextAlign = 'left' | 'center' | 'right';
-
-export type EmailBuilderPadding = {
-    top: number;
-    bottom: number;
-    left: number;
-    right: number;
+export type EmailBuilderDocument = Omit<EmailDocument, 'blocks'> & {
+    blocks: Record<string, EmailBuilderBlock>;
 };
-
-export type EmailBuilderStyle = {
-    color?: string | null;
-    backgroundColor?: string | null;
-    borderColor?: string | null;
-    borderRadius?: number | null;
-    fontSize?: number | null;
-    fontFamily?: EmailBuilderFontFamily | null;
-    fontWeight?: 'bold' | 'normal' | null;
-    textAlign?: EmailBuilderTextAlign | null;
-    padding?: EmailBuilderPadding | null;
-};
-
-export type EmailLayoutBlock = {
-    type: 'EmailLayout';
-    data: {
-        backdropColor?: string | null;
-        canvasColor?: string | null;
-        borderColor?: string | null;
-        borderRadius?: number | null;
-        textColor?: string | null;
-        fontFamily?: EmailBuilderFontFamily | null;
-        childrenIds?: string[] | null;
-    };
-};
-
-export type HeadingBlock = {
-    type: 'Heading';
-    data: {
-        style?: EmailBuilderStyle | null;
-        props?: {
-            text?: string | null;
-            level?: 'h1' | 'h2' | 'h3' | null;
-        } | null;
-    };
-};
-
-export type TextBlock = {
-    type: 'Text';
-    data: {
-        style?: EmailBuilderStyle | null;
-        props?: { text?: string | null; markdown?: boolean | null } | null;
-    };
-};
-
-export type ButtonBlock = {
-    type: 'Button';
-    data: {
-        style?: EmailBuilderStyle | null;
-        props?: {
-            text?: string | null;
-            url?: string | null;
-            buttonBackgroundColor?: string | null;
-            buttonTextColor?: string | null;
-            buttonStyle?: 'rectangle' | 'pill' | 'rounded' | null;
-            size?: 'x-small' | 'small' | 'medium' | 'large' | null;
-            fullWidth?: boolean | null;
-        } | null;
-    };
-};
-
-export type ImageBlock = {
-    type: 'Image';
-    data: {
-        style?: Pick<
-            EmailBuilderStyle,
-            'backgroundColor' | 'padding' | 'textAlign'
-        > | null;
-        props?: {
-            url?: string | null;
-            alt?: string | null;
-            linkHref?: string | null;
-            width?: number | null;
-            height?: number | null;
-            contentAlignment?: 'top' | 'middle' | 'bottom' | null;
-        } | null;
-    };
-};
-
-export type DividerBlock = {
-    type: 'Divider';
-    data: {
-        style?: Pick<EmailBuilderStyle, 'backgroundColor' | 'padding'> | null;
-        props?: {
-            lineColor?: string | null;
-            lineHeight?: number | null;
-        } | null;
-    };
-};
-
-export type SpacerBlock = {
-    type: 'Spacer';
-    data: { props?: { height?: number | null } | null };
-};
-
-export type HtmlBlock = {
-    type: 'Html';
-    data: {
-        style?: EmailBuilderStyle | null;
-        props?: { contents?: string | null } | null;
-    };
-};
-
-export type AvatarBlock = {
-    type: 'Avatar';
-    data: {
-        style?: Pick<EmailBuilderStyle, 'textAlign' | 'padding'> | null;
-        props?: {
-            size?: number | null;
-            shape?: 'circle' | 'square' | 'rounded' | null;
-            imageUrl?: string | null;
-            alt?: string | null;
-        } | null;
-    };
-};
-
-export type ContainerBlock = {
-    type: 'Container';
-    data: {
-        style?: Pick<
-            EmailBuilderStyle,
-            'backgroundColor' | 'borderColor' | 'borderRadius' | 'padding'
-        > | null;
-        props?: { childrenIds?: string[] | null } | null;
-    };
-};
-
-export type ColumnsContainerBlock = {
-    type: 'ColumnsContainer';
-    data: {
-        style?: Pick<EmailBuilderStyle, 'backgroundColor' | 'padding'> | null;
-        props?: {
-            fixedWidths?:
-                | [
-                      number | null | undefined,
-                      number | null | undefined,
-                      number | null | undefined,
-                  ]
-                | null;
-            columnsCount?: 2 | 3 | null;
-            columnsGap?: number | null;
-            contentAlignment?: 'top' | 'middle' | 'bottom' | null;
-            columns?:
-                | [
-                      { childrenIds: string[] },
-                      { childrenIds: string[] },
-                      { childrenIds: string[] },
-                  ]
-                | null;
-        } | null;
-    };
-};
-
-export type EmailBuilderBlock =
-    | HeadingBlock
-    | TextBlock
-    | ButtonBlock
-    | ImageBlock
-    | AvatarBlock
-    | ContainerBlock
-    | ColumnsContainerBlock
-    | DividerBlock
-    | SpacerBlock
-    | HtmlBlock;
-
-export type EmailBuilderBlockType = EmailBuilderBlock['type'];
-
-export type EmailBuilderDocument = Record<
-    string,
-    EmailBuilderBlock | EmailLayoutBlock
->;
 
 export type EmailEditorMode = 'html' | 'builder' | 'plain_text' | 'markdown';
 

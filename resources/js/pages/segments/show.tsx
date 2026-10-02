@@ -180,7 +180,11 @@ export default function SegmentShow({
                         No subscribers match these rules.
                     </p>
                 ) : (
-                    <Table>
+                    <Table
+                        footer={
+                            <Paginator paginator={subscribers} showSummary />
+                        }
+                    >
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Subscriber</TableHead>
@@ -223,7 +227,9 @@ export default function SegmentShow({
                         </TableBody>
                     </Table>
                 )}
-                <Paginator paginator={subscribers} />
+                {subscribers.data.length === 0 && (
+                    <Paginator paginator={subscribers} />
+                )}
             </div>
 
             <SegmentEditDialog

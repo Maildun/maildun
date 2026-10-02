@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\EmailDeliveryStatus;
 use App\Models\Audience;
 use App\Models\Company;
 use App\Models\Contact;
+use App\Models\Email;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use App\Models\Tag;
@@ -241,4 +243,19 @@ test('contacts can be managed independently and deletion removes memberships but
     $this->assertModelMissing($subscriber);
     $this->assertModelExists($delivery);
     expect($delivery->fresh()->contact_id)->toBeNull();
+});
+
+test('a recipient a stopped campaign never sent to has not received that email', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $contact = Contact::factory()->for($team)->create();
+    $email = Email::factory()->for($team)->create();
+    EmailDelivery::factory()->for($email)->for($contact)->create(['status' => EmailDeliveryStatus::Delivered]);
+    EmailDelivery::factory()->for($email)->for($contact)->create(['status' => EmailDeliveryStatus::Cancelled]);
+
+    $this->actingAs($user)
+        ->get(route('contacts.show', [$team, $contact]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('activity.received', 1)
+            ->has('contact.deliveries', 2));
 });

@@ -19,7 +19,6 @@ import EditMemberModal from '@/components/edit-member-modal';
 import InviteMemberModal from '@/components/invite-member-modal';
 import RemoveMemberModal from '@/components/remove-member-modal';
 import { SettingsPageHeader } from '@/components/settings-page-header';
-import { SettingsPanel } from '@/components/settings-panel';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
     AlertDialog,
@@ -207,17 +206,17 @@ export default function TeamMembers({
             <Head title={`Members · ${team.name}`} />
 
             <div className="flex flex-col gap-8">
-                <SettingsPageHeader title="Members" />
-                <SettingsPanel
-                    variant="inset"
-                    title="Workspace members"
+                <SettingsPageHeader
+                    title="Members"
                     description={
                         permissions.canCreateInvitation
                             ? `${members.total} ${members.total === 1 ? 'person has' : 'people have'} access to this workspace.`
                             : `${members.total} ${members.total === 1 ? 'person has' : 'people have'} workspace access.`
                     }
-                    actions={
-                        permissions.canCreateInvitation ? (
+                />
+                <div className="flex flex-col gap-4">
+                    {permissions.canCreateInvitation ? (
+                        <div className="flex items-center justify-end">
                             <Button
                                 data-test="invite-member-button"
                                 onClick={() => setInviteDialogOpen(true)}
@@ -228,22 +227,131 @@ export default function TeamMembers({
                                 />
                                 Invite member
                             </Button>
-                        ) : undefined
-                    }
-                >
-                    <div className="p-3 sm:p-4">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead className="h-12 px-5">
-                                        Member
+                        </div>
+                    ) : null}
+                    <Table
+                        footer={
+                            <ListPagination
+                                id="members"
+                                team={team}
+                                pageName="page"
+                                perPageName="members_per_page"
+                                paginator={members}
+                            />
+                        }
+                    >
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Member</TableHead>
+                                <TableHead>Role</TableHead>
+                                {permissions.canUpdateMember ||
+                                permissions.canRemoveMember ? (
+                                    <TableHead className="w-[1%] text-right">
+                                        <span className="sr-only">Actions</span>
                                     </TableHead>
-                                    <TableHead className="h-12 px-5">
-                                        Role
-                                    </TableHead>
+                                ) : null}
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {members.data.map((member) => (
+                                <TableRow
+                                    key={member.id}
+                                    data-test="member-row"
+                                >
+                                    <TableCell className="max-w-0">
+                                        <div className="flex min-w-64 items-center gap-3">
+                                            <Avatar className="size-8">
+                                                {member.avatar ? (
+                                                    <AvatarImage
+                                                        src={member.avatar}
+                                                        alt={member.name}
+                                                    />
+                                                ) : null}
+                                                <AvatarFallback>
+                                                    {getInitials(member.name)}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            <div className="min-w-0">
+                                                <p className="truncate font-medium">
+                                                    {member.name}
+                                                </p>
+                                                <p className="truncate text-sm text-muted-foreground">
+                                                    {member.email}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </TableCell>
+                                    <TableCell className="w-36">
+                                        <Badge
+                                            variant="secondary"
+                                            data-test="member-role-badge"
+                                        >
+                                            {member.role_label}
+                                        </Badge>
+                                    </TableCell>
                                     {permissions.canUpdateMember ||
                                     permissions.canRemoveMember ? (
-                                        <TableHead className="h-12 w-[1%] px-5 text-right">
+                                        <TableCell className="w-[1%] text-right">
+                                            {member.role !== 'owner' ? (
+                                                <MemberActions
+                                                    member={member}
+                                                    canEdit={
+                                                        permissions.canUpdateMember
+                                                    }
+                                                    canDelete={
+                                                        permissions.canRemoveMember
+                                                    }
+                                                    onEdit={editMember}
+                                                    onResetPassword={
+                                                        setMemberToResetPassword
+                                                    }
+                                                    onDelete={
+                                                        confirmRemoveMember
+                                                    }
+                                                />
+                                            ) : null}
+                                        </TableCell>
+                                    ) : null}
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+
+                {invitations.total > 0 ? (
+                    <section className="flex flex-col gap-4">
+                        <header className="flex flex-col gap-1.5 px-1">
+                            <h2 className="font-heading text-base font-medium">
+                                Pending invitations
+                            </h2>
+                            <p className="text-sm text-muted-foreground">
+                                {invitations.total}{' '}
+                                {invitations.total === 1
+                                    ? 'invitation is'
+                                    : 'invitations are'}{' '}
+                                awaiting a response.
+                            </p>
+                        </header>
+                        <Table
+                            footer={
+                                <ListPagination
+                                    id="invitations"
+                                    team={team}
+                                    pageName="invitations_page"
+                                    perPageName="invitations_per_page"
+                                    paginator={invitations}
+                                />
+                            }
+                        >
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Email</TableHead>
+                                    <TableHead>Role</TableHead>
+                                    <TableHead className="hidden sm:table-cell">
+                                        Sent
+                                    </TableHead>
+                                    {permissions.canCancelInvitation ? (
+                                        <TableHead className="w-[1%] text-right">
                                             <span className="sr-only">
                                                 Actions
                                             </span>
@@ -252,170 +360,54 @@ export default function TeamMembers({
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {members.data.map((member) => (
+                                {invitations.data.map((invitation) => (
                                     <TableRow
-                                        key={member.id}
-                                        data-test="member-row"
-                                        className="h-20"
+                                        key={invitation.code}
+                                        data-test="invitation-row"
                                     >
-                                        <TableCell className="max-w-0 px-5 py-4">
-                                            <div className="flex min-w-64 items-center gap-3">
-                                                <Avatar className="size-10">
-                                                    {member.avatar ? (
-                                                        <AvatarImage
-                                                            src={member.avatar}
-                                                            alt={member.name}
-                                                        />
-                                                    ) : null}
-                                                    <AvatarFallback>
-                                                        {getInitials(
-                                                            member.name,
-                                                        )}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                                <div className="min-w-0">
-                                                    <p className="truncate font-medium">
-                                                        {member.name}
-                                                    </p>
-                                                    <p className="truncate text-sm text-muted-foreground">
-                                                        {member.email}
-                                                    </p>
-                                                </div>
-                                            </div>
+                                        <TableCell className="max-w-0">
+                                            <p className="min-w-56 truncate font-medium">
+                                                {invitation.email}
+                                            </p>
                                         </TableCell>
-                                        <TableCell className="w-36 px-5 py-4">
-                                            <Badge
-                                                variant="secondary"
-                                                data-test="member-role-badge"
-                                            >
-                                                {member.role_label}
+                                        <TableCell className="w-36">
+                                            <Badge variant="secondary">
+                                                {invitation.role_label}
                                             </Badge>
                                         </TableCell>
-                                        {permissions.canUpdateMember ||
-                                        permissions.canRemoveMember ? (
-                                            <TableCell className="w-[1%] px-5 py-4 text-right">
-                                                {member.role !== 'owner' ? (
-                                                    <MemberActions
-                                                        member={member}
-                                                        canEdit={
-                                                            permissions.canUpdateMember
-                                                        }
-                                                        canDelete={
-                                                            permissions.canRemoveMember
-                                                        }
-                                                        onEdit={editMember}
-                                                        onResetPassword={
-                                                            setMemberToResetPassword
-                                                        }
-                                                        onDelete={
-                                                            confirmRemoveMember
-                                                        }
-                                                    />
-                                                ) : null}
+                                        <TableCell className="hidden text-muted-foreground sm:table-cell">
+                                            <time
+                                                dateTime={invitation.created_at}
+                                                title={new Date(
+                                                    invitation.created_at,
+                                                ).toLocaleString()}
+                                            >
+                                                {formatRelativeTime(
+                                                    invitation.created_at,
+                                                )}
+                                            </time>
+                                        </TableCell>
+                                        {permissions.canCancelInvitation ? (
+                                            <TableCell className="w-[1%] text-right">
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    data-test="invitation-cancel-button"
+                                                    onClick={() =>
+                                                        confirmCancelInvitation(
+                                                            invitation,
+                                                        )
+                                                    }
+                                                >
+                                                    Cancel
+                                                </Button>
                                             </TableCell>
                                         ) : null}
                                     </TableRow>
                                 ))}
                             </TableBody>
                         </Table>
-                        <ListPagination
-                            id="members"
-                            team={team}
-                            pageName="page"
-                            perPageName="members_per_page"
-                            paginator={members}
-                        />
-                    </div>
-                </SettingsPanel>
-
-                {invitations.total > 0 ? (
-                    <SettingsPanel
-                        variant="inset"
-                        title="Pending invitations"
-                        description={`${invitations.total} ${invitations.total === 1 ? 'invitation is' : 'invitations are'} awaiting a response.`}
-                    >
-                        <div className="p-3 sm:p-4">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead className="h-12 px-5">
-                                            Email
-                                        </TableHead>
-                                        <TableHead className="h-12 px-5">
-                                            Role
-                                        </TableHead>
-                                        <TableHead className="hidden h-12 px-5 sm:table-cell">
-                                            Sent
-                                        </TableHead>
-                                        {permissions.canCancelInvitation ? (
-                                            <TableHead className="h-12 w-[1%] px-5 text-right">
-                                                <span className="sr-only">
-                                                    Actions
-                                                </span>
-                                            </TableHead>
-                                        ) : null}
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {invitations.data.map((invitation) => (
-                                        <TableRow
-                                            key={invitation.code}
-                                            data-test="invitation-row"
-                                            className="h-16"
-                                        >
-                                            <TableCell className="max-w-0 px-5 py-4">
-                                                <p className="min-w-56 truncate font-medium">
-                                                    {invitation.email}
-                                                </p>
-                                            </TableCell>
-                                            <TableCell className="w-36 px-5 py-4">
-                                                <Badge variant="secondary">
-                                                    {invitation.role_label}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell className="hidden px-5 py-4 text-muted-foreground sm:table-cell">
-                                                <time
-                                                    dateTime={
-                                                        invitation.created_at
-                                                    }
-                                                    title={new Date(
-                                                        invitation.created_at,
-                                                    ).toLocaleString()}
-                                                >
-                                                    {formatRelativeTime(
-                                                        invitation.created_at,
-                                                    )}
-                                                </time>
-                                            </TableCell>
-                                            {permissions.canCancelInvitation ? (
-                                                <TableCell className="w-[1%] px-5 py-4 text-right">
-                                                    <Button
-                                                        variant="secondary"
-                                                        size="sm"
-                                                        data-test="invitation-cancel-button"
-                                                        onClick={() =>
-                                                            confirmCancelInvitation(
-                                                                invitation,
-                                                            )
-                                                        }
-                                                    >
-                                                        Cancel
-                                                    </Button>
-                                                </TableCell>
-                                            ) : null}
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                            <ListPagination
-                                id="invitations"
-                                team={team}
-                                pageName="invitations_page"
-                                perPageName="invitations_per_page"
-                                paginator={invitations}
-                            />
-                        </div>
-                    </SettingsPanel>
+                    </section>
                 ) : null}
             </div>
 
@@ -715,7 +707,7 @@ function ListPagination<T>({
     };
 
     return (
-        <footer className="border-t px-5 py-4">
+        <footer className="w-full">
             <div className="flex items-center justify-between gap-4">
                 <Field orientation="horizontal" className="w-fit">
                     <FieldLabel htmlFor={rowsPerPageId}>
