@@ -67,6 +67,11 @@ class EmailBuilderAgent
             throw ValidationException::withMessages(['design' => 'The resulting email is too large.']);
         }
 
+        if (isset($result['tools'])) {
+            // Keep JSON Schema objects as objects; associative decoding re-encodes `{}` as invalid `[]`.
+            $result['tools'] = json_decode($process->output(), flags: JSON_THROW_ON_ERROR)->tools;
+        }
+
         return $result;
     }
 }

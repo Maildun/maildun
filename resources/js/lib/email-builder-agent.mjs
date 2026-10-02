@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
     emptyDocument,
     formatIssues,
+    lintDocument,
     renderEmail,
     validateDocument,
 } from '@maildun/email-builder';
@@ -65,7 +66,13 @@ try {
                 document: next,
                 html: rendered.html,
                 text: rendered.text,
-                warnings: rendered.warnings,
+                warnings: [
+                    ...lintDocument(next),
+                    ...rendered.warnings.map((warning) => ({
+                        severity: 'warning',
+                        ...warning,
+                    })),
+                ],
                 outline: outlineDocument(next),
                 ops: session.ops,
                 result,

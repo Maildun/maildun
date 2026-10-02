@@ -55,6 +55,18 @@ test('reads the native agent reference and individual blocks without changing th
     expect($email->refresh()->getAttributes())->toBe($before);
 });
 
+test('exposes native tool input schemas with empty objects instead of arrays', function () {
+    $email = Email::factory()->builder()->create();
+
+    MaildunServer::tool(GetEmailBuilderTool::class, emailBuilderArguments($email))
+        ->assertOk()
+        ->assertSee('"name":"get_document","description":')
+        ->assertSee('"properties":{}')
+        ->assertSee('"additionalProperties":{}')
+        ->assertDontSee('"properties":[]')
+        ->assertDontSee('"additionalProperties":[]');
+});
+
 test('saves native block edits and matching delivery HTML and plain text', function () {
     $email = Email::factory()->builder()->create();
     $revision = emailBuilderArguments($email)['revision'];
@@ -289,6 +301,27 @@ test('checks and renders the email without saving it', function () {
         ->etc());
 
     expect($email->refresh()->getAttributes())->toBe($before);
+});
+
+test('reports lint warnings at the top level of check and preview results', function () {
+    $email = Email::factory()->builder()->create();
+
+    MaildunServer::tool(CheckEmailBuilderTool::class, emailBuilderArguments($email))
+        ->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('warnings', fn (Collection $warnings): bool => $warnings->pluck('code')->contains('missing-preheader'))
+        ->where('result.data.warnings', fn (Collection $warnings): bool => $warnings->pluck('code')->contains('missing-preheader'))
+        ->etc());
+
+    MaildunServer::tool(EditEmailBuilderTool::class, [
+        ...emailBuilderArguments($email),
+        'tool' => 'insert_blocks',
+        'input' => ['blocks' => [['id' => 'photo', 'type' => 'image', 'props' => ['src' => 'https://cdn.maildun.test/photo.png']]]],
+        'dry_run' => true,
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('warnings', fn (Collection $warnings): bool => $warnings->contains(fn (array $warning): bool => $warning['code'] === 'missing-alt'
+            && $warning['severity'] === 'warning'
+            && $warning['blockId'] === 'photo'))
+        ->etc());
 });
 
 test('reports a missing runtime without exposing process errors or changing the email', function () {
