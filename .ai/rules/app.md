@@ -13,7 +13,7 @@ App sidebar pages get padding from app-sidebar-layout (`p-10`), aligned with the
 Sidebar app pages wrap the header and body in one `mx-auto w-full max-w-7xl` container so breadcrumbs and content share the same 80rem (1280px) column. Padding stays on the inner body (`p-10`) and header (`px-10`) — do not re-add page-level padding or a second max-width wrapper. Settings keeps its own narrower max-w-4xl container.
 
 ## Let wide editors shrink inside the sidebar layout
-Keep `min-w-0` on AppContent, the max-w-7xl wrapper, and the padded body column. Wide intrinsic children such as EmailBuilder.js otherwise size the flex ancestors before their own overflow/container rules run, widening the page and breaking navigation on narrow desktop viewports.
+Keep `min-w-0` on AppContent, the max-w-7xl wrapper, and the padded body column. Wide intrinsic children such as the email editor otherwise size the flex ancestors before their own overflow/container rules run, widening the page and breaking navigation on narrow desktop viewports.
 
 ## Fullscreen layout hides the app chrome
 AppSidebarLayout accepts `fullscreen`. When true (campaign design via setLayoutProps), it presents an h-dvh overflow-hidden shell and visually hides AppSidebar, breadcrumbs, p-10, and attribution. Default remains the sidebar app chrome.

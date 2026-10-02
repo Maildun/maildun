@@ -218,7 +218,7 @@ export default function MediaLibraryDialog({
                     <DialogTitle>Media library</DialogTitle>
                     <DialogDescription>
                         Upload an image, copy its link, then paste the link into
-                        EmailBuilder.js.
+                        an image block.
                     </DialogDescription>
                 </DialogHeader>
 

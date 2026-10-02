@@ -1,102 +1,66 @@
 <?php
 
-test('email builder helpers render html from the stock document format', function () {
+test('email builder helpers render html with the maildun email builder package', function () {
     $builder = file_get_contents(dirname(__DIR__, 2).'/resources/js/lib/email-builder.ts');
 
     expect($builder)->toBeString()
-        ->toContain('export const ROOT_BLOCK_ID = \'root\'')
+        ->toContain("from '@maildun/email-builder'")
+        ->toContain("from '@maildun/email-builder/compat'")
+        ->toContain('renderEmail(toEmailDocument(document)).html')
+        ->toContain('export function toBuilderDocument')
+        ->toContain('isEmailBuilderJsDocument(stored)')
         ->toContain('export function renderBuilderHtml')
         ->toContain('export function emptyBuilderDocument')
         ->toContain('export function htmlToBuilderDocument')
         ->toContain('export function sourceToBuilderDocument')
         ->toContain('export function renderSourceHtml')
         ->toContain('export function getChildrenIds')
-        ->toContain("const MERGE_URL_PREFIX = 'https://maildun.merge/'")
-        ->toContain('function protectMergeTagsInValue')
-        ->toContain('function protectMarkdownMergeUrls')
-        ->toContain("\\b(href|src)\\s*=\\s*([\"'])([^\"']*)\\2")
-        ->toContain('function restoreMarkdownMergeUrls')
-        ->toContain('function withProtectedMarkdownMergeUrls')
-        ->not->toContain('export function duplicateBlock')
-        ->not->toContain('BUILDER_BLOCK_LABELS');
+        ->toContain('export const BUILDER_MERGE_TAGS')
+        ->not->toContain('@usewaypoint/email-builder')
+        ->not->toContain('MERGE_URL_PREFIX');
 });
+
+test('every page that opens a stored design converts legacy documents first', function (string $page) {
+    $source = file_get_contents(dirname(__DIR__, 2)."/resources/js/pages/{$page}.tsx");
+
+    expect($source)->toBeString()->toContain('toBuilderDocument(');
+})->with(['emails/edit', 'transactional/edit', 'email-templates/edit']);
 
 test('plain text and markdown use the source editor with a live preview', function () {
     $editor = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-source-editor.tsx');
 
     expect($editor)->toBeString()
         ->toContain('EmailSourceMode')
-        ->toContain('sourceToBuilderDocument')
-        ->toContain('<Reader')
+        ->toContain('renderSourceHtml(value, editor)')
         ->toContain('data-test="email-source-input"')
         ->toContain("editor === 'markdown' ? 'Markdown' : 'Plain text'")
         ->toContain('PreviewWidthTabs');
 });
 
-test('compose uses the vendored emailbuilder js editor rather than a custom block ui', function () {
+test('compose mounts the maildun email builder editor', function () {
     $editor = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-builder-editor.tsx');
-    $app = file_get_contents(dirname(__DIR__, 2).'/resources/js/email-builder/App/index.tsx');
-    $core = file_get_contents(dirname(__DIR__, 2).'/resources/js/email-builder/documents/editor/core.tsx');
+    $css = file_get_contents(dirname(__DIR__, 2).'/resources/css/app.css');
 
     expect($editor)->toBeString()
-        ->toContain("from '@/email-builder/App'")
-        ->toContain('ThemeProvider')
-        ->toContain('data-test="email-builder-js"')
-        ->toContain('resetDocument')
-        ->toContain('subscribeDocument')
-        ->not->toContain('email-builder-fields');
-
-    expect($app)->toBeString()
-        ->toContain('InspectorDrawer')
-        ->toContain('TemplatePanel')
-        ->not->toContain('SamplesDrawer');
-
-    expect($core)->toBeString()
-        ->toContain('Avatar:')
-        ->toContain('Button:')
-        ->toContain('Container:')
-        ->toContain('ColumnsContainer:')
-        ->toContain('Heading:')
-        ->toContain('Html:')
-        ->toContain('Image:')
-        ->toContain('Text:')
-        ->toContain('EmailLayout:')
-        ->toContain('Spacer:')
-        ->toContain('Divider:');
-
-    expect(file_exists(dirname(__DIR__, 2).'/resources/js/components/email-builder-fields.tsx'))->toBeFalse();
-});
-
-test('email builder does not mount the samples drawer', function () {
-    $app = file_get_contents(dirname(__DIR__, 2).'/resources/js/email-builder/App/index.tsx');
-    $panel = file_get_contents(dirname(__DIR__, 2).'/resources/js/email-builder/App/TemplatePanel/index.tsx');
-    $css = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-builder-editor.css');
-
-    expect($app)->toBeString()
-        ->not->toContain('SamplesDrawer')
-        ->not->toContain('useSamplesDrawerOpen');
-
-    expect($panel)->toBeString()
-        ->not->toContain('ToggleSamplesPanelButton')
-        ->toContain('ToggleInspectorPanelButton');
+        ->toContain("import { EmailEditor } from '@maildun/email-builder/editor';")
+        ->toContain('data-test="email-builder"')
+        ->toContain('value={toEmailDocument(document)}')
+        ->toContain('readOnly={disabled}')
+        ->toContain('mergeTags={mergeTags}');
 
     expect($css)->toBeString()
-        ->toContain('.MuiDrawer-paperAnchorRight')
-        ->toContain('right: 0')
-        ->not->toContain('.MuiDrawer-paperAnchorLeft');
+        ->toContain("@import '@maildun/email-builder/core.css';")
+        ->toContain("@source '../../node_modules/@maildun/email-builder/dist';");
 
-    expect(is_dir(dirname(__DIR__, 2).'/resources/js/email-builder/App/SamplesDrawer'))->toBeFalse();
+    expect(is_dir(dirname(__DIR__, 2).'/resources/js/email-builder'))->toBeFalse();
 });
 
-test('email builder stays contained on narrow screens', function () {
+test('email builder stays contained in the compose card', function () {
     $css = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/email-builder-editor.css');
 
     expect($css)->toBeString()
-        ->toContain('container-type: inline-size')
         ->toContain('max-width: 100%')
         ->toContain('min-width: 0')
-        ->toContain('@container (max-width: 43rem)')
-        ->toContain('margin-right: 0 !important')
-        ->toContain('.email-builder-js[data-fill]')
+        ->toContain('.email-builder[data-fill]')
         ->toContain('flex: 1 1 0%');
 });

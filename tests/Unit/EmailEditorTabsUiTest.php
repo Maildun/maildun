@@ -18,8 +18,7 @@ test('campaign draft compose is a setup hub instead of seven tabs', function () 
         ->toContain('Edit settings')
         ->toContain("view === 'design'")
         ->toContain('data-test="campaign-design-preview"')
-        ->toContain('<Reader')
-        ->toContain('toReaderDocument')
+        ->toContain('renderBuilderHtml(toBuilderDocument(design))')
         ->not->toContain('<TabsList')
         ->not->toContain('email-tab-')
         ->not->toContain('<SettingsPanel')
@@ -155,14 +154,13 @@ test('campaign design view fills leftover height and hub dialogs use the default
         ->not->toContain('min-h-full min-w-0 flex-col gap-4')
         ->and($row)->toContain('CheckmarkCircleSolidIcon')
         ->toContain('text-success')
-        ->and($css)->toContain('.email-builder-js[data-fill]')
+        ->and($css)->toContain('.email-builder[data-fill]')
         ->toContain('flex: 1 1 0%');
 });
 
 test('campaign personalization tags open a dialog with sample values', function () {
     $editor = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/emails/edit.tsx');
     $dialog = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/personalization-tags-dialog.tsx');
-    $buttonPanel = file_get_contents(dirname(__DIR__, 2).'/resources/js/email-builder/App/InspectorDrawer/ConfigurationPanel/input-panels/ButtonSidebarPanel.tsx');
 
     expect($editor)->toBeString()
         ->toContain('data-test="personalization-tags"')
@@ -180,9 +178,9 @@ test('campaign personalization tags open a dialog with sample values', function 
         ->toContain('data-test="copy-personalization-tag"')
         ->toContain('className="flex max-h-[calc(100svh-2rem)] w-lg flex-col overflow-hidden"');
 
-    expect($buttonPanel)->toBeString()
-        ->toContain('https://example.com or {{ unsubscribe_url }}')
-        ->toContain('Paste a personalization tag from the toolbar');
+    expect($editor)->toBeString()
+        ->toContain('...BUILDER_MERGE_TAGS')
+        ->toContain('selectedAudience?.attributes');
 });
 
 test('campaign media dialog supports upload search and copy link', function () {
@@ -195,7 +193,7 @@ test('campaign media dialog supports upload search and copy link', function () {
         ->toContain('data-test="copy-builder-media-link"')
         ->toContain("only: ['mediaLibrary']")
         ->toContain('Search recent media')
-        ->toContain('EmailBuilder.js');
+        ->toContain('paste the link into');
 });
 
 test('campaign draft saves each section and keeps template creation in campaign actions', function () {

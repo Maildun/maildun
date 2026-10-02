@@ -31,8 +31,6 @@ All three families are self-hosted: they are written into `public/build` and ser
 
 Hugeicons supplies the interface icon set. `@hugeicons/core-free-icons` and `@hugeicons/react` are MIT licensed and are the public default. `HUGEICONS_ICON_STYLE` can alias the free package to a Hugeicons Pro package at build time; Pro packages are never installed, committed, or distributed by this repository, and using one requires your own Hugeicons license.
 
-Material Design icons reach the application through `@mui/icons-material` (MIT) as part of the vendored email builder; they are not used elsewhere in the interface.
-
 ## Simple Icons brand glyphs
 
 `resources/js/lib/brand-icon-paths.ts` contains path data copied from the [Simple Icons](https://simpleicons.org) project, released under CC0 1.0 Universal. The glyphs themselves are trademarks of their owners and are used only to label mail clients and browsers in campaign reports:
@@ -74,11 +72,11 @@ Maildun generates local fallback avatars using DiceBear. The application current
 
 DiceBear and the individual avatar styles retain their respective rights. See the `dicebear/styles` package for complete license and source details.
 
-## Waypoint email builder
+## Email builder
 
-The email editor uses packages published by Waypoint (Metaccountant, Inc.) under the MIT License, and also vendors Waypoint source code into `resources/js/email-builder/`. That directory keeps its own `LICENSE` file — MIT License, Copyright (c) 2024 Waypoint (Metaccountant, Inc.) — which must stay with the source. Copyright remains with Waypoint and its contributors.
+The block editor and the email renderer are `@maildun/email-builder` (MIT), published from [Maildun/email-builder](https://github.com/Maildun/email-builder). Its own `THIRD_PARTY_NOTICES.md` lists the material it builds on, including the EmailBuilder.js (Waypoint, MIT) importer and font presets.
 
-The vendored editor brings its own dependencies, notably MUI (`@mui/material`, `@mui/icons-material`, MIT), Emotion (MIT) as MUI's style engine, and highlight.js (BSD-3-Clause).
+Earlier versions of this application vendored Waypoint's EmailBuilder.js editor into `resources/js/email-builder/`. That source was removed when the package was adopted. Designs saved in the EmailBuilder.js format are converted when they are opened.
 
 ## Laravel React starter kit
 

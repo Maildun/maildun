@@ -4,10 +4,13 @@
 
 @import 'shadcn/tailwind.css';
 
+@import '@maildun/email-builder/core.css';
+
 @import '@fontsource-variable/familjen-grotesk';
 @import '@fontsource-variable/inter';
 
 @source '../views';
+@source '../../node_modules/@maildun/email-builder/dist';
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 
 @custom-variant dark (&:is(.dark *));

@@ -50,8 +50,8 @@ class CreateTransactionalEmailTool extends Tool
             'reply_to' => ['nullable', 'email:rfc', 'max:255'],
             'html' => ['nullable', 'string', 'max:2000000'],
             'source' => ['nullable', 'string', 'max:2000000'],
-            'design' => ['nullable', 'array'],
-            'design.root' => ['required_with:design', 'array'],
+            'design' => ['nullable', 'array', 'required_array_keys:root'],
+            'design.root' => ['array'],
             'variables' => ['nullable', 'array'],
             'variables.*.key' => ['required', 'string', 'max:64', 'regex:/^[a-zA-Z_][a-zA-Z0-9_]*$/'],
             'variables.*.example' => ['nullable', 'string', 'max:255'],
@@ -119,7 +119,7 @@ class CreateTransactionalEmailTool extends Tool
             'reply_to' => $schema->string()->description('Reply-to email.')->format('email')->max(255),
             'html' => $schema->string()->description('Rendered HTML email content.')->max(2000000),
             'source' => $schema->string()->description('Editable Markdown or plain-text source for source-based workspace editors.')->max(2000000),
-            'design' => $schema->object()->description('EmailBuilder.js design document; root is required when supplied.'),
+            'design' => $schema->object()->description('@maildun/email-builder design document: {version: 1, settings, theme, root: ordered top-level block ids, blocks: map of id => {type, props, style?, children?}}. Root is required when supplied.'),
             'variables' => $this->variablesSchema($schema),
         ];
     }

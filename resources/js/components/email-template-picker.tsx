@@ -54,7 +54,7 @@ type Props = {
 
 const EDITOR_LABELS: Record<EmailEditorMode, string> = {
     html: 'HTML',
-    builder: 'EmailBuilder.js',
+    builder: 'Email Builder',
     plain_text: 'Plain text',
     markdown: 'Markdown',
 };

@@ -10,6 +10,7 @@ use App\Mcp\Tools\Campaigns\ListCampaignsTool;
 use App\Mcp\Tools\Campaigns\UpdateCampaignTool;
 use App\Models\Audience;
 use App\Models\Email;
+use App\Models\EmailTemplate;
 use App\Models\Segment;
 use App\Models\Team;
 use Illuminate\Testing\Fluent\AssertableJson;
@@ -156,6 +157,19 @@ test('drafts a source-based campaign through MCP before its body is written', fu
         ->where('campaign.source', null)
         ->where('campaign.plain_text', null)
         ->etc());
+});
+
+test('creates a block campaign that has no blocks yet', function () {
+    $team = Team::factory()->create(['slug' => 'blank-canvas', 'email_editor' => EmailEditor::Builder]);
+
+    MaildunServer::tool(CreateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'name' => 'Blank canvas',
+        'design' => EmailTemplate::builderDesign([]),
+    ])->assertOk();
+
+    expect(Email::query()->whereBelongsTo($team)->where('name', 'Blank canvas')->firstOrFail()->design)
+        ->toHaveKey('root', []);
 });
 
 test('refuses to delete a campaign that is still sending', function () {

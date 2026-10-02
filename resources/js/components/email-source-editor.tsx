@@ -1,14 +1,9 @@
-import { Reader } from '@usewaypoint/email-builder';
 import { useState } from 'react';
 import PreviewWidthTabs from '@/components/preview-width-tabs';
 import type { PreviewWidth } from '@/components/preview-width-tabs';
 import { CodeEditor } from '@/components/ui/code-editor';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-    ROOT_BLOCK_ID,
-    sourceToBuilderDocument,
-    toReaderDocument,
-} from '@/lib/email-builder';
+import { renderSourceHtml } from '@/lib/email-builder';
 import { cn } from '@/lib/utils';
 import type { EmailSourceMode } from '@/types';
 
@@ -29,7 +24,6 @@ export function EmailSourceEditor({
 }: Props) {
     const [previewWidth, setPreviewWidth] = useState<PreviewWidth>('desktop');
     const label = editor === 'markdown' ? 'Markdown' : 'Plain text';
-    const document = sourceToBuilderDocument(value, editor);
 
     return (
         <Tabs defaultValue="source" className="min-h-[32rem] flex-1">
@@ -79,9 +73,11 @@ export function EmailSourceEditor({
                                     : 'w-[375px]',
                             )}
                         >
-                            <Reader
-                                document={toReaderDocument(document)}
-                                rootBlockId={ROOT_BLOCK_ID}
+                            <iframe
+                                title={`${label} preview`}
+                                sandbox=""
+                                srcDoc={renderSourceHtml(value, editor)}
+                                className="h-full min-h-[24rem] w-full border-0"
                             />
                         </div>
                     </div>

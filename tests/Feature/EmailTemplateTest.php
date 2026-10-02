@@ -160,6 +160,24 @@ test('a team template can be renamed and deleted', function () {
     $this->assertModelMissing($template);
 });
 
+test('a block template can be saved with every block removed', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $team->update(['email_editor' => EmailEditor::Builder]);
+    $template = EmailTemplate::factory()->for($team)->builder()->create();
+
+    $this->actingAs($user)
+        ->patch(route('email_templates.update', [$team, $template]), [
+            'name' => $template->name,
+            'html' => '<p></p>',
+            'design' => EmailTemplate::builderDesign([]),
+        ])
+        ->assertValid('design')
+        ->assertRedirect();
+
+    expect($template->fresh()->design)->toHaveKey('root', []);
+});
+
 test('a markdown template keeps its editable source', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

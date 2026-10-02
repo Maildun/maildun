@@ -10,7 +10,6 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Reader } from '@usewaypoint/email-builder';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
@@ -37,7 +36,7 @@ import {
     EmptyTitle,
 } from '@/components/ui/empty';
 import { useListFilters } from '@/hooks/use-list-filters';
-import { ROOT_BLOCK_ID, toReaderDocument } from '@/lib/email-builder';
+import { renderBuilderHtml, toBuilderDocument } from '@/lib/email-builder';
 import { formatRelativeTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
@@ -60,7 +59,7 @@ type Props = {
 
 const EDITOR_LABELS: Record<EmailEditorMode, string> = {
     html: 'HTML',
-    builder: 'EmailBuilder.js',
+    builder: 'Email Builder',
     plain_text: 'Plain text',
     markdown: 'Markdown',
 };
@@ -84,9 +83,14 @@ function TemplatePreview({ template }: { template: EmailTemplateDetail }) {
     if (template.editor === 'builder' && template.design) {
         return (
             <ScaledEmailFrame>
-                <Reader
-                    document={toReaderDocument(template.design)}
-                    rootBlockId={ROOT_BLOCK_ID}
+                <iframe
+                    title={`${template.name} preview`}
+                    sandbox=""
+                    srcDoc={renderBuilderHtml(
+                        toBuilderDocument(template.design),
+                    )}
+                    tabIndex={-1}
+                    className="pointer-events-none h-full w-full border-0 bg-background"
                 />
             </ScaledEmailFrame>
         );

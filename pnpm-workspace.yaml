@@ -8,5 +8,8 @@ packages:
 allowBuilds:
   unrs-resolver: false
 
+minimumReleaseAgeExclude:
+  - '@maildun/email-builder@0.1.0'
+
 publicHoistPattern:
   - '@inertiajs/core'

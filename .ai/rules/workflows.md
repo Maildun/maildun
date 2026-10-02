@@ -16,11 +16,6 @@ paths:
 
 If you ever edit `require.php`, refresh the lock with `composer update --lock --no-scripts` (touches only `content-hash` and `platform`), or `composer validate` fails in CI.
 
-## pnpm audit stays at --audit-level=high (insane ReDoS is unfixable)
-`pnpm audit --audit-level=high` reports 1 moderate advisory that will not go away. Do not chase it, and do not lower the threshold to `moderate` — CI would fail permanently.
+## pnpm audit runs at --audit-level=high
+CI runs `pnpm audit --audit-level=high`. The one known moderate advisory, GHSA-w455-mfq9-hf74 (ReDoS in `insane`, reached through the former vendored Waypoint editor), no longer applies since the editor moved to `@maildun/email-builder`.
 
-GHSA-w455-mfq9-hf74: ReDoS in `insane` <=2.6.2, reached via `@usewaypoint/block-text` (and `@usewaypoint/email-builder`). The advisory lists "patched >=2.6.3", but **2.6.2 is the newest version ever published to npm** — the package is abandoned, so no upgrade or `pnpm.overrides` can resolve it.
-
-Reachability is low: `insane` sanitizes HTML inside the email builder editor, in the authenticated author's own browser. It never runs in Node — `config/inertia.php` sets `ssr.enabled => true`, but no SSR entrypoint or bundle exists, so `HttpGateway::dispatch()` short-circuits on `bundleExists()` before making any request.
-
-If it ever needs a real fix, the route is `pnpm.patchedDependencies`, not a version bump.

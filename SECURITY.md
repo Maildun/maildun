@@ -16,25 +16,6 @@ The maintainer will acknowledge a complete report as soon as practical, investig
 
 Security fixes are applied to the current `main` branch and, when tagged releases exist, the latest release line. Older commits and forks are not maintained by this project.
 
-## Known issues
-
-### insane (GHSA-w455-mfq9-hf74), regular expression denial of service
-
-`insane` enters the dependency tree through `@usewaypoint/block-text`, which the
-email builder uses to sanitize text blocks. No fixed release exists. The advisory
-names 2.6.3, but npm has never published anything past 2.6.2 (June 2022) and the
-package is unmaintained, so there is no version to upgrade to.
-
-The sanitizer runs in the browser, inside `renderBuilderHtml` in
-`resources/js/lib/email-builder.ts`, while an authenticated member composes a
-campaign, over HTML that same member authored. It does not run on the server:
-`App\Actions\Emails\RenderCampaignContent` performs merge-tag substitution in PHP,
-and recipients receive static HTML. A pathological input therefore stalls the
-composing browser tab and nothing else.
-
-`pnpm audit --prod` reports this advisory until the email builder drops `insane`
-upstream or the text block is replaced.
-
 ## Operator responsibilities
 
 Self-hosting transfers important security responsibilities to the operator:

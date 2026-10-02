@@ -32,6 +32,7 @@ import {
     htmlToBuilderDocument,
     renderBuilderHtml,
     renderSourceHtml,
+    toBuilderDocument,
 } from '@/lib/email-builder';
 import { edit, index, update } from '@/routes/email_templates';
 import type {
@@ -65,7 +66,7 @@ const TABS: { value: TabValue; label: string; fields: string[] }[] = [
 
 const EDITOR_LABELS: Record<EmailEditorMode, string> = {
     html: 'HTML',
-    builder: 'EmailBuilder.js',
+    builder: 'Email Builder',
     plain_text: 'Plain text',
     markdown: 'Markdown',
 };
@@ -98,8 +99,9 @@ export default function EmailTemplatesEdit({
         source: template.source ?? '',
         design:
             template.editor === 'builder'
-                ? (template.design ??
-                  htmlToBuilderDocument(template.html ?? ''))
+                ? template.design
+                    ? toBuilderDocument(template.design)
+                    : htmlToBuilderDocument(template.html ?? '')
                 : null,
     });
 
