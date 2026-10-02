@@ -148,6 +148,7 @@ test('inserting with a container selected appends inside it and with columns sel
         assert.equal(insertBuilderMedia(store, media()), true);
 
         const { document, selectedId } = store.getState();
+
         if (type === 'container') {
             assert.deepEqual(document.blocks.layout.children, [selectedId]);
             assert.deepEqual(document.root, ['layout']);

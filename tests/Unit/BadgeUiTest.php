@@ -9,7 +9,8 @@ test('badge exposes every Tailwind color family with light and dark styles', fun
         'purple', 'fuchsia', 'pink', 'rose', 'taupe', 'mauve', 'mist', 'olive',
     ] as $color) {
         expect($badge)->toContain("{$color}:")
-            ->toContain("bg-{$color}-50")
-            ->toContain("dark:bg-{$color}-400/10");
+            ->toContain("bg-{$color}-400/")
+            ->toContain("dark:bg-{$color}-400/40")
+            ->toContain("dark:text-{$color}-200");
     }
 });
