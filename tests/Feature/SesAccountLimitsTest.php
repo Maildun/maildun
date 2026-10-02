@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\Audience;
+use App\Models\Email;
+use App\Models\Subscriber;
 use App\Models\TeamEmailIntegration;
 use App\Models\User;
 use App\Services\SesAccountLimits;
@@ -99,4 +102,31 @@ test('the SES connection page loads the limits as a deferred prop', function () 
             ->missing('sesLimits')
             ->loadDeferredProps(fn (Assert $reload) => $reload
                 ->where('sesLimits.available', false)));
+});
+
+test('the send page loads the quota as a deferred prop and the editor does not request it', function () {
+    $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->ses()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'audience_id' => $audience->id,
+        'subject' => 'Hello',
+        'html' => '<p>Hi</p>',
+    ]);
+    $fake = Mockery::mock(SesAccountLimits::class);
+    $fake->shouldReceive('fetch')->once()->andReturn(['available' => false, 'reason' => 'Grant ses:GetAccount to these credentials to see the sending quota.']);
+    app()->instance(SesAccountLimits::class, $fake);
+
+    $this->actingAs($user)
+        ->get(route('emails.preview-and-send', [$user->currentTeam, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->missing('sesQuota')
+            ->loadDeferredProps(fn (Assert $reload) => $reload
+                ->where('sesQuota.available', false)));
+
+    $this->actingAs($user)
+        ->get(route('emails.edit', [$user->currentTeam, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->reload(fn (Assert $reload) => $reload->missing('sesQuota'), only: 'sesQuota'));
 });

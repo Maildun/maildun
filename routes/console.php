@@ -42,4 +42,4 @@ Schedule::command('emails:resume')->everyFiveMinutes()->withoutOverlapping();
 
 // Starts campaigns whose scheduled time has come. withoutOverlapping plus the
 // per-campaign claim in ScheduleEmailSend::claimDue mean each starts once.
-Schedule::command('emails:send-scheduled')->everyMinute()->withoutOverlapping();
+Schedule::command('emails:send-scheduled')->everyMinute()->withoutOverlapping(10);

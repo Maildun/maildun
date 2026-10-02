@@ -67,6 +67,7 @@ class SendEmailDelivery implements ShouldQueue
                 ->update([
                     'status' => EmailDeliveryStatus::Rejected,
                     'failure_reason' => __(EmailAddressSuppressedException::MESSAGE),
+                    'failure_code' => EmailFailureCode::AddressSuppressed,
                 ]);
 
             return;

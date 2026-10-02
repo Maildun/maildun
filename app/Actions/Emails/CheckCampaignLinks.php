@@ -8,6 +8,7 @@ use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\UriResolver;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use InvalidArgumentException;
 use Throwable;
 
 class CheckCampaignLinks
@@ -70,7 +71,11 @@ class CheckCampaignLinks
                     return $this->broken($url, $response->status(), __('Redirects without saying where to.'));
                 }
 
-                $current = (string) UriResolver::resolve(new Uri($current), new Uri($location));
+                try {
+                    $current = (string) UriResolver::resolve(new Uri($current), new Uri($location));
+                } catch (InvalidArgumentException) {
+                    return $this->broken($url, $response->status(), __('Redirects to an address that is not valid.'));
+                }
 
                 continue;
             }

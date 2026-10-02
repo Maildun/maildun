@@ -5,6 +5,7 @@ use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailAddressHealthStatus;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailProvider;
 use App\Jobs\SendEmailDelivery;
 use App\Jobs\SendTransactionalEmailDelivery;
@@ -149,6 +150,7 @@ test('a campaign worker rejects an address suppressed after its recipient batch 
     expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Rejected)
         ->and($delivery->fresh()->failure_reason)
         ->toBe('This email address is suppressed after a permanent bounce or complaint.')
+        ->and($delivery->fresh()->failure_code)->toBe(EmailFailureCode::AddressSuppressed)
         ->and($delivery->attempts()->count())->toBe(0);
     Mail::assertNothingSent();
 });

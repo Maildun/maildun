@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Emails\StartEmailSend;
 use App\Enums\EmailStatus;
 use App\Models\Audience;
 use App\Models\Email;
@@ -9,6 +10,8 @@ use App\Models\TeamEmailIntegration;
 use App\Models\User;
 use Illuminate\Support\Facades\Bus;
 use Inertia\Testing\AssertableInertia as Assert;
+
+use function Pest\Laravel\mock;
 
 function schedulableCampaign(Team $team, array $attributes = []): Email
 {
@@ -93,6 +96,16 @@ test('the scheduler starts due campaigns once and leaves future ones alone', fun
         ->status->toBe(EmailStatus::Draft)
         ->scheduled_at->not->toBeNull();
     Bus::assertBatchCount(1);
+});
+
+test('the scheduler starts every due campaign when more are due than fit in one page', function () {
+    $team = Team::factory()->create();
+    Email::factory()->for($team)->count(1005)->create(['scheduled_at' => now()->subMinute()]);
+    mock(StartEmailSend::class)->shouldReceive('handle')->times(1005);
+
+    $this->artisan('emails:send-scheduled')->assertSuccessful();
+
+    expect(Email::query()->whereNotNull('scheduled_at')->count())->toBe(0);
 });
 
 test('a scheduled send that cannot start keeps the reason on the draft', function () {

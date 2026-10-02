@@ -294,11 +294,6 @@ class EmailController extends Controller
                 ])->values(),
             ],
             'sendReadiness' => $sendReadiness->handle($email),
-            // Deferred: the SES quota needs an AWS call the page must not wait on.
-            'sesQuota' => Inertia::defer(fn (): ?array => ($integration = $currentTeam->emailIntegration()->first()) instanceof TeamEmailIntegration
-                && $integration->isVerified()
-                ? app(SesAccountLimits::class)->fetch($integration)
-                : null),
             'audiences' => $currentTeam->audiences()
                 ->withCount($this->subscribedCount($currentTeam))
                 ->with([
@@ -498,6 +493,11 @@ class EmailController extends Controller
                 'scheduled_at' => $email->scheduled_at?->toISOString(),
             ],
             'sendReadiness' => $sendReadiness->handle($email),
+            // Deferred: the SES quota needs an AWS call the page must not wait on.
+            'sesQuota' => Inertia::defer(fn (): ?array => ($integration = $currentTeam->emailIntegration()->first()) instanceof TeamEmailIntegration
+                && $integration->isVerified()
+                ? app(SesAccountLimits::class)->fetch($integration)
+                : null),
             'recipientCount' => (clone $recipientQuery)->count(),
             'suppressedRecipients' => $this->suppressedRecipients($email),
             'unconfirmedRecipients' => $this->campaignSubscribers($email)

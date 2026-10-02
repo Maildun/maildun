@@ -14,6 +14,7 @@ enum EmailFailureCode: string
     case NoReport = 'no_report';
     case SesRejected = 'ses_rejected';
     case TransientBounce = 'transient_bounce';
+    case AddressSuppressed = 'address_suppressed';
     case Unknown = 'unknown';
 
     public function label(): string
@@ -25,6 +26,7 @@ enum EmailFailureCode: string
             self::NoReport => __('The send never reported back'),
             self::SesRejected => __('Amazon SES rejected the message'),
             self::TransientBounce => __('Temporary bounce from the recipient server'),
+            self::AddressSuppressed => __('The address was suppressed after a bounce or complaint'),
             self::Unknown => __('Other errors'),
         };
     }
