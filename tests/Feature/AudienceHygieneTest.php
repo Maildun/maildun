@@ -1,9 +1,11 @@
 <?php
 
+use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\TeamRole;
 use App\Models\Audience;
 use App\Models\Email;
+use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use App\Models\Team;
@@ -139,6 +141,36 @@ test('workspace list hygiene filters subscribers by audience and search', functi
             ->where('subscribers.data.0.uuid', $matching->uuid));
 });
 
+test('workspace list hygiene shows suppressed addresses as undeliverable', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create([
+        'email' => 'bounced@example.com',
+    ]);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create([
+        'email' => $subscriber->email,
+        'reason' => EmailAddressHealthReason::PermanentBounce,
+        'detail' => 'General',
+        'last_event_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('list_hygiene.index', [
+            'current_team' => $team,
+            'kind' => 'undeliverable',
+        ]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('audiences.0.undeliverable_count', 1)
+            ->where('filters.kind', 'undeliverable')
+            ->where('subscribers.total', 1)
+            ->where('subscribers.data.0.uuid', $subscriber->uuid)
+            ->where('subscribers.data.0.health_reason', 'permanent_bounce')
+            ->where('subscribers.data.0.health_detail', 'General')
+            ->where('subscribers.data.0.health_event_at', fn (mixed $value): bool => is_string($value)));
+});
+
 test('workspace cleanup removes selected unconfirmed subscribers only', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
@@ -179,6 +211,28 @@ test('workspace cleanup removes selected inactive subscribers across audiences',
     $this->assertModelMissing($secondInactive);
     expect($firstDelivery->fresh()->subscriber_id)->toBeNull()
         ->and($secondDelivery->fresh()->subscriber_id)->toBeNull();
+});
+
+test('workspace cleanup removes an undeliverable subscriber but keeps the suppression', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create([
+        'email' => 'complained@example.com',
+    ]);
+    $health = EmailAddressHealth::factory()->for($team)->suppressed()->create([
+        'email' => $subscriber->email,
+        'reason' => EmailAddressHealthReason::Complaint,
+    ]);
+
+    $this->actingAs($user)
+        ->delete(route('list_hygiene.undeliverable.destroy', $team), [
+            'subscribers' => [$subscriber->uuid],
+        ])
+        ->assertRedirect();
+
+    $this->assertModelMissing($subscriber);
+    $this->assertModelExists($health);
 });
 
 test('workspace cleanup rejects subscribers from another team', function () {

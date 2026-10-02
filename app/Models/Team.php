@@ -61,6 +61,7 @@ use Illuminate\Support\Str;
  * @property-read Collection<int, TeamApiKey> $apiKeys
  * @property-read Collection<int, TransactionalEmailDelivery> $transactionalEmailDeliveries
  * @property-read Collection<int, AutomationEmailDelivery> $automationEmailDeliveries
+ * @property-read Collection<int, CampaignSeries> $campaignSeries
  * @property-read Collection<int, EmailAddressHealth> $emailAddressHealths
  * @property-read Collection<int, Media> $media
  * @property-read Collection<int, MediaCategory> $mediaCategories
@@ -361,6 +362,12 @@ class Team extends Model
     public function emailAddressHealths(): HasMany
     {
         return $this->hasMany(EmailAddressHealth::class);
+    }
+
+    /** @return HasMany<CampaignSeries, $this> */
+    public function campaignSeries(): HasMany
+    {
+        return $this->hasMany(CampaignSeries::class);
     }
 
     /** @return HasMany<Media, $this> */

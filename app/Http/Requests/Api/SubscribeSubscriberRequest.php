@@ -3,12 +3,14 @@
 namespace App\Http\Requests\Api;
 
 use App\Enums\AudienceAttributeType;
+use App\Enums\SubscriberLanguage;
 use App\Models\Audience;
 use App\Models\Team;
 use App\Models\TeamApiKey;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class SubscribeSubscriberRequest extends FormRequest
 {
@@ -35,6 +37,11 @@ class SubscribeSubscriberRequest extends FormRequest
             'email' => ['required', 'string', 'email', 'max:255'],
             'first_name' => ['nullable', 'string', 'max:255'],
             'last_name' => ['nullable', 'string', 'max:255'],
+            'language' => [
+                'nullable',
+                Rule::enum(SubscriberLanguage::class),
+                Rule::in($this->audience()->allowed_languages ?? []),
+            ],
             'consent_text' => ['nullable', 'string', 'max:1000'],
         ];
 

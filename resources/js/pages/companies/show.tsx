@@ -235,13 +235,25 @@ export default function CompanyShow({
                     />
                 ) : (
                     <>
-                        <Table>
+                        <Table
+                            className="table-fixed"
+                            footer={
+                                <Paginator
+                                    paginator={company.contacts}
+                                    showSummary
+                                />
+                            }
+                        >
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>Contact</TableHead>
+                                    <TableHead className="w-80">
+                                        Contact
+                                    </TableHead>
                                     <TableHead>Tags</TableHead>
                                     <TableHead>Audiences</TableHead>
-                                    <TableHead>Created</TableHead>
+                                    <TableHead className="w-28">
+                                        Created
+                                    </TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -257,7 +269,6 @@ export default function CompanyShow({
                                 ))}
                             </TableBody>
                         </Table>
-                        <Paginator paginator={company.contacts} />
                     </>
                 )}
             </div>
@@ -350,7 +361,7 @@ function CompanyContactRow({
 
     return (
         <TableRow data-test="company-contact-row">
-            <TableCell className="max-w-0">
+            <TableCell className="max-w-80">
                 <ContactHoverCard
                     contact={contact}
                     href={href}

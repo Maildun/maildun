@@ -16,16 +16,26 @@ test('subscriber list supports selecting every row', function () {
         ->toContain('href={showSubscriber.url([...routeArgs, subscriber.uuid])}')
         ->toContain('onEdit={canManage ? openEdit : undefined}')
         ->toContain('View profile')
+        ->toContain('className="table-fixed"')
+        ->toContain('<TableHead className="min-w-0 lg:w-64">Contact</TableHead>')
+        ->toContain('<TableHead className="hidden w-28 lg:table-cell">')
         ->toContain('className="max-w-0"')
+        ->toContain('hidden min-w-0 lg:table-cell')
+        ->toContain('hidden max-w-0 lg:table-cell')
+        ->toContain('hidden w-28 sm:table-cell')
+        ->toContain('hidden sm:table-cell')
         ->not->toContain('<CardTitle>Subscribers</CardTitle>')
         ->not->toContain('<CardTitle>Segments</CardTitle>')
         ->not->toContain('<CardTitle>Subscribe forms</CardTitle>')
         ->toContain('data-test="segment-row"')
         ->toContain('data-test="subscribe-form-row"')
+        ->toContain('data-test="segment-name-link"')
+        ->toContain('data-test="subscribe-form-name-link"')
         ->toContain('Edit Rule')
         ->toContain('onDelete={setSegmentToDelete}')
         ->toContain('setLifecycleOpen(false)')
-        ->toContain('setConsentConfirmed(false)');
+        ->toContain('setConsentConfirmed(false)')
+        ->toContain('footer={<Paginator paginator={pagination} showSummary />}');
 });
 
 test('subscriber stats chart uses the primary color', function () {
@@ -78,6 +88,24 @@ test('subscriber hover card previews the contact and offers profile and edit act
         ->toContain('href')
         ->toContain('>Status</dt>')
         ->toContain('>Source</dt>');
+});
+
+test('segment names link to the segment page', function () {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/audiences/show.tsx');
+
+    expect($source)->toBeString()
+        ->toContain('data-test="segment-name-link"')
+        ->toContain('href={showSegment([')
+        ->toContain('className="font-medium underline-offset-4 hover:underline"');
+});
+
+test('subscribe form names link to the editor', function () {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/audiences/show.tsx');
+
+    expect($source)->toBeString()
+        ->toContain('data-test="subscribe-form-name-link"')
+        ->toContain('href={editSubscribeForm([')
+        ->toContain('className="font-medium underline-offset-4 hover:underline"');
 });
 
 test('segment matching subscribers use the same hover card', function () {

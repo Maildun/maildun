@@ -14,6 +14,7 @@ import type {
     CampaignReportMetrics,
     CampaignSendRun,
 } from '@/components/email-report-layout';
+import { MetricGauge } from '@/components/metric-gauge';
 import {
     Card,
     CardContent,
@@ -21,6 +22,7 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { Progress, ProgressLabel } from '@/components/ui/progress';
 import { formatRelativeTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -58,43 +60,93 @@ export default function EmailShow({
             ]}
         >
             <div className="flex flex-col gap-4">
-                <CampaignInsights insights={insights} />
                 <Card size="sm">
-                    <CardHeader className="border-b">
+                    <CardHeader>
                         <CardTitle>Delivery health</CardTitle>
                         <CardDescription>
-                            Failed sends can be retried. Permanent bounces and
-                            complaints unsubscribe the recipient so they are
-                            skipped next time.
+                            Sending progress and confirmed delivery at a glance.
                         </CardDescription>
                     </CardHeader>
-                    <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                        <HealthStat
-                            label="Failed"
-                            value={metrics.failed}
-                            icon={Cancel01Icon}
-                            tone="danger"
+                    <CardContent className="grid items-center gap-6 p-5 sm:p-6 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-8">
+                        <MetricGauge
+                            value={metrics.delivery_rate}
+                            label="Confirmed delivery"
+                            detail={
+                                metrics.delivery_rate === null
+                                    ? 'Delivery confirmation unavailable'
+                                    : `${metrics.delivered.toLocaleString()} of ${metrics.feedback_recipient_count.toLocaleString()} confirmed`
+                            }
+                            className="justify-self-center"
                         />
-                        <HealthStat
-                            label="Bounced"
-                            value={feedbackReported ? metrics.bounced : null}
-                            icon={MailRemove01Icon}
-                            tone="danger"
-                        />
-                        <HealthStat
-                            label="Complaints"
-                            value={feedbackReported ? metrics.complained : null}
-                            icon={Alert02Icon}
-                            tone="danger"
-                        />
-                        <HealthStat
-                            label="Pending"
-                            value={Math.max(
-                                campaign.recipient_count - metrics.processed,
-                                0,
-                            )}
-                            icon={Clock01Icon}
-                        />
+                        <div className="flex min-w-0 flex-col gap-6">
+                            <Progress
+                                value={metrics.progress}
+                                className="gap-3 [&_[data-slot=progress-indicator]]:rounded-full [&_[data-slot=progress-indicator]]:transition-[width] [&_[data-slot=progress-indicator]]:motion-reduce:transition-none [&_[data-slot=progress-track]]:h-2.5"
+                            >
+                                <ProgressLabel>
+                                    Recipients processed
+                                </ProgressLabel>
+                                <span className="ml-auto text-sm text-muted-foreground tabular-nums">
+                                    {metrics.processed.toLocaleString()} of{' '}
+                                    {campaign.recipient_count.toLocaleString()}
+                                </span>
+                            </Progress>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-4">
+                                <HealthStat
+                                    label="Failed"
+                                    value={metrics.failed}
+                                    icon={Cancel01Icon}
+                                    iconClassName="bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                                    tone="danger"
+                                />
+                                <HealthStat
+                                    label="Bounced"
+                                    value={
+                                        feedbackReported
+                                            ? metrics.bounced
+                                            : null
+                                    }
+                                    icon={MailRemove01Icon}
+                                    iconClassName="bg-orange-500/10 text-orange-600 dark:text-orange-400"
+                                    tone="danger"
+                                />
+                                <HealthStat
+                                    label="Complaints"
+                                    value={
+                                        feedbackReported
+                                            ? metrics.complained
+                                            : null
+                                    }
+                                    icon={Alert02Icon}
+                                    iconClassName="bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                    tone="danger"
+                                />
+                                <HealthStat
+                                    label="Pending"
+                                    value={Math.max(
+                                        campaign.recipient_count -
+                                            metrics.processed,
+                                        0,
+                                    )}
+                                    icon={Clock01Icon}
+                                    iconClassName="bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                                />
+                            </div>
+                            <p className="text-xs/relaxed text-muted-foreground">
+                                Failed sends can be retried. Permanent bounces
+                                and complaints are left unsubscribed.
+                                {metrics.delivery_feedback === 'partial' && (
+                                    <>
+                                        {' '}
+                                        Delivery confirmation covers{' '}
+                                        {metrics.feedback_recipient_count.toLocaleString()}{' '}
+                                        of{' '}
+                                        {campaign.recipient_count.toLocaleString()}{' '}
+                                        recipients.
+                                    </>
+                                )}
+                            </p>
+                        </div>
                     </CardContent>
                     {failureCauses.length > 0 ? (
                         <CardContent
@@ -123,6 +175,7 @@ export default function EmailShow({
                     ) : null}
                 </Card>
                 {sendRuns.length > 1 && <SendHistory runs={sendRuns} />}
+                <CampaignInsights insights={insights} />
             </div>
         </EmailReportLayout>
     );
@@ -181,11 +234,13 @@ function HealthStat({
     label,
     value,
     icon,
+    iconClassName,
     tone = 'default',
 }: {
     label: string;
     value: number | null;
     icon: IconSvgElement;
+    iconClassName: string;
     tone?: 'default' | 'danger';
 }) {
     const isAlert = tone === 'danger' && value !== null && value > 0;
@@ -195,9 +250,7 @@ function HealthStat({
             <span
                 className={cn(
                     'flex size-8 shrink-0 items-center justify-center rounded-lg',
-                    isAlert
-                        ? 'bg-destructive/10 text-destructive'
-                        : 'bg-muted text-muted-foreground',
+                    iconClassName,
                 )}
             >
                 <HugeiconsIcon
@@ -215,7 +268,7 @@ function HealthStat({
                 ) : (
                     <p
                         className={cn(
-                            'text-2xl font-semibold tabular-nums',
+                            'font-heading text-xl font-semibold tabular-nums',
                             isAlert && 'text-destructive',
                         )}
                     >

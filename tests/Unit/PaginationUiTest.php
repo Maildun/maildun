@@ -11,6 +11,8 @@ test('paginator uses the shared pagination composition for Inertia links', funct
         ->toContain('PaginationEllipsis')
         ->toContain('PaginationNext')
         ->toContain('<Link href={link.url} preserveScroll />')
+        ->toContain('<Pagination')
+        ->toContain("showSummary ? 'mx-0 w-auto min-w-0 justify-end' : className")
         ->not->toContain("from '@/components/ui/button'");
 
     expect($pagination)->toBeString()

@@ -1,6 +1,8 @@
 import {
+    Copy01Icon,
     FilterIcon,
     Mail01Icon,
+    Tick02Icon,
     UserGroupIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -11,6 +13,8 @@ import { SettingsPanel } from '@/components/settings-panel';
 import { Button } from '@/components/ui/button';
 import {
     Field,
+    FieldContent,
+    FieldDescription,
     FieldError,
     FieldGroup,
     FieldLabel,
@@ -18,6 +22,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import { useClipboard } from '@/hooks/use-clipboard';
 import AudienceSettingsLayout from '@/layouts/audiences/settings-layout';
 import { formatRelativeTime } from '@/lib/format';
 import { show, update } from '@/routes/audiences';
@@ -40,6 +45,7 @@ type RouteArgs = [string, string];
 
 export default function AudienceEdit({ audience, stats }: Props) {
     const { currentTeam } = usePage().props;
+    const [copiedText, copy] = useClipboard();
 
     if (!currentTeam) {
         return null;
@@ -105,6 +111,37 @@ export default function AudienceEdit({ audience, stats }: Props) {
                                     <FieldError>
                                         {errors.description}
                                     </FieldError>
+                                </Field>
+                                <Field
+                                    orientation="responsive"
+                                    className="gap-4 @md/field-group:justify-between"
+                                >
+                                    <FieldContent>
+                                        <FieldLabel>Audience ID</FieldLabel>
+                                        <FieldDescription className="font-mono text-xs break-all">
+                                            {audience.uuid}
+                                        </FieldDescription>
+                                    </FieldContent>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => void copy(audience.uuid)}
+                                        aria-live="polite"
+                                        data-test="copy-audience-id-settings"
+                                    >
+                                        <HugeiconsIcon
+                                            icon={
+                                                copiedText === audience.uuid
+                                                    ? Tick02Icon
+                                                    : Copy01Icon
+                                            }
+                                            data-icon="inline-start"
+                                        />
+                                        {copiedText === audience.uuid
+                                            ? 'Copied'
+                                            : 'Copy ID'}
+                                    </Button>
                                 </Field>
                             </FieldGroup>
                             <div className="flex justify-end border-t px-6 py-5 sm:px-7">

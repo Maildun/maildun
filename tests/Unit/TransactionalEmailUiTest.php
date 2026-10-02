@@ -5,7 +5,7 @@ test('transactional index follows the campaign plain table presentation', functi
 
     expect($index)->toBeString()
         ->toContain('<div className="flex flex-1 flex-col gap-6">')
-        ->toContain('<Table>')
+        ->toMatch('/<Table[\s>]/')
         ->toContain('<Head title="Transactional" />')
         ->toContain("'No transactional emails yet'")
         ->toContain('Compose transactional email')

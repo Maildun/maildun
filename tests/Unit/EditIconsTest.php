@@ -28,7 +28,7 @@ test('audience table actions use manage and edit icons', function () {
 
     expect($source)->toBeString()
         ->toContain('data-test="audience-row"')
-        ->toContain('<Table>')
+        ->toMatch('/<Table[\s>]/')
         ->toContain('audience.avatar')
         ->toContain('rounded-md after:rounded-md')
         ->not->toContain('rounded-lg after:rounded-lg')

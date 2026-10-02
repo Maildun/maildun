@@ -29,6 +29,7 @@ use App\Http\Requests\UpdateEmailRequest;
 use App\Jobs\SendCampaignTestEmail;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
+use App\Models\CampaignSeries;
 use App\Models\Email;
 use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
@@ -203,6 +204,12 @@ class EmailController extends Controller
             : EmailTemplate::blankBodyFor($editor);
 
         $email = $currentTeam->emails()->create([
+            'campaign_series_id' => $request->filled('campaign_series')
+                ? CampaignSeries::query()
+                    ->whereBelongsTo($currentTeam)
+                    ->where('uuid', $request->string('campaign_series'))
+                    ->value('id')
+                : null,
             'email_template_id' => $template?->id,
             'name' => $request->string('name'),
             'subject' => filled($template?->subject)

@@ -14,7 +14,7 @@ class SubscriberController extends Controller
 {
     public function store(SubscribeSubscriberRequest $request, SubscribeViaApi $subscribe): JsonResponse
     {
-        /** @var array{email: string, first_name?: string|null, last_name?: string|null, consent_text?: string|null, attributes?: array<string, string|int|float|null>} $data */
+        /** @var array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, consent_text?: string|null, attributes?: array<string, string|int|float|null>} $data */
         $data = $request->validated();
         $subscriber = $subscribe->handle($request->audience(), $data, $request->ip());
 
@@ -40,7 +40,7 @@ class SubscriberController extends Controller
         ]);
     }
 
-    /** @return array{id: string, email: string, first_name: string|null, last_name: string|null, status: string, subscribed_at: string|null} */
+    /** @return array{id: string, email: string, first_name: string|null, last_name: string|null, language: string|null, status: string, subscribed_at: string|null} */
     private function subscriberPayload(Subscriber $subscriber): array
     {
         return [
@@ -48,6 +48,7 @@ class SubscriberController extends Controller
             'email' => $subscriber->email,
             'first_name' => $subscriber->first_name,
             'last_name' => $subscriber->last_name,
+            'language' => $subscriber->language?->value,
             'status' => $subscriber->status->value,
             'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
         ];

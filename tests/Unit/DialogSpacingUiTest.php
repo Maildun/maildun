@@ -54,8 +54,22 @@ test('dialog forms pair their own spacing with a tightened field group', functio
         $source = file_get_contents($root.'/'.$page);
 
         expect($source)->toBeString()
-            ->toContain('className="space-y-6"')
+            ->toContain('space-y-6')
             ->toContain('<FieldGroup className="gap-5">')
             ->not->toContain('<FieldGroup className="py-4">');
     }
+});
+
+test('the transactional test dialog keeps its controls visible when variables overflow', function () {
+    $source = file_get_contents(
+        dirname(__DIR__, 2).'/resources/js/components/send-test-transactional-email-dialog.tsx'
+    );
+
+    expect($source)->toBeString()
+        ->toContain('max-h-[calc(100svh-2rem)]')
+        ->toContain('className="flex min-h-0 flex-col space-y-6 overflow-hidden"')
+        ->toContain('className="flex min-h-0 flex-1 flex-col gap-5"')
+        ->toContain('aria-label="Merge tag sample values"')
+        ->toContain('overflow-y-auto overscroll-contain')
+        ->toContain('<DialogFooter className="shrink-0 gap-2">');
 });

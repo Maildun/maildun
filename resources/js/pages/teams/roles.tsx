@@ -8,7 +8,6 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { Form, Head, router } from '@inertiajs/react';
 import { useState } from 'react';
 import { SettingsPageHeader } from '@/components/settings-page-header';
-import { SettingsPanel } from '@/components/settings-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -90,13 +89,12 @@ export default function TeamRoles({ team, roles, permissions }: Props) {
             <Head title={`Roles · ${team.name}`} />
 
             <div className="flex flex-col gap-8">
-                <SettingsPageHeader title="Roles" />
-
-                <SettingsPanel
-                    variant="inset"
+                <SettingsPageHeader
                     title="Roles"
                     description="Manage workspace roles and choose the permissions each role can use."
-                    actions={
+                />
+                <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-end">
                         <Button
                             data-test="create-workspace-role"
                             onClick={() => setCreateOpen(true)}
@@ -107,110 +105,103 @@ export default function TeamRoles({ team, roles, permissions }: Props) {
                             />
                             Create role
                         </Button>
-                    }
-                >
-                    <div className="p-3 sm:p-4">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead className="h-12 px-5">
-                                        Role
-                                    </TableHead>
-                                    <TableHead className="h-12 px-5">
-                                        Permissions
-                                    </TableHead>
-                                    <TableHead className="h-12 w-[1%] px-5 text-right">
-                                        <span className="sr-only">Actions</span>
-                                    </TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {roles.map((role) => (
-                                    <TableRow key={role.id} className="h-16">
-                                        <TableCell className="px-5 py-4">
-                                            <div className="flex items-center gap-2 font-medium">
-                                                <span>{role.label}</span>
-                                                {role.is_system ? (
-                                                    <Badge variant="secondary">
-                                                        System
-                                                    </Badge>
-                                                ) : null}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="px-5 py-4 text-muted-foreground">
-                                            {role.permissions.length} permission
-                                            {role.permissions.length === 1
-                                                ? ''
-                                                : 's'}
-                                        </TableCell>
-                                        <TableCell className="w-[1%] px-5 py-4 text-right">
-                                            {!role.is_owner ? (
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger
-                                                        render={
-                                                            <Button
-                                                                size="icon"
-                                                                variant="ghost"
-                                                                data-test="workspace-role-actions"
-                                                                aria-label={`Actions for ${role.label}`}
-                                                            />
-                                                        }
-                                                    >
-                                                        <HugeiconsIcon
-                                                            icon={
-                                                                MoreHorizontalIcon
-                                                            }
-                                                        />
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end">
-                                                        <DropdownMenuGroup>
-                                                            <DropdownMenuItem
-                                                                data-test="edit-workspace-role"
-                                                                onClick={() =>
-                                                                    setRoleToEdit(
-                                                                        role,
-                                                                    )
-                                                                }
-                                                            >
-                                                                <HugeiconsIcon
-                                                                    icon={
-                                                                        Edit03Icon
-                                                                    }
-                                                                />
-                                                                Edit
-                                                            </DropdownMenuItem>
-                                                            {!role.is_system ? (
-                                                                <>
-                                                                    <DropdownMenuSeparator />
-                                                                    <DropdownMenuItem
-                                                                        variant="destructive"
-                                                                        data-test="delete-workspace-role"
-                                                                        onClick={() =>
-                                                                            setRoleToDelete(
-                                                                                role,
-                                                                            )
-                                                                        }
-                                                                    >
-                                                                        <HugeiconsIcon
-                                                                            icon={
-                                                                                Delete02Icon
-                                                                            }
-                                                                        />
-                                                                        Delete
-                                                                    </DropdownMenuItem>
-                                                                </>
-                                                            ) : null}
-                                                        </DropdownMenuGroup>
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
-                                            ) : null}
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
                     </div>
-                </SettingsPanel>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Role</TableHead>
+                                <TableHead>Permissions</TableHead>
+                                <TableHead className="w-[1%] text-right">
+                                    <span className="sr-only">Actions</span>
+                                </TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {roles.map((role) => (
+                                <TableRow key={role.id}>
+                                    <TableCell>
+                                        <div className="flex items-center gap-2 font-medium">
+                                            <span>{role.label}</span>
+                                            {role.is_system ? (
+                                                <Badge variant="secondary">
+                                                    System
+                                                </Badge>
+                                            ) : null}
+                                        </div>
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground tabular-nums">
+                                        {role.permissions.length} permission
+                                        {role.permissions.length === 1
+                                            ? ''
+                                            : 's'}
+                                    </TableCell>
+                                    <TableCell className="w-[1%] text-right">
+                                        {!role.is_owner ? (
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger
+                                                    render={
+                                                        <Button
+                                                            size="icon"
+                                                            variant="ghost"
+                                                            data-test="workspace-role-actions"
+                                                            aria-label={`Actions for ${role.label}`}
+                                                        />
+                                                    }
+                                                >
+                                                    <HugeiconsIcon
+                                                        icon={
+                                                            MoreHorizontalIcon
+                                                        }
+                                                    />
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end">
+                                                    <DropdownMenuGroup>
+                                                        <DropdownMenuItem
+                                                            data-test="edit-workspace-role"
+                                                            onClick={() =>
+                                                                setRoleToEdit(
+                                                                    role,
+                                                                )
+                                                            }
+                                                        >
+                                                            <HugeiconsIcon
+                                                                icon={
+                                                                    Edit03Icon
+                                                                }
+                                                            />
+                                                            Edit
+                                                        </DropdownMenuItem>
+                                                        {!role.is_system ? (
+                                                            <>
+                                                                <DropdownMenuSeparator />
+                                                                <DropdownMenuItem
+                                                                    variant="destructive"
+                                                                    data-test="delete-workspace-role"
+                                                                    onClick={() =>
+                                                                        setRoleToDelete(
+                                                                            role,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    <HugeiconsIcon
+                                                                        icon={
+                                                                            Delete02Icon
+                                                                        }
+                                                                    />
+                                                                    Delete
+                                                                </DropdownMenuItem>
+                                                            </>
+                                                        ) : null}
+                                                    </DropdownMenuGroup>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
+                                        ) : null}
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
             </div>
 
             <RoleDialog

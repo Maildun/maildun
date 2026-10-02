@@ -19,12 +19,13 @@ The sections below cover assets and vendored code that a manifest scan does not 
 
 ## Fonts
 
-Both families are self-hosted: they are written into `public/build` and served from this application, so they are redistributed with any deployment.
+All three families are self-hosted: they are written into `public/build` and served from this application, so they are redistributed with any deployment.
 
 | Font | Source | License |
 | --- | --- | --- |
 | Inter | `@fontsource-variable/inter`, imported by `resources/css/app.css` | SIL Open Font License 1.1 |
 | Instrument Sans | Fetched at build time from Bunny Fonts by the Laravel Vite plugin (`vite.config.ts`) | SIL Open Font License 1.1 |
+| Familjen Grotesk | `@fontsource-variable/familjen-grotesk`, imported by `resources/css/app.css` (headings) | SIL Open Font License 1.1 |
 
 ## Icons
 
@@ -54,7 +55,7 @@ Flag artwork comes from the [flag-icons](https://github.com/lipis/flag-icons) pr
 
 ## IP geolocation databases
 
-Campaign insights derive country, city, and ASN from local DB-IP Lite `.mmdb` files. **These databases are not included in this repository**; operators download them separately from [db-ip.com](https://db-ip.com) and are bound by DB-IP's terms for the edition they obtain. The DB-IP Lite databases are distributed under Creative Commons Attribution 4.0 International, which requires visible attribution.
+Campaign insights derive country, city, and ASN from local DB-IP Lite `.mmdb` files. **These databases are not included in this repository**; operators download them separately from [db-ip.com](https://db-ip.com), or opt in to `emails:update-geolocation-databases` (`MAIL_TRACKING_GEOLOCATION_AUTO_UPDATE_ENABLED`), which fetches the Lite editions on their behalf, and are bound by DB-IP's terms for the edition they obtain. The DB-IP Lite databases are distributed under Creative Commons Attribution 4.0 International, which requires visible attribution.
 
 Maildun surfaces that credit in the campaign insights payload (`app/Actions/Emails/BuildCampaignInsights.php`). Keep the DB-IP Lite attribution visible in any interface you build on top of this data.
 

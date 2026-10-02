@@ -68,7 +68,7 @@ Use `php artisan storage:configure` to validate a backend and `php artisan stora
 
 Maildun stores first-party open and click events, including technical request metadata. `MAIL_TRACKING_EVENT_RETENTION_DAYS` defaults to 90 days; aggregated campaign insights remain after detailed events are pruned. Set it to the shortest period your use case requires, or `0` only when indefinite detailed retention is intentional.
 
-Geolocation uses local DB-IP Lite `.mmdb` files configured with `MAIL_TRACKING_CITY_DATABASE` and `MAIL_TRACKING_ASN_DATABASE`. These databases are not included in the repository.
+Geolocation uses local DB-IP Lite `.mmdb` files configured with `MAIL_TRACKING_CITY_DATABASE` and `MAIL_TRACKING_ASN_DATABASE`. Leave them empty to use `storage/app/private/geoip/dbip-city-lite.mmdb` and `dbip-asn-lite.mmdb`. Relative paths are resolved from the project root. These databases are not included in the repository; Set `MAIL_TRACKING_GEOLOCATION_AUTO_UPDATE_ENABLED=true` to let `php artisan emails:update-geolocation-databases` (scheduled daily) download the current DB-IP Lite City and ASN files into those paths. It is off by default because it contacts `download.db-ip.com` and replaces any database already at those paths.
 
 ## Horizon access and alerts
 

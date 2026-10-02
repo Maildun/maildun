@@ -5,11 +5,13 @@ use App\Enums\AutomationTrigger;
 use App\Enums\SubscribeFormArtworkPreset;
 use App\Enums\SubscribeFormArtworkType;
 use App\Enums\SubscribeFormCardPadding;
+use App\Enums\SubscribeFormFieldMode;
 use App\Enums\SubscribeFormHeaderSpacing;
 use App\Enums\SubscribeFormLogoPosition;
 use App\Enums\SubscribeFormLogoShape;
 use App\Enums\SubscribeFormLogoSize;
 use App\Enums\SubscribeFormTextAlignment;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamBrandColor;
@@ -398,6 +400,79 @@ test('published forms display and store their audience attributes', function () 
         'company' => 'Acme Inc.',
         'team_size' => 12,
     ]);
+});
+
+test('published forms collect a configured subscriber language', function () {
+    $audience = Audience::factory()->create([
+        'language_mode' => SubscribeFormFieldMode::Required,
+        'allowed_languages' => [
+            SubscriberLanguage::English->value,
+            SubscriberLanguage::Indonesian->value,
+        ],
+        'default_language' => SubscriberLanguage::English,
+    ]);
+    $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
+
+    $this->get(route('public.subscribe_forms.show', $subscribeForm))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('subscribeForm.language_mode', 'required')
+            ->where('subscribeForm.default_language', 'en')
+            ->has('subscribeForm.languages', 2)
+            ->where('subscribeForm.languages.0.value', 'en')
+            ->where('subscribeForm.languages.1.value', 'id'));
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'language' => SubscriberLanguage::Indonesian->value,
+        'consent' => true,
+        'website' => '',
+    ])->assertOk();
+
+    expect($audience->subscribers()->sole()->language)->toBe(SubscriberLanguage::Indonesian);
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'missing-language@example.com',
+        'consent' => true,
+        'website' => '',
+    ])->assertInvalid('language');
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'unsupported-language@example.com',
+        'language' => SubscriberLanguage::Spanish->value,
+        'consent' => true,
+        'website' => '',
+    ])->assertInvalid('language');
+});
+
+test('optional hosted language uses the audience default when omitted', function () {
+    $audience = Audience::factory()->create([
+        'language_mode' => SubscribeFormFieldMode::Optional,
+        'allowed_languages' => [SubscriberLanguage::Indonesian->value],
+        'default_language' => SubscriberLanguage::Indonesian,
+    ]);
+    $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+        'website' => '',
+    ])->assertOk();
+
+    expect($audience->subscribers()->sole()->language)->toBe(SubscriberLanguage::Indonesian);
+});
+
+test('published forms reject language when the audience field is hidden', function () {
+    $subscribeForm = SubscribeForm::factory()->published()->create();
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'language' => SubscriberLanguage::English->value,
+        'consent' => true,
+        'website' => '',
+    ])->assertInvalid('language');
+
+    expect($subscribeForm->audience->subscribers()->count())->toBe(0);
 });
 
 test('published forms require configured required audience attributes', function () {

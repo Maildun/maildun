@@ -49,6 +49,9 @@ class PublicSubscribeFormController extends Controller
                 'card_padding' => $subscribeForm->card_padding->value,
                 'first_name_mode' => $subscribeForm->audience->first_name_mode->value,
                 'last_name_mode' => $subscribeForm->audience->last_name_mode->value,
+                'language_mode' => $subscribeForm->audience->language_mode->value,
+                'default_language' => $subscribeForm->audience->default_language?->value,
+                'languages' => $subscribeForm->audience->languageOptions(),
                 'attributes' => $subscribeForm->audience->audienceAttributes()
                     ->orderBy('position')
                     ->get()
@@ -73,6 +76,7 @@ class PublicSubscribeFormController extends Controller
             'email' => $request->string('email')->toString(),
             'first_name' => $request->filled('first_name') ? $request->string('first_name')->toString() : null,
             'last_name' => $request->filled('last_name') ? $request->string('last_name')->toString() : null,
+            'language' => $request->filled('language') ? $request->string('language')->toString() : null,
             'attributes' => $request->validated('attributes', []),
         ], $request->ip());
 

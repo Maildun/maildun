@@ -22,6 +22,17 @@ import {
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
+    Combobox,
+    ComboboxChip,
+    ComboboxChips,
+    ComboboxChipsInput,
+    ComboboxContent,
+    ComboboxEmpty,
+    ComboboxItem,
+    ComboboxList,
+    ComboboxValue,
+} from '@/components/ui/combobox';
+import {
     Dialog,
     DialogClose,
     DialogContent,
@@ -81,12 +92,15 @@ import type {
     AudienceAttributeType,
     AudienceAttributeTypeOption,
     SubscribeFormFieldMode,
+    SubscriberLanguage,
+    SubscriberLanguageOption,
 } from '@/types/audiences';
 
 type Props = {
     audience: Audience;
     attributes: AudienceAttribute[];
     attributeTypes: AudienceAttributeTypeOption[];
+    languages: SubscriberLanguageOption[];
 };
 
 type RouteArgs = [string, string];
@@ -95,6 +109,7 @@ export default function AudienceAttributeSettings({
     audience,
     attributes,
     attributeTypes,
+    languages,
 }: Props) {
     const { currentTeam } = usePage().props;
     const [attributeOpen, setAttributeOpen] = useState(false);
@@ -132,6 +147,7 @@ export default function AudienceAttributeSettings({
                 <MainAttributeSettings
                     audience={audience}
                     routeArgs={routeArgs}
+                    languages={languages}
                 />
 
                 <SettingsPanel
@@ -314,9 +330,11 @@ export default function AudienceAttributeSettings({
 function MainAttributeSettings({
     audience,
     routeArgs,
+    languages,
 }: {
     audience: Audience;
     routeArgs: RouteArgs;
+    languages: SubscriberLanguageOption[];
 }) {
     const [firstNameMode, setFirstNameMode] = useState<SubscribeFormFieldMode>(
         audience.first_name_mode,
@@ -324,6 +342,40 @@ function MainAttributeSettings({
     const [lastNameMode, setLastNameMode] = useState<SubscribeFormFieldMode>(
         audience.last_name_mode,
     );
+    const [languageMode, setLanguageMode] = useState<SubscribeFormFieldMode>(
+        audience.language_mode,
+    );
+    const [allowedLanguages, setAllowedLanguages] = useState<
+        SubscriberLanguage[]
+    >(audience.allowed_languages);
+    const [defaultLanguage, setDefaultLanguage] =
+        useState<SubscriberLanguage | null>(audience.default_language);
+    const allowedLanguageOptions = languages.filter((language) =>
+        allowedLanguages.includes(language.value),
+    );
+    const languageValues = languages.map((language) => language.value);
+
+    const handleLanguageModeChange = (mode: SubscribeFormFieldMode) => {
+        setLanguageMode(mode);
+
+        if (mode !== 'hidden' && allowedLanguages.length === 0) {
+            const initialLanguage =
+                languages.find((language) => language.value === 'en') ??
+                languages[0];
+
+            if (initialLanguage) {
+                setAllowedLanguages([initialLanguage.value]);
+                setDefaultLanguage(initialLanguage.value);
+            }
+        }
+    };
+
+    const handleAllowedLanguagesChange = (values: SubscriberLanguage[]) => {
+        setAllowedLanguages(values);
+        setDefaultLanguage((current) =>
+            current && values.includes(current) ? current : (values[0] ?? null),
+        );
+    };
 
     return (
         <Form
@@ -347,6 +399,32 @@ function MainAttributeSettings({
                             type="hidden"
                             name="last_name_mode"
                             value={lastNameMode}
+                        />
+                        <input
+                            type="hidden"
+                            name="language_mode"
+                            value={languageMode}
+                        />
+                        {allowedLanguages.length === 0 ? (
+                            <input
+                                type="hidden"
+                                name="allowed_languages"
+                                value=""
+                            />
+                        ) : (
+                            allowedLanguages.map((language) => (
+                                <input
+                                    key={language}
+                                    type="hidden"
+                                    name="allowed_languages[]"
+                                    value={language}
+                                />
+                            ))
+                        )}
+                        <input
+                            type="hidden"
+                            name="default_language"
+                            value={defaultLanguage ?? ''}
                         />
 
                         <Field>
@@ -389,6 +467,141 @@ function MainAttributeSettings({
                                 disabled={processing}
                             />
                             <FieldError>{errors.last_name_mode}</FieldError>
+                        </Field>
+
+                        <Field data-invalid={Boolean(errors.language_mode)}>
+                            <FieldLabel htmlFor="attribute-language">
+                                Language
+                            </FieldLabel>
+                            <FieldModeSelect
+                                id="attribute-language"
+                                value={languageMode}
+                                onValueChange={handleLanguageModeChange}
+                                disabled={processing}
+                            />
+                            <FieldDescription>
+                                Collect the subscriber's preferred language for
+                                localized emails.
+                            </FieldDescription>
+                            <FieldError>{errors.language_mode}</FieldError>
+                        </Field>
+
+                        <Field
+                            data-invalid={Boolean(
+                                errors.allowed_languages ||
+                                errors['allowed_languages.0'],
+                            )}
+                        >
+                            <FieldLabel htmlFor="attribute-allowed-languages">
+                                Available languages
+                            </FieldLabel>
+                            <Combobox
+                                items={languageValues}
+                                multiple
+                                value={allowedLanguages}
+                                onValueChange={(values) =>
+                                    handleAllowedLanguagesChange(
+                                        values as SubscriberLanguage[],
+                                    )
+                                }
+                                disabled={processing}
+                            >
+                                <ComboboxChips
+                                    id="attribute-allowed-languages"
+                                    aria-invalid={Boolean(
+                                        errors.allowed_languages ||
+                                        errors['allowed_languages.0'],
+                                    )}
+                                >
+                                    <ComboboxValue>
+                                        {allowedLanguages.map((language) => (
+                                            <ComboboxChip key={language}>
+                                                {languages.find(
+                                                    (option) =>
+                                                        option.value ===
+                                                        language,
+                                                )?.label ?? language}
+                                            </ComboboxChip>
+                                        ))}
+                                    </ComboboxValue>
+                                    <ComboboxChipsInput placeholder="Add languages" />
+                                </ComboboxChips>
+                                <ComboboxContent>
+                                    <ComboboxEmpty>
+                                        No languages found.
+                                    </ComboboxEmpty>
+                                    <ComboboxList>
+                                        {(language) => (
+                                            <ComboboxItem
+                                                key={language}
+                                                value={language}
+                                            >
+                                                {languages.find(
+                                                    (option) =>
+                                                        option.value ===
+                                                        language,
+                                                )?.label ?? language}
+                                            </ComboboxItem>
+                                        )}
+                                    </ComboboxList>
+                                </ComboboxContent>
+                            </Combobox>
+                            <FieldDescription>
+                                Hosted forms show only these choices, and API
+                                subscriptions accept only these language codes.
+                            </FieldDescription>
+                            <FieldError>
+                                {errors.allowed_languages ??
+                                    errors['allowed_languages.0']}
+                            </FieldError>
+                        </Field>
+
+                        <Field data-invalid={Boolean(errors.default_language)}>
+                            <FieldLabel htmlFor="attribute-default-language">
+                                Default language
+                            </FieldLabel>
+                            <Select
+                                items={allowedLanguageOptions}
+                                value={defaultLanguage}
+                                onValueChange={(value) =>
+                                    setDefaultLanguage(
+                                        value as SubscriberLanguage | null,
+                                    )
+                                }
+                                disabled={
+                                    processing ||
+                                    allowedLanguageOptions.length === 0
+                                }
+                            >
+                                <SelectTrigger
+                                    id="attribute-default-language"
+                                    className="w-full"
+                                    aria-invalid={Boolean(
+                                        errors.default_language,
+                                    )}
+                                >
+                                    <SelectValue placeholder="Select default language" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectGroup>
+                                        {allowedLanguageOptions.map(
+                                            (language) => (
+                                                <SelectItem
+                                                    key={language.value}
+                                                    value={language.value}
+                                                >
+                                                    {language.label}
+                                                </SelectItem>
+                                            ),
+                                        )}
+                                    </SelectGroup>
+                                </SelectContent>
+                            </Select>
+                            <FieldDescription>
+                                Used when a new form or API subscription does
+                                not provide a language.
+                            </FieldDescription>
+                            <FieldError>{errors.default_language}</FieldError>
                         </Field>
                     </FieldGroup>
                     <div className="flex justify-end border-t px-6 py-5 sm:px-7">

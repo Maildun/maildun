@@ -5,11 +5,9 @@ import {
     MouseLeftClick01Icon,
     Refresh03Icon,
     UserGroupIcon,
-    InformationCircleIcon,
     StopCircleIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import type { IconSvgElement } from '@hugeicons/react';
 import {
     Head,
     Link,
@@ -26,6 +24,7 @@ import {
     useState,
 } from 'react';
 import type { ReactNode } from 'react';
+import { MetricCard } from '@/components/metric-card';
 import {
     Alert,
     AlertAction,
@@ -46,7 +45,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
-    CardAction,
     CardContent,
     CardDescription,
     CardHeader,
@@ -56,11 +54,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from '@/components/ui/toast';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipTrigger,
-} from '@/components/ui/tooltip';
 import {
     CAMPAIGN_STATUS_LABELS,
     campaignStatusVariant,
@@ -599,6 +592,7 @@ export function EmailReportLayout({
                         detail={`${metrics.processed.toLocaleString()} processed`}
                         hint="Everyone the campaign was queued for. Processed counts recipients whose send finished, whether it succeeded or not."
                         icon={UserGroupIcon}
+                        iconClassName="bg-violet-500/10 text-violet-600 dark:text-violet-400"
                     />
                     <MetricCard
                         label="Delivered"
@@ -610,6 +604,7 @@ export function EmailReportLayout({
                         detail={deliveryFeedbackDetail}
                         hint="Share of Amazon SES recipients whose mail server confirmed receipt. SMTP hands mail off without reporting delivery, so it is left out."
                         icon={MailSend01Icon}
+                        iconClassName="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                     />
                     <MetricCard
                         label="Unique opens"
@@ -617,6 +612,7 @@ export function EmailReportLayout({
                         detail={`${metrics.opened.toLocaleString()} recipients`}
                         hint="Recipients who opened at least once, including privacy proxies and security scanners that load images automatically. Human engagement below counts only confident human opens."
                         icon={MailOpen01Icon}
+                        iconClassName="bg-amber-500/10 text-amber-600 dark:text-amber-400"
                     />
                     <MetricCard
                         label="Unique clicks"
@@ -624,6 +620,7 @@ export function EmailReportLayout({
                         detail={`${metrics.clicked.toLocaleString()} recipients`}
                         hint="Recipients who clicked any tracked link at least once, including link scanners. Human engagement below counts only confident human clicks."
                         icon={MouseLeftClick01Icon}
+                        iconClassName="bg-rose-500/10 text-rose-600 dark:text-rose-400"
                     />
                 </div>
 
@@ -889,66 +886,6 @@ function CampaignReportNav({
                 );
             })}
         </nav>
-    );
-}
-
-function MetricCard({
-    label,
-    value,
-    detail,
-    hint,
-    icon,
-}: {
-    label: string;
-    value: string;
-    detail: string;
-    /** What the metric counts, shown in a tooltip next to the label. */
-    hint: string;
-    icon: IconSvgElement;
-}) {
-    return (
-        <Card>
-            <CardHeader>
-                <CardDescription className="flex items-center gap-1">
-                    {label}
-                    <Tooltip>
-                        <TooltipTrigger
-                            render={
-                                <button
-                                    type="button"
-                                    aria-label={`About ${label}`}
-                                    className="text-muted-foreground hover:text-foreground"
-                                />
-                            }
-                        >
-                            <HugeiconsIcon
-                                icon={InformationCircleIcon}
-                                className="size-3.5"
-                                aria-hidden
-                            />
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-64">
-                            {hint}
-                        </TooltipContent>
-                    </Tooltip>
-                </CardDescription>
-                <CardAction>
-                    <div className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                        <HugeiconsIcon
-                            icon={icon}
-                            className="size-4"
-                            aria-hidden
-                        />
-                    </div>
-                </CardAction>
-                <CardTitle className="text-2xl font-semibold tabular-nums">
-                    {value}
-                </CardTitle>
-            </CardHeader>
-            <CardContent>
-                <p className="text-sm text-muted-foreground">{detail}</p>
-            </CardContent>
-        </Card>
     );
 }
 

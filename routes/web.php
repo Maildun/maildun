@@ -7,6 +7,8 @@ use App\Http\Controllers\AudienceSettingsController;
 use App\Http\Controllers\AutomationController;
 use App\Http\Controllers\AvatarController;
 use App\Http\Controllers\AwsSesWebhookController;
+use App\Http\Controllers\CampaignSeriesCampaignController;
+use App\Http\Controllers\CampaignSeriesController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\ContactAudienceController;
 use App\Http\Controllers\ContactController;
@@ -148,6 +150,8 @@ Route::prefix('{current_team}')
                 ->name('list_hygiene.unconfirmed.destroy');
             Route::delete('list-hygiene/inactive', [ListHygieneController::class, 'destroyInactive'])
                 ->name('list_hygiene.inactive.destroy');
+            Route::delete('list-hygiene/undeliverable', [ListHygieneController::class, 'destroyUndeliverable'])
+                ->name('list_hygiene.undeliverable.destroy');
 
             Route::post('audiences/{audience}/imports', [ContactImportController::class, 'store'])
                 ->name('audiences.imports.store');
@@ -227,6 +231,14 @@ Route::prefix('{current_team}')
 
             Route::resource('emails', EmailController::class)
                 ->only(['index', 'store', 'show', 'edit', 'update', 'destroy']);
+            Route::resource('campaign-series', CampaignSeriesController::class)
+                ->parameters(['campaign-series' => 'campaignSeries'])
+                ->names('campaign_series')
+                ->only(['index', 'store', 'show', 'update', 'destroy']);
+            Route::post('campaign-series/{campaignSeries}/campaigns', [CampaignSeriesCampaignController::class, 'store'])
+                ->name('campaign_series.campaigns.store');
+            Route::delete('campaign-series/{campaignSeries}/campaigns/{email}', [CampaignSeriesCampaignController::class, 'destroy'])
+                ->name('campaign_series.campaigns.destroy');
             Route::get('emails/{email}/check-links', EmailLinkCheckController::class)
                 ->middleware('throttle:10,1')
                 ->name('emails.check-links');

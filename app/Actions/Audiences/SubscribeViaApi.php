@@ -19,7 +19,7 @@ class SubscribeViaApi
         private ManageContact $manageContact,
     ) {}
 
-    /** @param array{email: string, first_name?: string|null, last_name?: string|null, consent_text?: string|null, attributes?: array<string, string|int|float|null>} $data */
+    /** @param array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, consent_text?: string|null, attributes?: array<string, string|int|float|null>} $data */
     public function handle(Audience $audience, array $data, ?string $ipAddress): Subscriber
     {
         $trigger = null;
@@ -46,6 +46,7 @@ class SubscribeViaApi
             if ($subscriber?->status === SubscriberStatus::Subscribed && ! $subscriber->isPendingConfirmation()) {
                 $subscriber->update([
                     ...$profile,
+                    ...(array_key_exists('language', $data) ? ['language' => $data['language']] : []),
                     ...($attributeValues === [] ? [] : [
                         'attribute_values' => [
                             ...($subscriber->attribute_values ?? []),
@@ -67,6 +68,7 @@ class SubscribeViaApi
 
             $values = [
                 ...$profile,
+                'language' => $data['language'] ?? $lockedAudience->default_language?->value,
                 'subscribe_form_id' => null,
                 'status' => SubscriberStatus::Subscribed,
                 'source' => SubscriberSource::Api,

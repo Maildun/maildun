@@ -2,6 +2,7 @@
 
 use App\Enums\AudienceAttributeType;
 use App\Enums\AutomationTrigger;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
@@ -15,7 +16,13 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 
 test('the api subscribes idempotently without replacing the shared contact profile', function () {
-    $audience = Audience::factory()->create();
+    $audience = Audience::factory()->create([
+        'allowed_languages' => [
+            SubscriberLanguage::English->value,
+            SubscriberLanguage::Indonesian->value,
+        ],
+        'default_language' => SubscriberLanguage::English,
+    ]);
     $issued = TeamApiKey::issue($audience->team, 'Production');
     Event::fake([SubscriberLifecycleOccurred::class]);
 
@@ -23,15 +30,18 @@ test('the api subscribes idempotently without replacing the shared contact profi
         ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
             'email' => 'ADA@EXAMPLE.COM',
             'first_name' => 'Ada',
+            'language' => SubscriberLanguage::English->value,
             'consent_text' => 'Signed up during checkout',
         ])
         ->assertOk()
         ->assertJsonPath('data.email', 'ada@example.com')
+        ->assertJsonPath('data.language', 'en')
         ->assertJsonPath('data.status', 'subscribed');
 
     $subscriber = $audience->subscribers()->sole();
 
     expect($subscriber->source)->toBe(SubscriberSource::Api)
+        ->and($subscriber->language)->toBe(SubscriberLanguage::English)
         ->and($subscriber->consent_text)->toBe('Signed up during checkout')
         ->and($subscriber->status)->toBe(SubscriberStatus::Subscribed);
 
@@ -44,13 +54,41 @@ test('the api subscribes idempotently without replacing the shared contact profi
         ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
             'email' => 'ada@example.com',
             'first_name' => 'Augusta Ada',
+            'language' => SubscriberLanguage::Indonesian->value,
         ])
         ->assertOk()
-        ->assertJsonPath('data.first_name', 'Ada');
+        ->assertJsonPath('data.first_name', 'Ada')
+        ->assertJsonPath('data.language', 'id');
 
     expect($audience->subscribers()->count())->toBe(1)
+        ->and($subscriber->fresh()->language)->toBe(SubscriberLanguage::Indonesian)
         ->and($audience->team->contacts()->sole()->first_name)->toBe('Ada');
     Event::assertDispatchedTimes(SubscriberLifecycleOccurred::class, 1);
+});
+
+test('the api accepts only audience languages and falls back to the default', function () {
+    $audience = Audience::factory()->create([
+        'allowed_languages' => [SubscriberLanguage::Indonesian->value],
+        'default_language' => SubscriberLanguage::Indonesian,
+    ]);
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'default@example.com',
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.language', 'id');
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'unsupported@example.com',
+            'language' => SubscriberLanguage::English->value,
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['language']);
+
+    expect($audience->subscribers()->count())->toBe(1);
 });
 
 test('the api uses an audience double opt-in transactional email', function () {
@@ -206,6 +244,15 @@ test('subscriber endpoints enforce key team scope and configured attributes', fu
         ])
         ->assertUnprocessable()
         ->assertJsonValidationErrors(['attributes', 'attributes.company']);
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'ada@example.com',
+            'language' => 'not-a-language',
+            'attributes' => ['company' => 'Analytical Engines'],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['language']);
 
     $this->withToken($issued['token'])
         ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [

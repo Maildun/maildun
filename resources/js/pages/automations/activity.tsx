@@ -11,16 +11,10 @@ import { Fragment, useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
 import { FilterMenu } from '@/components/filter-menu';
 import { ListSearch } from '@/components/list-search';
+import { MetricCard } from '@/components/metric-card';
 import { Paginator } from '@/components/paginator';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
 import {
     Empty,
     EmptyDescription,
@@ -249,7 +243,7 @@ export default function AutomationActivity({
                         </EmptyHeader>
                     </Empty>
                 ) : (
-                    <Table>
+                    <Table footer={<Paginator paginator={runs} showSummary />}>
                         <TableHeader>
                             <TableRow>
                                 <TableHead className="w-10" />
@@ -379,8 +373,7 @@ export default function AutomationActivity({
                         </TableBody>
                     </Table>
                 )}
-
-                <Paginator paginator={runs} />
+                {runs.data.length === 0 && <Paginator paginator={runs} />}
             </div>
         </>
     );
@@ -426,28 +419,6 @@ function StepTimeline({ steps }: { steps: AutomationRunRow['steps'] }) {
                 </li>
             ))}
         </ol>
-    );
-}
-
-function MetricCard({
-    label,
-    value,
-    detail,
-}: {
-    label: string;
-    value: string;
-    detail: string;
-}) {
-    return (
-        <Card>
-            <CardHeader>
-                <CardDescription>{label}</CardDescription>
-                <CardTitle className="text-3xl tabular-nums">{value}</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <p className="text-sm text-muted-foreground">{detail}</p>
-            </CardContent>
-        </Card>
     );
 }
 

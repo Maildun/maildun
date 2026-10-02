@@ -56,6 +56,8 @@ class SubscribeFormController extends Controller
                 'name' => $audience->name,
                 'first_name_mode' => $audience->first_name_mode->value,
                 'last_name_mode' => $audience->last_name_mode->value,
+                'language_mode' => $audience->language_mode->value,
+                'default_language' => $audience->default_language?->value,
             ],
             'subscribeForm' => [
                 'uuid' => $subscribeForm->uuid,
@@ -97,6 +99,7 @@ class SubscribeFormController extends Controller
             'brandColors' => TeamBrandColor::options(),
             'brandFonts' => TeamBrandFont::options(),
             'brandInputStyles' => TeamBrandInputStyle::options(),
+            'languages' => $audience->languageOptions(),
             'attributes' => $audience->audienceAttributes()
                 ->orderBy('position')
                 ->get()

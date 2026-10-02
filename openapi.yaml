@@ -556,6 +556,13 @@ components:
                         - string
                         - 'null'
                     maxLength: 255
+                language:
+                    oneOf:
+                        - $ref: '#/components/schemas/SubscriberLanguage'
+                        - type: 'null'
+                    description: |
+                        Subscriber language code. It must be one of the languages the audience
+                        allows; an audience that allows none rejects any language.
                 consent_text:
                     type:
                         - string
@@ -593,6 +600,7 @@ components:
                 - email
                 - first_name
                 - last_name
+                - language
                 - status
                 - subscribed_at
             properties:
@@ -610,6 +618,10 @@ components:
                     type:
                         - string
                         - 'null'
+                language:
+                    oneOf:
+                        - $ref: '#/components/schemas/SubscriberLanguage'
+                        - type: 'null'
                 status:
                     type: string
                     const: subscribed
@@ -619,6 +631,28 @@ components:
                         - 'null'
                     format: date-time
                     description: Null while double opt-in confirmation is pending.
+
+        SubscriberLanguage:
+            type: string
+            enum:
+                - ar
+                - zh
+                - nl
+                - en
+                - fr
+                - de
+                - hi
+                - id
+                - it
+                - ja
+                - ko
+                - ms
+                - pt
+                - ru
+                - es
+                - th
+                - tr
+                - vi
 
         UnsubscribeRequest:
             type: object

@@ -2,8 +2,11 @@
 
 namespace App\Jobs;
 
+use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Concerns\ThrottlesEmailDelivery;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailProvider;
+use App\Exceptions\EmailAddressSuppressedException;
 use App\Exceptions\EmailTransportException;
 use App\Mail\TransactionalEmailMessage;
 use App\Models\TransactionalEmailDelivery;
@@ -35,6 +38,18 @@ class SendTransactionalEmailDelivery implements ShouldQueue
     {
         $delivery = TransactionalEmailDelivery::query()->with('team')->findOrFail($this->deliveryId);
 
+        if (app(RecordEmailAddressHealth::class)->isSuppressed($delivery->team, $delivery->to_address)) {
+            TransactionalEmailDelivery::query()
+                ->whereKey($delivery->id)
+                ->where('status', EmailDeliveryStatus::Queued)
+                ->update([
+                    'status' => EmailDeliveryStatus::Rejected,
+                    'failure_reason' => __(EmailAddressSuppressedException::MESSAGE),
+                ]);
+
+            return;
+        }
+
         if (! $this->claim($delivery)) {
             return;
         }
@@ -45,6 +60,8 @@ class SendTransactionalEmailDelivery implements ShouldQueue
             $delivery->forceFill([
                 'provider' => $transport->provider->value,
                 'uses_team_email_integration' => $transport->usesTeamEmailIntegration(),
+                'ses_configuration_set' => $transport->sesConfigurationSet,
+                'ses_sns_topic_arn_hash' => $transport->sesSnsTopicArnHash,
             ])->save();
 
             $sentMessage = $teamMailer->sendResolved(
@@ -76,15 +93,35 @@ class SendTransactionalEmailDelivery implements ShouldQueue
      */
     public function failed(?Throwable $exception): void
     {
-        TransactionalEmailDelivery::query()
+        $failureReason = $exception instanceof EmailTransportException
+            ? $exception->getMessage()
+            : __('Delivery failed.');
+
+        // Only a delivery that never finished can fail: a late failure must not
+        // overwrite one that was sent, nor count against the address's health.
+        $failed = TransactionalEmailDelivery::query()
             ->whereKey($this->deliveryId)
             ->whereIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending])
             ->update([
                 'status' => EmailDeliveryStatus::Failed,
-                'failure_reason' => $exception instanceof EmailTransportException
-                    ? $exception->getMessage()
-                    : __('Delivery failed.'),
+                'failure_reason' => $failureReason,
             ]);
+
+        if ($failed === 0) {
+            return;
+        }
+
+        $delivery = TransactionalEmailDelivery::query()->with('team')->find($this->deliveryId);
+        $provider = $delivery === null ? null : EmailProvider::tryFrom($delivery->provider);
+
+        if ($delivery !== null && $provider !== null) {
+            app(RecordEmailAddressHealth::class)->recordFailure(
+                $delivery->team,
+                $delivery->to_address,
+                $provider,
+                $failureReason,
+            );
+        }
     }
 
     /** @return list<string> */

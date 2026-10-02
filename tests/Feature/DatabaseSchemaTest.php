@@ -30,6 +30,9 @@ test('fresh migrations preserve the consolidated application schema', function (
         ->and(Schema::hasColumns('audiences', [
             'first_name_mode',
             'last_name_mode',
+            'language_mode',
+            'allowed_languages',
+            'default_language',
             'double_opt_in',
             'double_opt_in_email_id',
             'from_name',
@@ -40,7 +43,7 @@ test('fresh migrations preserve the consolidated application schema', function (
             'already_subscribed_url',
             'unsubscribed_url',
         ]))->toBeTrue()
-        ->and(Schema::hasColumns('subscribers', ['subscribe_form_id', 'attribute_values']))->toBeTrue()
+        ->and(Schema::hasColumns('subscribers', ['subscribe_form_id', 'language', 'attribute_values']))->toBeTrue()
         ->and(Schema::hasColumns('subscribe_forms', [
             'style',
             'image_side',

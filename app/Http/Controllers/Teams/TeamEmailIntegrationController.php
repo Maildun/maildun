@@ -143,6 +143,9 @@ class TeamEmailIntegrationController extends Controller
                 $integration->connected_at = Carbon::now();
                 $integration->last_tested_at = null;
                 $integration->test_from_address = null;
+                $integration->test_requested_at = null;
+                $integration->test_failed_at = null;
+                $integration->test_failure = null;
                 $integration->verification_version++;
             }
 
@@ -200,6 +203,12 @@ class TeamEmailIntegrationController extends Controller
         }
 
         $configurationFingerprint = $this->configurationFingerprint($emailIntegration);
+
+        $emailIntegration->forceFill([
+            'test_requested_at' => now(),
+            'test_failed_at' => null,
+            'test_failure' => null,
+        ])->save();
 
         SendTeamEmailIntegrationTest::dispatch(
             $team->id,
@@ -298,7 +307,7 @@ class TeamEmailIntegrationController extends Controller
     }
 
     /**
-     * @return array{uuid: string, name: string, provider: string, provider_label: string, settings: array<string, int|string|null>, has_secret: bool, connected_at: string|null, last_tested_at: string|null, test_from_address: string|null, trust_provider_senders: bool, delivery_is_verified: bool, verified_sender_count: int, configuration_is_complete: bool}
+     * @return array{uuid: string, name: string, provider: string, provider_label: string, settings: array<string, int|string|null>, has_secret: bool, connected_at: string|null, last_tested_at: string|null, test_status: 'pending'|'failed'|null, test_failure: string|null, test_from_address: string|null, trust_provider_senders: bool, delivery_is_verified: bool, verified_sender_count: int, configuration_is_complete: bool}
      */
     private function integrationData(TeamEmailIntegration $integration): array
     {
@@ -330,6 +339,8 @@ class TeamEmailIntegrationController extends Controller
             'has_secret' => filled($integration->settings[$secretKey] ?? null),
             'connected_at' => $integration->connected_at?->toISOString(),
             'last_tested_at' => $integration->last_tested_at?->toISOString(),
+            'test_status' => $this->testStatus($integration),
+            'test_failure' => $integration->test_failed_at === null ? null : $integration->test_failure,
             'test_from_address' => $integration->test_from_address,
             'trust_provider_senders' => $integration->trust_provider_senders,
             'delivery_is_verified' => $integration->isVerified(),
@@ -337,6 +348,21 @@ class TeamEmailIntegrationController extends Controller
             'configuration_is_complete' => $integration->hasCompleteConfiguration(),
             'feedback' => app(BuildSesFeedbackHeartbeat::class)->handle($integration),
         ];
+    }
+
+    /**
+     * A queued test that never reports back (a dropped job, changed settings)
+     * stops counting as pending after a few minutes instead of spinning forever.
+     *
+     * @return 'pending'|'failed'|null
+     */
+    private function testStatus(TeamEmailIntegration $integration): ?string
+    {
+        if ($integration->test_requested_at?->isAfter(now()->subMinutes(5))) {
+            return 'pending';
+        }
+
+        return $integration->test_failed_at === null ? null : 'failed';
     }
 
     private function integrationName(TeamEmailIntegration $integration): string

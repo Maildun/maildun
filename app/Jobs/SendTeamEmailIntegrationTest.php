@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Enums\EmailProvider;
+use App\Exceptions\EmailTransportException;
 use App\Mail\TeamEmailIntegrationTest;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
@@ -13,6 +14,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Throwable;
 
 class SendTeamEmailIntegrationTest implements ShouldQueue
 {
@@ -57,12 +59,58 @@ class SendTeamEmailIntegrationTest implements ShouldQueue
             $this->fromAddress,
         );
 
-        if ($integration->provider === EmailProvider::AmazonSes
-            && $sesFeedbackVerifier->verify($integration) !== null) {
-            return;
+        if ($integration->provider === EmailProvider::AmazonSes) {
+            $feedbackFailure = $sesFeedbackVerifier->verify($integration);
+
+            if ($feedbackFailure !== null) {
+                $this->recordFailure($feedbackFailure);
+
+                return;
+            }
         }
 
-        DB::transaction(function (): void {
+        $this->updateTestedIntegration(fn (TeamEmailIntegration $integration) => $integration->forceFill([
+            'last_tested_at' => now(),
+            'test_from_address' => Str::lower($this->fromAddress),
+            'test_requested_at' => null,
+            'test_failed_at' => null,
+            'test_failure' => null,
+        ])->save());
+    }
+
+    public function failed(?Throwable $exception): void
+    {
+        Log::warning('A workspace email delivery test failed.', [
+            'team_id' => $this->teamId,
+            'email_integration_id' => $this->integrationId,
+            'exception' => $exception ? $exception::class : null,
+        ]);
+
+        // Only the sanitized transport message is safe to show; anything else
+        // may carry provider internals, so it gets the generic explanation.
+        $this->recordFailure($exception instanceof EmailTransportException
+            ? $exception->getMessage()
+            : __(EmailTransportException::MESSAGE));
+    }
+
+    private function recordFailure(string $reason): void
+    {
+        $this->updateTestedIntegration(fn (TeamEmailIntegration $integration) => $integration->forceFill([
+            'test_requested_at' => null,
+            'test_failed_at' => now(),
+            'test_failure' => Str::limit($reason, 500, ''),
+        ])->save());
+    }
+
+    /**
+     * Apply a result only while the connection still has the tested settings,
+     * so a slow test never overwrites the state of newer credentials.
+     *
+     * @param  callable(TeamEmailIntegration): mixed  $update
+     */
+    private function updateTestedIntegration(callable $update): void
+    {
+        DB::transaction(function () use ($update): void {
             $team = Team::query()->whereKey($this->teamId)->lockForUpdate()->first();
 
             if (! $team instanceof Team) {
@@ -80,21 +128,8 @@ class SendTeamEmailIntegrationTest implements ShouldQueue
                 return;
             }
 
-            $testedAt = now();
-            $integration->forceFill([
-                'last_tested_at' => $testedAt,
-                'test_from_address' => Str::lower($this->fromAddress),
-            ])->save();
+            $update($integration);
         });
-    }
-
-    public function failed(?\Throwable $exception): void
-    {
-        Log::warning('A workspace email delivery test failed.', [
-            'team_id' => $this->teamId,
-            'email_integration_id' => $this->integrationId,
-            'exception' => $exception ? $exception::class : null,
-        ]);
     }
 
     private function fingerprint(TeamEmailIntegration $integration): string

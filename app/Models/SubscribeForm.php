@@ -16,6 +16,7 @@ use App\Enums\SubscribeFormTextAlignment;
 use App\Enums\TeamBrandColor;
 use App\Enums\TeamBrandFont;
 use App\Enums\TeamBrandInputStyle;
+use Carbon\CarbonInterface;
 use Database\Factories\SubscribeFormFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -61,7 +62,7 @@ use Illuminate\Support\Str;
  * @property TeamBrandColor $brand_color
  * @property TeamBrandFont $brand_font
  * @property TeamBrandInputStyle $brand_input_style
- * @property Carbon|null $published_at
+ * @property CarbonInterface|null $published_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at

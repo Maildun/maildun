@@ -40,6 +40,14 @@ class StoreEmailRequest extends FormRequest
                             ->orWhere('team_id', $team->id)),
                 ),
             ],
+            'campaign_series' => [
+                'nullable',
+                'string',
+                'uuid',
+                Rule::exists('campaign_series', 'uuid')->where(
+                    fn (Builder $query) => $query->where('team_id', $team->id),
+                ),
+            ],
         ];
     }
 }

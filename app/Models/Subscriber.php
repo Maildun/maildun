@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Services\DiceBearAvatarGenerator;
@@ -28,6 +29,7 @@ use Illuminate\Support\Str;
  * @property string $email
  * @property string|null $first_name
  * @property string|null $last_name
+ * @property SubscriberLanguage|null $language
  * @property array<string, string|int|float> $attribute_values
  * @property SubscriberStatus $status
  * @property SubscriberSource $source
@@ -54,6 +56,7 @@ use Illuminate\Support\Str;
     'email',
     'first_name',
     'last_name',
+    'language',
     'attribute_values',
     'status',
     'source',
@@ -184,6 +187,7 @@ class Subscriber extends Model
         return [
             'status' => SubscriberStatus::class,
             'source' => SubscriberSource::class,
+            'language' => SubscriberLanguage::class,
             'attribute_values' => 'array',
             'consented_at' => 'datetime',
             'subscribed_at' => 'datetime',

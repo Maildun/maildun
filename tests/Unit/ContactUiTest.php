@@ -38,7 +38,9 @@ test('the contact list previews contacts with profile and edit actions', functio
         ->toContain('show.url([teamSlug, contact.uuid])')
         ->toContain('contact={contact}')
         ->toContain('onEdit={canManage ? openEdit : undefined}')
-        ->toContain('className="max-w-0"');
+        ->toContain('className="table-fixed"')
+        ->toContain('className="w-80"')
+        ->toContain('className="max-w-80"');
 
     expect($hoverCard)->toBeString()
         ->toContain('data-test="contact-hover-trigger"')

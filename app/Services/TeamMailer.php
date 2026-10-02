@@ -136,8 +136,8 @@ class TeamMailer
             }
 
             return $this->sendUsingResolvedTransport($transport, $recipient, $mailable);
-        } catch (TransportExceptionInterface) {
-            throw new EmailTransportException;
+        } catch (TransportExceptionInterface $exception) {
+            throw EmailTransportException::fromTransport($exception);
         }
     }
 

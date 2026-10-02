@@ -21,6 +21,7 @@ use Illuminate\Support\Str;
  * @property int $id
  * @property string $uuid
  * @property int $team_id
+ * @property int|null $campaign_series_id
  * @property int|null $audience_id
  * @property int|null $segment_id
  * @property int|null $email_template_id
@@ -56,6 +57,7 @@ use Illuminate\Support\Str;
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
  * @property-read Team $team
+ * @property-read CampaignSeries|null $campaignSeries
  * @property-read Audience|null $audience
  * @property-read Segment|null $segment
  * @property-read EmailTemplate|null $template
@@ -63,6 +65,7 @@ use Illuminate\Support\Str;
  */
 #[Fillable([
     'team_id',
+    'campaign_series_id',
     'audience_id',
     'segment_id',
     'email_template_id',
@@ -111,6 +114,12 @@ class Email extends Model
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class);
+    }
+
+    /** @return BelongsTo<CampaignSeries, $this> */
+    public function campaignSeries(): BelongsTo
+    {
+        return $this->belongsTo(CampaignSeries::class);
     }
 
     /** @return BelongsTo<Audience, $this> */

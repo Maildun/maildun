@@ -162,7 +162,11 @@ export default function CompaniesIndex({
                     </Empty>
                 ) : (
                     <>
-                        <Table>
+                        <Table
+                            footer={
+                                <Paginator paginator={companies} showSummary />
+                            }
+                        >
                             <TableHeader>
                                 <TableRow>
                                     <TableHead>Company</TableHead>
@@ -231,7 +235,6 @@ export default function CompaniesIndex({
                                 ))}
                             </TableBody>
                         </Table>
-                        <Paginator paginator={companies} />
                     </>
                 )}
             </div>

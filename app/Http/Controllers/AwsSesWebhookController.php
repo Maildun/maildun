@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Actions\Emails\ProcessSesEvent;
 use App\Enums\EmailProvider;
+use App\Models\AutomationEmailDelivery;
 use App\Models\EmailDeliveryAttempt;
 use App\Models\TeamEmailIntegration;
+use App\Models\TransactionalEmailDelivery;
 use Aws\Sns\Exception\InvalidSnsMessageException;
 use Aws\Sns\Message;
 use Aws\Sns\MessageValidator;
@@ -72,6 +74,14 @@ class AwsSesWebhookController extends Controller
             ->where('ses_sns_topic_arn_hash', $topicArnHash)
             ->exists()
             || EmailDeliveryAttempt::query()
+                ->where('provider', EmailProvider::AmazonSes)
+                ->where('ses_sns_topic_arn_hash', $topicArnHash)
+                ->exists()
+            || TransactionalEmailDelivery::query()
+                ->where('provider', EmailProvider::AmazonSes)
+                ->where('ses_sns_topic_arn_hash', $topicArnHash)
+                ->exists()
+            || AutomationEmailDelivery::query()
                 ->where('provider', EmailProvider::AmazonSes)
                 ->where('ses_sns_topic_arn_hash', $topicArnHash)
                 ->exists();

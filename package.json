@@ -36,6 +36,7 @@
         "@codemirror/lang-json": "^6.0.2",
         "@emotion/react": "^11.14.0",
         "@emotion/styled": "^11.14.1",
+        "@fontsource-variable/familjen-grotesk": "^5.3.0",
         "@fontsource-variable/inter": "^5.3.0",
         "@hugeicons/core-free-icons": "^4.3.3",
         "@hugeicons/react": "^1.1.10",

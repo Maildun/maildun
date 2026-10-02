@@ -39,6 +39,7 @@ class AudienceAttribute extends Model
         'email',
         'first_name',
         'last_name',
+        'language',
         'status',
         'source',
         'tags',

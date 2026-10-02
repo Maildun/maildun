@@ -11,6 +11,7 @@ import {
     MailReceive01Icon,
     MoreHorizontalIcon,
     MouseLeftClick01Icon,
+    NodeEditIcon,
     Tag01Icon,
     UserGroupIcon,
     UserIcon,
@@ -33,7 +34,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
     Collapsible,
@@ -47,6 +48,13 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+    Empty,
+    EmptyDescription,
+    EmptyHeader,
+    EmptyMedia,
+    EmptyTitle,
+} from '@/components/ui/empty';
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
@@ -280,74 +288,84 @@ export default function ContactShow({
                     <h2 className="font-heading text-base font-medium">
                         Activity
                     </h2>
-                    <Card className="gap-0 py-0">
-                        <PropertyList>
-                            <PropertyRow
-                                label={
-                                    <IconLabel
-                                        icon={
-                                            <HugeiconsIcon
-                                                icon={UserGroupIcon}
-                                            />
-                                        }
-                                    >
-                                        Audiences
-                                    </IconLabel>
-                                }
-                                href="#audiences"
-                            >
-                                {activity.audiences.toLocaleString()}
-                            </PropertyRow>
-                            <PropertyRow
-                                label={
-                                    <IconLabel
-                                        icon={
-                                            <HugeiconsIcon
-                                                icon={MailReceive01Icon}
-                                            />
-                                        }
-                                    >
-                                        Emails received
-                                    </IconLabel>
-                                }
-                                href="#received-emails"
-                            >
-                                {activity.received.toLocaleString()}
-                            </PropertyRow>
-                            <PropertyRow
-                                label={
-                                    <IconLabel
-                                        icon={
-                                            <HugeiconsIcon
-                                                icon={MailOpen01Icon}
-                                            />
-                                        }
-                                    >
-                                        Opened
-                                    </IconLabel>
-                                }
-                                href="#received-emails"
-                            >
-                                {activity.opened.toLocaleString()}
-                            </PropertyRow>
-                            <PropertyRow
-                                label={
-                                    <IconLabel
-                                        icon={
-                                            <HugeiconsIcon
-                                                icon={MouseLeftClick01Icon}
-                                            />
-                                        }
-                                    >
-                                        Clicked
-                                    </IconLabel>
-                                }
-                                href="#received-emails"
-                            >
-                                {activity.clicked.toLocaleString()}
-                            </PropertyRow>
-                        </PropertyList>
-                        <CardFooter className="justify-between gap-3 text-muted-foreground">
+                    <Card className="gap-3">
+                        <CardContent className="overflow-hidden p-0">
+                            <PropertyList>
+                                <PropertyRow
+                                    label={
+                                        <IconLabel
+                                            icon={
+                                                <HugeiconsIcon
+                                                    icon={UserGroupIcon}
+                                                />
+                                            }
+                                        >
+                                            Audiences
+                                        </IconLabel>
+                                    }
+                                    href="#audiences"
+                                >
+                                    <span className="text-lg font-semibold tabular-nums">
+                                        {activity.audiences.toLocaleString()}
+                                    </span>
+                                </PropertyRow>
+                                <PropertyRow
+                                    label={
+                                        <IconLabel
+                                            icon={
+                                                <HugeiconsIcon
+                                                    icon={MailReceive01Icon}
+                                                />
+                                            }
+                                        >
+                                            Emails received
+                                        </IconLabel>
+                                    }
+                                    href="#received-emails"
+                                >
+                                    <span className="text-lg font-semibold tabular-nums">
+                                        {activity.received.toLocaleString()}
+                                    </span>
+                                </PropertyRow>
+                                <PropertyRow
+                                    label={
+                                        <IconLabel
+                                            icon={
+                                                <HugeiconsIcon
+                                                    icon={MailOpen01Icon}
+                                                />
+                                            }
+                                        >
+                                            Opened
+                                        </IconLabel>
+                                    }
+                                    href="#received-emails"
+                                >
+                                    <span className="text-lg font-semibold tabular-nums">
+                                        {activity.opened.toLocaleString()}
+                                    </span>
+                                </PropertyRow>
+                                <PropertyRow
+                                    label={
+                                        <IconLabel
+                                            icon={
+                                                <HugeiconsIcon
+                                                    icon={MouseLeftClick01Icon}
+                                                />
+                                            }
+                                        >
+                                            Clicked
+                                        </IconLabel>
+                                    }
+                                    href="#received-emails"
+                                >
+                                    <span className="text-lg font-semibold tabular-nums">
+                                        {activity.clicked.toLocaleString()}
+                                    </span>
+                                </PropertyRow>
+                            </PropertyList>
+                        </CardContent>
+                        <CardFooter className="pb-1 text-xs text-muted-foreground">
                             <p>{membershipActivityDetail(activity)}</p>
                         </CardFooter>
                     </Card>
@@ -357,122 +375,149 @@ export default function ContactShow({
                     <h2 className="font-heading text-base font-medium">
                         Details
                     </h2>
-                    <Card className="gap-0 py-0">
-                        <PropertyList>
-                            <PropertyRow
-                                label={
-                                    <IconLabel
-                                        icon={
-                                            <HugeiconsIcon icon={Mail01Icon} />
-                                        }
-                                    >
-                                        Email
-                                    </IconLabel>
-                                }
-                            >
-                                {contact.email}
-                            </PropertyRow>
-                            <PropertyRow
-                                label={
-                                    <IconLabel
-                                        icon={<HugeiconsIcon icon={UserIcon} />}
-                                    >
-                                        First name
-                                    </IconLabel>
-                                }
-                            >
-                                {contact.first_name || '—'}
-                            </PropertyRow>
-                            <PropertyRow
-                                label={
-                                    <IconLabel
-                                        icon={<HugeiconsIcon icon={UserIcon} />}
-                                    >
-                                        Last name
-                                    </IconLabel>
-                                }
-                            >
-                                {contact.last_name || '—'}
-                            </PropertyRow>
-                            <PropertyRow
-                                label={
-                                    <IconLabel
-                                        icon={
-                                            <HugeiconsIcon
-                                                icon={Building06Icon}
-                                            />
-                                        }
-                                    >
-                                        Company
-                                    </IconLabel>
-                                }
-                            >
-                                {contact.company ? (
-                                    <Link
-                                        href={showCompany.url([
-                                            currentTeam.slug,
-                                            contact.company.uuid,
-                                        ])}
-                                        className="font-medium underline-offset-4 hover:underline"
-                                    >
-                                        {contact.company.name}
-                                    </Link>
-                                ) : (
-                                    '—'
-                                )}
-                            </PropertyRow>
-                            <PropertyRow label="Company assignment">
-                                {contact.company_assignment_mode === 'automatic'
-                                    ? 'Matched automatically'
-                                    : 'Set manually'}
-                            </PropertyRow>
-                            <PropertyRow
-                                label={
-                                    <IconLabel
-                                        icon={
-                                            <HugeiconsIcon icon={Tag01Icon} />
-                                        }
-                                    >
-                                        Tags
-                                    </IconLabel>
-                                }
-                            >
-                                {contact.tags.length > 0 ? (
-                                    <span className="flex flex-wrap justify-end gap-1">
-                                        {contact.tags.map((tag) => (
-                                            <Badge
-                                                key={tag.uuid}
-                                                variant={tagBadgeVariant(
-                                                    tag.color,
-                                                )}
-                                            >
-                                                {tag.name}
-                                            </Badge>
-                                        ))}
-                                    </span>
-                                ) : (
-                                    '—'
-                                )}
-                            </PropertyRow>
-                            <PropertyRow
-                                label={
-                                    <IconLabel
-                                        icon={
-                                            <HugeiconsIcon
-                                                icon={Calendar01Icon}
-                                            />
-                                        }
-                                    >
-                                        Added
-                                    </IconLabel>
-                                }
-                                title={absoluteTime(contact.created_at)}
-                            >
-                                {contact.created_at
-                                    ? formatRelativeTime(contact.created_at)
-                                    : '—'}
-                            </PropertyRow>
-                        </PropertyList>
+                    <Card className="gap-3">
+                        <CardContent className="overflow-hidden p-0">
+                            <PropertyList>
+                                <PropertyRow
+                                    label={
+                                        <IconLabel
+                                            icon={
+                                                <HugeiconsIcon
+                                                    icon={Mail01Icon}
+                                                />
+                                            }
+                                        >
+                                            Email
+                                        </IconLabel>
+                                    }
+                                >
+                                    {contact.email}
+                                </PropertyRow>
+                                <PropertyRow
+                                    label={
+                                        <IconLabel
+                                            icon={
+                                                <HugeiconsIcon
+                                                    icon={UserIcon}
+                                                />
+                                            }
+                                        >
+                                            First name
+                                        </IconLabel>
+                                    }
+                                >
+                                    {contact.first_name || '—'}
+                                </PropertyRow>
+                                <PropertyRow
+                                    label={
+                                        <IconLabel
+                                            icon={
+                                                <HugeiconsIcon
+                                                    icon={UserIcon}
+                                                />
+                                            }
+                                        >
+                                            Last name
+                                        </IconLabel>
+                                    }
+                                >
+                                    {contact.last_name || '—'}
+                                </PropertyRow>
+                                <PropertyRow
+                                    label={
+                                        <IconLabel
+                                            icon={
+                                                <HugeiconsIcon
+                                                    icon={Building06Icon}
+                                                />
+                                            }
+                                        >
+                                            Company
+                                        </IconLabel>
+                                    }
+                                >
+                                    {contact.company ? (
+                                        <Link
+                                            href={showCompany.url([
+                                                currentTeam.slug,
+                                                contact.company.uuid,
+                                            ])}
+                                            className="font-medium underline-offset-4 hover:underline"
+                                        >
+                                            {contact.company.name}
+                                        </Link>
+                                    ) : (
+                                        '—'
+                                    )}
+                                </PropertyRow>
+                                <PropertyRow
+                                    label={
+                                        <IconLabel
+                                            icon={
+                                                <HugeiconsIcon
+                                                    icon={NodeEditIcon}
+                                                />
+                                            }
+                                        >
+                                            Company assignment
+                                        </IconLabel>
+                                    }
+                                >
+                                    {contact.company_assignment_mode ===
+                                    'automatic'
+                                        ? 'Matched automatically'
+                                        : 'Set manually'}
+                                </PropertyRow>
+                                <PropertyRow
+                                    label={
+                                        <IconLabel
+                                            icon={
+                                                <HugeiconsIcon
+                                                    icon={Tag01Icon}
+                                                />
+                                            }
+                                        >
+                                            Tags
+                                        </IconLabel>
+                                    }
+                                >
+                                    {contact.tags.length > 0 ? (
+                                        <span className="flex flex-wrap justify-end gap-1">
+                                            {contact.tags.map((tag) => (
+                                                <Badge
+                                                    key={tag.uuid}
+                                                    variant={tagBadgeVariant(
+                                                        tag.color,
+                                                    )}
+                                                >
+                                                    {tag.name}
+                                                </Badge>
+                                            ))}
+                                        </span>
+                                    ) : (
+                                        '—'
+                                    )}
+                                </PropertyRow>
+                                <PropertyRow
+                                    label={
+                                        <IconLabel
+                                            icon={
+                                                <HugeiconsIcon
+                                                    icon={Calendar01Icon}
+                                                />
+                                            }
+                                        >
+                                            Added
+                                        </IconLabel>
+                                    }
+                                    title={absoluteTime(contact.created_at)}
+                                >
+                                    {contact.created_at
+                                        ? formatRelativeTime(contact.created_at)
+                                        : '—'}
+                                </PropertyRow>
+                            </PropertyList>
+                        </CardContent>
                     </Card>
                 </section>
 
@@ -490,7 +535,7 @@ export default function ContactShow({
                         {canManage && availableAudiences.length ? (
                             <form
                                 onSubmit={submitMembership}
-                                className="flex gap-2"
+                                className="flex w-full gap-2 sm:w-auto"
                             >
                                 <Select
                                     value={
@@ -503,7 +548,7 @@ export default function ContactShow({
                                         )
                                     }
                                 >
-                                    <SelectTrigger className="w-52">
+                                    <SelectTrigger className="w-full sm:w-52">
                                         <SelectValue placeholder="Choose audience" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -541,47 +586,66 @@ export default function ContactShow({
                             </form>
                         ) : null}
                     </div>
-                    <Card className="gap-0 py-0">
-                        {contact.memberships.length ? (
-                            <div className="divide-y">
-                                {contact.memberships.map((membership) => (
-                                    <MembershipPanel
-                                        key={membership.uuid}
-                                        membership={membership}
-                                        teamSlug={currentTeam.slug}
-                                        open={openMemberships.includes(
-                                            membership.uuid,
-                                        )}
-                                        onOpenChange={(open) =>
-                                            toggleMembership(
+                    <Card className="gap-3">
+                        <CardContent className="overflow-hidden p-0">
+                            {contact.memberships.length ? (
+                                <div className="divide-y divide-border/60">
+                                    {contact.memberships.map((membership) => (
+                                        <MembershipPanel
+                                            key={membership.uuid}
+                                            membership={membership}
+                                            teamSlug={currentTeam.slug}
+                                            open={openMemberships.includes(
                                                 membership.uuid,
-                                                open,
-                                            )
-                                        }
-                                        highlighted={
-                                            membership.audience.uuid ===
-                                            selectedAudienceUuid
-                                        }
-                                        canManage={canManage}
-                                        onUnsubscribe={() =>
-                                            unsubscribeMembership(membership)
-                                        }
-                                        onResubscribe={() =>
-                                            setMembershipToResubscribe(
-                                                membership,
-                                            )
-                                        }
-                                        onRemove={() =>
-                                            removeMembership(membership.uuid)
-                                        }
-                                    />
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="px-(--card-spacing) py-8 text-sm text-muted-foreground">
-                                This contact has not joined an audience.
-                            </p>
-                        )}
+                                            )}
+                                            onOpenChange={(open) =>
+                                                toggleMembership(
+                                                    membership.uuid,
+                                                    open,
+                                                )
+                                            }
+                                            highlighted={
+                                                membership.audience.uuid ===
+                                                selectedAudienceUuid
+                                            }
+                                            canManage={canManage}
+                                            onUnsubscribe={() =>
+                                                unsubscribeMembership(
+                                                    membership,
+                                                )
+                                            }
+                                            onResubscribe={() =>
+                                                setMembershipToResubscribe(
+                                                    membership,
+                                                )
+                                            }
+                                            onRemove={() =>
+                                                removeMembership(
+                                                    membership.uuid,
+                                                )
+                                            }
+                                        />
+                                    ))}
+                                </div>
+                            ) : (
+                                <Empty className="py-8">
+                                    <EmptyHeader>
+                                        <EmptyMedia variant="icon">
+                                            <HugeiconsIcon
+                                                icon={UserGroupIcon}
+                                            />
+                                        </EmptyMedia>
+                                        <EmptyTitle>
+                                            No audiences yet
+                                        </EmptyTitle>
+                                        <EmptyDescription>
+                                            This contact has not joined an
+                                            audience.
+                                        </EmptyDescription>
+                                    </EmptyHeader>
+                                </Empty>
+                            )}
+                        </CardContent>
                     </Card>
                 </section>
 
@@ -589,67 +653,83 @@ export default function ContactShow({
                     <h2 className="font-heading text-base font-medium">
                         Received emails
                     </h2>
-                    <Card className="gap-0 py-0">
-                        {contact.deliveries.length ? (
-                            <PropertyList>
-                                {contact.deliveries.map((delivery) => (
-                                    <div
-                                        key={delivery.uuid}
-                                        className="flex items-start justify-between gap-4 px-(--card-spacing) py-3"
-                                        data-test="contact-email-row"
-                                    >
-                                        <HugeiconsIcon
-                                            icon={MailReceive01Icon}
-                                            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                                            aria-label="Email received"
-                                        />
-                                        <div className="flex min-w-0 flex-1 flex-col gap-1">
-                                            {delivery.campaign.uuid ? (
-                                                <Link
-                                                    href={showCampaign.url([
-                                                        currentTeam.slug,
-                                                        delivery.campaign.uuid,
-                                                    ])}
-                                                    className="truncate font-medium underline-offset-4 hover:underline"
-                                                >
-                                                    {delivery.campaign.name}
-                                                </Link>
-                                            ) : (
-                                                <p className="truncate font-medium">
-                                                    {delivery.campaign.name}
+                    <Card className="gap-3">
+                        <CardContent className="overflow-hidden p-0">
+                            {contact.deliveries.length ? (
+                                <PropertyList>
+                                    {contact.deliveries.map((delivery) => (
+                                        <div
+                                            key={delivery.uuid}
+                                            className="flex items-start justify-between gap-4 px-(--card-spacing) py-3"
+                                            data-test="contact-email-row"
+                                        >
+                                            <HugeiconsIcon
+                                                icon={MailReceive01Icon}
+                                                className="mt-0.5 size-5 shrink-0 text-muted-foreground"
+                                                aria-label="Email received"
+                                            />
+                                            <div className="flex min-w-0 flex-1 flex-col gap-1">
+                                                {delivery.campaign.uuid ? (
+                                                    <Link
+                                                        href={showCampaign.url([
+                                                            currentTeam.slug,
+                                                            delivery.campaign
+                                                                .uuid,
+                                                        ])}
+                                                        className="truncate font-medium underline-offset-4 hover:underline"
+                                                    >
+                                                        {delivery.campaign.name}
+                                                    </Link>
+                                                ) : (
+                                                    <p className="truncate font-medium">
+                                                        {delivery.campaign.name}
+                                                    </p>
+                                                )}
+                                                <p className="text-sm text-muted-foreground">
+                                                    {delivery.audience?.name ??
+                                                        'No audience'}
                                                 </p>
-                                            )}
-                                            <p className="text-sm text-muted-foreground">
-                                                {delivery.audience?.name ??
-                                                    'No audience'}
-                                            </p>
+                                            </div>
+                                            <div className="flex shrink-0 flex-col items-end gap-1">
+                                                <Badge variant="outline">
+                                                    {delivery.status}
+                                                </Badge>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {delivery.opens.toLocaleString()}{' '}
+                                                    opens ·{' '}
+                                                    {delivery.clicks.toLocaleString()}{' '}
+                                                    clicks
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {delivery.sent_at
+                                                        ? formatRelativeTime(
+                                                              delivery.sent_at,
+                                                          )
+                                                        : 'Not sent'}
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div className="flex shrink-0 flex-col items-end gap-1">
-                                            <Badge variant="outline">
-                                                {delivery.status}
-                                            </Badge>
-                                            <p className="text-xs text-muted-foreground">
-                                                {delivery.opens.toLocaleString()}{' '}
-                                                opens ·{' '}
-                                                {delivery.clicks.toLocaleString()}{' '}
-                                                clicks
-                                            </p>
-                                            <p className="text-xs text-muted-foreground">
-                                                {delivery.sent_at
-                                                    ? formatRelativeTime(
-                                                          delivery.sent_at,
-                                                      )
-                                                    : 'Not sent'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </PropertyList>
-                        ) : (
-                            <p className="px-(--card-spacing) py-8 text-sm text-muted-foreground">
-                                No campaign deliveries for this contact yet.
-                            </p>
-                        )}
+                                    ))}
+                                </PropertyList>
+                            ) : (
+                                <Empty className="py-8">
+                                    <EmptyHeader>
+                                        <EmptyMedia variant="icon">
+                                            <HugeiconsIcon
+                                                icon={MailReceive01Icon}
+                                            />
+                                        </EmptyMedia>
+                                        <EmptyTitle>
+                                            No emails received
+                                        </EmptyTitle>
+                                        <EmptyDescription>
+                                            No campaign deliveries for this
+                                            contact yet.
+                                        </EmptyDescription>
+                                    </EmptyHeader>
+                                </Empty>
+                            )}
+                        </CardContent>
                     </Card>
                 </section>
 
@@ -657,61 +737,78 @@ export default function ContactShow({
                     <h2 className="font-heading text-base font-medium">
                         Automations
                     </h2>
-                    <Card className="gap-0 py-0">
-                        {automations.length ? (
-                            <PropertyList>
-                                {automations.map((automation) => (
-                                    <div
-                                        key={automation.uuid}
-                                        className="flex items-start justify-between gap-4 px-(--card-spacing) py-3"
-                                        data-test="contact-automation-row"
-                                    >
-                                        <HugeiconsIcon
-                                            icon={UserGroupIcon}
-                                            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                                            aria-label="Automation"
-                                        />
-                                        <div className="flex min-w-0 flex-1 flex-col gap-1">
-                                            {automation.automation_uuid ? (
-                                                <Link
-                                                    href={editAutomation.url([
-                                                        currentTeam.slug,
-                                                        automation.automation_uuid,
-                                                    ])}
-                                                    className="truncate font-medium underline-offset-4 hover:underline"
-                                                >
-                                                    {automation.name}
-                                                </Link>
-                                            ) : (
-                                                <p className="truncate font-medium">
-                                                    {automation.name}
+                    <Card className="gap-3">
+                        <CardContent className="overflow-hidden p-0">
+                            {automations.length ? (
+                                <PropertyList>
+                                    {automations.map((automation) => (
+                                        <div
+                                            key={automation.uuid}
+                                            className="flex items-start justify-between gap-4 px-(--card-spacing) py-3"
+                                            data-test="contact-automation-row"
+                                        >
+                                            <HugeiconsIcon
+                                                icon={NodeEditIcon}
+                                                className="mt-0.5 size-5 shrink-0 text-muted-foreground"
+                                                aria-label="Automation"
+                                            />
+                                            <div className="flex min-w-0 flex-1 flex-col gap-1">
+                                                {automation.automation_uuid ? (
+                                                    <Link
+                                                        href={editAutomation.url(
+                                                            [
+                                                                currentTeam.slug,
+                                                                automation.automation_uuid,
+                                                            ],
+                                                        )}
+                                                        className="truncate font-medium underline-offset-4 hover:underline"
+                                                    >
+                                                        {automation.name}
+                                                    </Link>
+                                                ) : (
+                                                    <p className="truncate font-medium">
+                                                        {automation.name}
+                                                    </p>
+                                                )}
+                                                <p className="text-sm text-muted-foreground">
+                                                    {automation.audience
+                                                        ?.name ?? 'No audience'}
                                                 </p>
-                                            )}
-                                            <p className="text-sm text-muted-foreground">
-                                                {automation.audience?.name ??
-                                                    'No audience'}
-                                            </p>
+                                            </div>
+                                            <div className="flex shrink-0 flex-col items-end gap-1">
+                                                <Badge variant="outline">
+                                                    {automation.status}
+                                                </Badge>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {automation.completed_at
+                                                        ? `Completed ${formatRelativeTime(automation.completed_at)}`
+                                                        : automation.started_at
+                                                          ? `Started ${formatRelativeTime(automation.started_at)}`
+                                                          : 'Not started'}
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div className="flex shrink-0 flex-col items-end gap-1">
-                                            <Badge variant="outline">
-                                                {automation.status}
-                                            </Badge>
-                                            <p className="text-xs text-muted-foreground">
-                                                {automation.completed_at
-                                                    ? `Completed ${formatRelativeTime(automation.completed_at)}`
-                                                    : automation.started_at
-                                                      ? `Started ${formatRelativeTime(automation.started_at)}`
-                                                      : 'Not started'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </PropertyList>
-                        ) : (
-                            <p className="px-(--card-spacing) py-8 text-sm text-muted-foreground">
-                                No automation runs for this contact yet.
-                            </p>
-                        )}
+                                    ))}
+                                </PropertyList>
+                            ) : (
+                                <Empty className="py-8">
+                                    <EmptyHeader>
+                                        <EmptyMedia variant="icon">
+                                            <HugeiconsIcon
+                                                icon={NodeEditIcon}
+                                            />
+                                        </EmptyMedia>
+                                        <EmptyTitle>
+                                            No automation runs
+                                        </EmptyTitle>
+                                        <EmptyDescription>
+                                            No automation runs for this contact
+                                            yet.
+                                        </EmptyDescription>
+                                    </EmptyHeader>
+                                </Empty>
+                            )}
+                        </CardContent>
                     </Card>
                 </section>
             </div>
@@ -876,17 +973,13 @@ function MembershipPanel({
             <CollapsibleTrigger
                 render={<button type="button" />}
                 className={cn(
-                    'flex w-full items-center gap-3 px-(--card-spacing) py-3 text-left text-sm transition-colors hover:bg-muted/50',
+                    'flex w-full items-center gap-3 px-(--card-spacing) py-4 text-left text-sm transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
                     highlighted && 'bg-muted/50',
                 )}
             >
-                <HugeiconsIcon
-                    icon={ArrowDown01Icon}
-                    className={cn(
-                        'size-4 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none',
-                        open && 'rotate-180',
-                    )}
-                />
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                    <HugeiconsIcon icon={UserGroupIcon} className="size-4" />
+                </span>
                 <span className="min-w-0 flex-1 truncate font-medium">
                     {membership.audience.name}
                 </span>
@@ -909,6 +1002,13 @@ function MembershipPanel({
                         ? formatRelativeTime(membership.subscribed_at)
                         : 'Pending confirmation'}
                 </span>
+                <HugeiconsIcon
+                    icon={ArrowDown01Icon}
+                    className={cn(
+                        'size-4 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none',
+                        open && 'rotate-180',
+                    )}
+                />
             </CollapsibleTrigger>
             <CollapsibleContent className="h-(--collapsible-panel-height) overflow-hidden transition-[height,opacity] duration-300 ease-out data-ending-style:h-0 data-ending-style:opacity-0 data-starting-style:h-0 data-starting-style:opacity-0 motion-reduce:transition-none">
                 <Separator />
@@ -1080,7 +1180,7 @@ function MembershipPanel({
 }
 
 function PropertyList({ children }: { children: ReactNode }) {
-    return <div className="divide-y">{children}</div>;
+    return <div className="divide-y divide-border/60">{children}</div>;
 }
 
 function PropertyRow({
@@ -1099,7 +1199,10 @@ function PropertyRow({
     const content = (
         <>
             <span className="min-w-0 text-muted-foreground">{label}</span>
-            <span className="min-w-0 text-right font-medium" title={title}>
+            <span
+                className="max-w-[65%] min-w-0 text-right font-medium wrap-anywhere"
+                title={title}
+            >
                 {children}
             </span>
         </>
@@ -1109,7 +1212,10 @@ function PropertyRow({
         return (
             <a
                 href={href}
-                className={`flex items-center justify-between gap-4 px-(--card-spacing) py-3 text-sm transition-colors hover:bg-muted/50 ${className ?? ''}`}
+                className={cn(
+                    'flex items-center justify-between gap-4 px-(--card-spacing) py-3.5 text-sm transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
+                    className,
+                )}
             >
                 {content}
             </a>
@@ -1118,7 +1224,10 @@ function PropertyRow({
 
     return (
         <div
-            className={`flex items-center justify-between gap-4 px-(--card-spacing) py-3 text-sm ${className ?? ''}`}
+            className={cn(
+                'flex items-center justify-between gap-4 px-(--card-spacing) py-3.5 text-sm',
+                className,
+            )}
         >
             {content}
         </div>
@@ -1133,8 +1242,10 @@ function IconLabel({
     children: ReactNode;
 }) {
     return (
-        <span className="flex items-center gap-2 text-muted-foreground [&>svg]:size-3.5">
-            {icon}
+        <span className="flex items-center gap-3 text-muted-foreground">
+            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-muted [&>svg]:size-4">
+                {icon}
+            </span>
             {children}
         </span>
     );
@@ -1159,7 +1270,7 @@ function NestedPanel({
                 ) : null}
                 {title}
             </div>
-            <div className="overflow-hidden rounded-md border bg-background">
+            <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
                 {children}
             </div>
         </div>

@@ -2,6 +2,7 @@ import {
     CleanIcon,
     ClockFadingIcon,
     Delete02Icon,
+    MailBlock01Icon,
     MailRemove01Icon,
     UserGroupIcon,
 } from '@hugeicons/core-free-icons';
@@ -10,6 +11,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import {
     destroyInactive,
+    destroyUndeliverable,
     destroyUnconfirmed,
 } from '@/actions/App/Http/Controllers/ListHygieneController';
 import { ActiveFilters } from '@/components/active-filters';
@@ -56,7 +58,7 @@ import { show as showSubscriber } from '@/routes/audiences/subscribers';
 import { index } from '@/routes/list_hygiene';
 import type { Paginated } from '@/types/audiences';
 
-type HygieneKind = 'unconfirmed' | 'inactive';
+type HygieneKind = 'unconfirmed' | 'inactive' | 'undeliverable';
 
 type AudienceHygieneSummary = {
     uuid: string;
@@ -65,6 +67,7 @@ type AudienceHygieneSummary = {
     subscribers_count: number;
     unconfirmed_count: number;
     inactive_count: number;
+    undeliverable_count: number;
 };
 
 type HygieneSubscriber = {
@@ -76,6 +79,9 @@ type HygieneSubscriber = {
     audience: Pick<AudienceHygieneSummary, 'uuid' | 'name' | 'avatar'>;
     created_at: string | null;
     last_sent_at: string | null;
+    health_reason: string | null;
+    health_detail: string | null;
+    health_event_at: string | null;
 };
 
 type HygieneFilters = {
@@ -119,6 +125,15 @@ const hygieneCopy: Record<
             'No subscribers in the selected audience match the inactivity rule.',
         icon: ClockFadingIcon,
     },
+    undeliverable: {
+        label: 'Undeliverable',
+        description:
+            'Email addresses suppressed after a permanent bounce or spam complaint.',
+        emptyTitle: 'No undeliverable subscribers',
+        emptyDescription:
+            'Maildun has not learned of any permanently undeliverable addresses in this workspace.',
+        icon: MailBlock01Icon,
+    },
 };
 
 export default function ListHygieneIndex({
@@ -148,8 +163,9 @@ export default function ListHygieneIndex({
         (totals, audience) => ({
             unconfirmed: totals.unconfirmed + audience.unconfirmed_count,
             inactive: totals.inactive + audience.inactive_count,
+            undeliverable: totals.undeliverable + audience.undeliverable_count,
         }),
-        { unconfirmed: 0, inactive: 0 },
+        { unconfirmed: 0, inactive: 0, undeliverable: 0 },
     );
     const audienceLabel =
         audiences.find((audience) => audience.uuid === filters.audience)
@@ -166,10 +182,11 @@ export default function ListHygieneIndex({
     };
 
     const removeSelected = () => {
-        const action =
-            filters.kind === 'unconfirmed'
-                ? destroyUnconfirmed(currentTeam.slug)
-                : destroyInactive(currentTeam.slug);
+        const action = {
+            unconfirmed: destroyUnconfirmed,
+            inactive: destroyInactive,
+            undeliverable: destroyUndeliverable,
+        }[filters.kind](currentTeam.slug);
 
         router.delete(action.url, {
             data: { subscribers: [...selected] },
@@ -210,6 +227,12 @@ export default function ListHygieneIndex({
                             Inactive
                             <Badge variant="secondary">
                                 {counts.inactive.toLocaleString()}
+                            </Badge>
+                        </TabsTrigger>
+                        <TabsTrigger value="undeliverable">
+                            Undeliverable
+                            <Badge variant="secondary">
+                                {counts.undeliverable.toLocaleString()}
                             </Badge>
                         </TabsTrigger>
                     </TabsList>
@@ -341,7 +364,14 @@ export default function ListHygieneIndex({
                                 </EmptyHeader>
                             </Empty>
                         ) : (
-                            <Table>
+                            <Table
+                                footer={
+                                    <Paginator
+                                        paginator={subscribers}
+                                        showSummary
+                                    />
+                                }
+                            >
                                 <TableHeader>
                                     <TableRow>
                                         {canManage && (
@@ -387,7 +417,9 @@ export default function ListHygieneIndex({
                                         <TableHead>
                                             {filters.kind === 'unconfirmed'
                                                 ? 'Signed up'
-                                                : 'Last campaign'}
+                                                : filters.kind === 'inactive'
+                                                  ? 'Last campaign'
+                                                  : 'Detected'}
                                         </TableHead>
                                         <TableHead>Reason</TableHead>
                                     </TableRow>
@@ -403,7 +435,14 @@ export default function ListHygieneIndex({
                                         const activityAt =
                                             filters.kind === 'unconfirmed'
                                                 ? subscriber.created_at
-                                                : subscriber.last_sent_at;
+                                                : filters.kind === 'inactive'
+                                                  ? subscriber.last_sent_at
+                                                  : subscriber.health_event_at;
+                                        const healthReason =
+                                            subscriber.health_reason ===
+                                            'complaint'
+                                                ? 'Spam complaint'
+                                                : 'Permanent bounce';
 
                                         return (
                                             <TableRow
@@ -551,13 +590,26 @@ export default function ListHygieneIndex({
                                                             filters.kind ===
                                                             'unconfirmed'
                                                                 ? 'secondary'
-                                                                : 'orange'
+                                                                : filters.kind ===
+                                                                    'inactive'
+                                                                  ? 'orange'
+                                                                  : 'destructive'
+                                                        }
+                                                        title={
+                                                            filters.kind ===
+                                                            'undeliverable'
+                                                                ? (subscriber.health_detail ??
+                                                                  undefined)
+                                                                : undefined
                                                         }
                                                     >
                                                         {filters.kind ===
                                                         'unconfirmed'
                                                             ? 'Awaiting confirmation'
-                                                            : 'No opens or clicks'}
+                                                            : filters.kind ===
+                                                                'inactive'
+                                                              ? 'No opens or clicks'
+                                                              : healthReason}
                                                     </Badge>
                                                 </TableCell>
                                             </TableRow>
@@ -566,17 +618,9 @@ export default function ListHygieneIndex({
                                 </TableBody>
                             </Table>
                         )}
-
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            {subscribers.total > 0 && (
-                                <p className="text-sm text-muted-foreground">
-                                    Showing {subscribers.from}–{subscribers.to}{' '}
-                                    of {subscribers.total.toLocaleString()}{' '}
-                                    subscribers
-                                </p>
-                            )}
+                        {subscribers.data.length === 0 && (
                             <Paginator paginator={subscribers} />
-                        </div>
+                        )}
                     </div>
                 </div>
 

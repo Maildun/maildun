@@ -4,7 +4,7 @@ import {
     CheckmarkCircle02Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Deferred, Form, Head, Link } from '@inertiajs/react';
+import { Deferred, Form, Head, Link, usePoll } from '@inertiajs/react';
 import { useState } from 'react';
 import { SettingsPageHeader } from '@/components/settings-page-header';
 import { SettingsPanel } from '@/components/settings-panel';
@@ -101,6 +101,21 @@ function relativeTimestamp(value: string): string {
     return /^\d+[mhd]$/.test(relative) ? `${relative} ago` : relative;
 }
 
+function DeliveryTestProgress() {
+    usePoll(3000, { only: ['integration'] });
+
+    return (
+        <Alert role="status" data-test="delivery-test-pending">
+            <Spinner />
+            <AlertTitle>Sending test email</AlertTitle>
+            <AlertDescription>
+                Waiting for the provider to accept the test. This page updates
+                automatically.
+            </AlertDescription>
+        </Alert>
+    );
+}
+
 export default function TeamEmailProviderShowPage({
     sesLimits,
     team,
@@ -166,6 +181,23 @@ export default function TeamEmailProviderShowPage({
                         </div>
                     ) : null}
                 </div>
+
+                {integration?.test_status === 'pending' ? (
+                    <DeliveryTestProgress />
+                ) : null}
+
+                {integration?.test_status === 'failed' ? (
+                    <Alert
+                        variant="destructive"
+                        data-test="delivery-test-failure"
+                    >
+                        <HugeiconsIcon icon={Alert01Icon} aria-hidden="true" />
+                        <AlertTitle>Delivery test failed</AlertTitle>
+                        <AlertDescription>
+                            {integration.test_failure}
+                        </AlertDescription>
+                    </Alert>
+                ) : null}
 
                 {integration?.feedback?.stale ? (
                     <Alert variant="warning" data-test="ses-feedback-stale">

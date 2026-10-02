@@ -28,6 +28,7 @@ import {
     Card,
     CardAction,
     CardContent,
+    CardFooter,
     CardDescription,
     CardHeader,
     CardTitle,
@@ -400,16 +401,10 @@ export default function EmailRecipients({
                             ))}
                         </TableBody>
                     </Table>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        {recipients.total > 0 && (
-                            <p className="text-sm text-muted-foreground">
-                                Showing {recipients.from}–{recipients.to} of{' '}
-                                {recipients.total} recipients
-                            </p>
-                        )}
-                        <Paginator paginator={recipients} />
-                    </div>
                 </CardContent>
+                <CardFooter>
+                    <Paginator paginator={recipients} showSummary />
+                </CardFooter>
             </Card>
 
             <AlertDialog

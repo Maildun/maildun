@@ -25,6 +25,7 @@ class TransactionalEmailMessage extends Mailable
             from: new Address($this->delivery->from_address, $this->delivery->from_name),
             replyTo: $this->delivery->reply_to === null ? [] : [new Address($this->delivery->reply_to)],
             subject: $this->delivery->subject,
+            metadata: $this->sesMessageTags(),
         );
     }
 
@@ -36,5 +37,15 @@ class TransactionalEmailMessage extends Mailable
         return new Content(
             htmlString: $this->delivery->html,
         );
+    }
+
+    /** @return array<string, string> */
+    private function sesMessageTags(): array
+    {
+        if ($this->delivery->provider !== 'ses') {
+            return [];
+        }
+
+        return ['transactional_delivery_uuid' => $this->delivery->uuid];
     }
 }

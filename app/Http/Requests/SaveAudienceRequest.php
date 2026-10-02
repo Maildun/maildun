@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\SubscribeFormFieldMode;
+use App\Enums\SubscriberLanguage;
 use App\Enums\TransactionalEmailStatus;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
@@ -29,7 +30,12 @@ class SaveAudienceRequest extends FormRequest
             'already_subscribed_url',
             'unsubscribed_url',
             'double_opt_in_email_uuid',
+            'default_language',
         ]));
+
+        if ($this->exists('allowed_languages') && blank($this->input('allowed_languages'))) {
+            $this->merge(['allowed_languages' => []]);
+        }
     }
 
     /** @return array<string, ValidationRule|array<mixed>|string> */
@@ -39,6 +45,25 @@ class SaveAudienceRequest extends FormRequest
 
         abort_unless($team instanceof Team, 404);
 
+        $languageRules = [];
+
+        if ($this->exists('language_mode')) {
+            $languageIsVisible = $this->input('language_mode') !== SubscribeFormFieldMode::Hidden->value;
+            $languageRules = [
+                'allowed_languages' => [
+                    $languageIsVisible ? 'required' : 'present',
+                    'array',
+                    ...($languageIsVisible ? ['min:1'] : []),
+                ],
+                'allowed_languages.*' => ['distinct', Rule::enum(SubscriberLanguage::class)],
+                'default_language' => [
+                    $languageIsVisible ? 'required' : 'nullable',
+                    Rule::enum(SubscriberLanguage::class),
+                    Rule::in($this->input('allowed_languages', [])),
+                ],
+            ];
+        }
+
         return [
             'name' => $this->isMethod('post')
                 ? ['required', 'string', 'max:255']
@@ -46,6 +71,8 @@ class SaveAudienceRequest extends FormRequest
             'description' => ['nullable', 'string', 'max:2000'],
             'first_name_mode' => ['sometimes', Rule::enum(SubscribeFormFieldMode::class)],
             'last_name_mode' => ['sometimes', Rule::enum(SubscribeFormFieldMode::class)],
+            'language_mode' => ['sometimes', Rule::enum(SubscribeFormFieldMode::class)],
+            ...$languageRules,
             'double_opt_in' => ['sometimes', 'boolean'],
             'double_opt_in_email_uuid' => [
                 Rule::requiredIf(fn (): bool => $this->boolean('double_opt_in')),

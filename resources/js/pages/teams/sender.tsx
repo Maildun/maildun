@@ -1,6 +1,8 @@
 import {
     ArrowDown01Icon,
+    CloudDownloadIcon,
     Copy01Icon,
+    Csv01Icon,
     Delete02Icon,
     Edit03Icon,
     Globe02Icon,
@@ -440,6 +442,83 @@ export default function TeamSenderSettingsPage({
     );
 }
 
+type ExportDnsRecord = {
+    type: 'TXT';
+    name: string;
+    value: string;
+};
+
+function dnsRecordsForExport(
+    senderDomain: TeamSenderDomain,
+): ExportDnsRecord[] {
+    return [
+        {
+            type: 'TXT',
+            name: senderDomain.dns_record_name,
+            value: senderDomain.dns_record_value,
+        },
+    ];
+}
+
+function fullyQualifiedDomainName(value: string): string {
+    return `${value.replace(/\.+$/, '')}.`;
+}
+
+function escapeZoneText(value: string): string {
+    return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+}
+
+function buildCloudflareZoneFile(senderDomain: TeamSenderDomain): string {
+    const records = dnsRecordsForExport(senderDomain).map(
+        (record) =>
+            `${fullyQualifiedDomainName(record.name)} 300 IN TXT "${escapeZoneText(record.value)}"`,
+    );
+
+    return [
+        `; Maildun DNS records for ${senderDomain.domain}`,
+        `$ORIGIN ${fullyQualifiedDomainName(senderDomain.domain)}`,
+        '$TTL 300',
+        '',
+        ...records,
+        '',
+    ].join('\n');
+}
+
+function escapeCsvValue(value: string): string {
+    return `"${value.replaceAll('"', '""')}"`;
+}
+
+function buildDnsCsv(senderDomain: TeamSenderDomain): string {
+    const rows = [
+        ['Type', 'Name', 'Value'],
+        ...dnsRecordsForExport(senderDomain).map((record) => [
+            record.type,
+            record.name,
+            record.value,
+        ]),
+    ];
+
+    return `${rows
+        .map((row) => row.map(escapeCsvValue).join(','))
+        .join('\r\n')}\r\n`;
+}
+
+function downloadDnsFile(
+    contents: string,
+    filename: string,
+    type: string,
+): void {
+    const objectUrl = URL.createObjectURL(new Blob([contents], { type }));
+    const link = document.createElement('a');
+
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+}
+
 function SenderDomainRow({
     team,
     senderDomain,
@@ -457,6 +536,7 @@ function SenderDomainRow({
 }) {
     const [open, setOpen] = useState(defaultOpen);
     const [copiedText, copy] = useClipboard();
+    const hasDnsRecords = dnsRecordsForExport(senderDomain).length > 0;
 
     const copyDnsValue = async (value: string) => {
         const copied = await copy(value);
@@ -550,6 +630,36 @@ function SenderDomainRow({
                                 >
                                     <HugeiconsIcon icon={Refresh03Icon} />
                                     Check DNS
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    data-test="export-cloudflare-dns-button"
+                                    disabled={!hasDnsRecords}
+                                    onClick={() =>
+                                        downloadDnsFile(
+                                            buildCloudflareZoneFile(
+                                                senderDomain,
+                                            ),
+                                            `${senderDomain.domain}-maildun-dns.txt`,
+                                            'text/plain;charset=utf-8',
+                                        )
+                                    }
+                                >
+                                    <HugeiconsIcon icon={CloudDownloadIcon} />
+                                    Export for Cloudflare
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    data-test="export-dns-csv-button"
+                                    disabled={!hasDnsRecords}
+                                    onClick={() =>
+                                        downloadDnsFile(
+                                            buildDnsCsv(senderDomain),
+                                            `${senderDomain.domain}-maildun-dns.csv`,
+                                            'text/csv;charset=utf-8',
+                                        )
+                                    }
+                                >
+                                    <HugeiconsIcon icon={Csv01Icon} />
+                                    Export CSV
                                 </DropdownMenuItem>
                             </DropdownMenuGroup>
                             <DropdownMenuSeparator />

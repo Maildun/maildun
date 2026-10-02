@@ -3,11 +3,14 @@
 namespace App\Jobs;
 
 use App\Actions\Emails\BuildTrackedEmailHtml;
+use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Concerns\ThrottlesEmailDelivery;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailFailureCode;
+use App\Enums\EmailProvider;
 use App\Enums\EmailStatus;
+use App\Exceptions\EmailAddressSuppressedException;
 use App\Exceptions\EmailTransportException;
 use App\Mail\CampaignEmail;
 use App\Models\Email;
@@ -53,6 +56,21 @@ class SendEmailDelivery implements ShouldQueue
             'email.links',
             'email.attachments',
         ])->findOrFail($this->deliveryId);
+
+        if (app(RecordEmailAddressHealth::class)->isSuppressed(
+            $delivery->email->team,
+            $delivery->email_address,
+        )) {
+            EmailDelivery::query()
+                ->whereKey($delivery->id)
+                ->where('status', EmailDeliveryStatus::Queued)
+                ->update([
+                    'status' => EmailDeliveryStatus::Rejected,
+                    'failure_reason' => __(EmailAddressSuppressedException::MESSAGE),
+                ]);
+
+            return;
+        }
 
         $html = $trackedHtml->build($delivery);
         $mergeData = $delivery->merge_data ?? [];
@@ -146,7 +164,7 @@ class SendEmailDelivery implements ShouldQueue
             ? $exception->failureCode
             : EmailFailureCode::Unknown;
 
-        DB::transaction(function () use ($failureReason, $failureCode): void {
+        $failed = DB::transaction(function () use ($failureReason, $failureCode): int {
             EmailDeliveryAttempt::query()
                 ->where('email_delivery_id', $this->deliveryId)
                 ->where('status', EmailDeliveryStatus::Sending)
@@ -155,7 +173,7 @@ class SendEmailDelivery implements ShouldQueue
                     'failure_reason' => $failureReason,
                 ]);
 
-            EmailDelivery::query()
+            return EmailDelivery::query()
                 ->whereKey($this->deliveryId)
                 ->whereIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending])
                 ->update([
@@ -164,6 +182,24 @@ class SendEmailDelivery implements ShouldQueue
                     'failure_code' => $failureCode,
                 ]);
         }, attempts: 3);
+
+        // A late failure must not count against the address's health when the
+        // delivery had already finished.
+        if ($failed === 0) {
+            return;
+        }
+
+        $delivery = EmailDelivery::query()->with('email.team')->find($this->deliveryId);
+        $provider = $delivery === null ? null : EmailProvider::tryFrom($delivery->provider);
+
+        if ($delivery !== null && $provider !== null) {
+            app(RecordEmailAddressHealth::class)->recordFailure(
+                $delivery->email->team,
+                $delivery->email_address,
+                $provider,
+                $failureReason,
+            );
+        }
     }
 
     /** @return list<string> */
