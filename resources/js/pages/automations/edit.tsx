@@ -1,5 +1,4 @@
 import {
-    Activity03Icon,
     Add01Icon,
     ArrowLeft01Icon,
     Cancel01Icon,
@@ -7,15 +6,22 @@ import {
     Copy01Icon,
     Edit03Icon,
     FilterIcon,
+    HistoryIcon,
     Key01Icon,
     PlayIcon,
     RefreshIcon,
     Tag01Icon,
+    WorkflowSquare10Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { addEdge, applyEdgeChanges, applyNodeChanges } from '@xyflow/react';
-import type { Connection, EdgeChange, NodeChange } from '@xyflow/react';
+import type {
+    Connection,
+    EdgeChange,
+    NodeChange,
+    XYPosition,
+} from '@xyflow/react';
 import { useMemo, useState } from 'react';
 import AutomationCanvas from '@/components/automation-canvas';
 import AutomationStepPanel from '@/components/automation-step-panel';
@@ -44,8 +50,15 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
+import {
+    AUTOMATION_STEP_DRAG_TYPE,
+    automationConnectionError,
+    orderAutomationWorkflow,
+} from '@/lib/automation-workflow';
+import { cn } from '@/lib/utils';
 import {
     activate,
     activity,
@@ -94,6 +107,7 @@ const STATUS_VARIANTS: Record<
 const NEW_STEPS: {
     type: Exclude<AutomationNodeType, 'trigger'>;
     label: string;
+    description: string;
     testId: string;
     icon: typeof Tag01Icon;
     iconClassName: string;
@@ -102,6 +116,7 @@ const NEW_STEPS: {
     {
         type: 'action',
         label: 'Action',
+        description: 'Send an email or update a tag.',
         testId: 'add-action-step',
         icon: Tag01Icon,
         iconClassName: 'bg-info/15 text-info',
@@ -110,6 +125,7 @@ const NEW_STEPS: {
     {
         type: 'condition',
         label: 'Condition',
+        description: 'Split the flow using subscriber data.',
         testId: 'add-condition-step',
         icon: FilterIcon,
         iconClassName: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
@@ -118,6 +134,7 @@ const NEW_STEPS: {
     {
         type: 'delay',
         label: 'Wait',
+        description: 'Pause before the next step.',
         testId: 'add-delay-step',
         icon: Clock01Icon,
         iconClassName: 'bg-warning/15 text-warning',
@@ -236,6 +253,11 @@ export default function AutomationEdit({
     const [elementsOpen, setElementsOpen] = useState(false);
 
     const readOnly = !canManage;
+    const workflow = useMemo(
+        () => orderAutomationWorkflow(nodes, edges),
+        [nodes, edges],
+    );
+    const workflowNodes = [...workflow.connected, ...workflow.disconnected];
 
     const selected = useMemo(
         () =>
@@ -297,16 +319,31 @@ export default function AutomationEdit({
                 ) as unknown as AutomationEdge[],
         );
 
-    const handleConnect = (connection: Connection) =>
-        setEdges(
-            (current) =>
-                addEdge(
-                    { ...connection, type: 'smoothstep' },
-                    current as never,
-                ) as unknown as AutomationEdge[],
-        );
+    const handleConnect = (connection: Connection) => {
+        if (readOnly) {
+            return;
+        }
 
-    const addStep = (step: (typeof NEW_STEPS)[number]) => {
+        setEdges((current) => {
+            if (automationConnectionError(nodes, current, connection)) {
+                return current;
+            }
+
+            return addEdge(
+                { ...connection, type: 'smoothstep' },
+                current as never,
+            ) as unknown as AutomationEdge[];
+        });
+    };
+
+    const addStep = (
+        step: (typeof NEW_STEPS)[number],
+        position?: XYPosition,
+    ) => {
+        if (readOnly) {
+            return;
+        }
+
         // Derived from the graph rather than a random id, so the same canvas
         // always produces the same next id.
         const taken = new Set(nodes.map((node) => node.id));
@@ -327,7 +364,7 @@ export default function AutomationEdit({
             {
                 id,
                 type: step.type,
-                position: {
+                position: position ?? {
                     x: 320,
                     y: lowest + NEW_STEP_VERTICAL_SPACING,
                 },
@@ -354,6 +391,29 @@ export default function AutomationEdit({
         setNodes((current) =>
             current.map((node) => ({ ...node, selected: false })),
         );
+
+    const selectStep = (id: string) => {
+        setNodes((current) =>
+            current.map((node) => ({ ...node, selected: node.id === id })),
+        );
+    };
+
+    const stepTitle = (node: AutomationNode): string => {
+        const data = node.data as Record<string, unknown>;
+
+        switch (node.type) {
+            case 'trigger':
+                return triggerLabels[String(data.kind)] ?? 'Choose a trigger';
+            case 'action':
+                return actionLabels[String(data.kind)] ?? 'Choose an action';
+            case 'condition':
+                return (
+                    conditionLabels[String(data.kind)] ?? 'Choose a condition'
+                );
+            case 'delay':
+                return `${data.amount ?? 1} ${delayUnitLabels[String(data.unit)] ?? 'minutes'}`;
+        }
+    };
 
     /** Strip the view-only keys ReactFlow adds so the saved graph stays the contract. */
     const graphPayload = toGraphPayload(nodes, edges);
@@ -656,7 +716,7 @@ export default function AutomationEdit({
                             }
                         >
                             <HugeiconsIcon
-                                icon={Activity03Icon}
+                                icon={HistoryIcon}
                                 data-icon="inline-start"
                             />
                             <span className="hidden sm:inline">Activity</span>
@@ -698,6 +758,131 @@ export default function AutomationEdit({
                 </header>
 
                 <div className="relative flex min-h-0 flex-1 overflow-hidden">
+                    <aside
+                        className="hidden w-64 shrink-0 flex-col border-r bg-card lg:flex"
+                        aria-label="Workflow steps"
+                        data-test="automation-step-sidebar"
+                    >
+                        <Tabs
+                            defaultValue="steps"
+                            className="min-h-0 flex-1 gap-0"
+                        >
+                            <div className="shrink-0 border-b px-3 py-2">
+                                <TabsList className="w-full">
+                                    <TabsTrigger value="steps">
+                                        Steps
+                                    </TabsTrigger>
+                                    <TabsTrigger value="workflow">
+                                        Workflow
+                                    </TabsTrigger>
+                                </TabsList>
+                            </div>
+                            <TabsContent
+                                value="steps"
+                                className="min-h-0 overflow-y-auto p-3"
+                            >
+                                <div className="flex flex-col gap-3">
+                                    <p className="text-xs text-muted-foreground">
+                                        Drag a step onto the canvas or click to
+                                        add it.
+                                    </p>
+                                    {NEW_STEPS.map((step) => (
+                                        <Button
+                                            key={step.type}
+                                            variant="outline"
+                                            className="h-auto w-full cursor-grab justify-start gap-3 px-3 py-3 whitespace-normal active:cursor-grabbing"
+                                            disabled={readOnly}
+                                            draggable={!readOnly}
+                                            onDragStart={(event) => {
+                                                event.dataTransfer.setData(
+                                                    AUTOMATION_STEP_DRAG_TYPE,
+                                                    step.type,
+                                                );
+                                                event.dataTransfer.effectAllowed =
+                                                    'copy';
+                                            }}
+                                            data-test={`sidebar-${step.testId}`}
+                                            onClick={() => addStep(step)}
+                                        >
+                                            <span
+                                                className={cn(
+                                                    'flex size-8 shrink-0 items-center justify-center rounded-lg',
+                                                    step.iconClassName,
+                                                )}
+                                            >
+                                                <HugeiconsIcon
+                                                    icon={step.icon}
+                                                />
+                                            </span>
+                                            <span className="flex min-w-0 flex-col gap-1 text-left">
+                                                <span>{step.label}</span>
+                                                <span className="text-xs leading-relaxed font-normal text-muted-foreground">
+                                                    {step.description}
+                                                </span>
+                                            </span>
+                                        </Button>
+                                    ))}
+                                </div>
+                            </TabsContent>
+                            <TabsContent
+                                value="workflow"
+                                className="min-h-0 overflow-y-auto p-3"
+                            >
+                                <div className="flex flex-col gap-2">
+                                    <p className="pb-1 text-xs text-muted-foreground">
+                                        Select a step to view its settings.
+                                    </p>
+                                    {workflowNodes.map((node, position) => (
+                                        <Button
+                                            key={node.id}
+                                            variant={
+                                                selected?.id === node.id
+                                                    ? 'secondary'
+                                                    : 'ghost'
+                                            }
+                                            className="h-auto w-full justify-start gap-3 px-3 py-3 whitespace-normal"
+                                            aria-pressed={
+                                                selected?.id === node.id
+                                            }
+                                            data-test="automation-workflow-step"
+                                            onClick={() => selectStep(node.id)}
+                                        >
+                                            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs text-muted-foreground">
+                                                {position <
+                                                workflow.connected.length
+                                                    ? position + 1
+                                                    : '—'}
+                                            </span>
+                                            <span className="flex min-w-0 flex-col gap-1 text-left">
+                                                <span>{stepTitle(node)}</span>
+                                                <span className="text-xs font-normal text-muted-foreground">
+                                                    {position >=
+                                                        workflow.connected
+                                                            .length &&
+                                                        'Not connected · '}
+                                                    {node.type === 'trigger'
+                                                        ? 'Trigger'
+                                                        : NEW_STEPS.find(
+                                                              (step) =>
+                                                                  step.type ===
+                                                                  node.type,
+                                                          )?.label}
+                                                </span>
+                                            </span>
+                                        </Button>
+                                    ))}
+                                </div>
+                            </TabsContent>
+                        </Tabs>
+                        <div className="flex items-center gap-2 border-t p-3 text-xs text-muted-foreground">
+                            <HugeiconsIcon
+                                icon={WorkflowSquare10Icon}
+                                className="size-4"
+                            />
+                            {nodes.length}{' '}
+                            {nodes.length === 1 ? 'step' : 'steps'}
+                        </div>
+                    </aside>
                     <main className="relative min-w-0 flex-1 overflow-hidden">
                         {(canManage ||
                             (automation.trigger === 'api' &&
@@ -707,63 +892,69 @@ export default function AutomationEdit({
                                 data-test="automation-canvas-toolbar"
                             >
                                 {canManage && (
-                                    <Popover
-                                        open={elementsOpen}
-                                        onOpenChange={(open) => {
-                                            if (open && selected) {
-                                                closeInspector();
-                                            }
+                                    <div className="lg:hidden">
+                                        <Popover
+                                            open={elementsOpen}
+                                            onOpenChange={(open) => {
+                                                if (open && selected) {
+                                                    closeInspector();
+                                                }
 
-                                            setElementsOpen(open);
-                                        }}
-                                    >
-                                        <PopoverTrigger
-                                            render={
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    data-test="toggle-automation-elements"
-                                                />
-                                            }
+                                                setElementsOpen(open);
+                                            }}
                                         >
-                                            <HugeiconsIcon
-                                                icon={Add01Icon}
-                                                data-icon="inline-start"
-                                            />
-                                            Add step
-                                        </PopoverTrigger>
-                                        <PopoverContent
-                                            align="start"
-                                            side="bottom"
-                                            className="w-44 p-1"
-                                            data-test="automation-step-palette"
-                                        >
-                                            <div className="flex flex-col gap-1">
-                                                {NEW_STEPS.map((step) => (
+                                            <PopoverTrigger
+                                                render={
                                                     <Button
-                                                        key={step.type}
-                                                        variant="ghost"
-                                                        className="h-9 w-full justify-start gap-2 px-2 text-sm font-medium"
-                                                        data-test={step.testId}
-                                                        onClick={() =>
-                                                            addStep(step)
-                                                        }
-                                                    >
-                                                        <span
-                                                            className={`flex size-6 shrink-0 items-center justify-center rounded-md ${step.iconClassName}`}
+                                                        size="sm"
+                                                        variant="outline"
+                                                        data-test="toggle-automation-elements"
+                                                    />
+                                                }
+                                            >
+                                                <HugeiconsIcon
+                                                    icon={Add01Icon}
+                                                    data-icon="inline-start"
+                                                />
+                                                Add step
+                                            </PopoverTrigger>
+                                            <PopoverContent
+                                                align="start"
+                                                side="bottom"
+                                                className="w-44 p-1"
+                                                data-test="automation-step-palette"
+                                            >
+                                                <div className="flex flex-col gap-1">
+                                                    {NEW_STEPS.map((step) => (
+                                                        <Button
+                                                            key={step.type}
+                                                            variant="ghost"
+                                                            className="h-9 w-full justify-start gap-2 px-2 text-sm font-medium"
+                                                            data-test={
+                                                                step.testId
+                                                            }
+                                                            onClick={() =>
+                                                                addStep(step)
+                                                            }
                                                         >
-                                                            <HugeiconsIcon
-                                                                icon={step.icon}
-                                                                className="size-3.5"
-                                                                data-icon="inline-start"
-                                                            />
-                                                        </span>
-                                                        {step.label}
-                                                    </Button>
-                                                ))}
-                                            </div>
-                                        </PopoverContent>
-                                    </Popover>
+                                                            <span
+                                                                className={`flex size-6 shrink-0 items-center justify-center rounded-md ${step.iconClassName}`}
+                                                            >
+                                                                <HugeiconsIcon
+                                                                    icon={
+                                                                        step.icon
+                                                                    }
+                                                                    className="size-3.5"
+                                                                    data-icon="inline-start"
+                                                                />
+                                                            </span>
+                                                            {step.label}
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            </PopoverContent>
+                                        </Popover>
+                                    </div>
                                 )}
 
                                 {automation.trigger === 'api' &&
@@ -868,6 +1059,15 @@ export default function AutomationEdit({
                             onNodesChange={handleNodesChange}
                             onEdgesChange={handleEdgesChange}
                             onConnect={handleConnect}
+                            onAddStep={(type, position) => {
+                                const step = NEW_STEPS.find(
+                                    (step) => step.type === type,
+                                );
+
+                                if (step) {
+                                    addStep(step, position);
+                                }
+                            }}
                             readOnly={readOnly}
                             triggerLabels={triggerLabels}
                             actionLabels={actionLabels}
@@ -880,11 +1080,16 @@ export default function AutomationEdit({
                         />
                     </main>
 
-                    {selected && (
-                        <aside
-                            className="absolute inset-y-0 right-0 z-20 w-full overflow-hidden border-l bg-background shadow-sm motion-safe:animate-in motion-safe:duration-200 motion-safe:fade-in-0 motion-safe:slide-in-from-right-4 sm:w-96 lg:relative lg:inset-auto lg:z-auto lg:shrink-0 lg:shadow-none"
-                            data-test="automation-step-inspector"
-                        >
+                    <aside
+                        className={cn(
+                            'absolute inset-y-0 right-0 z-20 hidden w-full overflow-hidden border-l bg-card shadow-sm sm:w-80 lg:relative lg:inset-auto lg:z-auto lg:block lg:w-80 lg:shrink-0 lg:shadow-none',
+                            selected &&
+                                'block motion-safe:animate-in motion-safe:duration-200 motion-safe:fade-in-0 motion-safe:slide-in-from-right-4',
+                        )}
+                        aria-label="Step settings"
+                        data-test="automation-step-inspector"
+                    >
+                        {selected && (
                             <Button
                                 size="icon-sm"
                                 variant="ghost"
@@ -895,18 +1100,18 @@ export default function AutomationEdit({
                             >
                                 <HugeiconsIcon icon={Cancel01Icon} />
                             </Button>
-                            <AutomationStepPanel
-                                node={selected}
-                                catalog={catalog}
-                                audiences={audiences}
-                                tags={tags}
-                                emails={transactionalEmails}
-                                readOnly={readOnly}
-                                onChange={updateNodeData}
-                                onDelete={deleteNode}
-                            />
-                        </aside>
-                    )}
+                        )}
+                        <AutomationStepPanel
+                            node={selected}
+                            catalog={catalog}
+                            audiences={audiences}
+                            tags={tags}
+                            emails={transactionalEmails}
+                            readOnly={readOnly}
+                            onChange={updateNodeData}
+                            onDelete={deleteNode}
+                        />
+                    </aside>
                 </div>
             </div>
         </>

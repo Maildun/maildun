@@ -67,7 +67,7 @@ test('the editor renders a full screen xyflow canvas with workflow controls', fu
         ->toContain("testId: 'add-action-step'")
         ->toContain("testId: 'add-condition-step'")
         ->toContain("testId: 'add-delay-step'")
-        ->toContain('data-test={step.testId}')
+        ->toMatch('/data-test=\{\s*step.testId\s*\}/')
         ->toContain('data-test="save-automation-button"')
         ->toContain("? 'pause-automation-button'")
         ->toContain(": 'activate-automation-button'");
@@ -119,10 +119,19 @@ test('automation nodes use the full card composition and support test state', fu
         ->not->toContain("testing ? 'Testing' : 'Ready'");
 });
 
-test('the editor uses a contextual step menu and docked inspector', function () {
+test('the editor has desktop step and settings sidebars with a compact mobile menu', function () {
     $edit = automationFile('resources/js/pages/automations/edit.tsx');
+    $panel = automationFile('resources/js/components/automation-step-panel.tsx');
 
     expect($edit)->toBeString()
+        ->toContain('data-test="automation-step-sidebar"')
+        ->toContain('aria-label="Workflow steps"')
+        ->toContain('<TabsTrigger value="steps">')
+        ->toContain('<TabsTrigger value="workflow">')
+        ->toContain('data-test="automation-workflow-step"')
+        ->toContain('onClick={() => selectStep(node.id)}')
+        ->toContain('aria-label="Step settings"')
+        ->toContain('lg:block lg:w-80')
         ->toContain('const [elementsOpen, setElementsOpen] = useState(false);')
         ->toContain('<Popover')
         ->toContain('className="w-44 p-1"')
@@ -138,6 +147,9 @@ test('the editor uses a contextual step menu and docked inspector', function () 
         ->not->toContain('absolute top-1/2 left-4')
         ->not->toContain('MagicWand02Icon')
         ->not->toContain('Grid2X2Icon');
+
+    expect($panel)->toContain('data-test="automation-step-inspector-empty"')
+        ->toContain('<EmptyTitle>Select a step</EmptyTitle>');
 });
 
 test('the canvas is gated behind useMounted so SSR paints a placeholder', function () {
@@ -287,7 +299,7 @@ test('both the list and the editor link to activity', function () {
 
     expect(automationFile('resources/js/pages/automations/edit.tsx'))
         ->toContain('data-test="automation-activity-link"')
-        ->toContain('Activity03Icon');
+        ->toContain('HistoryIcon');
 });
 
 test('the activity page uses a future-facing formatter for a parked run', function () {

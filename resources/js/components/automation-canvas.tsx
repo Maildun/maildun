@@ -22,9 +22,12 @@ import type {
     EdgeProps,
     NodeChange,
     NodeProps,
+    ReactFlowInstance,
+    XYPosition,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useMemo, useRef } from 'react';
+import type { DragEvent } from 'react';
 import { Badge } from '@/components/ui/badge';
 import {
     Card,
@@ -35,7 +38,14 @@ import {
 } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from '@/components/ui/toast';
 import { useMounted } from '@/hooks/use-mounted';
+import {
+    AUTOMATION_STEP_DRAG_TYPE,
+    automationConnectionError,
+    isAutomationPaletteStepType,
+} from '@/lib/automation-workflow';
+import type { AutomationPaletteStepType } from '@/lib/automation-workflow';
 import { cn } from '@/lib/utils';
 import type {
     AutomationActionData,
@@ -65,6 +75,7 @@ type Props = Lookups & {
     onNodesChange: (changes: NodeChange[]) => void;
     onEdgesChange: (changes: EdgeChange[]) => void;
     onConnect: (connection: Connection) => void;
+    onAddStep: (type: AutomationPaletteStepType, position: XYPosition) => void;
     readOnly: boolean;
     testingNodeId?: string | null;
 };
@@ -100,75 +111,73 @@ function NodeShell({
     return (
         <Card
             size="sm"
+            body="seamless"
             className={cn(
-                'w-64 gap-0 py-0 text-left shadow-xs transition-shadow hover:shadow-sm',
-                selected && 'shadow-sm ring-2 ring-primary',
-                testing && 'shadow-sm ring-2 ring-primary',
+                'w-64 gap-0 py-0 text-left shadow-xs transition-shadow hover:shadow-sm has-[>[data-slot=card-content]:last-child]:pb-0 data-[body=seamless]:py-0 data-[size=sm]:gap-0',
+                selected && 'border-primary shadow-sm ring-4 ring-primary/20',
+                testing && 'border-primary shadow-sm ring-2 ring-primary/30',
             )}
             data-test="automation-node-card"
         >
-            <CardHeader className="py-3">
-                <div className="flex items-center gap-3">
-                    <div
-                        className={cn(
-                            'flex size-8 shrink-0 items-center justify-center rounded-md',
-                            iconClassName,
-                        )}
-                    >
-                        <HugeiconsIcon icon={icon} className="size-4" />
-                    </div>
-                    <div className="min-w-0">
-                        <CardTitle className="truncate">{title}</CardTitle>
-                    </div>
+            <CardHeader className="relative pt-4 pr-16 pb-2 pl-4">
+                <div
+                    className={cn(
+                        'absolute top-4 right-4 flex size-8 items-center justify-center rounded-lg',
+                        iconClassName,
+                    )}
+                >
+                    <HugeiconsIcon icon={icon} className="size-4" />
                 </div>
-            </CardHeader>
-            <CardContent className="pb-3">
-                <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                    {detail ?? 'Select this step to configure it.'}
-                </p>
-            </CardContent>
-            <CardFooter
-                className={cn(
-                    'justify-between px-3 py-2',
-                    hasBranches && 'flex-col items-stretch gap-0 px-0 py-0',
-                )}
-            >
-                <div className={cn(hasBranches && 'px-3 py-2')}>
+                <div className="flex min-w-0 flex-col items-start gap-1.5">
                     <Badge variant={variants[tone]}>
                         {testing ? 'Testing' : kicker}
                     </Badge>
+                    <CardTitle
+                        className="line-clamp-2 break-words"
+                        title={title}
+                    >
+                        {title}
+                    </CardTitle>
                 </div>
-                {hasBranches && (
-                    <>
-                        <Separator />
-                        <div className="flex items-stretch">
-                            <div className="flex flex-1 justify-center py-2">
-                                <Badge
-                                    variant="success"
-                                    data-test="automation-branch-yes"
-                                >
-                                    True
-                                </Badge>
-                            </div>
-                            <Separator orientation="vertical" />
-                            <div className="flex flex-1 justify-center py-2">
-                                <Badge
-                                    variant="zinc"
-                                    data-test="automation-branch-no"
-                                >
-                                    False
-                                </Badge>
-                            </div>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+                <p
+                    className="line-clamp-2 text-xs leading-relaxed break-words text-muted-foreground"
+                    title={detail}
+                >
+                    {detail ?? 'Select this step to configure it.'}
+                </p>
+            </CardContent>
+            {hasBranches && (
+                <CardFooter className="flex-col items-stretch gap-0 p-0">
+                    <Separator />
+                    <div className="flex items-stretch">
+                        <div className="flex flex-1 justify-center py-2.5">
+                            <Badge
+                                variant="success"
+                                data-test="automation-branch-yes"
+                            >
+                                True
+                            </Badge>
                         </div>
-                    </>
-                )}
-            </CardFooter>
+                        <Separator orientation="vertical" />
+                        <div className="flex flex-1 justify-center py-2.5">
+                            <Badge
+                                variant="zinc"
+                                data-test="automation-branch-no"
+                            >
+                                False
+                            </Badge>
+                        </div>
+                    </div>
+                </CardFooter>
+            )}
         </Card>
     );
 }
 
 const HANDLE_CLASS =
-    '!size-3 !border-2 !border-background !bg-primary !shadow-sm';
+    '!size-3 !border-2 !border-background !bg-(--automation-connector) !shadow-sm';
 
 type CanvasContextValue = Lookups & {
     testingNodeId?: string | null;
@@ -286,6 +295,7 @@ function DelayNode({ id, data, selected }: NodeProps) {
                 title={`${delay.amount ?? 1} ${
                     delayUnitLabels[delay.unit] ?? 'minutes'
                 }`}
+                detail="Continue after this wait."
                 selected={selected}
                 testing={testingNodeId === id}
             />
@@ -423,6 +433,7 @@ export default function AutomationCanvas({
     onNodesChange,
     onEdgesChange,
     onConnect,
+    onAddStep,
     readOnly,
     triggerLabels,
     actionLabels,
@@ -434,6 +445,38 @@ export default function AutomationCanvas({
     testingNodeId,
 }: Props) {
     const mounted = useMounted();
+    const flow = useRef<Pick<ReactFlowInstance, 'screenToFlowPosition'> | null>(
+        null,
+    );
+
+    const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+        if (
+            readOnly ||
+            !event.dataTransfer.types.includes(AUTOMATION_STEP_DRAG_TYPE)
+        ) {
+            return;
+        }
+
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+    };
+
+    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+        const type = event.dataTransfer.getData(AUTOMATION_STEP_DRAG_TYPE);
+
+        if (readOnly || !flow.current || !isAutomationPaletteStepType(type)) {
+            return;
+        }
+
+        event.preventDefault();
+        onAddStep(
+            type,
+            flow.current.screenToFlowPosition({
+                x: event.clientX,
+                y: event.clientY,
+            }),
+        );
+    };
     const contextValue = useMemo<CanvasContextValue>(() => {
         const tagName = (uuid: unknown) =>
             tags.find((tag) => tag.uuid === uuid)?.name ?? 'No tag chosen';
@@ -478,7 +521,7 @@ export default function AutomationCanvas({
                             ? 'var(--color-success)'
                             : edge.sourceHandle === 'no'
                               ? 'var(--color-muted-foreground)'
-                              : 'var(--primary)',
+                              : 'var(--automation-connector)',
                     strokeWidth: 3,
                 },
             })),
@@ -499,6 +542,44 @@ export default function AutomationCanvas({
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
+                isValidConnection={(connection) =>
+                    !readOnly &&
+                    automationConnectionError(nodes, edges, connection) === null
+                }
+                onConnectEnd={(_, { isValid, fromHandle, toHandle }) => {
+                    if (
+                        readOnly ||
+                        isValid ||
+                        !fromHandle ||
+                        !toHandle ||
+                        fromHandle.type === toHandle.type
+                    ) {
+                        return;
+                    }
+
+                    const source =
+                        fromHandle.type === 'source' ? fromHandle : toHandle;
+                    const target =
+                        fromHandle.type === 'target' ? fromHandle : toHandle;
+                    const error = automationConnectionError(nodes, edges, {
+                        source: source.nodeId,
+                        target: target.nodeId,
+                        sourceHandle: source.id,
+                    });
+
+                    if (error) {
+                        toast.add({
+                            type: 'error',
+                            title: 'Connection not allowed',
+                            description: error,
+                        });
+                    }
+                }}
+                onInit={(instance) => {
+                    flow.current = instance;
+                }}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
                 nodesDraggable={!readOnly}
                 nodesConnectable={!readOnly}
                 edgesReconnectable={!readOnly}
@@ -507,7 +588,11 @@ export default function AutomationCanvas({
                 fitViewOptions={FIT_VIEW_OPTIONS}
                 proOptions={{ hideAttribution: true }}
                 defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
-                className="bg-muted"
+                connectionLineStyle={{
+                    stroke: 'var(--automation-connector)',
+                    strokeWidth: 3,
+                }}
+                className="bg-muted [--automation-connector:var(--primary)] [--xy-background-color:var(--muted)] dark:[--automation-connector:var(--info)]"
                 data-test="automation-canvas"
             >
                 <Background gap={20} size={1} />

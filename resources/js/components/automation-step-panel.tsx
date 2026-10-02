@@ -8,6 +8,13 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Button } from '@/components/ui/button';
 import {
+    Empty,
+    EmptyDescription,
+    EmptyHeader,
+    EmptyMedia,
+    EmptyTitle,
+} from '@/components/ui/empty';
+import {
     Field,
     FieldDescription,
     FieldGroup,
@@ -80,8 +87,26 @@ export default function AutomationStepPanel({
 }: Props) {
     if (!node) {
         return (
-            <div className="flex h-full items-center justify-center p-6 text-center text-muted-foreground">
-                Select a step on the canvas to configure it.
+            <div
+                className="flex h-full min-h-0 flex-col"
+                data-test="automation-step-inspector-empty"
+            >
+                <div className="shrink-0 px-4 py-4">
+                    <p className="text-sm font-medium">Step settings</p>
+                </div>
+                <Separator />
+                <Empty className="p-6">
+                    <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                            <HugeiconsIcon icon={WorkflowSquare10Icon} />
+                        </EmptyMedia>
+                        <EmptyTitle>Select a step</EmptyTitle>
+                        <EmptyDescription>
+                            Select a step on the canvas or in the Workflow tab
+                            to configure it.
+                        </EmptyDescription>
+                    </EmptyHeader>
+                </Empty>
             </div>
         );
     }
