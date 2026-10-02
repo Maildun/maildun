@@ -88,12 +88,12 @@ test('the visual test walks from the trigger along edges instead of canvas posit
         ->not->toContain('first.position.y - second.position.y');
 });
 
-test('new automation steps are placed with more vertical separation', function () {
+test('clicked automation steps are placed near the workflow and brought into view', function () {
     $edit = automationFile('resources/js/pages/automations/edit.tsx');
 
     expect($edit)->toBeString()
-        ->toContain('const NEW_STEP_VERTICAL_SPACING = 220;')
-        ->toContain('y: lowest + NEW_STEP_VERTICAL_SPACING');
+        ->toContain('automationStepPlacement(nodes, edges, selected?.id)')
+        ->toContain('focusStepIds={focusStepIds}');
 });
 
 test('automation nodes use the full card composition and support test state', function () {

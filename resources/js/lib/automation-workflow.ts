@@ -8,6 +8,59 @@ export const AUTOMATION_STEP_DRAG_TYPE = 'application/maildun-automation-step';
 
 export type AutomationPaletteStepType = Exclude<AutomationNodeType, 'trigger'>;
 
+type MeasuredAutomationNode = AutomationNode & {
+    measured?: { width?: number; height?: number };
+};
+
+export function automationStepPlacement(
+    nodes: MeasuredAutomationNode[],
+    edges: AutomationEdge[],
+    selectedId?: string,
+): { position: AutomationNode['position']; anchorId?: string } {
+    const workflow = orderAutomationWorkflow(nodes, edges);
+    const anchor =
+        nodes.find((node) => node.id === selectedId) ??
+        workflow.connected.at(-1) ??
+        nodes.at(-1);
+
+    if (!anchor) {
+        return { position: { x: 320, y: 220 } };
+    }
+
+    const measuredAnchor = anchor as MeasuredAutomationNode;
+    const y =
+        anchor.position.y +
+        Math.max(220, (measuredAnchor.measured?.height ?? 0) + 64);
+    const width = 256;
+    const height = 180;
+    const clearance = 24;
+    let column = 0;
+    let position = { x: anchor.position.x, y };
+
+    const overlaps = () =>
+        nodes.some(
+            (node) =>
+                position.x <
+                    node.position.x +
+                        (node.measured?.width ?? width) +
+                        clearance &&
+                position.x + width + clearance > node.position.x &&
+                position.y <
+                    node.position.y +
+                        (node.measured?.height ?? height) +
+                        clearance &&
+                position.y + height + clearance > node.position.y,
+        );
+
+    while (overlaps()) {
+        column += 1;
+        const offset = Math.ceil(column / 2) * (column % 2 === 1 ? 1 : -1);
+        position = { x: anchor.position.x + offset * 320, y };
+    }
+
+    return { position, anchorId: anchor.id };
+}
+
 export function isAutomationPaletteStepType(
     value: string,
 ): value is AutomationPaletteStepType {

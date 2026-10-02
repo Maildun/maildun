@@ -15,6 +15,8 @@ import {
     Handle,
     Position,
     ReactFlow,
+    useNodesInitialized,
+    useReactFlow,
 } from '@xyflow/react';
 import type {
     Connection,
@@ -26,7 +28,7 @@ import type {
     XYPosition,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { createContext, useContext, useMemo, useRef } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import type { DragEvent } from 'react';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -76,6 +78,7 @@ type Props = Lookups & {
     onEdgesChange: (changes: EdgeChange[]) => void;
     onConnect: (connection: Connection) => void;
     onAddStep: (type: AutomationPaletteStepType, position: XYPosition) => void;
+    focusStepIds: string[] | null;
     readOnly: boolean;
     testingNodeId?: string | null;
 };
@@ -427,6 +430,36 @@ const DEFAULT_EDGE_OPTIONS = {
     style: { strokeWidth: 3 },
 };
 
+function FocusAddedStep({ ids }: { ids: string[] | null }) {
+    const initialized = useNodesInitialized();
+    const { fitView, getNode } = useReactFlow();
+    const previous = useRef<string[] | null>(null);
+
+    useEffect(() => {
+        if (
+            !initialized ||
+            !ids ||
+            previous.current === ids ||
+            ids.some((id) => !getNode(id)?.measured?.width)
+        ) {
+            return;
+        }
+
+        previous.current = ids;
+        void fitView({
+            nodes: ids.map((id) => ({ id })),
+            padding: 0.4,
+            maxZoom: 1,
+            duration: window.matchMedia('(prefers-reduced-motion: reduce)')
+                .matches
+                ? 0
+                : 250,
+        });
+    }, [fitView, getNode, ids, initialized]);
+
+    return null;
+}
+
 export default function AutomationCanvas({
     nodes,
     edges,
@@ -434,6 +467,7 @@ export default function AutomationCanvas({
     onEdgesChange,
     onConnect,
     onAddStep,
+    focusStepIds,
     readOnly,
     triggerLabels,
     actionLabels,
@@ -595,6 +629,7 @@ export default function AutomationCanvas({
                 className="bg-muted [--automation-connector:var(--primary)] [--xy-background-color:var(--muted)] dark:[--automation-connector:var(--info)]"
                 data-test="automation-canvas"
             >
+                <FocusAddedStep ids={focusStepIds} />
                 <Background gap={20} size={1} />
                 <Controls
                     showInteractive={false}

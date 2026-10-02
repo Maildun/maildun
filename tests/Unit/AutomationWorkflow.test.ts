@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
     automationConnectionError,
+    automationStepPlacement,
     isAutomationPaletteStepType,
     orderAutomationWorkflow,
 } from '../../resources/js/lib/automation-workflow.ts';
@@ -29,6 +30,61 @@ function edge(
         sourceHandle,
     };
 }
+
+test('clicked steps appear below the selected node wherever the flow was moved', () => {
+    const selected = { ...node('selected'), position: { x: 1400, y: -600 } };
+    const nodes = [node('start', 'trigger'), selected];
+    const before = structuredClone(nodes);
+
+    assert.deepEqual(automationStepPlacement(nodes, [], selected.id), {
+        position: { x: 1400, y: -380 },
+        anchorId: 'selected',
+    });
+    assert.deepEqual(nodes, before);
+});
+
+test('clicked steps follow the connected flow instead of a distant detached node', () => {
+    const nodes = [
+        { ...node('finish'), position: { x: -400, y: 300 } },
+        node('start', 'trigger'),
+        { ...node('detached'), position: { x: 6000, y: 8000 } },
+    ];
+    const edges = [edge('start', 'finish')];
+
+    assert.deepEqual(automationStepPlacement(nodes, edges), {
+        position: { x: -400, y: 520 },
+        anchorId: 'finish',
+    });
+    assert.deepEqual(automationStepPlacement(nodes, edges, 'deleted'), {
+        position: { x: -400, y: 520 },
+        anchorId: 'finish',
+    });
+});
+
+test('clicked steps use a nearby free column when the space below is occupied', () => {
+    const nodes = [
+        node('start', 'trigger'),
+        { ...node('below'), position: { x: 0, y: 220 } },
+        { ...node('right'), position: { x: 320, y: 220 } },
+    ];
+
+    assert.deepEqual(automationStepPlacement(nodes, [], 'start'), {
+        position: { x: -320, y: 220 },
+        anchorId: 'start',
+    });
+});
+
+test('clicked steps leave room for measured tall cards and have an empty-canvas fallback', () => {
+    const nodes = [{ ...node('tall'), measured: { width: 256, height: 400 } }];
+
+    assert.deepEqual(automationStepPlacement(nodes, [], 'tall'), {
+        position: { x: 0, y: 464 },
+        anchorId: 'tall',
+    });
+    assert.deepEqual(automationStepPlacement([], []), {
+        position: { x: 320, y: 220 },
+    });
+});
 
 test('connections allow a sequence and independent outgoing branches', () => {
     const nodes = [

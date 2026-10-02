@@ -56,6 +56,7 @@ import { toast } from '@/components/ui/toast';
 import {
     AUTOMATION_STEP_DRAG_TYPE,
     automationConnectionError,
+    automationStepPlacement,
     orderAutomationWorkflow,
 } from '@/lib/automation-workflow';
 import { cn } from '@/lib/utils';
@@ -141,8 +142,6 @@ const NEW_STEPS: {
         data: { amount: 1, unit: 'hours' },
     },
 ];
-
-const NEW_STEP_VERTICAL_SPACING = 220;
 
 function toLabelMap(options: { value: string; label: string }[]) {
     return Object.fromEntries(
@@ -251,6 +250,7 @@ export default function AutomationEdit({
     const [testing, setTesting] = useState(false);
     const [testingNodeId, setTestingNodeId] = useState<string | null>(null);
     const [elementsOpen, setElementsOpen] = useState(false);
+    const [focusStepIds, setFocusStepIds] = useState<string[] | null>(null);
 
     const readOnly = !canManage;
     const workflow = useMemo(
@@ -354,24 +354,27 @@ export default function AutomationEdit({
         }
 
         const id = `${step.type}-${suffix}`;
-        const lowest = nodes.reduce(
-            (max, node) => Math.max(max, node.position.y),
-            0,
-        );
+        const placement = position
+            ? { position, anchorId: undefined }
+            : automationStepPlacement(nodes, edges, selected?.id);
 
         setNodes((current) => [
             ...current.map((node) => ({ ...node, selected: false })),
             {
                 id,
                 type: step.type,
-                position: position ?? {
-                    x: 320,
-                    y: lowest + NEW_STEP_VERTICAL_SPACING,
-                },
+                position: placement.position,
                 data: { ...step.data },
                 selected: true,
             },
         ]);
+
+        if (!position) {
+            setFocusStepIds(
+                placement.anchorId ? [placement.anchorId, id] : [id],
+            );
+        }
+
         setElementsOpen(false);
     };
 
@@ -1059,6 +1062,7 @@ export default function AutomationEdit({
                             onNodesChange={handleNodesChange}
                             onEdgesChange={handleEdgesChange}
                             onConnect={handleConnect}
+                            focusStepIds={focusStepIds}
                             onAddStep={(type, position) => {
                                 const step = NEW_STEPS.find(
                                     (step) => step.type === type,
