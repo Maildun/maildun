@@ -50,6 +50,8 @@ use Spatie\Permission\Traits\HasRoles;
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token', 'avatar_path'])]
 class User extends Authenticatable implements OAuthenticatable, PasskeyUser
 {
+    protected string $guard_name = 'web';
+
     /**
      * Append the public avatar URL to serialized user data.
      *
