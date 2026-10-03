@@ -6,6 +6,8 @@ use App\Models\Audience;
 use App\Models\Automation;
 use App\Models\Contact;
 use App\Models\Email;
+use App\Models\Media;
+use App\Models\MediaTag;
 use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Tag;
@@ -276,6 +278,27 @@ class ResourcePayload
             'name' => $tag->name,
             'color' => $tag->color,
             'contacts_count' => (int) $tag->getAttribute('contacts_count'),
+        ];
+    }
+
+    /**
+     * Local storage URLs are root-relative, so they are made absolute on the
+     * request host (APP_URL over stdio) for use inside email bodies.
+     *
+     * @return array{uuid: string, name: string, alt: string|null, url: string|null, mime_type: string|null, width: int|null, height: int|null, category: string|null, tags: list<string>}
+     */
+    public function media(Media $media): array
+    {
+        return [
+            'uuid' => $media->uuid,
+            'name' => $media->name,
+            'alt' => $media->alt,
+            'url' => $media->url === null ? null : url($media->url),
+            'mime_type' => $media->mime_type,
+            'width' => $media->width,
+            'height' => $media->height,
+            'category' => $media->category?->name,
+            'tags' => array_values($media->tags->map(fn (MediaTag $tag): string => $tag->name)->all()),
         ];
     }
 }

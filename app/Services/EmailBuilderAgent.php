@@ -28,9 +28,10 @@ class EmailBuilderAgent
      * @param  array<string, mixed>|null  $document
      * @param  array<string, mixed>  $input
      * @param  list<string>  $mergeTags
+     * @param  bool  $requireUnsubscribe  Lint for a missing {{ unsubscribe_url }} link, as marketing email needs one.
      * @return array<string, mixed>
      */
-    public function run(?array $document, ?string $html, string $tool, array $input = [], array $mergeTags = []): array
+    public function run(?array $document, ?string $html, string $tool, array $input = [], array $mergeTags = [], bool $requireUnsubscribe = false): array
     {
         $payload = json_encode([
             'document' => $document,
@@ -38,6 +39,7 @@ class EmailBuilderAgent
             'tool' => $tool,
             'input' => (object) $input,
             'merge_tags' => $mergeTags,
+            'require_unsubscribe' => $requireUnsubscribe,
         ], JSON_THROW_ON_ERROR);
 
         if (strlen($payload) > 4_000_000) {

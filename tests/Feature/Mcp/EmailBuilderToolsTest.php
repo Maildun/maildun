@@ -49,9 +49,22 @@ test('reads the native agent reference and individual blocks without changing th
 
     MaildunServer::tool(GetEmailBuilderTool::class, [...emailBuilderArguments($email), 'block_id' => 'block-1'])
         ->assertOk()
-        ->assertStructuredContent(fn (AssertableJson $json) => $json->where('result.data.type', 'text')->etc());
+        ->assertStructuredContent(fn (AssertableJson $json) => $json->where('block.type', 'text')->missing('outline')->etc());
 
     expect($email->refresh()->getAttributes())->toBe($before);
+});
+
+test('omits the native tool reference on rereads when the agent already has it', function () {
+    $email = Email::factory()->builder()->create();
+
+    MaildunServer::tool(GetEmailBuilderTool::class, [...emailBuilderArguments($email), 'include_reference' => false])
+        ->assertOk()
+        ->assertStructuredContent(fn (AssertableJson $json) => $json
+            ->where('outline', fn (string $outline): bool => str_contains($outline, 'block-1 text'))
+            ->missing('tools')
+            ->missing('instructions')
+            ->missing('result')
+            ->etc());
 });
 
 test('exposes native tool input schemas with empty objects instead of arrays', function () {
@@ -77,7 +90,9 @@ test('saves native block edits and matching delivery HTML and plain text', funct
     ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
         ->where('saved', true)
         ->where('revision', fn (string $value): bool => $value !== $revision)
-        ->where('ops.0.op', 'update')
+        ->where('changes.changed', ['block-1'])
+        ->missing('ops')
+        ->missing('result')
         ->etc());
 
     expect($email->refresh())
@@ -113,7 +128,6 @@ test('previews native changes without saving the proposal', function () {
     ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
         ->where('saved', false)
         ->where('outline', fn (string $outline): bool => str_contains($outline, '#ff0000'))
-        ->where('ops.0.op', 'updateTheme')
         ->etc());
 
     expect($email->refresh()->getAttributes())->toBe($before);
@@ -288,18 +302,50 @@ test('does not convert source or HTML emails through the block tools', function 
     expect($email->refresh()->getAttributes())->toBe($before);
 })->with([EmailEditor::Html, EmailEditor::Markdown, EmailEditor::PlainText]);
 
-test('checks and renders the email without saving it', function () {
+test('checks the email without saving it and returns HTML only on request', function () {
     $email = Email::factory()->builder()->create();
     $before = $email->refresh()->getAttributes();
 
     MaildunServer::tool(CheckEmailBuilderTool::class, emailBuilderArguments($email))
         ->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
-        ->whereType('html', 'string')
         ->whereType('text', 'string')
-        ->whereType('result.data.warnings', 'array')
+        ->whereType('warnings', 'array')
+        ->missing('html')
+        ->missing('result')
         ->etc());
 
+    MaildunServer::tool(CheckEmailBuilderTool::class, [...emailBuilderArguments($email), 'include_html' => true])
+        ->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json->whereType('html', 'string')->etc());
+
     expect($email->refresh()->getAttributes())->toBe($before);
+});
+
+test('warns campaign agents about a missing unsubscribe link but not transactional ones', function () {
+    $campaign = Email::factory()->builder()->create();
+    $transactional = TransactionalEmail::factory()->builder()->create();
+    $hasWarning = fn (Collection $warnings): bool => $warnings->pluck('code')->contains('missing-unsubscribe');
+
+    MaildunServer::tool(CheckEmailBuilderTool::class, emailBuilderArguments($campaign))
+        ->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json->where('warnings', $hasWarning)->etc());
+
+    MaildunServer::tool(GetEmailBuilderTool::class, emailBuilderArguments($campaign))
+        ->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('instructions', fn (string $instructions): bool => str_contains($instructions, 'Maildun appends a generic footer link'))
+        ->etc());
+
+    MaildunServer::tool(EditEmailBuilderTool::class, [
+        ...emailBuilderArguments($campaign),
+        'tool' => 'insert_section',
+        'input' => ['name' => 'footer'],
+        'dry_run' => true,
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('warnings', fn (Collection $warnings): bool => ! $hasWarning($warnings))
+        ->etc());
+
+    MaildunServer::tool(CheckEmailBuilderTool::class, emailBuilderArguments($transactional))
+        ->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('warnings', fn (Collection $warnings): bool => ! $hasWarning($warnings))
+        ->etc());
 });
 
 test('reports lint warnings at the top level of check and preview results', function () {
@@ -308,7 +354,6 @@ test('reports lint warnings at the top level of check and preview results', func
     MaildunServer::tool(CheckEmailBuilderTool::class, emailBuilderArguments($email))
         ->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
         ->where('warnings', fn (Collection $warnings): bool => $warnings->pluck('code')->contains('missing-preheader'))
-        ->where('result.data.warnings', fn (Collection $warnings): bool => $warnings->pluck('code')->contains('missing-preheader'))
         ->etc());
 
     MaildunServer::tool(EditEmailBuilderTool::class, [

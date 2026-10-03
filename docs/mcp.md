@@ -111,6 +111,7 @@ To read it again, call `get-campaign` with `workspace` and the returned campaign
 | Transactional email | `list-transactional-emails`, `get-transactional-email`, `create-transactional-email`, `update-transactional-email`, `delete-transactional-email` | Creates drafts and edits definitions and merge variables; a slug cannot change after first publication. |
 | Automations | `list-automations`, `get-automation` | Read-only; trigger secrets are never returned. |
 | Block email builder | `get-email-builder`, `edit-email-builder`, `check-email-builder` | Native block operations on campaign and transactional email designs, with revision checks and matching HTML rendering. |
+| Media | `list-media` | Read-only; lists ready images from the media library with absolute URLs and alt text for use in designs. |
 
 List tools support `search` and `limit` (default 20, from 1 to 100). Campaign, transactional-email, and automation lists also accept `status`; use the values advertised by each tool's schema. Lists return `count` for the returned records, not a total across all matches, and do not expose pagination arguments.
 
@@ -124,9 +125,9 @@ Delete tools require `workspace`, `uuid`, and an exact `confirm_name`. They are 
 
 Use the builder tools when the email's `editor` is `builder`. They support `target: "campaign"` and `target: "transactional_email"`, using the same workspace slug and record UUID as the existing domain tools. Create a draft with `create-campaign` or `create-transactional-email` in a workspace configured for the block builder before composing a new email.
 
-1. Call `get-email-builder` with `workspace`, `target`, and `uuid`. It returns a compact block outline, a `revision`, and the installed builder package's native tool schemas and instructions. Supply `block_id` to inspect one block and its children.
+1. Call `get-email-builder` with `workspace`, `target`, and `uuid`. It returns a compact block outline, a `revision`, and the installed builder package's native tool schemas and instructions. Supply `block_id` to inspect one block and its children. The schemas and instructions are large, so pass `include_reference: false` on later reads.
 2. Call `edit-email-builder` with those identifiers, the latest `revision`, a native `tool` name, and its `input` arguments. The edit saves design JSON and rendered delivery HTML together; campaign plain text and transactional merge variables are also updated.
-3. Call `check-email-builder` to read the rendered HTML, plain text, and validation warnings. Checking does not save or send anything.
+3. Call `check-email-builder` to read the plain text and validation warnings; pass `include_html: true` for the rendered HTML. Checking does not save or send anything. Campaigns warn when the design has no `{{ unsubscribe_url }}` link; Maildun still appends a generic footer link when sending, but an author-placed link is better for inbox placement.
 
 Available native edits are `insert_blocks`, `update_block`, `move_block`, `remove_block`, `duplicate_block`, `replace_block`, `insert_section`, `update_settings`, `update_theme`, `replace_document`, and `apply_ops`. Use the returned schemas for their input shapes. `apply_ops` applies a batch atomically: if any operation fails, none of the changes are saved.
 
@@ -147,7 +148,7 @@ For example, after reading a campaign's outline:
 }
 ```
 
-Use a block ID and properties appropriate to its type. A dry run returns the proposed outline and operations with `saved: false`; it leaves the email and revision unchanged. To apply the change, submit the edit with `dry_run: false`. Every saved edit returns a new revision for the next call. If the email changes between reading and saving, the edit is rejected; read it again before retrying. The revision is checked again after rendering, inside the save transaction.
+Use a block ID and properties appropriate to its type. A dry run returns the proposed outline, warnings, and `changes` (inserted, changed, and removed block IDs) with `saved: false`; it leaves the email and revision unchanged. To apply the change, submit the edit with `dry_run: false`. Every saved edit returns a new revision for the next call. If the email changes between reading and saving, the edit is rejected; read it again before retrying. The revision is checked again after rendering, inside the save transaction.
 
 Campaign edits are limited to drafts. Transactional definitions follow the existing update policy, including edits to published definitions; the tool does not change publication status. Read-only members can inspect and check designs but cannot edit them, including dry runs. Legacy EmailBuilder.js designs are converted in memory when read and stored in the current format on a successful edit. A builder email with no design preserves its existing HTML as an HTML block.
 
