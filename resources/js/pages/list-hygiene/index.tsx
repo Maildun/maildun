@@ -19,6 +19,7 @@ import { FilterMenu } from '@/components/filter-menu';
 import Heading from '@/components/heading';
 import { ListSearch } from '@/components/list-search';
 import { Paginator } from '@/components/paginator';
+import { SelectionActionBar } from '@/components/selection-action-bar';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -205,10 +206,15 @@ export default function ListHygieneIndex({
             <Head title={`List hygiene · ${currentTeam.name}`} />
 
             <div className="flex flex-col gap-8">
-                <Heading
-                    title="List hygiene"
-                    description="Review and clean hygiene candidates across every audience in this workspace."
-                />
+                <div className="flex flex-col gap-1">
+                    <h1 className="text-2xl font-semibold tracking-tight">
+                        List hygiene
+                    </h1>
+                    <p className="text-sm text-muted-foreground">
+                        Review and clean hygiene candidates across every
+                        audience in this workspace.
+                    </p>
+                </div>
 
                 <Tabs
                     value={filters.kind}
@@ -311,30 +317,6 @@ export default function ListHygieneIndex({
                             }}
                             clearTestId="clear-hygiene-filters"
                         />
-
-                        {canManage && selected.size > 0 && (
-                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/50 px-4 py-3">
-                                <p className="text-sm text-muted-foreground">
-                                    {selected.size.toLocaleString()}{' '}
-                                    {selected.size === 1
-                                        ? 'subscriber'
-                                        : 'subscribers'}{' '}
-                                    selected
-                                </p>
-                                <Button
-                                    type="button"
-                                    variant="destructive"
-                                    size="sm"
-                                    onClick={() => setConfirmationOpen(true)}
-                                >
-                                    <HugeiconsIcon
-                                        icon={Delete02Icon}
-                                        data-icon="inline-start"
-                                    />
-                                    Remove selected
-                                </Button>
-                            </div>
-                        )}
 
                         {audiences.length === 0 ? (
                             <Empty>
@@ -622,6 +604,27 @@ export default function ListHygieneIndex({
                             <Paginator paginator={subscribers} />
                         )}
                     </div>
+
+                    {canManage && (
+                        <SelectionActionBar
+                            count={selected.size}
+                            noun={['subscriber', 'subscribers']}
+                            onClear={() => setSelected(new Set())}
+                        >
+                            <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => setConfirmationOpen(true)}
+                            >
+                                <HugeiconsIcon
+                                    icon={Delete02Icon}
+                                    data-icon="inline-start"
+                                />
+                                Remove selected
+                            </Button>
+                        </SelectionActionBar>
+                    )}
                 </div>
 
                 <AlertDialog

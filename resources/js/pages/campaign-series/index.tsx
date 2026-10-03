@@ -1,6 +1,5 @@
 import {
     Add01Icon,
-    ArrowLeft02Icon,
     FoldersIcon,
     Target02Icon,
 } from '@hugeicons/core-free-icons';
@@ -31,7 +30,6 @@ import {
 import { useListFilters } from '@/hooks/use-list-filters';
 import { formatRelativeTime } from '@/lib/format';
 import { index as seriesIndex, show } from '@/routes/campaign_series';
-import { index as campaignsIndex } from '@/routes/emails';
 import type { CampaignSeriesGoalOption, CampaignSeriesSummary } from '@/types';
 import type { Paginated } from '@/types/audiences';
 
@@ -65,31 +63,14 @@ export default function CampaignSeriesIndex({
             <Head title="Campaign series" />
             <div className="flex flex-1 flex-col gap-6">
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-                    <div className="flex flex-col gap-2">
-                        <Button
-                            size="sm"
-                            variant="ghost"
-                            className="-ml-2 self-start"
-                            nativeButton={false}
-                            render={
-                                <Link href={campaignsIndex(currentTeam.slug)} />
-                            }
-                        >
-                            <HugeiconsIcon
-                                icon={ArrowLeft02Icon}
-                                data-icon="inline-start"
-                            />
-                            Campaigns
-                        </Button>
-                        <div className="flex flex-col gap-1">
-                            <h1 className="text-2xl font-semibold tracking-tight">
-                                Campaign series
-                            </h1>
-                            <p className="text-sm text-muted-foreground">
-                                Group sales campaigns, track the shared goal,
-                                and compare every send side by side.
-                            </p>
-                        </div>
+                    <div className="flex flex-col gap-1">
+                        <h1 className="text-2xl font-semibold tracking-tight">
+                            Campaign series
+                        </h1>
+                        <p className="text-sm text-muted-foreground">
+                            Group sales campaigns, track the shared goal, and
+                            compare every send side by side.
+                        </p>
                     </div>
                     {canManage && (
                         <Button onClick={() => setCreateOpen(true)}>
@@ -224,20 +205,3 @@ export default function CampaignSeriesIndex({
         </>
     );
 }
-
-CampaignSeriesIndex.layout = (props: {
-    currentTeam?: { slug: string } | null;
-}) => ({
-    breadcrumbs: [
-        {
-            title: 'Campaigns',
-            href: props.currentTeam
-                ? campaignsIndex(props.currentTeam.slug)
-                : '/',
-        },
-        {
-            title: 'Series',
-            href: props.currentTeam ? seriesIndex(props.currentTeam.slug) : '/',
-        },
-    ],
-});

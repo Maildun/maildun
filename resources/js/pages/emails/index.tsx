@@ -2,7 +2,6 @@ import {
     Add01Icon,
     Delete02Icon,
     Edit03Icon,
-    FoldersIcon,
     MailAtSign02Icon,
     MoreHorizontalIcon,
     PieChartIcon,
@@ -58,7 +57,6 @@ import {
     campaignStatusVariant,
 } from '@/lib/email-status';
 import { formatRelativeTime } from '@/lib/format';
-import { index as campaignSeriesIndex } from '@/routes/campaign_series';
 import { index as templatesIndex } from '@/routes/email_templates';
 import { edit, index, show } from '@/routes/emails';
 import type {
@@ -168,22 +166,6 @@ export default function EmailsIndex({
                         </p>
                     </div>
                     <div className="flex gap-2">
-                        <Button
-                            variant="outline"
-                            nativeButton={false}
-                            render={
-                                <Link
-                                    href={campaignSeriesIndex(currentTeam.slug)}
-                                    prefetch
-                                />
-                            }
-                        >
-                            <HugeiconsIcon
-                                icon={FoldersIcon}
-                                data-icon="inline-start"
-                            />
-                            Series
-                        </Button>
                         <Button
                             variant="outline"
                             nativeButton={false}

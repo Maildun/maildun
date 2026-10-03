@@ -1,13 +1,20 @@
 import {
     Add01Icon,
+    Alert02Icon,
     ArrowLeft02Icon,
     ArrowUpRight01Icon,
+    Cancel01Icon,
+    Clock01Icon,
     Delete02Icon,
     Edit03Icon,
+    FolderRemoveIcon,
     FoldersIcon,
     MailOpen01Icon,
+    MailRemove01Icon,
     MailSend01Icon,
+    MoreHorizontalIcon,
     MouseLeftClick01Icon,
+    PieChartIcon,
     Target02Icon,
     UserGroupIcon,
 } from '@hugeicons/core-free-icons';
@@ -17,7 +24,9 @@ import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { CampaignSeriesDialog } from '@/components/campaign-series-dialog';
 import EmailTemplatePicker from '@/components/email-template-picker';
+import { HealthStat } from '@/components/health-stat';
 import { MetricCard } from '@/components/metric-card';
+import { MetricGauge } from '@/components/metric-gauge';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -54,6 +63,14 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
     Empty,
     EmptyContent,
     EmptyDescription,
@@ -72,6 +89,7 @@ import {
     FieldTitle,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { Progress, ProgressLabel } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import {
     Table,
@@ -86,12 +104,7 @@ import {
     campaignStatusVariant,
 } from '@/lib/email-status';
 import { formatRelativeTime } from '@/lib/format';
-import { cn } from '@/lib/utils';
-import {
-    destroy as destroySeries,
-    index,
-    show as showSeries,
-} from '@/routes/campaign_series';
+import { destroy as destroySeries, index } from '@/routes/campaign_series';
 import {
     destroy as removeCampaign,
     store as addCampaigns,
@@ -118,12 +131,28 @@ export default function CampaignSeriesShow({
     const [composeOpen, setComposeOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const { summary } = report;
+    const sentCampaigns = report.campaigns.filter(
+        (campaign) => campaign.status !== 'draft',
+    );
     const bestClickRate = Math.max(
         0,
-        ...report.campaigns
-            .filter((campaign) => campaign.status !== 'draft')
-            .map((campaign) => campaign.click_rate),
+        ...sentCampaigns.map((campaign) => campaign.click_rate),
     );
+    const queuedSends = sentCampaigns.reduce(
+        (total, campaign) => total + campaign.recipient_count,
+        0,
+    );
+    const progress =
+        queuedSends > 0
+            ? Math.round((summary.processed / queuedSends) * 100)
+            : 0;
+    const feedbackReported = summary.delivery_feedback !== 'unavailable';
+    const lastSentAt = sentCampaigns
+        .map((campaign) => campaign.sent_at)
+        .filter((sentAt): sentAt is string => sentAt !== null)
+        .sort()
+        .at(-1);
 
     if (!currentTeam) {
         return null;
@@ -164,112 +193,150 @@ export default function CampaignSeriesShow({
                                 {series.goal_label}
                             </Badge>
                         </div>
-                        {series.objective && (
-                            <p className="text-sm font-medium">
-                                {series.objective}
-                            </p>
-                        )}
-                        {series.description && (
+                        {(series.objective || series.description) && (
                             <p className="max-w-3xl text-sm text-muted-foreground">
-                                {series.description}
+                                {[series.objective, series.description]
+                                    .filter(Boolean)
+                                    .join(' · ')}
                             </p>
-                        )}
-                        {series.primary_cta_url && (
-                            <a
-                                href={series.primary_cta_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="group inline-flex w-fit items-center gap-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                            >
-                                Primary CTA
-                                <HugeiconsIcon
-                                    icon={ArrowUpRight01Icon}
-                                    className="transition-transform motion-safe:group-hover:translate-x-0.5 motion-safe:group-hover:-translate-y-0.5"
-                                />
-                            </a>
                         )}
                     </div>
 
-                    {canManage && (
-                        <div className="flex flex-wrap gap-2">
-                            <Button
-                                variant="outline"
-                                onClick={() => setEditOpen(true)}
-                            >
-                                <HugeiconsIcon
-                                    icon={Edit03Icon}
-                                    data-icon="inline-start"
-                                />
-                                Edit
-                            </Button>
-                            <Button
-                                variant="outline"
-                                onClick={() => setAddOpen(true)}
-                            >
-                                <HugeiconsIcon
-                                    icon={FoldersIcon}
-                                    data-icon="inline-start"
-                                />
-                                Add campaigns
-                            </Button>
-                            <Button onClick={() => setComposeOpen(true)}>
-                                <HugeiconsIcon
-                                    icon={Add01Icon}
-                                    data-icon="inline-start"
-                                />
-                                New campaign
-                            </Button>
+                    <div className="flex flex-col items-start gap-3 sm:items-end">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                            <span>
+                                {lastSentAt
+                                    ? `Last sent ${formatRelativeTime(lastSentAt)} ago`
+                                    : 'Nothing sent yet'}
+                            </span>
+                            {series.primary_cta_url && (
+                                <a
+                                    href={series.primary_cta_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="group inline-flex items-center gap-1 underline-offset-4 hover:text-foreground hover:underline"
+                                >
+                                    Primary CTA
+                                    <HugeiconsIcon
+                                        icon={ArrowUpRight01Icon}
+                                        className="size-3.5 transition-transform motion-safe:group-hover:translate-x-0.5 motion-safe:group-hover:-translate-y-0.5"
+                                    />
+                                </a>
+                            )}
                         </div>
-                    )}
+                        {canManage && (
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setAddOpen(true)}
+                                >
+                                    <HugeiconsIcon
+                                        icon={FoldersIcon}
+                                        data-icon="inline-start"
+                                    />
+                                    Add campaigns
+                                </Button>
+                                <Button onClick={() => setComposeOpen(true)}>
+                                    <HugeiconsIcon
+                                        icon={Add01Icon}
+                                        data-icon="inline-start"
+                                    />
+                                    New campaign
+                                </Button>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger
+                                        render={
+                                            <Button
+                                                size="icon"
+                                                variant="outline"
+                                                aria-label="Series actions"
+                                            />
+                                        }
+                                    >
+                                        <HugeiconsIcon
+                                            icon={MoreHorizontalIcon}
+                                        />
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuGroup>
+                                            <DropdownMenuItem
+                                                onClick={() =>
+                                                    setEditOpen(true)
+                                                }
+                                            >
+                                                <HugeiconsIcon
+                                                    icon={Edit03Icon}
+                                                />
+                                                Edit series
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem
+                                                variant="destructive"
+                                                onClick={() =>
+                                                    setDeleteOpen(true)
+                                                }
+                                            >
+                                                <HugeiconsIcon
+                                                    icon={Delete02Icon}
+                                                />
+                                                Delete series
+                                            </DropdownMenuItem>
+                                        </DropdownMenuGroup>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <MetricCard
                         label="Unique reach"
-                        value={report.summary.unique_recipients.toLocaleString()}
-                        detail={`${report.summary.sent_campaigns} of ${report.summary.campaigns} campaigns sent`}
+                        value={summary.unique_recipients.toLocaleString()}
+                        detail={`${summary.sent_campaigns} of ${summary.campaigns} campaigns sent`}
+                        hint="People who received at least one campaign in this series. Someone sent two campaigns counts once."
                         icon={UserGroupIcon}
                         iconClassName="bg-violet-500/10 text-violet-600 dark:text-violet-400"
                     />
                     <MetricCard
-                        label="Unique open rate"
-                        value={`${report.summary.open_rate}%`}
-                        detail={`${report.summary.opened.toLocaleString()} people opened`}
+                        label="Unique opens"
+                        value={`${summary.open_rate}%`}
+                        detail={`${summary.opened.toLocaleString()} people opened`}
+                        hint="Share of reached people who opened any campaign in this series at least once, including privacy proxies that load images automatically."
                         icon={MailOpen01Icon}
                         iconClassName="bg-amber-500/10 text-amber-600 dark:text-amber-400"
                     />
                     <MetricCard
-                        label="Unique click rate"
-                        value={`${report.summary.click_rate}%`}
-                        detail={`${report.summary.clicked.toLocaleString()} people clicked`}
+                        label="Unique clicks"
+                        value={`${summary.click_rate}%`}
+                        detail={`${summary.clicked.toLocaleString()} people · ${summary.click_to_open_rate}% click-to-open`}
+                        hint="Share of reached people who clicked any tracked link in this series. Click-to-open counts clickers among people who opened."
                         icon={MouseLeftClick01Icon}
                         iconClassName="bg-rose-500/10 text-rose-600 dark:text-rose-400"
                     />
-                    <MetricCard
-                        label="Click-to-open rate"
-                        value={`${report.summary.click_to_open_rate}%`}
-                        detail="Clicks among people who opened"
-                        icon={MailSend01Icon}
-                        iconClassName="bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                    />
-                    <MetricCard
-                        label={
-                            series.primary_cta_url
-                                ? 'Primary CTA clicks'
-                                : 'Processed sends'
-                        }
-                        value={(series.primary_cta_url
-                            ? report.summary.cta_clicks
-                            : report.summary.processed
-                        ).toLocaleString()}
-                        detail={
-                            series.primary_cta_url
-                                ? 'All tracked clicks on the exact CTA URL'
-                                : 'Add a primary CTA URL to track the sales action'
-                        }
-                        icon={Target02Icon}
-                        iconClassName="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                    />
+                    {series.primary_cta_url ? (
+                        <MetricCard
+                            label="Primary CTA clicks"
+                            value={summary.cta_clicks.toLocaleString()}
+                            detail="Tracked clicks on the exact CTA URL"
+                            hint="Every tracked click on the series' primary CTA URL across all of its campaigns, including repeat clicks."
+                            icon={Target02Icon}
+                            iconClassName="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                        />
+                    ) : (
+                        <MetricCard
+                            label="Delivered"
+                            value={
+                                summary.delivery_rate === null
+                                    ? '—'
+                                    : `${summary.delivery_rate}%`
+                            }
+                            detail="Add a primary CTA to track the sales action"
+                            hint="Share of Amazon SES and Maildun Send sends whose mail server confirmed receipt. SMTP does not report delivery."
+                            icon={MailSend01Icon}
+                            iconClassName="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                        />
+                    )}
                 </div>
 
                 {report.has_mixed_recipients && (
@@ -288,93 +355,175 @@ export default function CampaignSeriesShow({
                     </Callout>
                 )}
 
-                <Card>
+                <Card size="sm">
                     <CardHeader>
-                        <CardTitle>Campaign comparison</CardTitle>
+                        <CardTitle>Delivery health</CardTitle>
                         <CardDescription>
-                            Opens and clicks come from each campaign&apos;s
-                            tracking aggregates. The overview above deduplicates
-                            people who received more than one campaign in this
-                            series.
+                            Sending progress and confirmed delivery across every
+                            campaign in this series.
                         </CardDescription>
                     </CardHeader>
-                    <CardContent>
-                        {report.campaigns.length === 0 ? (
-                            <Empty>
-                                <EmptyHeader>
-                                    <EmptyMedia variant="icon">
-                                        <HugeiconsIcon icon={FoldersIcon} />
-                                    </EmptyMedia>
-                                    <EmptyTitle>
-                                        No campaigns in this series
-                                    </EmptyTitle>
-                                    <EmptyDescription>
-                                        Add an existing campaign or compose a
-                                        new one for this sales goal.
-                                    </EmptyDescription>
-                                </EmptyHeader>
-                                {canManage && (
-                                    <EmptyContent>
-                                        <div className="flex flex-wrap justify-center gap-2">
-                                            <Button
-                                                variant="outline"
-                                                onClick={() => setAddOpen(true)}
-                                            >
-                                                Add existing
-                                            </Button>
-                                            <Button
-                                                onClick={() =>
-                                                    setComposeOpen(true)
-                                                }
-                                            >
-                                                Compose campaign
-                                            </Button>
-                                        </div>
-                                    </EmptyContent>
-                                )}
-                            </Empty>
-                        ) : (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Campaign</TableHead>
-                                        <TableHead>Recipients</TableHead>
+                    <CardContent className="grid items-center gap-6 p-5 sm:p-6 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-8">
+                        <MetricGauge
+                            value={summary.delivery_rate}
+                            label="Confirmed delivery"
+                            detail={
+                                summary.delivery_rate === null
+                                    ? 'Delivery confirmation unavailable'
+                                    : `${summary.delivered.toLocaleString()} of ${summary.feedback_recipient_count.toLocaleString()} confirmed`
+                            }
+                            className="justify-self-center"
+                        />
+                        <div className="flex min-w-0 flex-col gap-6">
+                            <Progress
+                                value={progress}
+                                className="gap-3 [&_[data-slot=progress-indicator]]:rounded-full [&_[data-slot=progress-indicator]]:transition-[width] [&_[data-slot=progress-indicator]]:motion-reduce:transition-none [&_[data-slot=progress-track]]:h-2.5"
+                            >
+                                <ProgressLabel>Sends processed</ProgressLabel>
+                                <span className="ml-auto text-sm text-muted-foreground tabular-nums">
+                                    {summary.processed.toLocaleString()} of{' '}
+                                    {queuedSends.toLocaleString()}
+                                </span>
+                            </Progress>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-4">
+                                <HealthStat
+                                    label="Failed"
+                                    value={summary.failed}
+                                    icon={Cancel01Icon}
+                                    iconClassName="bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                                    tone="danger"
+                                />
+                                <HealthStat
+                                    label="Bounced"
+                                    value={
+                                        feedbackReported
+                                            ? summary.bounced
+                                            : null
+                                    }
+                                    icon={MailRemove01Icon}
+                                    iconClassName="bg-orange-500/10 text-orange-600 dark:text-orange-400"
+                                    tone="danger"
+                                    unavailableLabel="Not reported"
+                                />
+                                <HealthStat
+                                    label="Complaints"
+                                    value={
+                                        feedbackReported
+                                            ? summary.complained
+                                            : null
+                                    }
+                                    icon={Alert02Icon}
+                                    iconClassName="bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                    tone="danger"
+                                    unavailableLabel="Not reported"
+                                />
+                                <HealthStat
+                                    label="Pending"
+                                    value={Math.max(
+                                        queuedSends - summary.processed,
+                                        0,
+                                    )}
+                                    icon={Clock01Icon}
+                                    iconClassName="bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                                />
+                            </div>
+                            <p className="text-xs/relaxed text-muted-foreground">
+                                Retry failed sends from each campaign&apos;s
+                                report. Permanent bounces and complaints are
+                                left unsubscribed.
+                                {summary.delivery_feedback === 'partial' &&
+                                    ' Delivery confirmation only covers sends through Amazon SES or Maildun Send.'}
+                            </p>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <section className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-1">
+                        <h2 className="text-base font-semibold">Campaigns</h2>
+                        <p className="text-sm text-muted-foreground">
+                            Each campaign&apos;s own rates, side by side. The
+                            totals above count people who received more than one
+                            campaign once.
+                        </p>
+                    </div>
+
+                    {report.campaigns.length === 0 ? (
+                        <Empty className="border">
+                            <EmptyHeader>
+                                <EmptyMedia variant="icon">
+                                    <HugeiconsIcon icon={FoldersIcon} />
+                                </EmptyMedia>
+                                <EmptyTitle>
+                                    No campaigns in this series
+                                </EmptyTitle>
+                                <EmptyDescription>
+                                    Add an existing campaign or compose a new
+                                    one for this sales goal.
+                                </EmptyDescription>
+                            </EmptyHeader>
+                            {canManage && (
+                                <EmptyContent>
+                                    <div className="flex flex-wrap justify-center gap-2">
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => setAddOpen(true)}
+                                        >
+                                            Add existing
+                                        </Button>
+                                        <Button
+                                            onClick={() => setComposeOpen(true)}
+                                        >
+                                            Compose campaign
+                                        </Button>
+                                    </div>
+                                </EmptyContent>
+                            )}
+                        </Empty>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Campaign</TableHead>
+                                    <TableHead>Recipients</TableHead>
+                                    <TableHead className="text-right">
+                                        Delivered
+                                    </TableHead>
+                                    <TableHead className="text-right">
+                                        Open rate
+                                    </TableHead>
+                                    <TableHead className="text-right">
+                                        Click rate
+                                    </TableHead>
+                                    <TableHead className="text-right">
+                                        Click-to-open
+                                    </TableHead>
+                                    {series.primary_cta_url && (
                                         <TableHead className="text-right">
-                                            Reach
+                                            CTA clicks
                                         </TableHead>
-                                        <TableHead className="text-right">
-                                            Delivered
-                                        </TableHead>
-                                        <TableHead className="text-right">
-                                            Open rate
-                                        </TableHead>
-                                        <TableHead className="text-right">
-                                            Click rate
-                                        </TableHead>
-                                        <TableHead className="text-right">
-                                            Click-to-open
-                                        </TableHead>
-                                        {series.primary_cta_url && (
-                                            <TableHead className="text-right">
-                                                CTA clicks
-                                            </TableHead>
-                                        )}
-                                        <TableHead>Sent</TableHead>
-                                        {canManage && (
-                                            <TableHead className="text-right">
-                                                Action
-                                            </TableHead>
-                                        )}
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {report.campaigns.map((campaign) => (
+                                    )}
+                                    <TableHead>Sent</TableHead>
+                                    <TableHead className="text-right">
+                                        Actions
+                                    </TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {report.campaigns.map((campaign) => {
+                                    const isDraft = campaign.status === 'draft';
+                                    const isBest =
+                                        bestClickRate > 0 &&
+                                        !isDraft &&
+                                        campaign.click_rate === bestClickRate;
+
+                                    return (
                                         <TableRow
                                             key={campaign.uuid}
                                             data-test="series-campaign-row"
                                         >
                                             <TableCell>
-                                                <div className="flex min-w-52 flex-col gap-1">
+                                                <div className="flex min-w-56 flex-col gap-1">
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <Link
                                                             href={campaignRoute(
@@ -398,14 +547,6 @@ export default function CampaignSeriesShow({
                                                                 ]
                                                             }
                                                         </Badge>
-                                                        {bestClickRate > 0 &&
-                                                            campaign.click_rate ===
-                                                                bestClickRate && (
-                                                                <Badge variant="outline">
-                                                                    Best click
-                                                                    rate
-                                                                </Badge>
-                                                            )}
                                                     </div>
                                                     <span className="max-w-sm truncate text-muted-foreground">
                                                         {campaign.subject}
@@ -419,36 +560,48 @@ export default function CampaignSeriesShow({
                                                             campaign.audience ??
                                                             'Not set'}
                                                     </span>
-                                                    {campaign.segment && (
-                                                        <span className="text-muted-foreground">
-                                                            {campaign.audience}
-                                                        </span>
-                                                    )}
+                                                    <span className="text-muted-foreground tabular-nums">
+                                                        {isDraft
+                                                            ? 'Not sent'
+                                                            : `${campaign.recipient_count.toLocaleString()} ${campaign.recipient_count === 1 ? 'recipient' : 'recipients'}`}
+                                                    </span>
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-right tabular-nums">
-                                                {campaign.recipient_count.toLocaleString()}
-                                            </TableCell>
-                                            <TableCell className="text-right tabular-nums">
-                                                {campaign.delivery_rate === null
-                                                    ? 'N/A'
-                                                    : `${campaign.delivery_rate}%`}
+                                                {isDraft
+                                                    ? '—'
+                                                    : campaign.delivery_rate ===
+                                                        null
+                                                      ? 'N/A'
+                                                      : `${campaign.delivery_rate}%`}
                                             </TableCell>
                                             <RateCell
                                                 campaign={campaign}
                                                 metric="open_rate"
                                             />
-                                            <RateCell
-                                                campaign={campaign}
-                                                metric="click_rate"
-                                            />
+                                            <TableCell className="text-right tabular-nums">
+                                                {isDraft ? (
+                                                    '—'
+                                                ) : (
+                                                    <span className="inline-flex items-center justify-end gap-2">
+                                                        {isBest && (
+                                                            <Badge variant="success">
+                                                                Best
+                                                            </Badge>
+                                                        )}
+                                                        {campaign.click_rate}%
+                                                    </span>
+                                                )}
+                                            </TableCell>
                                             <RateCell
                                                 campaign={campaign}
                                                 metric="click_to_open_rate"
                                             />
                                             {series.primary_cta_url && (
                                                 <TableCell className="text-right tabular-nums">
-                                                    {campaign.cta_clicks.toLocaleString()}
+                                                    {isDraft
+                                                        ? '—'
+                                                        : campaign.cta_clicks.toLocaleString()}
                                                 </TableCell>
                                             )}
                                             <TableCell className="text-muted-foreground">
@@ -458,85 +611,91 @@ export default function CampaignSeriesShow({
                                                       )
                                                     : '—'}
                                             </TableCell>
-                                            {canManage && (
-                                                <TableCell className="text-right">
-                                                    <Button
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        onClick={() =>
-                                                            router.delete(
-                                                                removeCampaign.url(
-                                                                    [
-                                                                        currentTeam.slug,
-                                                                        series.uuid,
-                                                                        campaign.uuid,
-                                                                    ],
-                                                                ),
-                                                                {
-                                                                    preserveScroll: true,
-                                                                },
-                                                            )
+                                            <TableCell className="text-right">
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger
+                                                        render={
+                                                            <Button
+                                                                size="icon"
+                                                                variant="ghost"
+                                                                aria-label={`Actions for ${campaign.name}`}
+                                                            />
                                                         }
                                                     >
-                                                        Remove
-                                                    </Button>
-                                                </TableCell>
-                                            )}
+                                                        <HugeiconsIcon
+                                                            icon={
+                                                                MoreHorizontalIcon
+                                                            }
+                                                        />
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                        <DropdownMenuGroup>
+                                                            <DropdownMenuItem
+                                                                render={
+                                                                    <Link
+                                                                        href={campaignRoute(
+                                                                            currentTeam.slug,
+                                                                            campaign,
+                                                                        )}
+                                                                        prefetch
+                                                                    />
+                                                                }
+                                                            >
+                                                                <HugeiconsIcon
+                                                                    icon={
+                                                                        isDraft
+                                                                            ? Edit03Icon
+                                                                            : PieChartIcon
+                                                                    }
+                                                                />
+                                                                {isDraft
+                                                                    ? canManage
+                                                                        ? 'Edit'
+                                                                        : 'View'
+                                                                    : 'View report'}
+                                                            </DropdownMenuItem>
+                                                            {canManage && (
+                                                                <>
+                                                                    <DropdownMenuSeparator />
+                                                                    <DropdownMenuItem
+                                                                        variant="destructive"
+                                                                        onClick={() =>
+                                                                            router.delete(
+                                                                                removeCampaign.url(
+                                                                                    [
+                                                                                        currentTeam.slug,
+                                                                                        series.uuid,
+                                                                                        campaign.uuid,
+                                                                                    ],
+                                                                                ),
+                                                                                {
+                                                                                    preserveScroll: true,
+                                                                                },
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <HugeiconsIcon
+                                                                            icon={
+                                                                                FolderRemoveIcon
+                                                                            }
+                                                                        />
+                                                                        Remove
+                                                                        from
+                                                                        series
+                                                                    </DropdownMenuItem>
+                                                                </>
+                                                            )}
+                                                        </DropdownMenuGroup>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            </TableCell>
                                         </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        )}
-                    </CardContent>
-                </Card>
-
-                <Card size="sm">
-                    <CardHeader>
-                        <CardTitle>Delivery health</CardTitle>
-                        <CardDescription>
-                            Operational totals across every campaign in this
-                            series.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                        <HealthStat
-                            label="Bounced"
-                            value={report.summary.bounced}
-                        />
-                        <HealthStat
-                            label="Complaints"
-                            value={report.summary.complained}
-                        />
-                        <HealthStat
-                            label="Failed"
-                            value={report.summary.failed}
-                        />
-                        <HealthStat
-                            label="Delivered"
-                            value={report.summary.delivered}
-                            detail={
-                                report.summary.delivery_rate === null
-                                    ? 'Provider feedback unavailable'
-                                    : `${report.summary.delivery_rate}% of ${report.summary.feedback_recipient_count.toLocaleString()} feedback-enabled sends`
-                            }
-                        />
-                    </CardContent>
-                </Card>
-
-                {canManage && (
-                    <div className="flex justify-end">
-                        <Button
-                            variant="destructive"
-                            onClick={() => setDeleteOpen(true)}
-                        >
-                            <HugeiconsIcon
-                                icon={Delete02Icon}
-                                data-icon="inline-start"
-                            />
-                            Delete series
-                        </Button>
-                    </div>
-                )}
+                                    );
+                                })}
+                            </TableBody>
+                        </Table>
+                    )}
+                </section>
             </div>
 
             {canManage && (
@@ -577,8 +736,8 @@ export default function CampaignSeriesShow({
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                             The series and its shared goal will be removed. Its{' '}
-                            {report.summary.campaigns} campaigns and all their
-                            reports will be kept.
+                            {summary.campaigns} campaigns and all their reports
+                            will be kept.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -600,39 +759,12 @@ export default function CampaignSeriesShow({
     );
 }
 
-function HealthStat({
-    label,
-    value,
-    detail,
-}: {
-    label: string;
-    value: number;
-    detail?: string;
-}) {
-    return (
-        <div className="flex flex-col gap-1">
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p
-                className={cn(
-                    'text-2xl font-semibold tabular-nums',
-                    label !== 'Delivered' && value > 0 && 'text-destructive',
-                )}
-            >
-                {value.toLocaleString()}
-            </p>
-            {detail && (
-                <p className="text-xs text-muted-foreground">{detail}</p>
-            )}
-        </div>
-    );
-}
-
 function RateCell({
     campaign,
     metric,
 }: {
     campaign: CampaignSeriesCampaign;
-    metric: 'open_rate' | 'click_rate' | 'click_to_open_rate';
+    metric: 'open_rate' | 'click_to_open_rate';
 }) {
     return (
         <TableCell className="text-right tabular-nums">
@@ -732,9 +864,7 @@ function AddCampaignsDialog({
                                 />
                             </Field>
                             <FieldSet>
-                                <FieldLegend variant="label">
-                                    Campaigns
-                                </FieldLegend>
+                                <FieldLegend>Campaigns</FieldLegend>
                                 <FieldDescription>
                                     Select up to 100 campaigns to add.
                                 </FieldDescription>
@@ -827,22 +957,3 @@ function AddCampaignsDialog({
         </Dialog>
     );
 }
-
-CampaignSeriesShow.layout = (
-    props: CampaignSeriesShowProps & {
-        currentTeam?: { slug: string } | null;
-    },
-) => ({
-    breadcrumbs: [
-        {
-            title: 'Campaign series',
-            href: props.currentTeam ? index(props.currentTeam.slug) : '/',
-        },
-        {
-            title: props.series.name,
-            href: props.currentTeam
-                ? showSeries([props.currentTeam.slug, props.series.uuid])
-                : '/',
-        },
-    ],
-});

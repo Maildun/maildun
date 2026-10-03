@@ -4,8 +4,6 @@ import {
     Clock01Icon,
     MailRemove01Icon,
 } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon } from '@hugeicons/react';
-import type { IconSvgElement } from '@hugeicons/react';
 import { CampaignInsights } from '@/components/campaign-insights';
 import type { CampaignInsightsData } from '@/components/campaign-insights';
 import { EmailReportLayout } from '@/components/email-report-layout';
@@ -14,6 +12,7 @@ import type {
     CampaignReportMetrics,
     CampaignSendRun,
 } from '@/components/email-report-layout';
+import { HealthStat } from '@/components/health-stat';
 import { MetricGauge } from '@/components/metric-gauge';
 import {
     Card,
@@ -24,7 +23,6 @@ import {
 } from '@/components/ui/card';
 import { Progress, ProgressLabel } from '@/components/ui/progress';
 import { formatRelativeTime } from '@/lib/format';
-import { cn } from '@/lib/utils';
 
 type Props = {
     campaign: CampaignReportCampaign;
@@ -223,59 +221,5 @@ function SendHistory({ runs }: { runs: CampaignSendRun[] }) {
                 </ul>
             </CardContent>
         </Card>
-    );
-}
-
-/**
- * A null value means the transport never reports this outcome (SMTP is
- * handoff only), so the stat says so instead of showing a misleading 0.
- */
-function HealthStat({
-    label,
-    value,
-    icon,
-    iconClassName,
-    tone = 'default',
-}: {
-    label: string;
-    value: number | null;
-    icon: IconSvgElement;
-    iconClassName: string;
-    tone?: 'default' | 'danger';
-}) {
-    const isAlert = tone === 'danger' && value !== null && value > 0;
-
-    return (
-        <div className="flex items-start gap-3">
-            <span
-                className={cn(
-                    'flex size-8 shrink-0 items-center justify-center rounded-lg',
-                    iconClassName,
-                )}
-            >
-                <HugeiconsIcon
-                    icon={icon}
-                    className="size-4"
-                    aria-hidden="true"
-                />
-            </span>
-            <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">{label}</p>
-                {value === null ? (
-                    <p className="pt-1.5 text-sm text-muted-foreground">
-                        Not reported by SMTP
-                    </p>
-                ) : (
-                    <p
-                        className={cn(
-                            'font-heading text-xl font-semibold tabular-nums',
-                            isAlert && 'text-destructive',
-                        )}
-                    >
-                        {value.toLocaleString()}
-                    </p>
-                )}
-            </div>
-        </div>
     );
 }

@@ -66,17 +66,17 @@ function MediaThumbnail({
                 className,
             )}
         >
-            {item.processing ? (
-                <div className="grid size-full place-items-center">
-                    <Skeleton className="absolute inset-0 rounded-none" />
-                    <Spinner />
-                </div>
-            ) : item.url ? (
+            {item.url ? (
                 <img
                     src={item.url}
                     alt={item.alt ?? item.name}
                     className="size-full object-cover"
                 />
+            ) : item.processing ? (
+                <div className="grid size-full place-items-center">
+                    <Skeleton className="absolute inset-0 rounded-none" />
+                    <Spinner />
+                </div>
             ) : (
                 <div className="grid size-full place-items-center p-3 text-center text-xs text-muted-foreground">
                     {item.status === 'failed' ? 'Failed' : 'No preview'}

@@ -24,6 +24,7 @@ import { FilterMenu } from '@/components/filter-menu';
 import { ListSearch } from '@/components/list-search';
 import { Paginator } from '@/components/paginator';
 import { SegmentRuleFields } from '@/components/segment-rule-fields';
+import { SelectionActionBar } from '@/components/selection-action-bar';
 import { SubscriberDialog } from '@/components/subscriber-dialog';
 import {
     SubscriberHoverCard,
@@ -388,53 +389,6 @@ export default function AudienceShow(props: Props) {
                             onClearAll={clearSubscriberFilters}
                             clearTestId="clear-subscriber-filters"
                         />
-                        {canManage && selected.size > 0 && (
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                <p className="text-sm text-muted-foreground">
-                                    {selected.size} selected
-                                </p>
-                                <div className="flex gap-2">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                            router.patch(
-                                                bulkUnsubscribe.url(routeArgs),
-                                                {
-                                                    ids: [...selected],
-                                                },
-                                                {
-                                                    preserveScroll: true,
-                                                    onSuccess: () =>
-                                                        setSelected(new Set()),
-                                                },
-                                            );
-                                        }}
-                                    >
-                                        Unsubscribe
-                                    </Button>
-                                    <Button
-                                        variant="destructive"
-                                        size="sm"
-                                        onClick={() => {
-                                            router.delete(
-                                                bulkDestroy.url(routeArgs),
-                                                {
-                                                    data: {
-                                                        ids: [...selected],
-                                                    },
-                                                    preserveScroll: true,
-                                                    onSuccess: () =>
-                                                        setSelected(new Set()),
-                                                },
-                                            );
-                                        }}
-                                    >
-                                        Delete
-                                    </Button>
-                                </div>
-                            </div>
-                        )}
                         {subscribers.data.length === 0 ? (
                             <Empty>
                                 <EmptyHeader>
@@ -472,6 +426,56 @@ export default function AudienceShow(props: Props) {
                         )}
                         {subscribers.data.length === 0 && (
                             <Paginator paginator={subscribers} />
+                        )}
+                        {canManage && (
+                            <SelectionActionBar
+                                count={selected.size}
+                                noun={['subscriber', 'subscribers']}
+                                onClear={() => setSelected(new Set())}
+                            >
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        router.patch(
+                                            bulkUnsubscribe.url(routeArgs),
+                                            {
+                                                ids: [...selected],
+                                            },
+                                            {
+                                                preserveScroll: true,
+                                                onSuccess: () =>
+                                                    setSelected(new Set()),
+                                            },
+                                        );
+                                    }}
+                                >
+                                    Unsubscribe
+                                </Button>
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                        router.delete(
+                                            bulkDestroy.url(routeArgs),
+                                            {
+                                                data: {
+                                                    ids: [...selected],
+                                                },
+                                                preserveScroll: true,
+                                                onSuccess: () =>
+                                                    setSelected(new Set()),
+                                            },
+                                        );
+                                    }}
+                                >
+                                    <HugeiconsIcon
+                                        icon={Delete02Icon}
+                                        data-icon="inline-start"
+                                    />
+                                    Delete
+                                </Button>
+                            </SelectionActionBar>
                         )}
                     </TabsContent>
 

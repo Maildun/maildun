@@ -4,6 +4,7 @@ import {
     Building06Icon,
     File01Icon,
     FolderLibraryIcon,
+    FoldersIcon,
     MailAtSign02Icon,
     MailSend02Icon,
     MenuCircleIcon,
@@ -35,6 +36,7 @@ import { cn } from '@/lib/utils';
 import { dashboard } from '@/routes';
 import { index as audiences } from '@/routes/audiences';
 import { index as automations } from '@/routes/automations';
+import { index as campaignSeries } from '@/routes/campaign_series';
 import { index as companies } from '@/routes/companies';
 import { index as contacts } from '@/routes/contacts';
 import { index as templates } from '@/routes/email_templates';
@@ -54,6 +56,9 @@ export function AppSidebar() {
     const companiesUrl = currentTeam ? companies(currentTeam.slug) : '/';
     const listHygieneUrl = currentTeam ? listHygiene(currentTeam.slug) : '/';
     const emailsUrl = currentTeam ? emails(currentTeam.slug) : '/';
+    const campaignSeriesUrl = currentTeam
+        ? campaignSeries(currentTeam.slug)
+        : '/';
     const automationsUrl = currentTeam ? automations(currentTeam.slug) : '/';
     const transactionalUrl = currentTeam
         ? transactionalEmails(currentTeam.slug)
@@ -97,6 +102,11 @@ export function AppSidebar() {
             title: 'Campaigns',
             href: emailsUrl,
             icon: MailAtSign02Icon,
+        },
+        {
+            title: 'Series',
+            href: campaignSeriesUrl,
+            icon: FoldersIcon,
         },
         {
             title: 'Transactional',

@@ -233,7 +233,11 @@ test('delivery health says SMTP does not report bounces instead of showing zero'
     expect($report)->toBeString()
         ->toContain("metrics.delivery_feedback !== 'unavailable'")
         ->toMatch('/value=\{\s*feedbackReported\s*\?\s*metrics\.bounced\s*:\s*null\s*\}/')
-        ->toContain('Not reported by SMTP');
+        ->toContain("import { HealthStat } from '@/components/health-stat'");
+
+    expect(file_get_contents(dirname(__DIR__, 2).'/resources/js/components/health-stat.tsx'))
+        ->toBeString()
+        ->toContain("unavailableLabel = 'Not reported by SMTP'");
 });
 
 test('campaign and delivery badges come from the shared email status module', function (string $path) {

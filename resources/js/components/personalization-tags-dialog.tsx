@@ -125,7 +125,7 @@ export default function PersonalizationTagsDialog({
                             key={group.title}
                             className="flex flex-col gap-2"
                         >
-                            <h3 className="text-sm font-medium">
+                            <h3 className="text-base font-medium">
                                 {group.title}
                             </h3>
                             <ul className="flex flex-col">
