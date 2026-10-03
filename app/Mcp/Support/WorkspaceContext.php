@@ -4,11 +4,15 @@ namespace App\Mcp\Support;
 
 use App\Models\Audience;
 use App\Models\Automation;
+use App\Models\Contact;
 use App\Models\Email;
+use App\Models\Segment;
+use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
@@ -49,6 +53,53 @@ class WorkspaceContext
         $this->authorize($request, 'view', $audience);
 
         return $audience;
+    }
+
+    /**
+     * Resolve the audience a nested resource is created in or filtered by,
+     * from an `audience_uuid` argument rather than the record `uuid`.
+     */
+    public function audienceFrom(Request $request, Team $team, string $key = 'audience_uuid'): Audience
+    {
+        $uuid = $this->scopedUuid($request, Audience::class, $team, 'audience', key: $key);
+
+        $audience = $team->audiences()->where('uuid', $uuid)->firstOrFail();
+        $this->authorize($request, 'view', $audience);
+
+        return $audience;
+    }
+
+    public function contact(Request $request, Team $team): Contact
+    {
+        $uuid = $this->scopedUuid($request, Contact::class, $team, 'contact');
+
+        $contact = $team->contacts()->where('uuid', $uuid)->firstOrFail();
+        $this->authorize($request, 'view', $contact);
+
+        return $contact;
+    }
+
+    public function subscriber(Request $request, Team $team): Subscriber
+    {
+        $uuid = $this->audienceScopedUuid($request, Subscriber::class, $team, 'subscriber');
+
+        $subscriber = $team->subscribers()->where('subscribers.uuid', $uuid)->firstOrFail();
+        $this->authorize($request, 'view', $subscriber);
+
+        return $subscriber;
+    }
+
+    public function segment(Request $request, Team $team): Segment
+    {
+        $uuid = $this->audienceScopedUuid($request, Segment::class, $team, 'segment');
+
+        $segment = Segment::query()
+            ->whereIn('audience_id', $team->audiences()->select('id'))
+            ->where('uuid', $uuid)
+            ->firstOrFail();
+        $this->authorize($request, 'view', $segment);
+
+        return $segment;
     }
 
     public function campaign(Request $request, Team $team): Email
@@ -148,7 +199,7 @@ class WorkspaceContext
     }
 
     /**
-     * @param  class-string<Audience|Automation|Email|TransactionalEmail>  $model
+     * @param  class-string<Audience|Automation|Contact|Email|TransactionalEmail>  $model
      */
     private function scopedUuid(
         Request $request,
@@ -156,12 +207,34 @@ class WorkspaceContext
         Team $team,
         string $resource,
         bool $softDeletes = false,
+        string $key = 'uuid',
     ): string {
         $rule = Rule::exists($model, 'uuid')->where('team_id', $team->id);
 
         if ($softDeletes) {
             $rule->whereNull('deleted_at');
         }
+
+        $validated = $request->validate([
+            $key => ['required', 'uuid', $rule],
+        ], [
+            "{$key}.exists" => "The selected {$resource} was not found in this workspace.",
+        ]);
+
+        return (string) $validated[$key];
+    }
+
+    /**
+     * Validate the UUID of a record that belongs to the workspace through one
+     * of its audiences rather than a team_id column of its own.
+     *
+     * @param  class-string<Segment|Subscriber>  $model
+     */
+    private function audienceScopedUuid(Request $request, string $model, Team $team, string $resource): string
+    {
+        $rule = Rule::exists($model, 'uuid')->where(
+            fn (Builder $query) => $query->whereIn('audience_id', $team->audiences()->select('id')),
+        );
 
         $validated = $request->validate([
             'uuid' => ['required', 'uuid', $rule],

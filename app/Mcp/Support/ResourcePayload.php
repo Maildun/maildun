@@ -4,7 +4,11 @@ namespace App\Mcp\Support;
 
 use App\Models\Audience;
 use App\Models\Automation;
+use App\Models\Contact;
 use App\Models\Email;
+use App\Models\Segment;
+use App\Models\Subscriber;
+use App\Models\Tag;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 
@@ -166,6 +170,112 @@ class ResourcePayload
             'trigger_config' => $automation->trigger_config,
             'graph' => $automation->graph,
             'created_at' => $automation->created_at?->toISOString(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function contactSummary(Contact $contact): array
+    {
+        return [
+            'uuid' => $contact->uuid,
+            'email' => $contact->email,
+            'first_name' => $contact->first_name,
+            'last_name' => $contact->last_name,
+            'company' => $contact->company === null ? null : [
+                'uuid' => $contact->company->uuid,
+                'name' => $contact->company->name,
+            ],
+            'tags' => $contact->tags->pluck('name')->sortBy(fn (string $name): string => mb_strtolower($name))->values()->all(),
+            'audiences_count' => (int) ($contact->getAttribute('subscribers_count') ?? $contact->subscribers()->count()),
+            'created_at' => $contact->created_at?->toISOString(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function contact(Contact $contact): array
+    {
+        return [
+            ...$this->contactSummary($contact),
+            'memberships' => $contact->subscribers
+                ->map(fn (Subscriber $subscriber): array => [
+                    'subscriber_uuid' => $subscriber->uuid,
+                    'audience' => [
+                        'uuid' => $subscriber->audience->uuid,
+                        'name' => $subscriber->audience->name,
+                    ],
+                    'status' => $subscriber->status->value,
+                    'pending_confirmation' => $subscriber->isPendingConfirmation(),
+                    'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
+                    'unsubscribed_at' => $subscriber->unsubscribed_at?->toISOString(),
+                ])
+                ->values()
+                ->all(),
+            'updated_at' => $contact->updated_at?->toISOString(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function subscriber(Subscriber $subscriber): array
+    {
+        return [
+            'uuid' => $subscriber->uuid,
+            'contact_uuid' => $subscriber->contact?->uuid,
+            'audience' => [
+                'uuid' => $subscriber->audience->uuid,
+                'name' => $subscriber->audience->name,
+            ],
+            'email' => $subscriber->email,
+            'first_name' => $subscriber->first_name,
+            'last_name' => $subscriber->last_name,
+            'status' => $subscriber->status->value,
+            'pending_confirmation' => $subscriber->isPendingConfirmation(),
+            'source' => $subscriber->source->value,
+            'tags' => $subscriber->tags->pluck('name')->sortBy(fn (string $name): string => mb_strtolower($name))->values()->all(),
+            'attribute_values' => $subscriber->attribute_values ?? [],
+            'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
+            'unsubscribed_at' => $subscriber->unsubscribed_at?->toISOString(),
+            'created_at' => $subscriber->created_at?->toISOString(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function segment(Segment $segment): array
+    {
+        return [
+            'uuid' => $segment->uuid,
+            'audience' => [
+                'uuid' => $segment->audience->uuid,
+                'name' => $segment->audience->name,
+            ],
+            'name' => $segment->name,
+            'description' => $segment->description,
+            'match_type' => $segment->match_type->value,
+            'rules' => $segment->rules,
+            'subscribers_count' => (int) ($segment->getAttribute('subscribers_count') ?? $segment->subscribers()->count()),
+            'rules_synced_at' => $segment->rules_synced_at?->toISOString(),
+            'created_at' => $segment->created_at?->toISOString(),
+            'updated_at' => $segment->updated_at?->toISOString(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function tag(Tag $tag): array
+    {
+        return [
+            'uuid' => $tag->uuid,
+            'name' => $tag->name,
+            'color' => $tag->color,
+            'contacts_count' => (int) $tag->getAttribute('contacts_count'),
         ];
     }
 }

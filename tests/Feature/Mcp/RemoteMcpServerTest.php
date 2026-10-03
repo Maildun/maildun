@@ -13,12 +13,24 @@ use App\Mcp\Tools\Campaigns\SendTestCampaignTool;
 use App\Mcp\Tools\Campaigns\StopCampaignTool;
 use App\Mcp\Tools\Campaigns\UnscheduleCampaignTool;
 use App\Mcp\Tools\Campaigns\UpdateCampaignTool;
+use App\Mcp\Tools\Contacts\CreateContactTool;
+use App\Mcp\Tools\Contacts\DeleteContactTool;
+use App\Mcp\Tools\Contacts\UpdateContactTool;
+use App\Mcp\Tools\Segments\CreateSegmentTool;
+use App\Mcp\Tools\Segments\DeleteSegmentTool;
+use App\Mcp\Tools\Segments\UpdateSegmentTool;
+use App\Mcp\Tools\Subscribers\AddSubscriberTool;
+use App\Mcp\Tools\Subscribers\RemoveSubscriberTool;
+use App\Mcp\Tools\Subscribers\ResubscribeSubscriberTool;
+use App\Mcp\Tools\Subscribers\UnsubscribeSubscriberTool;
 use App\Mcp\Tools\TransactionalEmails\CreateTransactionalEmailTool;
 use App\Mcp\Tools\TransactionalEmails\DeleteTransactionalEmailTool;
 use App\Mcp\Tools\TransactionalEmails\UpdateTransactionalEmailTool;
 use App\Mcp\Tools\Workspaces\ListWorkspacesTool;
 use App\Models\Audience;
 use App\Models\Email;
+use App\Models\Segment;
+use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use App\Models\User;
@@ -210,6 +222,9 @@ test('MCP writes enforce the workspace role policies', function () {
     $audience = Audience::factory()->for($team)->create(['name' => 'Existing audience']);
     $campaign = Email::factory()->for($team)->create(['name' => 'Existing campaign']);
     $transactionalEmail = TransactionalEmail::factory()->for($team)->create(['name' => 'Existing transactional email']);
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create();
+    $contact = $subscriber->contact;
+    $segment = Segment::factory()->for($audience)->create(['name' => 'Existing segment']);
 
     $unauthorizedCalls = [
         [CreateAudienceTool::class, [
@@ -263,6 +278,56 @@ test('MCP writes enforce the workspace role policies', function () {
         [StopCampaignTool::class, [
             'workspace' => $team->slug,
             'uuid' => $campaign->uuid,
+        ]],
+        [CreateContactTool::class, [
+            'workspace' => $team->slug,
+            'email' => 'unauthorized@example.com',
+        ]],
+        [UpdateContactTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $contact->uuid,
+            'first_name' => 'Changed',
+        ]],
+        [DeleteContactTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $contact->uuid,
+            'confirm_email' => $contact->email,
+        ]],
+        [AddSubscriberTool::class, [
+            'workspace' => $team->slug,
+            'audience_uuid' => $audience->uuid,
+            'email' => 'unauthorized@example.com',
+            'consent_confirmed' => true,
+        ]],
+        [UnsubscribeSubscriberTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $subscriber->uuid,
+        ]],
+        [ResubscribeSubscriberTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $subscriber->uuid,
+            'consent_confirmed' => true,
+        ]],
+        [RemoveSubscriberTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $subscriber->uuid,
+            'confirm_email' => $subscriber->email,
+        ]],
+        [CreateSegmentTool::class, [
+            'workspace' => $team->slug,
+            'audience_uuid' => $audience->uuid,
+            'name' => 'Unauthorized segment',
+            'rules' => [['field' => 'status', 'operator' => 'equals', 'value' => 'subscribed']],
+        ]],
+        [UpdateSegmentTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $segment->uuid,
+            'name' => 'Changed segment',
+        ]],
+        [DeleteSegmentTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $segment->uuid,
+            'confirm_name' => $segment->name,
         ]],
         [CreateTransactionalEmailTool::class, [
             'workspace' => $team->slug,
