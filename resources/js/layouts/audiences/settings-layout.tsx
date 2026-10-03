@@ -10,16 +10,6 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { IconSvgElement } from '@hugeicons/react';
-import {
-    CleanIcon as CleanSolidIcon,
-    DangerIcon as DangerSolidIcon,
-    LeftToRightListBulletIcon as LeftToRightListBulletSolidIcon,
-    LinkSquare02Icon as LinkSquare02SolidIcon,
-    MailOpen01Icon as MailOpen01SolidIcon,
-    MailSend01Icon as MailSend01SolidIcon,
-    Notification03Icon as Notification03SolidIcon,
-    Settings02Icon as Settings02SolidIcon,
-} from '@hugeicons-pro/core-solid-rounded';
 import { Link, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import type { PropsWithChildren } from 'react';
@@ -95,56 +85,56 @@ export function AudienceSettingsSidebar({
             title: 'General',
             href: toUrl(edit(routeArgs)),
             icon: Settings02Icon,
-            activeIcon: Settings02SolidIcon,
+            activeIcon: Settings02Icon,
         },
         {
             key: 'sender',
             title: 'Sender',
             href: toUrl(sender(routeArgs)),
             icon: MailSend01Icon,
-            activeIcon: MailSend01SolidIcon,
+            activeIcon: MailSend01Icon,
         },
         {
             key: 'notifications',
             title: 'Email notification',
             href: toUrl(notifications(routeArgs)),
             icon: Notification03Icon,
-            activeIcon: Notification03SolidIcon,
+            activeIcon: Notification03Icon,
         },
         {
             key: 'double-opt-in',
             title: 'Double opt-in',
             href: toUrl(doubleOptIn(routeArgs)),
             icon: MailOpen01Icon,
-            activeIcon: MailOpen01SolidIcon,
+            activeIcon: MailOpen01Icon,
         },
         {
             key: 'attributes',
             title: 'Attributes',
             href: toUrl(attributes(routeArgs)),
             icon: LeftToRightListBulletIcon,
-            activeIcon: LeftToRightListBulletSolidIcon,
+            activeIcon: LeftToRightListBulletIcon,
         },
         {
             key: 'landing-pages',
             title: 'Landing pages',
             href: toUrl(landingPages(routeArgs)),
             icon: LinkSquare02Icon,
-            activeIcon: LinkSquare02SolidIcon,
+            activeIcon: LinkSquare02Icon,
         },
         {
             key: 'hygiene',
             title: 'List hygiene',
             href: toUrl(hygiene(routeArgs)),
             icon: CleanIcon,
-            activeIcon: CleanSolidIcon,
+            activeIcon: CleanIcon,
         },
         {
             key: 'danger',
             title: 'Danger zone',
             href: toUrl(danger(routeArgs)),
             icon: DangerIcon,
-            activeIcon: DangerSolidIcon,
+            activeIcon: DangerIcon,
         },
     ];
 

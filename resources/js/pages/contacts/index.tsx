@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
 import { ContactDialog } from '@/components/contact-dialog';
 import { ContactHoverCard } from '@/components/contact-hover-card';
-import { ContactImportDialog } from '@/components/contact-import-dialog';
+import { ContactImportMenu } from '@/components/contact-import-menu';
 import { FilterMenu } from '@/components/filter-menu';
 import { ListSearch } from '@/components/list-search';
 import { Paginator } from '@/components/paginator';
@@ -44,7 +44,6 @@ import { formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
 import { index, show } from '@/routes/contacts';
 import { show as showContactExport } from '@/routes/contacts/exports';
-import { store as storeContactImport } from '@/routes/contacts/imports';
 import type { ContactIndexProps, ContactSummary } from '@/types/contacts';
 
 const SORT_LABELS = {
@@ -58,7 +57,6 @@ export default function ContactsIndex({
     companies,
     audiences,
     tags,
-    contactImports,
     filters,
     canManage,
 }: ContactIndexProps) {
@@ -100,12 +98,8 @@ export default function ContactsIndex({
                     </div>
                     {canManage ? (
                         <div className="flex flex-wrap items-center gap-2">
-                            <ContactImportDialog
-                                action={storeContactImport.url(
-                                    currentTeam.slug,
-                                )}
-                                imports={contactImports}
-                                pollOnly={['contactImports', 'contacts']}
+                            <ContactImportMenu
+                                teamSlug={currentTeam.slug}
                                 exportCsvUrl={showContactExport.url(
                                     [currentTeam.slug, 'csv'],
                                     { query: filters },

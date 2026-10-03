@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Audiences\AddContactToAudiences;
+use App\Enums\ContactImportStatus;
 use App\Enums\TeamRole;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Jobs\ProcessContactImport;
@@ -10,13 +11,19 @@ use App\Models\ContactImport;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\ContactImportCsv;
+use App\Services\ImportEmailReview;
 use App\Services\ManageContact;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
-test('contact CSV uploads are stored privately and queued', function () {
+beforeEach(function () {
+    fakeMailDomains();
+});
+
+test('contact CSV uploads are stored privately as a draft awaiting column mapping', function () {
     Queue::fake([ProcessContactImport::class]);
     Storage::fake('local');
 
@@ -30,23 +37,22 @@ test('contact CSV uploads are stored privately and queued', function () {
                 "email,first_name,last_name\ntaylor@example.com,Taylor,Otwell\n",
             ),
         ])
-        ->assertRedirect()
-        ->assertSessionHasNoErrors();
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('contacts.imports.show', [$team, $team->contactImports()->sole()]));
 
     $contactImport = $team->contactImports()->sole();
 
     expect($contactImport->original_name)->toBe('contacts.csv')
-        ->and($contactImport->status)->toBe('pending')
+        ->and($contactImport->status)->toBe(ContactImportStatus::Draft)
         ->and($contactImport->consent_ip)->toBe('127.0.0.1')
-        ->and($contactImport->audience_id)->toBeNull();
+        ->and($contactImport->audience_id)->toBeNull()
+        ->and($contactImport->total_rows)->toBe(1)
+        ->and($contactImport->column_map)->toBe(['email', 'first_name', 'last_name']);
     Storage::disk('local')->assertExists($contactImport->path);
-    Queue::assertPushed(
-        ProcessContactImport::class,
-        fn (ProcessContactImport $job): bool => $job->contactImportId === $contactImport->id,
-    );
+    Queue::assertNothingPushed();
 });
 
-test('audience CSV uploads are scoped to the audience and queued', function () {
+test('audience CSV uploads are scoped to the audience', function () {
     Queue::fake([ProcessContactImport::class]);
     Storage::fake('local');
 
@@ -55,17 +61,17 @@ test('audience CSV uploads are scoped to the audience and queued', function () {
     $audience = Audience::factory()->for($team)->create();
 
     $this->actingAs($user)
-        ->post(route('audiences.imports.store', [$team, $audience]), [
+        ->post(route('contacts.imports.store', $team), [
             'file' => UploadedFile::fake()->createWithContent(
                 'audience.csv',
                 "email\ntaylor@example.com\n",
             ),
+            'audience' => $audience->uuid,
         ])
         ->assertRedirect()
         ->assertSessionHasNoErrors();
 
     expect($team->contactImports()->sole()->audience_id)->toBe($audience->id);
-    Queue::assertPushed(ProcessContactImport::class);
 });
 
 test('members without contact management permission cannot queue imports', function () {
@@ -97,12 +103,13 @@ test('audience imports cannot target an audience from another workspace', functi
     $otherAudience = Audience::factory()->for(Team::factory()->create())->create();
 
     $this->actingAs($user)
-        ->post(route('audiences.imports.store', [$user->currentTeam, $otherAudience]), [
+        ->post(route('contacts.imports.store', $user->currentTeam), [
             'file' => UploadedFile::fake()->createWithContent('contacts.csv', "email\nnope@example.com\n"),
+            'audience' => $otherAudience->uuid,
         ])
-        ->assertNotFound();
+        ->assertSessionHasErrors(['audience' => 'Choose an audience from this workspace.']);
 
-    Queue::assertNothingPushed();
+    expect($user->currentTeam->contactImports()->count())->toBe(0);
 });
 
 test('contact imports create valid contacts and count duplicate and invalid rows', function () {
@@ -124,6 +131,8 @@ test('contact imports create valid contacts and count duplicate and invalid rows
     (new ProcessContactImport($contactImport->id))->handle(
         app(ManageContact::class),
         app(AddContactToAudiences::class),
+        app(ContactImportCsv::class),
+        app(ImportEmailReview::class),
     );
 
     $contactImport->refresh();
@@ -131,7 +140,7 @@ test('contact imports create valid contacts and count duplicate and invalid rows
     expect($team->contacts()->count())->toBe(2)
         ->and($team->contacts()->where('email', 'new@example.com')->value('first_name'))->toBe('New')
         ->and($team->contacts()->where('email', 'existing@example.com')->value('first_name'))->toBe('Existing')
-        ->and($contactImport->status)->toBe('completed')
+        ->and($contactImport->status)->toBe(ContactImportStatus::Completed)
         ->and($contactImport->processed_rows)->toBe(3)
         ->and($contactImport->imported_contacts)->toBe(1)
         ->and($contactImport->imported_subscribers)->toBe(0)
@@ -161,6 +170,8 @@ test('audience imports reuse contacts and skip duplicate memberships', function 
     (new ProcessContactImport($contactImport->id))->handle(
         app(ManageContact::class),
         app(AddContactToAudiences::class),
+        app(ContactImportCsv::class),
+        app(ImportEmailReview::class),
     );
 
     $contactImport->refresh();
@@ -175,7 +186,7 @@ test('audience imports reuse contacts and skip duplicate memberships', function 
     Event::assertDispatchedTimes(SubscriberLifecycleOccurred::class, 2);
 });
 
-test('imports fail with a useful error when the email header is missing', function () {
+test('imports fail with a useful error and keep the file for retry when the email header is missing', function () {
     Storage::fake('local');
 
     $team = Team::factory()->create();
@@ -184,17 +195,17 @@ test('imports fail with a useful error when the email header is missing', functi
     $job = new ProcessContactImport($contactImport->id);
 
     try {
-        $job->handle(app(ManageContact::class), app(AddContactToAudiences::class));
+        $job->handle(app(ManageContact::class), app(AddContactToAudiences::class), app(ContactImportCsv::class), app(ImportEmailReview::class));
     } catch (RuntimeException $exception) {
         $job->failed($exception);
     }
 
     $contactImport->refresh();
 
-    expect($contactImport->status)->toBe('failed')
-        ->and($contactImport->errors)->toBe(['The CSV must include an email column.'])
+    expect($contactImport->status)->toBe(ContactImportStatus::Failed)
+        ->and($contactImport->failure_message)->toBe('The CSV must include an email column.')
         ->and($team->contacts()->count())->toBe(0);
-    Storage::disk('local')->assertMissing($contactImport->path);
+    Storage::disk('local')->assertExists($contactImport->path);
 });
 
 test('imports reject files that are not CSV data', function () {
@@ -223,19 +234,19 @@ test('large contact imports checkpoint bounded chunks and retain the source unti
     Storage::disk('local')->put($import->path, implode("\n", $rows));
     $job = new ProcessContactImport($import->id);
 
-    $job->handle(app(ManageContact::class), app(AddContactToAudiences::class));
+    $job->handle(app(ManageContact::class), app(AddContactToAudiences::class), app(ContactImportCsv::class), app(ImportEmailReview::class));
 
     expect($import->refresh()->processed_rows)->toBe(200);
-    expect($import->status)->toBe('processing');
+    expect($import->status)->toBe(ContactImportStatus::Processing);
     expect($import->file_offset)->toBeGreaterThan(0);
     Storage::disk('local')->assertExists($import->path);
     Queue::assertPushed(ProcessContactImport::class, 1);
 
-    Queue::pushed(ProcessContactImport::class)->sole()->handle(app(ManageContact::class), app(AddContactToAudiences::class));
-    $job->handle(app(ManageContact::class), app(AddContactToAudiences::class));
+    Queue::pushed(ProcessContactImport::class)->sole()->handle(app(ManageContact::class), app(AddContactToAudiences::class), app(ContactImportCsv::class), app(ImportEmailReview::class));
+    $job->handle(app(ManageContact::class), app(AddContactToAudiences::class), app(ContactImportCsv::class), app(ImportEmailReview::class));
     $job->failed(new RuntimeException('A duplicate old worker failed.'));
 
-    expect($import->refresh()->status)->toBe('completed');
+    expect($import->refresh()->status)->toBe(ContactImportStatus::Completed);
     expect($import->processed_rows)->toBe(205);
     expect($import->imported_contacts)->toBe(205);
     expect($import->duplicate_rows)->toBe(0);
@@ -257,7 +268,7 @@ test('the sync queue completes imports larger than one chunk', function () {
     Storage::disk('local')->put($import->path, implode("\n", $rows));
     ProcessContactImport::dispatchSync($import->id);
 
-    expect($import->refresh()->status)->toBe('completed');
+    expect($import->refresh()->status)->toBe(ContactImportStatus::Completed);
     expect($import->processed_rows)->toBe(205);
     expect($import->imported_contacts)->toBe(205);
     expect($import->duplicate_rows)->toBe(0);
@@ -278,16 +289,16 @@ test('an interrupted import retries the rolled back row without losing progress 
     });
     $job = new ProcessContactImport($import->id);
 
-    expect(fn () => $job->handle(app(ManageContact::class), app(AddContactToAudiences::class)))
+    expect(fn () => $job->handle(app(ManageContact::class), app(AddContactToAudiences::class), app(ContactImportCsv::class), app(ImportEmailReview::class)))
         ->toThrow(RuntimeException::class, 'Import interrupted.');
 
     expect($team->contacts()->count())->toBe(0);
     expect($import->refresh()->file_offset)->toBe(0);
     Storage::disk('local')->assertExists($import->path);
 
-    $job->handle(app(ManageContact::class), app(AddContactToAudiences::class));
+    $job->handle(app(ManageContact::class), app(AddContactToAudiences::class), app(ContactImportCsv::class), app(ImportEmailReview::class));
 
-    expect($import->refresh()->status)->toBe('completed');
+    expect($import->refresh()->status)->toBe(ContactImportStatus::Completed);
     expect($import->imported_contacts)->toBe(1);
     expect($import->duplicate_rows)->toBe(0);
 });

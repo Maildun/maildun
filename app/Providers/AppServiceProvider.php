@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Contracts\DnsRecordLookup;
 use App\Contracts\DnsResolver;
+use App\Contracts\MailDomainLookup;
 use App\Models\Automation;
 use App\Models\EmailDelivery;
 use App\Models\SubscribeForm;
@@ -11,6 +12,7 @@ use App\Models\Subscriber;
 use App\Models\TeamApiKey;
 use App\Services\SystemDnsRecordLookup;
 use App\Services\SystemDnsResolver;
+use App\Services\SystemMailDomainLookup;
 use App\Services\TeamMailer;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -32,6 +34,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->bind(DnsResolver::class, SystemDnsResolver::class);
         $this->app->bind(DnsRecordLookup::class, SystemDnsRecordLookup::class);
+        $this->app->bind(MailDomainLookup::class, SystemMailDomainLookup::class);
     }
 
     /**

@@ -163,12 +163,6 @@ class AudienceController extends Controller
             'subscriberStats' => $buildSubscriberStats->handle($audience),
             'segments' => $segments,
             'forms' => $forms,
-            'contactImports' => $audience->contactImports()
-                ->latest()
-                ->limit(5)
-                ->get()
-                ->map->toInertia()
-                ->values(),
             'filters' => $filters,
             'canManage' => Gate::allows('update', $audience),
         ]);

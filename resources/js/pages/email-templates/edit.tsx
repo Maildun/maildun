@@ -34,7 +34,7 @@ import {
     renderSourceHtml,
     toBuilderDocument,
 } from '@/lib/email-builder';
-import { edit, index, update } from '@/routes/email_templates';
+import { update } from '@/routes/email_templates';
 import type {
     EmailBuilderDocument,
     EmailEditorMode,
@@ -440,21 +440,3 @@ export default function EmailTemplatesEdit({
         </>
     );
 }
-
-EmailTemplatesEdit.layout = (props: {
-    template: { name: string; uuid: string };
-    currentTeam?: { slug: string } | null;
-}) => ({
-    breadcrumbs: [
-        {
-            title: 'Templates',
-            href: props.currentTeam ? index(props.currentTeam.slug) : '/',
-        },
-        {
-            title: props.template.name,
-            href: props.currentTeam
-                ? edit([props.currentTeam.slug, props.template.uuid])
-                : '/',
-        },
-    ],
-});

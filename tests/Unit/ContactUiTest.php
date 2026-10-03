@@ -54,29 +54,25 @@ test('the contact list previews contacts with profile and edit actions', functio
         ->not->toContain('Edit03Icon');
 });
 
-test('contact and audience lists expose the shared background import dialog', function () {
+test('contact and audience lists link to the dedicated import pages', function () {
     $root = dirname(__DIR__, 2).'/resources/js';
     $contacts = file_get_contents($root.'/pages/contacts/index.tsx');
     $audience = file_get_contents($root.'/pages/audiences/show.tsx');
-    $dialog = file_get_contents($root.'/components/contact-import-dialog.tsx');
+    $menu = file_get_contents($root.'/components/contact-import-menu.tsx');
 
     expect($contacts)
-        ->toContain('ContactImportDialog')
-        ->toContain("pollOnly={['contactImports', 'contacts']}")
+        ->toContain('ContactImportMenu')
         ->toContain('showContactExport.url')
         ->and($audience)
-        ->toContain('ContactImportDialog')
-        ->toContain("'subscribers'")
+        ->toContain('ContactImportMenu')
+        ->toContain('audienceUuid={audience.uuid}')
         ->toContain('showAudienceExport.url')
-        ->and($dialog)
+        ->and($menu)
         ->toContain('<DropdownMenuLabel>Import</DropdownMenuLabel>')
         ->toContain('<DropdownMenuLabel>Export</DropdownMenuLabel>')
         ->toContain('MoreHorizontalIcon')
         ->toContain('Xls01Icon')
         ->toContain('aria-label="Import or export contacts"')
-        ->toContain('DropdownMenuTrigger')
-        ->toContain('onClick={() => setOpen(true)}')
-        ->toContain('usePoll')
-        ->toContain('duplicate_rows')
-        ->toContain('Import');
+        ->toContain('createContactImport(teamSlug')
+        ->toContain('Import history');
 });

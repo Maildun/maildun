@@ -235,18 +235,7 @@ export function EmailReportLayout({
 
     setLayoutProps({
         fullscreen: false,
-        breadcrumbs: currentTeam
-            ? [
-                  {
-                      title: 'Campaigns',
-                      href: index.url(currentTeam.slug),
-                  },
-                  {
-                      title: campaign.name,
-                      href: show.url([currentTeam.slug, campaign.uuid]),
-                  },
-              ]
-            : [],
+        breadcrumbs: [],
     });
     const isActive =
         campaign.status === 'queued' || campaign.status === 'sending';

@@ -724,10 +724,37 @@ export default function EmailEdit({
                                     orientation="vertical"
                                     className="hidden h-5 sm:block"
                                 />
-                                <span className="truncate font-medium">
-                                    {form.data.name || email.name}
-                                </span>
-                                <Badge variant="secondary">Draft</Badge>
+                                {canManage ? (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="group max-w-36 min-w-0 justify-start px-2 sm:max-w-56 lg:max-w-80"
+                                        data-test="campaign-design-rename"
+                                        onClick={() => setOpenSection('name')}
+                                    >
+                                        <span className="truncate">
+                                            {form.data.name || email.name}
+                                        </span>
+                                        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover:bg-accent group-hover:text-foreground">
+                                            <HugeiconsIcon
+                                                icon={Edit03Icon}
+                                                className="size-3.5"
+                                                data-icon="inline-end"
+                                            />
+                                        </span>
+                                    </Button>
+                                ) : (
+                                    <p className="max-w-36 truncate px-2 text-sm font-medium sm:max-w-56 lg:max-w-80">
+                                        {form.data.name || email.name}
+                                    </p>
+                                )}
+                                <Badge
+                                    variant="secondary"
+                                    className="hidden md:inline-flex"
+                                >
+                                    Draft
+                                </Badge>
                             </div>
                             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                                 {email.editor === 'builder' ? (

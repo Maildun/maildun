@@ -19,7 +19,7 @@ import { Form, Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
 import { ContactDialog } from '@/components/contact-dialog';
-import { ContactImportDialog } from '@/components/contact-import-dialog';
+import { ContactImportMenu } from '@/components/contact-import-menu';
 import { FilterMenu } from '@/components/filter-menu';
 import { ListSearch } from '@/components/list-search';
 import { Paginator } from '@/components/paginator';
@@ -91,7 +91,6 @@ import { formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
 import { edit, show } from '@/routes/audiences';
 import { show as showAudienceExport } from '@/routes/audiences/exports';
-import { store as storeContactImport } from '@/routes/audiences/imports';
 import {
     destroy as destroySegment,
     show as showSegment,
@@ -122,7 +121,6 @@ import type {
     Tag,
 } from '@/types/audiences';
 import type { CompanyOption } from '@/types/contacts';
-import type { ContactImport } from '@/types/contacts';
 
 const MAX_VISIBLE_TAGS = 3;
 
@@ -134,7 +132,6 @@ type Props = {
     forms: SubscribeFormSummary[];
     companies: CompanyOption[];
     tags: Tag[];
-    contactImports: ContactImport[];
     filters: SubscriberIndexFilters;
     canManage: boolean;
 };
@@ -163,7 +160,6 @@ export default function AudienceShow(props: Props) {
         forms,
         companies,
         tags,
-        contactImports,
         filters,
         canManage,
     } = props;
@@ -308,17 +304,9 @@ export default function AudienceShow(props: Props) {
                                 />
                                 {canManage && (
                                     <>
-                                        <ContactImportDialog
-                                            action={storeContactImport.url(
-                                                routeArgs,
-                                            )}
-                                            imports={contactImports}
-                                            audienceName={audience.name}
-                                            pollOnly={[
-                                                'contactImports',
-                                                'subscribers',
-                                                'subscriberStats',
-                                            ]}
+                                        <ContactImportMenu
+                                            teamSlug={currentTeam.slug}
+                                            audienceUuid={audience.uuid}
                                             exportCsvUrl={showAudienceExport.url(
                                                 [...routeArgs, 'csv'],
                                                 { query: filters },

@@ -68,13 +68,6 @@ class ContactController extends Controller
             'companies' => $currentTeam->companies()->orderBy('name')->get(['uuid', 'name']),
             'audiences' => $currentTeam->audiences()->orderBy('name')->get(['uuid', 'name']),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
-            'contactImports' => $currentTeam->contactImports()
-                ->whereNull('audience_id')
-                ->latest()
-                ->limit(5)
-                ->get()
-                ->map->toInertia()
-                ->values(),
             'filters' => $filters,
             'canManage' => Gate::allows('create', [Contact::class, $currentTeam]),
         ]);

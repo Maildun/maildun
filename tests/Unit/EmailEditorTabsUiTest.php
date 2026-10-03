@@ -131,6 +131,7 @@ test('campaign design view fills leftover height and hub dialogs use the default
         ->toContain("'campaign-design-shell'")
         ->toContain('data-test="campaign-design-navbar"')
         ->toContain('data-test="campaign-design-back"')
+        ->toContain('data-test="campaign-design-rename"')
         ->toContain('data-test="personalization-tags"')
         ->toContain('<PersonalizationTagsDialog')
         ->toContain('data-test="open-media-library"')

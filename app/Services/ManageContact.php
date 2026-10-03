@@ -76,6 +76,25 @@ class ManageContact
         );
     }
 
+    /**
+     * Attach tags without removing the contact's existing ones.
+     *
+     * @param  list<string>  $names
+     * @return list<string>
+     */
+    public function addTags(Team $team, Contact $contact, array $names): array
+    {
+        $tagIds = collect($names)
+            ->map(fn (string $name): string => trim($name))
+            ->filter()
+            ->unique(fn (string $name): string => Str::lower($name))
+            ->map(fn (string $name): int => $team->tags()->firstOrCreate(['name' => $name])->id);
+
+        $attached = $contact->tags()->syncWithoutDetaching($tagIds)['attached'];
+
+        return array_values($team->tags()->whereKey($attached)->pluck('uuid')->all());
+    }
+
     private function syncSubscriberCopies(Contact $contact): void
     {
         $contact->subscribers()->update([
