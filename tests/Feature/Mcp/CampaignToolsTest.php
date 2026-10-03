@@ -251,3 +251,55 @@ test('refuses to delete a campaign that is still sending', function () {
 
     $this->assertNotSoftDeleted($campaign);
 });
+
+test('rejects a block design that the editor cannot open', function () {
+    $team = Team::factory()->create(['slug' => 'partial-design', 'email_editor' => EmailEditor::Builder]);
+    $campaign = Email::factory()->builder()->for($team)->create();
+    $design = $campaign->design;
+    $partial = ['root' => ['block-1'], 'blocks' => ['block-1' => ['type' => 'text', 'props' => ['markdown' => 'Hi']]]];
+
+    MaildunServer::tool(CreateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'name' => 'Partial design',
+        'design' => $partial,
+    ])->assertHasErrors(['theme: Required.']);
+
+    MaildunServer::tool(UpdateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $campaign->uuid,
+        'design' => $partial,
+    ])->assertHasErrors(['theme: Required.']);
+
+    expect(Email::query()->whereBelongsTo($team)->where('name', 'Partial design')->exists())->toBeFalse()
+        ->and($campaign->refresh()->design)->toBe($design);
+});
+
+test('stores delivery HTML rendered from a supplied block design', function () {
+    $team = Team::factory()->create(['slug' => 'rendered-design', 'email_editor' => EmailEditor::Builder]);
+    $design = EmailTemplate::builderDesign([
+        'block-1' => ['type' => 'text', 'props' => ['markdown' => 'Rendered from the design.']],
+    ]);
+
+    MaildunServer::tool(CreateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'name' => 'Rendered design',
+        'html' => '<p>Stale markup</p>',
+        'design' => $design,
+    ])->assertOk();
+
+    $campaign = Email::query()->whereBelongsTo($team)->where('name', 'Rendered design')->firstOrFail();
+
+    expect($campaign->html)->toContain('Rendered from the design.')->not->toContain('Stale markup')
+        ->and($campaign->plain_text)->toContain('Rendered from the design.');
+
+    $design['blocks']['block-1']['props']['markdown'] = 'Updated through MCP.';
+
+    MaildunServer::tool(UpdateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $campaign->uuid,
+        'design' => $design,
+    ])->assertOk();
+
+    expect($campaign->refresh()->html)->toContain('Updated through MCP.')
+        ->and($campaign->design['blocks']['block-1']['props']['markdown'])->toBe('Updated through MCP.');
+});

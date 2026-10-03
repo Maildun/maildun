@@ -9,6 +9,7 @@ use App\Mcp\Support\WorkspaceContext;
 use App\Models\EmailTemplate;
 use App\Models\TransactionalEmail;
 use App\Rules\AuthorizedSenderAddress;
+use App\Services\EmailBuilderAgent;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Validation\ValidationException;
@@ -33,6 +34,7 @@ class CreateTransactionalEmailTool extends Tool
         private WorkspaceContext $context,
         private ResourcePayload $payload,
         private RenderTransactionalContent $renderer,
+        private EmailBuilderAgent $agent,
     ) {}
 
     public function handle(Request $request): ResponseFactory
@@ -51,7 +53,6 @@ class CreateTransactionalEmailTool extends Tool
             'html' => ['nullable', 'string', 'max:2000000'],
             'source' => ['nullable', 'string', 'max:2000000'],
             'design' => ['nullable', 'array', 'required_array_keys:root'],
-            'design.root' => ['array'],
             'variables' => ['nullable', 'array'],
             'variables.*.key' => ['required', 'string', 'max:64', 'regex:/^[a-zA-Z_][a-zA-Z0-9_]*$/'],
             'variables.*.example' => ['nullable', 'string', 'max:255'],
@@ -68,6 +69,12 @@ class CreateTransactionalEmailTool extends Tool
             throw ValidationException::withMessages([
                 'slug' => 'This identifier is already used in the workspace.',
             ]);
+        }
+
+        if ($team->email_editor === EmailEditor::Builder && isset($attributes['design'])) {
+            $rendered = $this->agent->render($attributes['design']);
+            $attributes['design'] = $rendered['design'];
+            $attributes['html'] = $rendered['html'];
         }
 
         $body = EmailTemplate::blankBodyFor($team->email_editor);

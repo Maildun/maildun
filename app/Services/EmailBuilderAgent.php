@@ -11,6 +11,20 @@ use JsonException;
 class EmailBuilderAgent
 {
     /**
+     * Validate a whole design supplied by a client and render its delivery HTML,
+     * so the editor never receives a document the package cannot open.
+     *
+     * @param  array<string, mixed>  $design
+     * @return array{design: array<string, mixed>, html: string, text: string}
+     */
+    public function render(array $design): array
+    {
+        $result = $this->run($design, null, 'check_email');
+
+        return ['design' => $result['document'], 'html' => $result['html'], 'text' => $result['text']];
+    }
+
+    /**
      * @param  array<string, mixed>|null  $document
      * @param  array<string, mixed>  $input
      * @param  list<string>  $mergeTags
