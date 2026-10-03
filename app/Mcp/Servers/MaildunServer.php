@@ -14,6 +14,11 @@ use App\Mcp\Tools\Campaigns\CreateCampaignTool;
 use App\Mcp\Tools\Campaigns\DeleteCampaignTool;
 use App\Mcp\Tools\Campaigns\GetCampaignTool;
 use App\Mcp\Tools\Campaigns\ListCampaignsTool;
+use App\Mcp\Tools\Campaigns\ScheduleCampaignTool;
+use App\Mcp\Tools\Campaigns\SendCampaignTool;
+use App\Mcp\Tools\Campaigns\SendTestCampaignTool;
+use App\Mcp\Tools\Campaigns\StopCampaignTool;
+use App\Mcp\Tools\Campaigns\UnscheduleCampaignTool;
 use App\Mcp\Tools\Campaigns\UpdateCampaignTool;
 use App\Mcp\Tools\EmailBuilder\CheckEmailBuilderTool;
 use App\Mcp\Tools\EmailBuilder\EditEmailBuilderTool;
@@ -34,7 +39,7 @@ use Laravel\Mcp\Server\Tool;
 
 #[Name('Maildun MCP Server')]
 #[Version('1.0.0')]
-#[Instructions('Provides access to Maildun workspaces, audiences, campaigns, transactional emails, and automations. Remote connections can only use workspaces available to the authenticated user. Start with application-status, then list-workspaces. Every domain tool requires a workspace slug; record identifiers are always scoped to that workspace. For block email design, start with get-email-builder to discover native agent tools and the revision. Apply edits through edit-email-builder, use dry_run to preview and apply_ops for atomic batches, then check-email-builder to validate and preview. Re-read after a revision conflict. list-saved-sections returns the workspace saved sections; insert one with edit-email-builder using its blocks.')]
+#[Instructions('Provides access to Maildun workspaces, audiences, campaigns, transactional emails, and automations. Remote connections can only use workspaces available to the authenticated user. Start with application-status, then list-workspaces. Every domain tool requires a workspace slug; record identifiers are always scoped to that workspace. For block email design, start with get-email-builder to discover native agent tools and the revision. Apply edits through edit-email-builder, use dry_run to preview and apply_ops for atomic batches, then check-email-builder to validate and preview. Re-read after a revision conflict. To deliver a campaign, use send-test-campaign first, then send-campaign or schedule-campaign with the exact campaign name; stop-campaign halts a send in progress. list-saved-sections returns the workspace saved sections; insert one with edit-email-builder using its blocks.')]
 class MaildunServer extends Server
 {
     /**
@@ -53,6 +58,11 @@ class MaildunServer extends Server
         CreateCampaignTool::class,
         UpdateCampaignTool::class,
         DeleteCampaignTool::class,
+        SendTestCampaignTool::class,
+        SendCampaignTool::class,
+        ScheduleCampaignTool::class,
+        UnscheduleCampaignTool::class,
+        StopCampaignTool::class,
         ListTransactionalEmailsTool::class,
         GetTransactionalEmailTool::class,
         CreateTransactionalEmailTool::class,

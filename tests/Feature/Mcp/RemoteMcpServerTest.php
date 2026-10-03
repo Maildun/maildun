@@ -7,6 +7,11 @@ use App\Mcp\Tools\Audiences\DeleteAudienceTool;
 use App\Mcp\Tools\Audiences\UpdateAudienceTool;
 use App\Mcp\Tools\Campaigns\CreateCampaignTool;
 use App\Mcp\Tools\Campaigns\DeleteCampaignTool;
+use App\Mcp\Tools\Campaigns\ScheduleCampaignTool;
+use App\Mcp\Tools\Campaigns\SendCampaignTool;
+use App\Mcp\Tools\Campaigns\SendTestCampaignTool;
+use App\Mcp\Tools\Campaigns\StopCampaignTool;
+use App\Mcp\Tools\Campaigns\UnscheduleCampaignTool;
 use App\Mcp\Tools\Campaigns\UpdateCampaignTool;
 use App\Mcp\Tools\TransactionalEmails\CreateTransactionalEmailTool;
 use App\Mcp\Tools\TransactionalEmails\DeleteTransactionalEmailTool;
@@ -234,6 +239,30 @@ test('MCP writes enforce the workspace role policies', function () {
             'workspace' => $team->slug,
             'uuid' => $campaign->uuid,
             'confirm_name' => $campaign->name,
+        ]],
+        [SendTestCampaignTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $campaign->uuid,
+            'to' => 'reviewer@example.com',
+        ]],
+        [SendCampaignTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $campaign->uuid,
+            'confirm_name' => $campaign->name,
+        ]],
+        [ScheduleCampaignTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $campaign->uuid,
+            'scheduled_at' => now()->addDay()->toIso8601String(),
+            'confirm_name' => $campaign->name,
+        ]],
+        [UnscheduleCampaignTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $campaign->uuid,
+        ]],
+        [StopCampaignTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $campaign->uuid,
         ]],
         [CreateTransactionalEmailTool::class, [
             'workspace' => $team->slug,

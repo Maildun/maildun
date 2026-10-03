@@ -92,6 +92,8 @@ class ResourcePayload
             'track_clicks' => $campaign->track_clicks,
             'track_opens' => $campaign->track_opens,
             'design' => $campaign->design,
+            'scheduled_at' => $campaign->scheduled_at?->toISOString(),
+            'schedule_error' => $campaign->schedule_error,
             'send_started_at' => $campaign->send_started_at?->toISOString(),
             'sent_at' => $campaign->sent_at?->toISOString(),
             'created_at' => $campaign->created_at?->toISOString(),
