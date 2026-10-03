@@ -3,9 +3,11 @@
 use App\Actions\Automations\AdvanceAutomationRun;
 use App\Enums\AutomationAction;
 use App\Enums\AutomationRunStatus;
+use App\Enums\EmailDeliveryStatus;
 use App\Jobs\ProcessAutomationRun;
 use App\Models\Audience;
 use App\Models\Automation;
+use App\Models\AutomationEmailDelivery;
 use App\Models\AutomationRun;
 use App\Models\Subscriber;
 use Illuminate\Support\Facades\Queue;
@@ -132,4 +134,37 @@ test('a duplicate sweep cannot double-advance the same run', function () {
 
     expect($run->refresh()->steps()->where('node_id', 'wait')->count())->toBe(1)
         ->and($run->current_node_id)->toBe('after');
+});
+
+test('a stale claimed branch fails without sending again and cancels its remaining work', function () {
+    $this->freezeTime();
+    $run = parkedRun(AutomationRunStatus::Running, null);
+    $run->steps()->where('node_id', 'wait')->update(['updated_at' => now()->subHour(), 'processed_at' => now()->subHour()]);
+    $run->steps()->create(['node_id' => 'after', 'status' => 'pending']);
+    $delivery = AutomationEmailDelivery::factory()->create([
+        'automation_run_id' => $run->id,
+        'team_id' => $run->automation->team_id,
+        'status' => EmailDeliveryStatus::Sending,
+        'updated_at' => now()->subHour(),
+    ]);
+
+    $this->artisan('automations:resume')->assertSuccessful();
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Failed);
+    expect($run->failure_reason)->toContain('will not be retried automatically');
+    expect($run->steps()->where('node_id', 'wait')->value('status'))->toBe('failed');
+    expect($run->steps()->where('node_id', 'after')->value('status'))->toBe('cancelled');
+    expect($delivery->refresh()->status)->toBe(EmailDeliveryStatus::Failed);
+    Queue::assertNothingPushed();
+});
+
+test('a currently running branch is not failed by the stale worker sweep', function () {
+    $this->freezeTime();
+    $run = parkedRun(AutomationRunStatus::Running, null);
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Running);
+    Queue::assertNothingPushed();
 });

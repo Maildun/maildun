@@ -39,6 +39,8 @@ class EmailWebViewController extends Controller
      */
     public function campaign(EmailDelivery $delivery, BuildTrackedEmailHtml $trackedHtml): Response
     {
+        $delivery->loadMissing(['email' => fn ($query) => $query->withTrashed()]);
+
         return $this->page($trackedHtml->build($delivery));
     }
 

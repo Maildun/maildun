@@ -5,9 +5,14 @@ namespace App\Jobs;
 use App\Actions\Audiences\AddContactToAudiences;
 use App\Models\ContactImport;
 use App\Services\ManageContact;
+use DateTimeInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Queue\SyncQueue;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -17,32 +22,46 @@ class ProcessContactImport implements ShouldQueue
 {
     use Queueable;
 
-    public int $tries = 1;
+    private const int CHUNK_SIZE = 200;
 
-    public int $timeout = 900;
+    public int $tries = 3;
+
+    public int $maxExceptions = 3;
+
+    public int $timeout = 45;
+
+    /** @var list<int> */
+    public array $backoff = [30, 120, 300];
 
     public function __construct(public int $contactImportId) {}
 
+    /** @return list<WithoutOverlapping> */
+    public function middleware(): array
+    {
+        return [(new WithoutOverlapping('contact-import:'.$this->contactImportId))->releaseAfter(5)->expireAfter(75)];
+    }
+
+    public function retryUntil(): DateTimeInterface
+    {
+        return now()->addHours(6);
+    }
+
     public function handle(ManageContact $manageContact, AddContactToAudiences $addContactToAudiences): void
     {
-        $contactImport = ContactImport::query()
-            ->with(['team', 'audience'])
-            ->find($this->contactImportId);
+        $contactImport = ContactImport::query()->with(['team', 'audience'])->find($this->contactImportId);
 
-        if ($contactImport === null || $contactImport->status === 'completed') {
+        if ($contactImport === null || in_array($contactImport->status, ['completed', 'failed'], true)) {
             return;
         }
 
-        $contactImport->update([
-            'status' => 'processing',
-            'errors' => null,
-        ]);
-
+        $contactImport->update(['status' => 'processing']);
         $stream = Storage::disk($contactImport->disk)->readStream($contactImport->path);
 
         if (! is_resource($stream)) {
             throw new RuntimeException('The uploaded CSV file could not be read.');
         }
+
+        $completed = false;
 
         try {
             $headers = $this->headers($stream);
@@ -52,81 +71,99 @@ class ProcessContactImport implements ShouldQueue
                 throw new RuntimeException('The CSV must include an email column.');
             }
 
-            $firstNameIndex = array_search('first_name', $headers, true);
-            $lastNameIndex = array_search('last_name', $headers, true);
-            $counts = [
-                'processed_rows' => 0,
-                'imported_contacts' => 0,
-                'imported_subscribers' => 0,
-                'duplicate_rows' => 0,
-                'failed_rows' => 0,
-            ];
-            $errors = [];
+            if ($contactImport->file_offset > 0) {
+                $metadata = stream_get_meta_data($stream);
 
-            while (($row = fgetcsv($stream, null, ',', '"', '')) !== false) {
-                if ($this->isBlankRow($row)) {
-                    continue;
+                if ($metadata['seekable']) {
+                    if (fseek($stream, $contactImport->file_offset) !== 0) {
+                        throw new RuntimeException('The uploaded CSV file could not be resumed.');
+                    }
+                } else {
+                    $remainingBytes = $contactImport->file_offset - (int) ftell($stream);
+
+                    while ($remainingBytes > 0) {
+                        $skipped = fread($stream, min($remainingBytes, 1024 * 1024));
+
+                        if ($skipped === false || $skipped === '') {
+                            throw new RuntimeException('The uploaded CSV file could not be resumed.');
+                        }
+
+                        $remainingBytes -= strlen($skipped);
+                    }
                 }
-
-                $counts['processed_rows']++;
-                $email = Str::lower(trim((string) ($row[$emailIndex] ?? '')));
-                $firstName = $this->valueAt($row, $firstNameIndex);
-                $lastName = $this->valueAt($row, $lastNameIndex);
-                $rowNumber = $counts['processed_rows'] + 1;
-
-                if (! filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($email) > 255) {
-                    $counts['failed_rows']++;
-                    $this->addError($errors, __('Row :row has an invalid email address.', ['row' => $rowNumber]));
-                    $this->persistProgress($contactImport, $counts, $errors);
-
-                    continue;
-                }
-
-                if (($firstName !== null && mb_strlen($firstName) > 255)
-                    || ($lastName !== null && mb_strlen($lastName) > 255)) {
-                    $counts['failed_rows']++;
-                    $this->addError($errors, __('Row :row has a name longer than 255 characters.', ['row' => $rowNumber]));
-                    $this->persistProgress($contactImport, $counts, $errors);
-
-                    continue;
-                }
-
-                $contact = $manageContact->findOrCreate($contactImport->team, [
-                    'email' => $email,
-                    'first_name' => $firstName,
-                    'last_name' => $lastName,
-                ]);
-                $createdContact = $contact->wasRecentlyCreated;
-                $createdMembership = 0;
-
-                if ($contactImport->audience !== null) {
-                    $createdMembership = $addContactToAudiences->handle(
-                        $contact,
-                        new Collection([$contactImport->audience]),
-                        $contactImport->consent_ip,
-                    );
-                }
-
-                $counts['imported_contacts'] += $createdContact ? 1 : 0;
-                $counts['imported_subscribers'] += $createdMembership;
-
-                if (! $createdContact && $createdMembership === 0) {
-                    $counts['duplicate_rows']++;
-                }
-
-                $this->persistProgress($contactImport, $counts, $errors);
             }
 
-            $contactImport->update([
-                ...$counts,
-                'total_rows' => $counts['processed_rows'],
-                'status' => 'completed',
-                'errors' => $errors === [] ? null : $errors,
-                'completed_at' => now(),
-            ]);
+            $firstNameIndex = array_search('first_name', $headers, true);
+            $lastNameIndex = array_search('last_name', $headers, true);
+            $deadline = microtime(true) + 30;
+
+            for ($rows = 0; $rows < self::CHUNK_SIZE && microtime(true) < $deadline; $rows++) {
+                $row = fgetcsv($stream, null, ',', '"', '');
+
+                if ($row === false) {
+                    $completed = true;
+                    break;
+                }
+
+                $offset = ftell($stream);
+
+                if ($offset === false) {
+                    throw new RuntimeException('The uploaded CSV position could not be recorded.');
+                }
+
+                DB::transaction(function () use ($contactImport, $row, $offset, $emailIndex, $firstNameIndex, $lastNameIndex, $manageContact, $addContactToAudiences): void {
+                    if (! $this->isBlankRow($row)) {
+                        $contactImport->processed_rows++;
+                        $email = Str::lower(trim((string) ($row[$emailIndex] ?? '')));
+                        $firstName = $this->valueAt($row, $firstNameIndex);
+                        $lastName = $this->valueAt($row, $lastNameIndex);
+                        $rowNumber = $contactImport->processed_rows + 1;
+                        $errors = $contactImport->errors ?? [];
+
+                        if (! filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($email) > 255) {
+                            $contactImport->failed_rows++;
+                            $this->addError($errors, __('Row :row has an invalid email address.', ['row' => $rowNumber]));
+                        } elseif (($firstName !== null && mb_strlen($firstName) > 255) || ($lastName !== null && mb_strlen($lastName) > 255)) {
+                            $contactImport->failed_rows++;
+                            $this->addError($errors, __('Row :row has a name longer than 255 characters.', ['row' => $rowNumber]));
+                        } else {
+                            $contact = $manageContact->findOrCreate($contactImport->team, [
+                                'email' => $email, 'first_name' => $firstName, 'last_name' => $lastName,
+                            ]);
+                            $createdContact = $contact->wasRecentlyCreated;
+                            $createdMembership = $contactImport->audience === null ? 0 : $addContactToAudiences->handle(
+                                $contact, new Collection([$contactImport->audience]), $contactImport->consent_ip,
+                            );
+                            $contactImport->imported_contacts += $createdContact ? 1 : 0;
+                            $contactImport->imported_subscribers += $createdMembership;
+
+                            if (! $createdContact && $createdMembership === 0) {
+                                $contactImport->duplicate_rows++;
+                            }
+                        }
+
+                        $contactImport->errors = $errors === [] ? null : $errors;
+                    }
+
+                    $contactImport->file_offset = $offset;
+                    $contactImport->total_rows = $contactImport->processed_rows;
+                    $contactImport->save();
+                });
+            }
+
+            if ($completed) {
+                $contactImport->update(['status' => 'completed', 'completed_at' => now()]);
+            }
         } finally {
             fclose($stream);
+        }
+
+        if ($completed) {
             Storage::disk($contactImport->disk)->delete($contactImport->path);
+        } elseif (Queue::connection($this->connection) instanceof SyncQueue) {
+            $this->handle($manageContact, $addContactToAudiences);
+        } else {
+            self::dispatch($contactImport->id)->afterCommit();
         }
     }
 
@@ -134,7 +171,7 @@ class ProcessContactImport implements ShouldQueue
     {
         $contactImport = ContactImport::query()->find($this->contactImportId);
 
-        if ($contactImport === null) {
+        if ($contactImport === null || $contactImport->status === 'completed') {
             return;
         }
 
@@ -195,22 +232,5 @@ class ProcessContactImport implements ShouldQueue
         if (count($errors) < 20) {
             $errors[] = $message;
         }
-    }
-
-    /**
-     * @param  array{processed_rows: int, imported_contacts: int, imported_subscribers: int, duplicate_rows: int, failed_rows: int}  $counts
-     * @param  list<string>  $errors
-     */
-    private function persistProgress(ContactImport $contactImport, array $counts, array $errors): void
-    {
-        if ($counts['processed_rows'] % 100 !== 0) {
-            return;
-        }
-
-        $contactImport->update([
-            ...$counts,
-            'total_rows' => $counts['processed_rows'],
-            'errors' => $errors === [] ? null : $errors,
-        ]);
     }
 }

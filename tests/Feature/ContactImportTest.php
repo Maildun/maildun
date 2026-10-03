@@ -208,3 +208,86 @@ test('imports reject files that are not CSV data', function () {
         ])
         ->assertSessionHasErrors('file');
 });
+
+test('large contact imports checkpoint bounded chunks and retain the source until completed', function () {
+    Queue::fake([ProcessContactImport::class]);
+    Storage::fake('local');
+    $team = Team::factory()->create();
+    $import = ContactImport::factory()->for($team)->create();
+    $rows = ['email'];
+
+    for ($row = 1; $row <= 205; $row++) {
+        $rows[] = 'contact'.$row.'@example.com';
+    }
+
+    Storage::disk('local')->put($import->path, implode("\n", $rows));
+    $job = new ProcessContactImport($import->id);
+
+    $job->handle(app(ManageContact::class), app(AddContactToAudiences::class));
+
+    expect($import->refresh()->processed_rows)->toBe(200);
+    expect($import->status)->toBe('processing');
+    expect($import->file_offset)->toBeGreaterThan(0);
+    Storage::disk('local')->assertExists($import->path);
+    Queue::assertPushed(ProcessContactImport::class, 1);
+
+    Queue::pushed(ProcessContactImport::class)->sole()->handle(app(ManageContact::class), app(AddContactToAudiences::class));
+    $job->handle(app(ManageContact::class), app(AddContactToAudiences::class));
+    $job->failed(new RuntimeException('A duplicate old worker failed.'));
+
+    expect($import->refresh()->status)->toBe('completed');
+    expect($import->processed_rows)->toBe(205);
+    expect($import->imported_contacts)->toBe(205);
+    expect($import->duplicate_rows)->toBe(0);
+    expect($team->contacts()->count())->toBe(205);
+    Storage::disk('local')->assertMissing($import->path);
+});
+
+test('the sync queue completes imports larger than one chunk', function () {
+    config()->set('queue.default', 'sync');
+    Storage::fake('local');
+    $team = Team::factory()->create();
+    $import = ContactImport::factory()->for($team)->create();
+    $rows = ['email'];
+
+    for ($row = 1; $row <= 205; $row++) {
+        $rows[] = 'sync'.$row.'@example.com';
+    }
+
+    Storage::disk('local')->put($import->path, implode("\n", $rows));
+    ProcessContactImport::dispatchSync($import->id);
+
+    expect($import->refresh()->status)->toBe('completed');
+    expect($import->processed_rows)->toBe(205);
+    expect($import->imported_contacts)->toBe(205);
+    expect($import->duplicate_rows)->toBe(0);
+    Storage::disk('local')->assertMissing($import->path);
+});
+
+test('an interrupted import retries the rolled back row without losing progress or its input', function () {
+    Storage::fake('local');
+    $team = Team::factory()->create();
+    $import = ContactImport::factory()->for($team)->create();
+    Storage::disk('local')->put($import->path, "email\nnew@example.com\n");
+    $shouldInterrupt = true;
+    Contact::created(function () use (&$shouldInterrupt): void {
+        if ($shouldInterrupt) {
+            $shouldInterrupt = false;
+            throw new RuntimeException('Import interrupted.');
+        }
+    });
+    $job = new ProcessContactImport($import->id);
+
+    expect(fn () => $job->handle(app(ManageContact::class), app(AddContactToAudiences::class)))
+        ->toThrow(RuntimeException::class, 'Import interrupted.');
+
+    expect($team->contacts()->count())->toBe(0);
+    expect($import->refresh()->file_offset)->toBe(0);
+    Storage::disk('local')->assertExists($import->path);
+
+    $job->handle(app(ManageContact::class), app(AddContactToAudiences::class));
+
+    expect($import->refresh()->status)->toBe('completed');
+    expect($import->imported_contacts)->toBe(1);
+    expect($import->duplicate_rows)->toBe(0);
+});

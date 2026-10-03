@@ -30,6 +30,18 @@ php artisan app:install --no-interaction --force --registration=closed --skip-st
 
 The web server's document root must be the repository's `public` directory. The application process must not run as `root`, and only Laravel's required storage and cache directories should be writable.
 
+## Remote MCP
+
+Remote MCP at `/mcp/maildun` uses Passport OAuth. The installer does not generate its signing keys. On the first deployment, if no key pair has already been provisioned through persistent storage or the secret manager, run:
+
+```bash
+php artisan passport:keys --no-interaction
+```
+
+Preserve `storage/oauth-private.key` and `storage/oauth-public.key` across releases and application servers, or supply matching `PASSPORT_PRIVATE_KEY` and `PASSPORT_PUBLIC_KEY` values through the secret manager. Both keys must be readable by the PHP process. Do not regenerate them on every deployment or use `--force` as a routine repair; overwriting the pair causes existing access tokens to fail verification.
+
+Set the public HTTPS `APP_URL`, allow only trusted callback origins or native schemes, and make OAuth discovery and token routes reachable through the reverse proxy. Follow [Using MCP](mcp.md#operator-setup) for the configuration defaults and connection checks.
+
 ## Required long-running processes
 
 ### Queue workers
@@ -62,6 +74,7 @@ Back up and regularly restore-test:
 
 - the database;
 - `APP_KEY` and every deployment secret;
+- the Passport OAuth key pair used by remote MCP;
 - local uploaded files, or both S3-compatible buckets; and
 - infrastructure configuration needed to recreate workers, schedules, domains, and webhooks.
 

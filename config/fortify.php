@@ -102,7 +102,7 @@ return [
     |
     */
 
-    'middleware' => ['web', EnsureRegistrationIsOpen::class],
+    'middleware' => ['web', EnsureRegistrationIsOpen::class, 'throttle:registration'],
 
     /*
     |--------------------------------------------------------------------------

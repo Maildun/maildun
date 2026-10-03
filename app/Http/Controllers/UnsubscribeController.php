@@ -45,7 +45,7 @@ class UnsubscribeController extends Controller
      */
     public function show(EmailDelivery $delivery): Response
     {
-        $delivery->loadMissing(['subscriber', 'email.audience']);
+        $delivery->loadMissing(['subscriber', 'email' => fn ($query) => $query->withTrashed()->with('audience')]);
 
         return Inertia::render('unsubscribe/show', $this->props($delivery));
     }
@@ -58,7 +58,7 @@ class UnsubscribeController extends Controller
      */
     public function store(Request $request, EmailDelivery $delivery): RedirectResponse|HttpResponse
     {
-        $delivery->loadMissing(['subscriber', 'email.audience']);
+        $delivery->loadMissing(['subscriber', 'email' => fn ($query) => $query->withTrashed()->with('audience')]);
 
         $this->optOut($delivery->subscriber);
 

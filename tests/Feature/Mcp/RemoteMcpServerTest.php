@@ -275,3 +275,19 @@ test('MCP writes enforce the workspace role policies', function () {
         ->and($campaign->refresh()->name)->toBe('Existing campaign')
         ->and($transactionalEmail->refresh()->name)->toBe('Existing transactional email');
 });
+
+test('remote MCP still rejects mutations by a member without audience permission', function () {
+    $owner = User::factory()->create();
+    $member = User::factory()->create();
+    $team = $owner->currentTeam;
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignViewerRole($team, $member);
+    actingAsMcpUser($member, ['mcp:use']);
+
+    $this->postJson('/mcp/maildun', [
+        'jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
+        'params' => ['name' => 'create-audience', 'arguments' => ['workspace' => $team->slug, 'name' => 'Unauthorized audience']],
+    ])->assertOk()->assertJsonPath('result.isError', true);
+
+    $this->assertDatabaseMissing('audiences', ['team_id' => $team->id, 'name' => 'Unauthorized audience']);
+});

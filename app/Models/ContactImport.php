@@ -22,6 +22,7 @@ use Illuminate\Support\Str;
  * @property string $path
  * @property string $status
  * @property int $total_rows
+ * @property int $file_offset
  * @property int $processed_rows
  * @property int $imported_contacts
  * @property int $imported_subscribers
@@ -45,6 +46,7 @@ use Illuminate\Support\Str;
     'path',
     'status',
     'total_rows',
+    'file_offset',
     'processed_rows',
     'imported_contacts',
     'imported_subscribers',
@@ -87,6 +89,7 @@ class ContactImport extends Model
     protected function casts(): array
     {
         return [
+            'file_offset' => 'integer',
             'errors' => 'array',
             'completed_at' => 'datetime',
         ];
