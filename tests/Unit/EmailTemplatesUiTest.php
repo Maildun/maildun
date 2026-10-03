@@ -40,16 +40,21 @@ test('email templates are presented as a preview gallery with clear ownership an
         ->toContain('Name the campaign to start from');
 });
 
-test('template compose is a full page with details and content tabs', function () {
+test('template compose is a setup hub with a fullscreen design canvas', function () {
     $edit = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/email-templates/edit.tsx');
 
     expect($edit)->toBeString()
-        ->toContain("value: 'details'")
-        ->toContain("value: 'content'")
-        ->toContain("fields: ['name', 'description', 'subject', 'preheader']")
-        ->toContain("fields: ['html', 'source', 'design']")
-        ->toContain('variant="sliding"')
-        ->toContain('Compose the email campaigns will start from.')
+        ->toContain("import { CampaignSetupRow } from '@/components/campaign-setup-row'")
+        ->toContain("{ value: 'details', fields: ['name', 'description'] }")
+        ->toContain("{ value: 'subject', fields: ['subject', 'preheader'] }")
+        ->toContain("{ value: 'design', fields: ['html', 'source', 'design'] }")
+        ->toContain('setLayoutProps({ fullscreen: designing })')
+        ->toContain('data-test="template-design-navbar"')
+        ->toContain('data-test="template-design-rename"')
+        ->toContain('data-test="template-design-preview"')
+        ->toContain('toBuilderDocument(template.design)')
+        ->not->toContain('<Tabs')
+        ->not->toContain('breadcrumbs')
         ->not->toContain('Send campaign')
         ->not->toContain('audience');
 });
