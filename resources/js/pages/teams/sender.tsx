@@ -17,9 +17,14 @@ import { Form, Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
 import { SettingsPageHeader } from '@/components/settings-page-header';
 import { SettingsPanel } from '@/components/settings-panel';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    Callout,
+    CalloutContent,
+    CalloutHeading,
+    CalloutText,
+} from '@/components/ui/callout';
 import {
     Collapsible,
     CollapsibleContent,
@@ -123,56 +128,70 @@ export default function TeamSenderSettingsPage({
                     description="Register exact From addresses after the workspace delivery connection has been tested."
                 />
                 {!delivery.verified ? (
-                    <Alert data-test="sender-delivery-required">
-                        <HugeiconsIcon
-                            icon={MailAtSign02Icon}
-                            aria-hidden="true"
-                        />
-                        <AlertTitle>
-                            {delivery.configured
-                                ? 'Verify email delivery first'
-                                : 'Connect email delivery first'}
-                        </AlertTitle>
-                        <AlertDescription>
-                            Sender verification uses the workspace delivery
-                            connection. Test that connection before adding or
-                            retesting a sender.{' '}
-                            <Link
-                                href={editEmailDelivery(team.slug)}
-                                className="font-medium text-foreground underline underline-offset-4"
-                            >
-                                Manage email delivery
-                            </Link>
-                        </AlertDescription>
-                    </Alert>
+                    <Callout
+                        icon={MailAtSign02Icon}
+                        data-test="sender-delivery-required"
+                    >
+                        <CalloutContent>
+                            <CalloutHeading>
+                                {delivery.configured
+                                    ? 'Verify email delivery first'
+                                    : 'Connect email delivery first'}
+                            </CalloutHeading>
+                            <CalloutText>
+                                Sender verification uses the workspace delivery
+                                connection. Test that connection before adding
+                                or retesting a sender.{' '}
+                                <Link
+                                    href={editEmailDelivery(team.slug)}
+                                    className="font-medium text-foreground underline underline-offset-4"
+                                >
+                                    Manage email delivery
+                                </Link>
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 ) : null}
                 {retestCount > 0 ? (
-                    <Alert variant="warning" data-test="sender-retest-required">
-                        <HugeiconsIcon icon={Alert02Icon} aria-hidden="true" />
-                        <AlertTitle>
-                            {retestCount === 1
-                                ? '1 sender needs to be retested'
-                                : `${retestCount} senders need to be retested`}
-                        </AlertTitle>
-                        <AlertDescription>
-                            Their verification no longer matches the current
-                            delivery connection, because it changed or needs a
-                            new test. Campaigns, automations and transactional
-                            emails from them are blocked until they are verified
-                            again.
-                        </AlertDescription>
-                    </Alert>
+                    <Callout
+                        variant="warning"
+                        icon={Alert02Icon}
+                        data-test="sender-retest-required"
+                    >
+                        <CalloutContent>
+                            <CalloutHeading>
+                                {retestCount === 1
+                                    ? '1 sender needs to be retested'
+                                    : `${retestCount} senders need to be retested`}
+                            </CalloutHeading>
+                            <CalloutText>
+                                Their verification no longer matches the current
+                                delivery connection, because it changed or needs
+                                a new test. Campaigns, automations and
+                                transactional emails from them are blocked until
+                                they are verified again.
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 ) : null}
                 {delivery.verified && delivery.trust_provider_senders ? (
-                    <Alert data-test="sender-provider-trust-enabled">
-                        <HugeiconsIcon icon={Tick02Icon} aria-hidden="true" />
-                        <AlertTitle>Provider trust enabled</AlertTitle>
-                        <AlertDescription>
-                            Registered sender addresses on the same domain as
-                            the last tested From address are authorized without
-                            a Maildun DNS record or mailbox verification.
-                        </AlertDescription>
-                    </Alert>
+                    <Callout
+                        variant="success"
+                        icon={Tick02Icon}
+                        data-test="sender-provider-trust-enabled"
+                    >
+                        <CalloutContent>
+                            <CalloutHeading>
+                                Provider trust enabled
+                            </CalloutHeading>
+                            <CalloutText>
+                                Registered sender addresses on the same domain
+                                as the last tested From address are authorized
+                                without a Maildun DNS record or mailbox
+                                verification.
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 ) : null}
                 <SettingsPanel
                     variant="inset"
@@ -1121,18 +1140,18 @@ function EditSenderDialog({
                             </DialogHeader>
 
                             {!sender.is_verified ? (
-                                <Alert>
-                                    <HugeiconsIcon
-                                        icon={MailAtSign02Icon}
-                                        aria-hidden="true"
-                                    />
-                                    <AlertTitle>Verify this address</AlertTitle>
-                                    <AlertDescription>
-                                        {sender.verification_sent_at
-                                            ? 'Open the latest verification email, or send another one from the row actions.'
-                                            : 'The verification email is waiting in the queue.'}
-                                    </AlertDescription>
-                                </Alert>
+                                <Callout icon={MailAtSign02Icon}>
+                                    <CalloutContent>
+                                        <CalloutHeading>
+                                            Verify this address
+                                        </CalloutHeading>
+                                        <CalloutText>
+                                            {sender.verification_sent_at
+                                                ? 'Open the latest verification email, or send another one from the row actions.'
+                                                : 'The verification email is waiting in the queue.'}
+                                        </CalloutText>
+                                    </CalloutContent>
+                                </Callout>
                             ) : null}
 
                             <FieldGroup className="gap-5">

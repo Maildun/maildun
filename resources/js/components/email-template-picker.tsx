@@ -134,7 +134,7 @@ export default function EmailTemplatePicker({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 className={cn(
-                    !templateIsLocked && 'max-h-[85vh] w-2xl overflow-y-auto',
+                    !templateIsLocked && 'max-h-[85vh] overflow-y-auto',
                 )}
             >
                 <form onSubmit={submit}>

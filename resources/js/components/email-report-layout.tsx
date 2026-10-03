@@ -27,12 +27,6 @@ import {
 import type { ReactNode } from 'react';
 import { MetricCard } from '@/components/metric-card';
 import {
-    Alert,
-    AlertAction,
-    AlertDescription,
-    AlertTitle,
-} from '@/components/ui/alert';
-import {
     AlertDialog,
     AlertDialogAction,
     AlertDialogCancel,
@@ -241,18 +235,7 @@ export function EmailReportLayout({
 
     setLayoutProps({
         fullscreen: false,
-        breadcrumbs: currentTeam
-            ? [
-                  {
-                      title: 'Campaigns',
-                      href: index.url(currentTeam.slug),
-                  },
-                  {
-                      title: campaign.name,
-                      href: show.url([currentTeam.slug, campaign.uuid]),
-                  },
-              ]
-            : [],
+        breadcrumbs: [],
     });
     const isActive =
         campaign.status === 'queued' || campaign.status === 'sending';
@@ -458,75 +441,91 @@ export function EmailReportLayout({
                 )}
 
                 {isActive && metrics.stalled && (
-                    <Alert variant="warning" data-test="sending-stalled-alert">
-                        <AlertTitle>
-                            {metrics.worker_state === 'stopped'
-                                ? 'No queue worker is running'
-                                : metrics.worker_state === 'paused'
-                                  ? 'Queue workers are paused'
-                                  : 'Sending has stalled'}
-                        </AlertTitle>
-                        <AlertDescription>
-                            {metrics.worker_state === 'stopped'
-                                ? 'Nothing will send until Horizon is started again under your process manager.'
-                                : metrics.worker_state === 'paused'
-                                  ? 'Horizon is paused, so no deliveries are being handed to the provider. Continue it with php artisan horizon:continue.'
-                                  : `No delivery has finished ${metrics.last_activity_at ? `since ${formatRelativeTime(metrics.last_activity_at)} ago` : 'since the send started'}. Check that queue workers are running; stuck deliveries are recovered automatically.`}
-                        </AlertDescription>
-                    </Alert>
+                    <Callout
+                        variant="warning"
+                        data-test="sending-stalled-alert"
+                    >
+                        <CalloutContent>
+                            <CalloutHeading>
+                                {metrics.worker_state === 'stopped'
+                                    ? 'No queue worker is running'
+                                    : metrics.worker_state === 'paused'
+                                      ? 'Queue workers are paused'
+                                      : 'Sending has stalled'}
+                            </CalloutHeading>
+                            <CalloutText>
+                                {metrics.worker_state === 'stopped'
+                                    ? 'Nothing will send until Horizon is started again under your process manager.'
+                                    : metrics.worker_state === 'paused'
+                                      ? 'Horizon is paused, so no deliveries are being handed to the provider. Continue it with php artisan horizon:continue.'
+                                      : `No delivery has finished ${metrics.last_activity_at ? `since ${formatRelativeTime(metrics.last_activity_at)} ago` : 'since the send started'}. Check that queue workers are running; stuck deliveries are recovered automatically.`}
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 )}
 
                 {isActive && metrics.failed > 0 && (
-                    <Alert variant="warning" data-test="sending-failures-alert">
-                        <AlertTitle>
-                            {metrics.failed.toLocaleString()}{' '}
-                            {metrics.failed === 1
-                                ? 'delivery has'
-                                : 'deliveries have'}{' '}
-                            failed so far
-                        </AlertTitle>
-                        <AlertDescription>
-                            Sending continues for everyone else. Failed
-                            deliveries used up their automatic retries; you can
-                            retry them from this report once the campaign
-                            finishes.
-                        </AlertDescription>
-                    </Alert>
+                    <Callout
+                        variant="warning"
+                        data-test="sending-failures-alert"
+                    >
+                        <CalloutContent>
+                            <CalloutHeading>
+                                {metrics.failed.toLocaleString()}{' '}
+                                {metrics.failed === 1
+                                    ? 'delivery has'
+                                    : 'deliveries have'}{' '}
+                                failed so far
+                            </CalloutHeading>
+                            <CalloutText>
+                                Sending continues for everyone else. Failed
+                                deliveries used up their automatic retries; you
+                                can retry them from this report once the
+                                campaign finishes.
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 )}
 
                 {campaign.status === 'stopped' && metrics.cancelled > 0 && (
-                    <Alert data-test="campaign-stopped-alert">
-                        <AlertTitle>Sending was stopped</AlertTitle>
-                        <AlertDescription>
-                            {metrics.cancelled.toLocaleString()}{' '}
-                            {metrics.cancelled === 1
-                                ? 'recipient was'
-                                : 'recipients were'}{' '}
-                            not sent this campaign. Everyone already handed to
-                            the provider before the stop received it.
-                        </AlertDescription>
-                    </Alert>
+                    <Callout data-test="campaign-stopped-alert">
+                        <CalloutContent>
+                            <CalloutHeading>Sending was stopped</CalloutHeading>
+                            <CalloutText>
+                                {metrics.cancelled.toLocaleString()}{' '}
+                                {metrics.cancelled === 1
+                                    ? 'recipient was'
+                                    : 'recipients were'}{' '}
+                                not sent this campaign. Everyone already handed
+                                to the provider before the stop received it.
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 )}
 
                 {canManage && !isActive && metrics.unqueued > 0 && (
-                    <Alert
-                        variant="destructive"
+                    <Callout
+                        variant="danger"
+                        role="alert"
+                        inline
                         data-test="unqueued-recipients-alert"
                     >
-                        <AlertTitle>
-                            {metrics.unqueued.toLocaleString()}{' '}
-                            {metrics.unqueued === 1
-                                ? 'recipient was'
-                                : 'recipients were'}{' '}
-                            never queued
-                        </AlertTitle>
-                        <AlertDescription>
-                            Preparing this send stopped part-way, so these
-                            recipients never received it. Queue them to continue
-                            where it stopped; nobody who already got the
-                            campaign is sent it again.
-                        </AlertDescription>
-                        <AlertAction>
+                        <CalloutContent>
+                            <CalloutHeading>
+                                {metrics.unqueued.toLocaleString()}{' '}
+                                {metrics.unqueued === 1
+                                    ? 'recipient was'
+                                    : 'recipients were'}{' '}
+                                never queued
+                            </CalloutHeading>
+                            <CalloutText>
+                                Preparing this send stopped part-way, so these
+                                recipients never received it. Queue them to
+                                continue where it stopped; nobody who already
+                                got the campaign is sent it again.
+                            </CalloutText>
+                        </CalloutContent>
+                        <CalloutActions>
                             <Button
                                 type="button"
                                 size="sm"
@@ -560,8 +559,8 @@ export function EmailReportLayout({
                             >
                                 Queue remaining
                             </Button>
-                        </AlertAction>
-                    </Alert>
+                        </CalloutActions>
+                    </Callout>
                 )}
 
                 {canRetryFailed && (

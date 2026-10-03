@@ -1,7 +1,11 @@
 import { Alert02Icon } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon } from '@hugeicons/react';
 import { Link, usePage } from '@inertiajs/react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+    Callout,
+    CalloutContent,
+    CalloutHeading,
+    CalloutText,
+} from '@/components/ui/callout';
 import { edit as editEmailDelivery } from '@/routes/teams/email-provider';
 
 /**
@@ -16,24 +20,26 @@ export function DeliveryPausedBanner() {
     }
 
     return (
-        <Alert
+        <Callout
             variant="warning"
+            icon={Alert02Icon}
             className="mb-6"
             data-test="delivery-paused-banner"
         >
-            <HugeiconsIcon icon={Alert02Icon} aria-hidden="true" />
-            <AlertTitle>Sending is paused</AlertTitle>
-            <AlertDescription>
-                The workspace email delivery connection needs to be tested
-                again. Campaigns, automations and transactional emails will not
-                send until it passes.{' '}
-                <Link
-                    href={editEmailDelivery(currentTeam.slug)}
-                    className="font-medium text-foreground underline underline-offset-4"
-                >
-                    Open email delivery
-                </Link>
-            </AlertDescription>
-        </Alert>
+            <CalloutContent>
+                <CalloutHeading>Sending is paused</CalloutHeading>
+                <CalloutText>
+                    The workspace email delivery connection needs to be tested
+                    again. Campaigns, automations and transactional emails will
+                    not send until it passes.{' '}
+                    <Link
+                        href={editEmailDelivery(currentTeam.slug)}
+                        className="font-medium text-foreground underline underline-offset-4"
+                    >
+                        Open email delivery
+                    </Link>
+                </CalloutText>
+            </CalloutContent>
+        </Callout>
     );
 }

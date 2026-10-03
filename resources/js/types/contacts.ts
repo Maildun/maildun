@@ -5,18 +5,77 @@ export type CompanyOption = {
     name: string;
 };
 
+export type ContactImportStatus =
+    'draft' | 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+
+export type ContactImportIssue =
+    | 'typo'
+    | 'disposable'
+    | 'undeliverable'
+    | 'role_address'
+    | 'duplicate_in_file'
+    | 'suppressed';
+
+export type ContactImportIssueAction = 'fix' | 'import' | 'skip';
+
+export type ContactImportIssueOption = {
+    value: ContactImportIssue;
+    label: string;
+    actions: ContactImportIssueAction[];
+};
+
+export type ContactImportReviewFlag = {
+    row: number;
+    email: string;
+    issue: ContactImportIssue;
+    action: 'fixed' | 'imported' | 'skipped';
+    detail: string | null;
+};
+
 export type ContactImport = {
     uuid: string;
     file_name: string;
-    status: 'pending' | 'processing' | 'completed' | 'failed';
+    status: ContactImportStatus;
+    status_label: string;
+    audience: { uuid: string; name: string } | null;
+    uploaded_by: string | null;
+    total_rows: number;
     processed_rows: number;
     imported_contacts: number;
+    updated_contacts: number;
     imported_subscribers: number;
     duplicate_rows: number;
+    skipped_unsubscribed: number;
+    flagged_rows: number;
+    skipped_rows: number;
+    review_counts: Partial<Record<ContactImportIssue, number>>;
+    review_options: Partial<
+        Record<ContactImportIssue, ContactImportIssueAction>
+    >;
     failed_rows: number;
-    errors: string[];
+    error_count: number;
+    failure_message: string | null;
+    merge_strategy: 'skip' | 'fill_blanks';
+    tag_names: string[];
+    resubscribe_unsubscribed: boolean;
     created_at: string | null;
+    started_at: string | null;
+    updated_at: string | null;
     completed_at: string | null;
+};
+
+export type ContactImportRowError = {
+    row: number | null;
+    email: string | null;
+    message: string;
+};
+
+export type ContactImportMapping = {
+    headers: string[];
+    sampleRows: string[][];
+    columnMap: (string | null)[];
+    fields: { value: string; label: string }[];
+    tags: Tag[];
 };
 
 export type ContactSummary = {
@@ -124,7 +183,6 @@ export type ContactIndexProps = {
     companies: CompanyOption[];
     audiences: CompanyOption[];
     tags: Tag[];
-    contactImports: ContactImport[];
     filters: ContactIndexFilters;
     canManage: boolean;
 };

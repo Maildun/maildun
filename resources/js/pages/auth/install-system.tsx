@@ -7,9 +7,14 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Form, Head, Link } from '@inertiajs/react';
 import InstallationController from '@/actions/App/Http/Controllers/InstallationController';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    Callout,
+    CalloutContent,
+    CalloutHeading,
+    CalloutText,
+} from '@/components/ui/callout';
 import {
     Card,
     CardContent,
@@ -90,21 +95,24 @@ export default function InstallSystem({
                     </CardContent>
                 </Card>
 
-                <Alert variant={hasFailures ? 'destructive' : 'default'}>
-                    <HugeiconsIcon
-                        icon={hasFailures ? Alert02Icon : CheckmarkCircle02Icon}
-                    />
-                    <AlertTitle>
-                        {hasFailures
-                            ? 'Some services need attention'
-                            : 'Core services are ready'}
-                    </AlertTitle>
-                    <AlertDescription>
-                        The storage test creates temporary files and removes
-                        them immediately. No infrastructure settings are
-                        changed.
-                    </AlertDescription>
-                </Alert>
+                <Callout
+                    variant={hasFailures ? 'danger' : 'success'}
+                    icon={hasFailures ? Alert02Icon : CheckmarkCircle02Icon}
+                    role={hasFailures ? 'alert' : undefined}
+                >
+                    <CalloutContent>
+                        <CalloutHeading>
+                            {hasFailures
+                                ? 'Some services need attention'
+                                : 'Core services are ready'}
+                        </CalloutHeading>
+                        <CalloutText>
+                            The storage test creates temporary files and removes
+                            them immediately. No infrastructure settings are
+                            changed.
+                        </CalloutText>
+                    </CalloutContent>
+                </Callout>
 
                 <Form
                     {...InstallationController.testSystem.form({

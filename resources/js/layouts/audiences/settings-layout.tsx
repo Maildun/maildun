@@ -54,6 +54,7 @@ type NavItem = {
     title: string;
     href: string;
     icon: IconSvgElement;
+    activeIcon: IconSvgElement;
 };
 
 type AudienceSettingsLayoutProps = PropsWithChildren<{
@@ -84,48 +85,56 @@ export function AudienceSettingsSidebar({
             title: 'General',
             href: toUrl(edit(routeArgs)),
             icon: Settings02Icon,
+            activeIcon: Settings02Icon,
         },
         {
             key: 'sender',
             title: 'Sender',
             href: toUrl(sender(routeArgs)),
             icon: MailSend01Icon,
+            activeIcon: MailSend01Icon,
         },
         {
             key: 'notifications',
             title: 'Email notification',
             href: toUrl(notifications(routeArgs)),
             icon: Notification03Icon,
+            activeIcon: Notification03Icon,
         },
         {
             key: 'double-opt-in',
             title: 'Double opt-in',
             href: toUrl(doubleOptIn(routeArgs)),
             icon: MailOpen01Icon,
+            activeIcon: MailOpen01Icon,
         },
         {
             key: 'attributes',
             title: 'Attributes',
             href: toUrl(attributes(routeArgs)),
             icon: LeftToRightListBulletIcon,
+            activeIcon: LeftToRightListBulletIcon,
         },
         {
             key: 'landing-pages',
             title: 'Landing pages',
             href: toUrl(landingPages(routeArgs)),
             icon: LinkSquare02Icon,
+            activeIcon: LinkSquare02Icon,
         },
         {
             key: 'hygiene',
             title: 'List hygiene',
             href: toUrl(hygiene(routeArgs)),
             icon: CleanIcon,
+            activeIcon: CleanIcon,
         },
         {
             key: 'danger',
             title: 'Danger zone',
             href: toUrl(danger(routeArgs)),
             icon: DangerIcon,
+            activeIcon: DangerIcon,
         },
     ];
 
@@ -184,7 +193,13 @@ export function AudienceSettingsSidebar({
                                                 />
                                             }
                                         >
-                                            <HugeiconsIcon icon={item.icon} />
+                                            <HugeiconsIcon
+                                                icon={
+                                                    isActive
+                                                        ? item.activeIcon
+                                                        : item.icon
+                                                }
+                                            />
                                             <span>{item.title}</span>
                                         </SidebarMenuButton>
                                     </SidebarMenuItem>

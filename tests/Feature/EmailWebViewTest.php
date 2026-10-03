@@ -91,6 +91,14 @@ test('a campaign web view serves the tracked body with the attribution notice', 
         ->and(stripos($html, 'Powered by'))->toBeLessThan(stripos($html, '</body>'));
 });
 
+test('a sent campaign web view survives deletion of the campaign', function () {
+    $delivery = webViewCampaignDelivery('<p>Hello {{ name }}</p>', ['name' => 'Ada']);
+    $url = BuildTrackedEmailHtml::webViewUrl($delivery);
+    $delivery->email->delete();
+
+    $this->get($url)->assertOk()->assertSee('<p>Hello Ada</p>', false);
+});
+
 test('a transactional send stores the signed web view link in its body', function () {
     Queue::fake();
     $email = TransactionalEmail::factory()->published()->create([

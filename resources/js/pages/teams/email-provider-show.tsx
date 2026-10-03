@@ -13,7 +13,6 @@ import {
     TeamEmailProviderFields,
 } from '@/components/team-email-provider-fields';
 import type { EmailProviderIntegration } from '@/components/team-email-provider-fields';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -26,6 +25,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    Callout,
+    CalloutContent,
+    CalloutHeading,
+    CalloutText,
+} from '@/components/ui/callout';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
@@ -105,14 +110,18 @@ function DeliveryTestProgress() {
     usePoll(3000, { only: ['integration'] });
 
     return (
-        <Alert role="status" data-test="delivery-test-pending">
-            <Spinner />
-            <AlertTitle>Sending test email</AlertTitle>
-            <AlertDescription>
-                Waiting for the provider to accept the test. This page updates
-                automatically.
-            </AlertDescription>
-        </Alert>
+        <Callout role="status" data-test="delivery-test-pending">
+            <CalloutContent>
+                <CalloutHeading className="flex items-center gap-2">
+                    <Spinner />
+                    Sending test email
+                </CalloutHeading>
+                <CalloutText>
+                    Waiting for the provider to accept the test. This page
+                    updates automatically.
+                </CalloutText>
+            </CalloutContent>
+        </Callout>
     );
 }
 
@@ -187,54 +196,68 @@ export default function TeamEmailProviderShowPage({
                 ) : null}
 
                 {integration?.test_status === 'failed' ? (
-                    <Alert
-                        variant="destructive"
+                    <Callout
+                        variant="danger"
+                        icon={Alert01Icon}
+                        role="alert"
                         data-test="delivery-test-failure"
                     >
-                        <HugeiconsIcon icon={Alert01Icon} aria-hidden="true" />
-                        <AlertTitle>Delivery test failed</AlertTitle>
-                        <AlertDescription>
-                            {integration.test_failure}
-                        </AlertDescription>
-                    </Alert>
+                        <CalloutContent>
+                            <CalloutHeading>
+                                Delivery test failed
+                            </CalloutHeading>
+                            <CalloutText>
+                                {integration.test_failure}
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 ) : null}
 
                 {integration?.feedback?.stale ? (
-                    <Alert variant="warning" data-test="ses-feedback-stale">
-                        <AlertTitle>
-                            Amazon SES has stopped reporting back
-                        </AlertTitle>
-                        <AlertDescription>
-                            Mail went out through this connection more than an
-                            hour ago, but no delivery, bounce or complaint
-                            feedback has arrived since. Check that the SNS topic
-                            is still subscribed to the webhook URL below; until
-                            it is, campaigns show no delivery results and hard
-                            bounces are not suppressed.
-                        </AlertDescription>
-                    </Alert>
+                    <Callout variant="warning" data-test="ses-feedback-stale">
+                        <CalloutContent>
+                            <CalloutHeading>
+                                Amazon SES has stopped reporting back
+                            </CalloutHeading>
+                            <CalloutText>
+                                Mail went out through this connection more than
+                                an hour ago, but no delivery, bounce or
+                                complaint feedback has arrived since. Check that
+                                the SNS topic is still subscribed to the webhook
+                                URL below; until it is, campaigns show no
+                                delivery results and hard bounces are not
+                                suppressed.
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 ) : null}
                 {integration ? (
-                    <Alert data-test="delivery-verification-status">
-                        <HugeiconsIcon
-                            icon={
-                                integration.delivery_is_verified
-                                    ? CheckmarkCircle02Icon
-                                    : Alert01Icon
-                            }
-                            aria-hidden="true"
-                        />
-                        <AlertTitle>
-                            {integration.delivery_is_verified
-                                ? 'Delivery verified'
-                                : 'Delivery test required'}
-                        </AlertTitle>
-                        <AlertDescription>
-                            {integration.delivery_is_verified
-                                ? `The provider accepted a test from ${integration.test_from_address}. You can now verify workspace sender addresses.`
-                                : 'Send a successful test with an explicit From and To address. This tests the provider credentials without depending on a workspace sender.'}
-                        </AlertDescription>
-                    </Alert>
+                    <Callout
+                        variant={
+                            integration.delivery_is_verified
+                                ? 'success'
+                                : 'secondary'
+                        }
+                        icon={
+                            integration.delivery_is_verified
+                                ? CheckmarkCircle02Icon
+                                : Alert01Icon
+                        }
+                        data-test="delivery-verification-status"
+                    >
+                        <CalloutContent>
+                            <CalloutHeading>
+                                {integration.delivery_is_verified
+                                    ? 'Delivery verified'
+                                    : 'Delivery test required'}
+                            </CalloutHeading>
+                            <CalloutText>
+                                {integration.delivery_is_verified
+                                    ? `The provider accepted a test from ${integration.test_from_address}. You can now verify workspace sender addresses.`
+                                    : 'Send a successful test with an explicit From and To address. This tests the provider credentials without depending on a workspace sender.'}
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 ) : null}
 
                 <SettingsPanel variant="inset" title="Delivery overview">

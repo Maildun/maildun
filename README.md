@@ -33,7 +33,7 @@ It is built for teams that have outgrown a hosted newsletter tool, or that canno
 - **Delivery** — Amazon SES or SMTP, configured and verified per workspace, with bounce and complaint processing for SES
 - **Tracking** — first-party open and click tracking with optional local geolocation databases; no third-party pixels
 - **Teams** — workspaces, invitations, roles, two-factor authentication, and passkeys
-- **Operations** — local or S3-compatible media storage, Redis-backed queues with Laravel Horizon, and a built-in [MCP server](docs/mcp.md) for AI-assisted workspace operations
+- **Operations** — local or S3-compatible media storage, Redis-backed queues with Laravel Horizon, and a local and OAuth-protected remote [MCP server](docs/mcp.md) for AI-assisted workspace operations
 
 ## Technology
 

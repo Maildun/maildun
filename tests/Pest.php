@@ -1,5 +1,6 @@
 <?php
 
+use App\Contracts\MailDomainLookup;
 use App\Models\Team;
 use App\Models\User;
 use App\Models\WorkspaceRole;
@@ -83,4 +84,23 @@ function assignViewerRole(Team $team, User $user): void
         ->where('user_id', $user->id)
         ->sole()
         ->update(['role' => $role->name]);
+}
+
+/**
+ * Answer mail-domain DNS lookups without touching the network.
+ *
+ * @param  array<string, bool|null>  $domains  Domains that do (true) or do not (false) accept mail; others are unknown.
+ */
+function fakeMailDomains(array $domains = []): void
+{
+    app()->instance(MailDomainLookup::class, new class($domains) implements MailDomainLookup
+    {
+        /** @param array<string, bool|null> $domains */
+        public function __construct(private array $domains) {}
+
+        public function acceptsMail(string $domain): ?bool
+        {
+            return $this->domains[$domain] ?? null;
+        }
+    });
 }

@@ -153,16 +153,36 @@ Route::prefix('{current_team}')
             Route::delete('list-hygiene/undeliverable', [ListHygieneController::class, 'destroyUndeliverable'])
                 ->name('list_hygiene.undeliverable.destroy');
 
-            Route::post('audiences/{audience}/imports', [ContactImportController::class, 'store'])
-                ->name('audiences.imports.store');
             Route::get('audiences/{audience}/exports/{format}', [ContactExportController::class, 'audience'])
                 ->whereIn('format', ['csv', 'xls'])
                 ->name('audiences.exports.show');
             Route::resource('audiences', AudienceController::class)
                 ->only(['index', 'store', 'show', 'update', 'destroy']);
 
+            Route::get('contacts/imports', [ContactImportController::class, 'index'])
+                ->name('contacts.imports.index');
+            Route::get('contacts/imports/create', [ContactImportController::class, 'create'])
+                ->name('contacts.imports.create');
             Route::post('contacts/imports', [ContactImportController::class, 'store'])
                 ->name('contacts.imports.store');
+            Route::get('contacts/imports/{contactImport}', [ContactImportController::class, 'show'])
+                ->whereUuid('contactImport')
+                ->name('contacts.imports.show');
+            Route::delete('contacts/imports/{contactImport}', [ContactImportController::class, 'destroy'])
+                ->whereUuid('contactImport')
+                ->name('contacts.imports.destroy');
+            Route::post('contacts/imports/{contactImport}/start', [ContactImportController::class, 'start'])
+                ->whereUuid('contactImport')
+                ->name('contacts.imports.start');
+            Route::post('contacts/imports/{contactImport}/retry', [ContactImportController::class, 'retry'])
+                ->whereUuid('contactImport')
+                ->name('contacts.imports.retry');
+            Route::post('contacts/imports/{contactImport}/cancel', [ContactImportController::class, 'cancel'])
+                ->whereUuid('contactImport')
+                ->name('contacts.imports.cancel');
+            Route::get('contacts/imports/{contactImport}/report', [ContactImportController::class, 'report'])
+                ->whereUuid('contactImport')
+                ->name('contacts.imports.report');
             Route::get('contacts/exports/{format}', [ContactExportController::class, 'contacts'])
                 ->whereIn('format', ['csv', 'xls'])
                 ->name('contacts.exports.show');

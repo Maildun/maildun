@@ -48,7 +48,6 @@ test('wide dialogs keep their intended width after the w-96 default', function (
 
     expect(file_get_contents($root.'/components/media-detail-dialog.tsx'))->toContain('w-4xl')
         ->and(file_get_contents($root.'/components/delete-audience-dialog.tsx'))->toContain('w-lg')
-        ->and(file_get_contents($root.'/components/email-template-picker.tsx'))->toContain('w-2xl')
         ->and(file_get_contents($root.'/components/ui/command.tsx'))->toContain('w-lg')
         ->and(file_get_contents($root.'/pages/audiences/show.tsx'))->toContain('<DialogContent className="w-2xl">')
         ->and(file_get_contents($root.'/pages/segments/show.tsx'))->toContain('<DialogContent className="w-2xl">');

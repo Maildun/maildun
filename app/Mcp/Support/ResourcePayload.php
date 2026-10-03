@@ -38,8 +38,6 @@ class ResourcePayload
             'from_address' => $audience->from_address,
             'reply_to' => $audience->reply_to,
             'notification_email' => $audience->notification_email,
-            'subscribed_url' => $audience->subscribed_url,
-            'already_subscribed_url' => $audience->already_subscribed_url,
             'unsubscribed_url' => $audience->unsubscribed_url,
             'subscribers_count' => (int) $audience->getAttribute('subscribers_count'),
             'subscribed_count' => (int) $audience->getAttribute('subscribed_count'),

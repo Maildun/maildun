@@ -72,7 +72,7 @@ export default function AppSidebarLayout({
                                 'flex min-h-0 min-w-0 flex-1 flex-col p-10',
                                 fullscreen && 'p-0',
                                 settingsAudience &&
-                                    'mx-auto w-full max-w-4xl p-6 lg:p-10',
+                                    'mx-auto min-h-auto w-full max-w-4xl p-6 lg:p-10',
                             )}
                         >
                             {!fullscreen && <DeliveryPausedBanner />}

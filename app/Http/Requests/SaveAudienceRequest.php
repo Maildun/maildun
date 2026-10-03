@@ -26,8 +26,6 @@ class SaveAudienceRequest extends FormRequest
             'from_address',
             'reply_to',
             'notification_email',
-            'subscribed_url',
-            'already_subscribed_url',
             'unsubscribed_url',
             'double_opt_in_email_uuid',
             'default_language',
@@ -112,8 +110,6 @@ class SaveAudienceRequest extends FormRequest
             'from_address' => ['nullable', 'string', 'email', 'max:255', new AuthorizedSenderAddress($team)],
             'reply_to' => ['nullable', 'string', 'email', 'max:255'],
             'notification_email' => ['nullable', 'string', 'email', 'max:255'],
-            'subscribed_url' => ['nullable', 'string', 'url:http,https', 'max:2048'],
-            'already_subscribed_url' => ['nullable', 'string', 'url:http,https', 'max:2048'],
             'unsubscribed_url' => ['nullable', 'string', 'url:http,https', 'max:2048'],
         ];
     }

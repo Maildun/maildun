@@ -50,9 +50,9 @@ test('audience settings keep save inside the card with small overview icons and 
     expect($landingPages)->toBeString()
         ->toContain('variant="inset"')
         ->toContain('flex justify-end border-t px-6 py-5 sm:px-7')
-        ->toContain('placeholder="https://example.com/thanks"')
-        ->toContain('placeholder="https://example.com/already-subscribed"')
         ->toContain('placeholder="https://example.com/unsubscribed"')
+        ->not->toContain('name="subscribed_url"')
+        ->not->toContain('name="already_subscribed_url"')
         ->not->toContain('<div className="flex justify-end">');
 
     expect($attributes)->toBeString()

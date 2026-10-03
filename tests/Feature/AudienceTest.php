@@ -78,8 +78,6 @@ test('team owners can manage audiences', function () {
             'from_address' => 'news@example.com',
             'reply_to' => 'replies@example.com',
             'notification_email' => 'alerts@example.com',
-            'subscribed_url' => 'https://example.com/thanks',
-            'already_subscribed_url' => 'https://example.com/already',
             'unsubscribed_url' => 'https://example.com/bye',
         ])
         ->assertRedirect();
@@ -90,8 +88,6 @@ test('team owners can manage audiences', function () {
         ->from_address->toBe('news@example.com')
         ->reply_to->toBe('replies@example.com')
         ->notification_email->toBe('alerts@example.com')
-        ->subscribed_url->toBe('https://example.com/thanks')
-        ->already_subscribed_url->toBe('https://example.com/already')
         ->unsubscribed_url->toBe('https://example.com/bye');
 });
 
@@ -111,7 +107,8 @@ test('team owners can open audience settings', function () {
             ->where('audience.avatar', $audience->avatar)
             ->where('audience.from_name', null)
             ->where('audience.notification_email', null)
-            ->where('audience.subscribed_url', null)
+            ->where('audience.unsubscribed_url', null)
+            ->missing('audience.subscribed_url')
             ->where('stats.subscribers', 0)
             ->where('stats.subscribed', 0)
             ->where('stats.segments', 0)
@@ -399,14 +396,12 @@ test('audience settings reject invalid sender addresses and landing page links',
             'name' => $audience->name,
             'from_address' => 'not-an-address',
             'notification_email' => 'also-bad',
-            'subscribed_url' => 'not-a-url',
-            'already_subscribed_url' => 'ftp://example.com/nope',
+            'unsubscribed_url' => 'ftp://example.com/nope',
         ])
         ->assertInvalid([
             'from_address',
             'notification_email',
-            'subscribed_url',
-            'already_subscribed_url',
+            'unsubscribed_url',
         ]);
 });
 

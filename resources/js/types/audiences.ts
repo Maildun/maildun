@@ -113,8 +113,6 @@ export type Audience = Pick<
     from_address: string | null;
     reply_to: string | null;
     notification_email: string | null;
-    subscribed_url: string | null;
-    already_subscribed_url: string | null;
     unsubscribed_url: string | null;
 };
 

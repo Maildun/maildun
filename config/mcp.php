@@ -7,6 +7,8 @@ $redirectDomains = array_values(array_filter(array_map(
 
 return [
 
+    'email_builder_runtime' => env('MCP_EMAIL_BUILDER_RUNTIME', 'node'),
+
     /*
     |--------------------------------------------------------------------------
     | Redirect Domains

@@ -18,7 +18,6 @@ import type { FormEvent } from 'react';
 import { CampaignSeriesDialog } from '@/components/campaign-series-dialog';
 import EmailTemplatePicker from '@/components/email-template-picker';
 import { MetricCard } from '@/components/metric-card';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -31,6 +30,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    Callout,
+    CalloutContent,
+    CalloutHeading,
+    CalloutText,
+} from '@/components/ui/callout';
 import {
     Card,
     CardContent,
@@ -268,15 +273,19 @@ export default function CampaignSeriesShow({
                 </div>
 
                 {report.has_mixed_recipients && (
-                    <Alert>
-                        <HugeiconsIcon icon={UserGroupIcon} />
-                        <AlertTitle>Different recipient groups</AlertTitle>
-                        <AlertDescription>
-                            These campaigns use different audiences or segments.
-                            Compare rates as directional signals because the
-                            recipient mix can affect performance.
-                        </AlertDescription>
-                    </Alert>
+                    <Callout icon={UserGroupIcon}>
+                        <CalloutContent>
+                            <CalloutHeading>
+                                Different recipient groups
+                            </CalloutHeading>
+                            <CalloutText>
+                                These campaigns use different audiences or
+                                segments. Compare rates as directional signals
+                                because the recipient mix can affect
+                                performance.
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
                 )}
 
                 <Card>

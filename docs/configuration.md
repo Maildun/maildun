@@ -80,7 +80,9 @@ Set `HORIZON_NOTIFICATION_EMAIL` to receive long-wait alerts and keep the schedu
 
 Maildun provides a local MCP server through `.mcp.json` and a remote OAuth-protected endpoint at `/mcp/maildun`. The remote endpoint requires the `mcp:use` scope and is restricted to the authenticated user's workspace memberships. Keep `APP_URL` accurate, allow only trusted client callback origins in `MCP_REDIRECT_DOMAINS`, and never use a wildcard for a network-accessible deployment.
 
-See [Using MCP](mcp.md) for local and remote connection instructions, supported tools, and troubleshooting.
+The default callback origins are `https://chatgpt.com` and `https://grok.com`. Native callback schemes are configured separately in `config/mcp.php`; only `cursor` is enabled by default. Access tokens expire after `MCP_ACCESS_TOKEN_EXPIRATION_MINUTES` (default 60), and refresh tokens after `MCP_REFRESH_TOKEN_EXPIRATION_DAYS` (default 30).
+
+Remote OAuth needs a persistent Passport key pair; `app:install` does not generate it. See [Using MCP](mcp.md) for key setup, local and remote connection instructions, supported tools, and troubleshooting.
 
 ## Secrets
 

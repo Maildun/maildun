@@ -13,7 +13,7 @@ paths:
   - resources/js/components/getting-started-checklist.tsx
   - resources/js/components/email-builder-editor.css
   - resources/js/components/email-report-layout.tsx
-  - resources/js/components/contact-import-dialog.tsx
+  - resources/js/components/contact-import-menu.tsx
 ---
 
 # Components
@@ -69,4 +69,4 @@ Keep Dashboard under Overview; Audiences and List Hygiene under Manage audience;
 Overview/Recipients/Links/Preview are Inertia links, not Tabs. The active tab uses a single h-1 rounded-t bg-foreground pill that translates on page change (scrollLeft-aware, like sliding TabsList) and fades/slides up on first reveal. Hovering an inactive tab slides a soft gray after:bg-border bar up from below (after:translate-y-full → hover:after:translate-y-0); the nav is overflow-hidden so that rise is clipped at the hairline. Keep before:h-px as the hairline. Do not use rounded-full or border-b-2.
 
 ## Import uses a dropdown entry point
-Contacts and audience lists use the shared Import dropdown trigger with ArrowDown03Icon. Import CSV is a dropdown item that opens the existing queued-import dialog; keep progress polling and recent import results in that dialog.
+Contacts and audience lists use the shared ContactImportMenu dropdown. Import CSV links to the dedicated contacts.imports.create page (with ?audience= on an audience), and Import history links to contacts.imports.index. Do not bring back an in-dialog import or recent-imports list; progress and results belong on the import show page.

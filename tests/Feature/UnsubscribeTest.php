@@ -335,3 +335,16 @@ test('each recipient gets their own unsubscribe rate limit bucket', function () 
         fn (Subscriber $subscriber): bool => $subscriber->fresh()->status === SubscriberStatus::Unsubscribed,
     ))->toBeTrue();
 });
+
+test('deleted campaigns retain their signed unsubscribe confirmation and landing page', function () {
+    $delivery = unsubscribeDelivery(['name' => 'Weekly digest', 'unsubscribed_url' => 'https://example.com/unsubscribed']);
+    $show = URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]);
+    $store = URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]);
+    $delivery->email->delete();
+
+    $this->get($show)->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->component('unsubscribe/show')->where('audience', 'Weekly digest')->where('unsubscribed', false));
+    $this->post($store, [], ['X-Inertia' => 'true'])->assertRedirect('https://example.com/unsubscribed');
+
+    expect($delivery->subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+});

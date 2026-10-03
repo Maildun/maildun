@@ -8,7 +8,6 @@ import { Form, Head, router } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { SettingsPageHeader } from '@/components/settings-page-header';
 import { SettingsPanel } from '@/components/settings-panel';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -20,6 +19,12 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+    Callout,
+    CalloutContent,
+    CalloutHeading,
+    CalloutText,
+} from '@/components/ui/callout';
 import {
     Dialog,
     DialogClose,
@@ -305,15 +310,18 @@ export default function TeamApiSettings({
                         </DialogDescription>
                     </DialogHeader>
 
-                    <Alert>
-                        <HugeiconsIcon icon={Key01Icon} />
-                        <AlertTitle>This API key is shown only once</AlertTitle>
-                        <AlertDescription>
-                            You will not be able to view it again. Store it in
-                            your server's secret manager and never expose it in
-                            browser code.
-                        </AlertDescription>
-                    </Alert>
+                    <Callout icon={Key01Icon}>
+                        <CalloutContent>
+                            <CalloutHeading>
+                                This API key is shown only once
+                            </CalloutHeading>
+                            <CalloutText>
+                                You will not be able to view it again. Store it
+                                in your server's secret manager and never expose
+                                it in browser code.
+                            </CalloutText>
+                        </CalloutContent>
+                    </Callout>
 
                     <code className="block rounded-md bg-muted px-3 py-3 text-xs break-all">
                         {newApiKey?.token}
