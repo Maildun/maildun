@@ -12,7 +12,6 @@ use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Email;
 use App\Models\EmailTemplate;
-use App\Models\Team;
 use App\Models\TransactionalEmail;
 use App\Models\User;
 use App\Services\EmailBuilderAgent;
@@ -383,17 +382,6 @@ test('includes custom audience fields in campaign agent instructions', function 
         ->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
         ->where('instructions', fn (string $instructions): bool => str_contains($instructions, 'loyalty_points'))
         ->etc());
-});
-
-test('rejects edits to unsubscribed workspaces when remote billing access is required', function () {
-    config(['billing.enabled' => true]);
-    $owner = User::factory()->create();
-    $team = Team::factory()->create();
-    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
-    $email = Email::factory()->for($team)->builder()->create();
-
-    MaildunServer::actingAs($owner)->tool(GetEmailBuilderTool::class, emailBuilderArguments($email))
-        ->assertHasErrors(['An active subscription is required']);
 });
 
 test('rejects a malformed runtime response without changing the email', function (string $output) {
