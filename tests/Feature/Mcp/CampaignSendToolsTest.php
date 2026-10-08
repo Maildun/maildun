@@ -53,6 +53,21 @@ test('queues a test copy of a draft campaign', function () {
         ->last_test_recipient->toBe('reviewer@example.com');
 });
 
+test('refuses a test copy when the workspace has no email provider', function () {
+    Queue::fake();
+    $team = Team::factory()->create();
+    $campaign = Email::factory()->for($team)->create();
+
+    MaildunServer::tool(SendTestCampaignTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $campaign->uuid,
+        'to' => 'reviewer@example.com',
+    ])->assertHasErrors(['Connect and test an email provider for this workspace.']);
+
+    Queue::assertNothingPushed();
+    expect($campaign->refresh()->last_test_status)->toBeNull();
+});
+
 test('sends a campaign only after exact-name confirmation', function () {
     Bus::fake();
     $team = Team::factory()->create();

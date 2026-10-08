@@ -36,7 +36,7 @@ test('manages an audience membership through MCP', function () {
         ->where('subscribed', true)
         ->where('subscriber.status', 'subscribed')
         ->where('subscriber.source', 'manual')
-        ->etc());
+        ->etc())->assertSee('"attribute_values":{}');
 
     $subscriber = Subscriber::query()->whereBelongsTo($audience)->sole();
     Event::assertDispatched(SubscriberLifecycleOccurred::class, fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Subscribed);

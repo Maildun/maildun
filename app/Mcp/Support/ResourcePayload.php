@@ -239,7 +239,7 @@ class ResourcePayload
             'pending_confirmation' => $subscriber->isPendingConfirmation(),
             'source' => $subscriber->source->value,
             'tags' => $subscriber->tags->pluck('name')->sortBy(fn (string $name): string => mb_strtolower($name))->values()->all(),
-            'attribute_values' => $subscriber->attribute_values ?? [],
+            'attribute_values' => (object) ($subscriber->attribute_values ?? []),
             'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
             'unsubscribed_at' => $subscriber->unsubscribed_at?->toISOString(),
             'created_at' => $subscriber->created_at?->toISOString(),
