@@ -59,7 +59,7 @@ class SendTransactionalEmailDelivery implements ShouldQueue
 
             $delivery->forceFill([
                 'provider' => $transport->provider->value,
-                'uses_team_email_integration' => $transport->usesTeamEmailIntegration(),
+                'uses_team_email_integration' => true,
                 'ses_configuration_set' => $transport->sesConfigurationSet,
                 'ses_sns_topic_arn_hash' => $transport->sesSnsTopicArnHash,
             ])->save();

@@ -159,7 +159,7 @@ class QueueTransactionalEmail
             'from_address' => $email->resolvedFromAddress(),
             'reply_to' => $email->resolvedReplyTo(),
             'provider' => $transport->provider->value,
-            'uses_team_email_integration' => $transport->usesTeamEmailIntegration(),
+            'uses_team_email_integration' => true,
         ]);
         $delivery->uuid = $uuid;
         $delivery->save();

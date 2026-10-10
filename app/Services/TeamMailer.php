@@ -96,16 +96,9 @@ class TeamMailer
 
     public function resolve(Team $team): ResolvedEmailTransport
     {
-        if (! $team->exists) {
-            throw EmailTransportException::providerUnavailable();
-        }
+        $integration = $this->integration($team);
 
-        $integration = TeamEmailIntegration::query()
-            ->where('team_id', $team->getKey())
-            ->whereNotNull('connected_at')
-            ->first();
-
-        if (! $integration instanceof TeamEmailIntegration || ! $integration->isVerified()) {
+        if (! $integration instanceof TeamEmailIntegration) {
             throw EmailTransportException::providerUnavailable();
         }
 
@@ -131,10 +124,6 @@ class TeamMailer
         }
 
         try {
-            if (! $transport->usesTeamEmailIntegration()) {
-                return Mail::to($recipient)->send($mailable);
-            }
-
             return $this->sendUsingResolvedTransport($transport, $recipient, $mailable);
         } catch (TransportExceptionInterface $exception) {
             throw EmailTransportException::fromTransport($exception);

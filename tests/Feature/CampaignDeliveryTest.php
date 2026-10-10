@@ -552,15 +552,8 @@ test('a queued campaign delivery uses and reports the current workspace provider
 test('a claimed delivery resolves one transport and does not regress feedback received during acceptance', function () {
     $email = Email::factory()->create(['html' => '<p>Hello</p>', 'status' => EmailStatus::Queued]);
     $delivery = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
-    $transport = new ResolvedEmailTransport(
-        provider: EmailProvider::Smtp,
-        integrationId: null,
-        integrationUuid: null,
-        integrationName: null,
-        configuration: null,
-        sesConfigurationSet: null,
-        sesSnsTopicArnHash: null,
-    );
+    TeamEmailIntegration::factory()->for($email->team)->smtp()->create();
+    $transport = app(TeamMailer::class)->resolve($email->team);
     $teamMailer = Mockery::mock(TeamMailer::class);
     $teamMailer->shouldReceive('resolve')->once()->andReturn($transport);
     $teamMailer->shouldReceive('sendResolved')
