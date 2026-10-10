@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Enums\TeamRole;
 use App\Models\Team;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -29,20 +30,36 @@ class AdminUserSeeder extends Seeder
             $this->command->warn("Demo administrator created with a one-time password: {$password}");
         }
 
-        $team = $user->personalTeam() ?? Team::query()->create([
-            'name' => "{$user->name}'s Team",
-            'is_personal' => true,
-        ]);
+        $team = $this->personalWorkspace($user);
 
         $membership = $team->memberships()->firstOrCreate(
             ['user_id' => $user->id],
-            ['role' => TeamRole::Admin],
+            ['role' => TeamRole::Owner->value],
         );
 
-        if ($membership->role !== TeamRole::Admin->value) {
-            $membership->update(['role' => TeamRole::Admin->value]);
+        if ($membership->role !== TeamRole::Owner->value) {
+            $membership->update(['role' => TeamRole::Owner->value]);
         }
 
         $user->switchTeam($team);
+    }
+
+    /**
+     * Find the personal workspace the administrator owns, or one an earlier seed left without an owner.
+     *
+     * Another user's personal workspace is never taken over; a new one is created instead.
+     */
+    private function personalWorkspace(User $user): Team
+    {
+        return $user->ownedTeams()->where('teams.is_personal', true)->oldest('teams.id')->first()
+            ?? $user->teams()
+                ->where('teams.is_personal', true)
+                ->whereDoesntHave('memberships', fn (Builder $query) => $query->where('role', TeamRole::Owner->value))
+                ->oldest('teams.id')
+                ->first()
+            ?? Team::query()->create([
+                'name' => "{$user->name}'s Team",
+                'is_personal' => true,
+            ]);
     }
 }
