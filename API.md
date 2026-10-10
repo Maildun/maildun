@@ -24,6 +24,8 @@ POST /api/v1/transactional-emails/{slug}/send
 
 The slug must identify a published transactional email in the API key's team. Values in `data` replace the template's `{{ key }}` variables. Values inserted into HTML are escaped.
 
+`web_view_url` and `unsubscribe_url` are filled by Maildun and override any value sent in `data`. `unsubscribe_url` links the recipient out of the email's Unsubscribe audience, and is empty when no audience is set or the recipient is not subscribed to it.
+
 ```json
 {
   "to": "ada@example.com",

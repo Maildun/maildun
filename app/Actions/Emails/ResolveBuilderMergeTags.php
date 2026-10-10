@@ -2,6 +2,7 @@
 
 namespace App\Actions\Emails;
 
+use App\Actions\Transactional\RenderTransactionalContent;
 use App\Models\Email;
 use App\Models\EmailTemplate;
 use App\Models\TransactionalEmail;
@@ -31,7 +32,7 @@ class ResolveBuilderMergeTags
                 ...self::CAMPAIGN_TAGS,
                 ...($record->audience?->audienceAttributes()->pluck('key')->all() ?? []),
             ],
-            $record instanceof TransactionalEmail => ['web_view_url', ...array_column($record->variables, 'key')],
+            $record instanceof TransactionalEmail => [...RenderTransactionalContent::SYSTEM_KEYS, ...array_column($record->variables, 'key')],
             default => self::CAMPAIGN_TAGS,
         };
 
