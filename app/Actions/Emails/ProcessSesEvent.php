@@ -182,11 +182,12 @@ class ProcessSesEvent
     {
         $tags = is_array($mail['tags'] ?? null) ? $mail['tags'] : [];
         $deliveryUuid = $this->firstTag($tags, 'transactional_delivery_uuid');
+        $sesProviders = EmailProvider::withSesFeedback();
 
         if ($deliveryUuid !== null) {
             $delivery = TransactionalEmailDelivery::query()
                 ->where('uuid', $deliveryUuid)
-                ->where('provider', EmailProvider::AmazonSes)
+                ->whereIn('provider', $sesProviders)
                 ->where('ses_sns_topic_arn_hash', $topicArnHash)
                 ->lockForUpdate()
                 ->first();
@@ -199,7 +200,38 @@ class ProcessSesEvent
         $messageId = is_string($mail['messageId'] ?? null) ? $mail['messageId'] : null;
 
         return $messageId === null ? null : TransactionalEmailDelivery::query()
-            ->where('provider', EmailProvider::AmazonSes)
+            ->whereIn('provider', $sesProviders)
+            ->where('provider_message_id', $messageId)
+            ->where('ses_sns_topic_arn_hash', $topicArnHash)
+            ->latest('id')
+            ->lockForUpdate()
+            ->first();
+    }
+
+    /** @param array<string, mixed> $mail */
+    private function findAutomationDelivery(array $mail, string $topicArnHash): ?AutomationEmailDelivery
+    {
+        $tags = is_array($mail['tags'] ?? null) ? $mail['tags'] : [];
+        $deliveryUuid = $this->firstTag($tags, 'automation_delivery_uuid');
+        $sesProviders = EmailProvider::withSesFeedback();
+
+        if ($deliveryUuid !== null) {
+            $delivery = AutomationEmailDelivery::query()
+                ->where('uuid', $deliveryUuid)
+                ->whereIn('provider', $sesProviders)
+                ->where('ses_sns_topic_arn_hash', $topicArnHash)
+                ->lockForUpdate()
+                ->first();
+
+            if ($delivery !== null) {
+                return $delivery;
+            }
+        }
+
+        $messageId = is_string($mail['messageId'] ?? null) ? $mail['messageId'] : null;
+
+        return $messageId === null ? null : AutomationEmailDelivery::query()
+            ->whereIn('provider', $sesProviders)
             ->where('provider_message_id', $messageId)
             ->where('ses_sns_topic_arn_hash', $topicArnHash)
             ->latest('id')
@@ -212,11 +244,12 @@ class ProcessSesEvent
     {
         $tags = is_array($mail['tags'] ?? null) ? $mail['tags'] : [];
         $attemptUuid = $this->firstTag($tags, 'attempt_uuid');
+        $sesProviders = EmailProvider::withSesFeedback();
 
         if ($attemptUuid !== null) {
             $attempt = EmailDeliveryAttempt::query()
                 ->where('uuid', $attemptUuid)
-                ->where('provider', EmailProvider::AmazonSes)
+                ->whereIn('provider', $sesProviders)
                 ->where('ses_sns_topic_arn_hash', $topicArnHash)
                 ->lockForUpdate()
                 ->first();
@@ -233,37 +266,7 @@ class ProcessSesEvent
         }
 
         return EmailDeliveryAttempt::query()
-            ->where('provider', EmailProvider::AmazonSes)
-            ->where('provider_message_id', $messageId)
-            ->where('ses_sns_topic_arn_hash', $topicArnHash)
-            ->latest('id')
-            ->lockForUpdate()
-            ->first();
-    }
-
-    /** @param array<string, mixed> $mail */
-    private function findAutomationDelivery(array $mail, string $topicArnHash): ?AutomationEmailDelivery
-    {
-        $tags = is_array($mail['tags'] ?? null) ? $mail['tags'] : [];
-        $deliveryUuid = $this->firstTag($tags, 'automation_delivery_uuid');
-
-        if ($deliveryUuid !== null) {
-            $delivery = AutomationEmailDelivery::query()
-                ->where('uuid', $deliveryUuid)
-                ->where('provider', EmailProvider::AmazonSes)
-                ->where('ses_sns_topic_arn_hash', $topicArnHash)
-                ->lockForUpdate()
-                ->first();
-
-            if ($delivery !== null) {
-                return $delivery;
-            }
-        }
-
-        $messageId = is_string($mail['messageId'] ?? null) ? $mail['messageId'] : null;
-
-        return $messageId === null ? null : AutomationEmailDelivery::query()
-            ->where('provider', EmailProvider::AmazonSes)
+            ->whereIn('provider', $sesProviders)
             ->where('provider_message_id', $messageId)
             ->where('ses_sns_topic_arn_hash', $topicArnHash)
             ->latest('id')

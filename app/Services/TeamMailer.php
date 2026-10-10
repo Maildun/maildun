@@ -292,14 +292,16 @@ class TeamMailer
         $configurationSet = $this->filledString($settings['configuration_set'] ?? null);
         $topicArnHash = $this->filledString($integration->ses_sns_topic_arn_hash);
 
+        $publishesSesFeedback = $integration->provider->publishesSesFeedback();
+
         return new ResolvedEmailTransport(
             provider: $integration->provider,
             integrationId: $integration->id,
             integrationUuid: $integration->uuid,
             integrationName: $integration->name,
             configuration: $this->configurationFor($integration),
-            sesConfigurationSet: $integration->provider === EmailProvider::AmazonSes ? $configurationSet : null,
-            sesSnsTopicArnHash: $integration->provider === EmailProvider::AmazonSes ? $topicArnHash : null,
+            sesConfigurationSet: $publishesSesFeedback ? $configurationSet : null,
+            sesSnsTopicArnHash: $publishesSesFeedback ? $topicArnHash : null,
             authorizedFromAddresses: $integration->verifiedSenderAddresses(),
         );
     }

@@ -69,20 +69,22 @@ class AwsSesWebhookController extends Controller
             return true;
         }
 
+        $sesProviders = EmailProvider::withSesFeedback();
+
         return TeamEmailIntegration::query()
-            ->where('provider', EmailProvider::AmazonSes)
+            ->whereIn('provider', $sesProviders)
             ->where('ses_sns_topic_arn_hash', $topicArnHash)
             ->exists()
             || EmailDeliveryAttempt::query()
-                ->where('provider', EmailProvider::AmazonSes)
+                ->whereIn('provider', $sesProviders)
                 ->where('ses_sns_topic_arn_hash', $topicArnHash)
                 ->exists()
             || TransactionalEmailDelivery::query()
-                ->where('provider', EmailProvider::AmazonSes)
+                ->whereIn('provider', $sesProviders)
                 ->where('ses_sns_topic_arn_hash', $topicArnHash)
                 ->exists()
             || AutomationEmailDelivery::query()
-                ->where('provider', EmailProvider::AmazonSes)
+                ->whereIn('provider', $sesProviders)
                 ->where('ses_sns_topic_arn_hash', $topicArnHash)
                 ->exists();
     }

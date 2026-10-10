@@ -180,6 +180,18 @@ test('the delivery job sends once and records the result', function () {
         ->and($delivery->fresh()->sent_at)->not->toBeNull();
 });
 
+test('transactional mail carries its feedback correlation tag only through amazon ses', function (string $provider, bool $tagged) {
+    $email = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create(['provider' => $provider]);
+
+    expect((new TransactionalEmailMessage($delivery))->envelope()->metadata)
+        ->toBe($tagged ? ['transactional_delivery_uuid' => $delivery->uuid] : []);
+})->with([
+    'amazon ses' => ['ses', true],
+    'smtp' => ['smtp', false],
+    'the platform array mailer' => ['array', false],
+]);
+
 test('api errors carry a machine readable code', function () {
     $email = TransactionalEmail::factory()->published()->create();
     $issued = TeamApiKey::issue($email->team, 'Production');

@@ -801,10 +801,10 @@ class EmailController extends Controller
             ? $trackingAggregate->unique_clicks_count
             : 0;
         $sesRecipientCount = (clone $deliveries)
-            ->where('provider', EmailProvider::AmazonSes)
+            ->whereIn('provider', EmailProvider::withSesFeedback())
             ->count();
         $deliveredCount = (clone $deliveries)
-            ->where('provider', EmailProvider::AmazonSes)
+            ->whereIn('provider', EmailProvider::withSesFeedback())
             ->whereNotNull('delivered_at')
             ->count();
         $deliveryFeedback = match (true) {

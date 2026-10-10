@@ -2,7 +2,6 @@
 
 namespace App\Actions\Emails;
 
-use App\Enums\EmailProvider;
 use App\Models\EmailDeliveryAttempt;
 use App\Models\EmailProviderEvent;
 use App\Models\TeamEmailIntegration;
@@ -26,7 +25,7 @@ class BuildSesFeedbackHeartbeat
      */
     public function handle(TeamEmailIntegration $integration): ?array
     {
-        if ($integration->provider !== EmailProvider::AmazonSes || $integration->ses_sns_topic_arn_hash === null) {
+        if (! $integration->provider->publishesSesFeedback() || $integration->ses_sns_topic_arn_hash === null) {
             return null;
         }
 

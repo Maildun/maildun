@@ -127,7 +127,10 @@ class BuildCampaignSeriesReport
      */
     private function deliveryStats(array $campaignIds): Collection
     {
-        $feedbackProviders = [EmailProvider::AmazonSes->value];
+        $feedbackProviders = array_map(
+            fn (EmailProvider $provider): string => $provider->value,
+            EmailProvider::withSesFeedback(),
+        );
         $feedbackProviderList = implode(', ', array_fill(0, count($feedbackProviders), '?'));
 
         return EmailDelivery::query()

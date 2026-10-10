@@ -58,7 +58,7 @@ class TeamEmailIntegration extends Model
         });
 
         static::saving(function (TeamEmailIntegration $integration): void {
-            $topicArn = $integration->provider === EmailProvider::AmazonSes
+            $topicArn = $integration->provider->publishesSesFeedback()
                 ? $integration->settings['sns_topic_arn'] ?? null
                 : null;
 

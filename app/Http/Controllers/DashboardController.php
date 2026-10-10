@@ -92,13 +92,17 @@ class DashboardController extends Controller
         $subscribers = $this->subscribersFor($team);
         $deliveries = EmailDelivery::query()
             ->whereHas('email', fn (Builder $query): Builder => $query->where('team_id', $team->id));
+        $sesProviders = array_map(
+            fn (EmailProvider $provider): string => $provider->value,
+            EmailProvider::withSesFeedback(),
+        );
 
         $deliveryStats = (clone $deliveries)
             ->whereNotNull('sent_at')
             ->where('sent_at', '>=', $periodStart)
             ->toBase()
             ->selectRaw('count(*) as sent')
-            ->selectRaw('count(case when provider = ? then 1 end) as ses_sent', [EmailProvider::AmazonSes->value])
+            ->selectRaw('count(case when provider in ('.implode(', ', array_fill(0, count($sesProviders), '?')).') then 1 end) as ses_sent', $sesProviders)
             ->selectRaw('count(case when delivered_at is not null then 1 end) as delivered')
             ->selectRaw('count(case when first_opened_at is not null then 1 end) as opened')
             ->selectRaw('count(case when first_clicked_at is not null then 1 end) as clicked')
@@ -170,7 +174,7 @@ class DashboardController extends Controller
                 ])
                 ->withCount([
                     'deliveries as delivered_count' => fn (Builder $query): Builder => $query->whereNotNull('delivered_at'),
-                    'deliveries as ses_delivery_count' => fn (Builder $query): Builder => $query->where('provider', EmailProvider::AmazonSes),
+                    'deliveries as ses_delivery_count' => fn (Builder $query): Builder => $query->whereIn('provider', $sesProviders),
                     'deliveries as opened_count' => fn (Builder $query): Builder => $query->whereNotNull('first_opened_at'),
                     'deliveries as clicked_count' => fn (Builder $query): Builder => $query->whereNotNull('first_clicked_at'),
                 ])
