@@ -45,13 +45,24 @@ class AdminUserSeeder extends Seeder
     }
 
     /**
+     * Find the oldest personal workspace the given user owns.
+     *
+     * Demo seeders use this instead of personalTeam(), which can return another user's
+     * personal workspace the user was only invited to.
+     */
+    public static function ownedPersonalWorkspace(User $user): ?Team
+    {
+        return $user->ownedTeams()->where('teams.is_personal', true)->oldest('teams.id')->first();
+    }
+
+    /**
      * Find the personal workspace the administrator owns, or one an earlier seed left without an owner.
      *
      * Another user's personal workspace is never taken over; a new one is created instead.
      */
     private function personalWorkspace(User $user): Team
     {
-        return $user->ownedTeams()->where('teams.is_personal', true)->oldest('teams.id')->first()
+        return self::ownedPersonalWorkspace($user)
             ?? $user->teams()
                 ->where('teams.is_personal', true)
                 ->whereDoesntHave('memberships', fn (Builder $query) => $query->where('role', TeamRole::Owner->value))

@@ -57,10 +57,9 @@ class SubscriberSeeder extends Seeder
 
     private function team(): ?Team
     {
-        return User::query()
-            ->oldest('id')
-            ->first()
-            ?->personalTeam();
+        $user = User::query()->oldest('id')->first();
+
+        return $user instanceof User ? AdminUserSeeder::ownedPersonalWorkspace($user) : null;
     }
 
     private function audience(Team $team, string $name): ?Audience
