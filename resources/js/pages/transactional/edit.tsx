@@ -46,6 +46,14 @@ import {
     FieldLabel,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectGroup,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from '@/components/ui/toast';
@@ -78,6 +86,7 @@ import type {
 type Props = {
     email: TransactionalEmailDetail;
     defaults: EmailSenderDefaults;
+    audiences: { uuid: string; name: string }[];
     canManage: boolean;
     currentTeam: { slug: string };
     auth: { user: { email: string } };
@@ -96,7 +105,7 @@ const SECTIONS: { value: SectionValue; fields: string[] }[] = [
         fields: ['from_name', 'from_address', 'reply_to'],
     },
     { value: 'design', fields: ['html', 'source', 'design'] },
-    { value: 'variables', fields: ['variables'] },
+    { value: 'variables', fields: ['variables', 'audience'] },
 ];
 
 const VARIABLE_KEY = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
@@ -108,7 +117,15 @@ const BUILT_IN_TAGS = [
         label: 'View in browser',
         description: 'Opens a hosted copy of the email that was sent.',
     },
+    {
+        key: 'unsubscribe_url',
+        label: 'Unsubscribe',
+        description:
+            'Opts the recipient out of the audience chosen below. Empty when no audience is chosen or the recipient is not subscribed to it.',
+    },
 ] as const;
+
+const NO_AUDIENCE = '__none__';
 
 function TransactionalDesignPreview({
     editor,
@@ -156,6 +173,7 @@ function TransactionalDesignPreview({
 export default function TransactionalEdit({
     email,
     defaults,
+    audiences,
     canManage,
     currentTeam,
     auth,
@@ -167,6 +185,13 @@ export default function TransactionalEdit({
     const [publishing, setPublishing] = useState(false);
     const [newVariableKey, setNewVariableKey] = useState('');
     const [, copy] = useClipboard();
+    const audienceItems = [
+        { value: NO_AUDIENCE, label: 'Not set' },
+        ...audiences.map((audience) => ({
+            value: audience.uuid,
+            label: audience.name,
+        })),
+    ];
 
     const form = useForm<{
         name: string;
@@ -177,6 +202,7 @@ export default function TransactionalEdit({
         from_name: string;
         from_address: string;
         reply_to: string;
+        audience: string | null;
         html: string;
         source: string;
         design: EmailBuilderDocument | null;
@@ -190,6 +216,7 @@ export default function TransactionalEdit({
         from_name: email.from_name ?? '',
         from_address: email.from_address ?? '',
         reply_to: email.reply_to ?? '',
+        audience: email.audience,
         html: email.html ?? '',
         source: email.source,
         design:
@@ -978,6 +1005,52 @@ export default function TransactionalEdit({
                                 </FieldDescription>
                             </Field>
                         ))}
+
+                        <Field data-invalid={Boolean(form.errors.audience)}>
+                            <FieldLabel htmlFor="transactional-audience">
+                                Unsubscribe audience
+                            </FieldLabel>
+                            <Select
+                                items={audienceItems}
+                                value={form.data.audience ?? NO_AUDIENCE}
+                                disabled={!canManage}
+                                onValueChange={(value) =>
+                                    form.setData(
+                                        'audience',
+                                        typeof value === 'string' &&
+                                            value !== NO_AUDIENCE
+                                            ? value
+                                            : null,
+                                    )
+                                }
+                            >
+                                <SelectTrigger
+                                    id="transactional-audience"
+                                    className="w-full"
+                                    data-test="transactional-audience"
+                                    aria-invalid={Boolean(form.errors.audience)}
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent alignItemWithTrigger={false}>
+                                    <SelectGroup>
+                                        {audienceItems.map((item) => (
+                                            <SelectItem
+                                                key={item.value}
+                                                value={item.value}
+                                            >
+                                                {item.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectGroup>
+                                </SelectContent>
+                            </Select>
+                            <FieldDescription>
+                                Who {'{{ unsubscribe_url }}'} unsubscribes the
+                                recipient from.
+                            </FieldDescription>
+                            <FieldError>{form.errors.audience}</FieldError>
+                        </Field>
 
                         {form.data.variables.length === 0 ? (
                             <p className="text-sm text-muted-foreground">

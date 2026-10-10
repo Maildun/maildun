@@ -143,8 +143,11 @@ test('the edit page exposes the email and sender defaults', function () {
         'email_from_name' => 'Maildun HQ',
         'email_from_address' => 'hq@example.com',
     ]);
+    $audience = Audience::factory()->for($team)->create(['name' => 'Customers']);
+    Audience::factory()->create();
     $email = TransactionalEmail::factory()->for($team)->create([
         'slug' => 'welcome-email',
+        'audience_id' => $audience->id,
         'variables' => [['key' => 'first_name', 'example' => 'Ada']],
     ]);
 
@@ -155,6 +158,8 @@ test('the edit page exposes the email and sender defaults', function () {
             ->component('transactional/edit')
             ->where('email.uuid', $email->uuid)
             ->where('email.slug', 'welcome-email')
+            ->where('email.audience', $audience->uuid)
+            ->where('audiences', [['uuid' => $audience->uuid, 'name' => 'Customers']])
             ->where('email.editor', EmailEditor::Builder->value)
             ->where('email.slug_frozen', false)
             ->where('canManage', true)
@@ -191,6 +196,39 @@ test('saving merges detected variables and keeps examples', function () {
             ['key' => 'first_name', 'example' => 'Ada'],
             ['key' => 'reset_url', 'example' => ''],
         ]);
+});
+
+test('saving links an audience for the unsubscribe link', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $email = TransactionalEmail::factory()->for($team)->create();
+    $payload = [
+        'name' => $email->name,
+        'slug' => $email->slug,
+        'subject' => $email->subject,
+        'html' => '<a href="{{ unsubscribe_url }}">Unsubscribe</a>',
+    ];
+
+    $this->actingAs($user)
+        ->patch(route('transactional_emails.update', [$team, $email]), [...$payload, 'audience' => $audience->uuid])
+        ->assertRedirect();
+
+    expect($email->fresh()->audience_id)->toBe($audience->id)
+        ->and($email->fresh()->variables)->toBe([]);
+
+    $this->actingAs($user)
+        ->patch(route('transactional_emails.update', [$team, $email]), [
+            ...$payload,
+            'audience' => Audience::factory()->create()->uuid,
+        ])
+        ->assertInvalid('audience');
+
+    $this->actingAs($user)
+        ->patch(route('transactional_emails.update', [$team, $email]), [...$payload, 'audience' => null])
+        ->assertRedirect();
+
+    expect($email->fresh()->audience_id)->toBeNull();
 });
 
 test('the block editor requires a document', function () {
@@ -391,6 +429,22 @@ test('a test send queues rendered merge tags', function () {
     expect($email->fresh()->last_tested_at)->toBeNull();
 });
 
+test('a test send links the unsubscribe tag to a page that opts nobody out', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = TransactionalEmail::factory()->for($team)->create([
+        'html' => '<a href="{{ unsubscribe_url }}">Unsubscribe</a>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('transactional_emails.test', [$team, $email]), ['to' => 'reviewer@example.com'])
+        ->assertRedirect();
+
+    Queue::assertPushed(SendTransactionalEmailTest::class, fn (SendTransactionalEmailTest $job): bool => $job->html === '<a href="'.route('public.unsubscribe.test').'">Unsubscribe</a>');
+});
+
 test('a test send requires a valid address', function () {
     Mail::fake();
 
@@ -424,7 +478,9 @@ test('a transactional test send queues before the delivery worker resolves its p
 test('a transactional email can be duplicated', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
     $email = TransactionalEmail::factory()->for($team)->published()->create([
+        'audience_id' => $audience->id,
         'name' => 'Welcome email',
         'slug' => 'welcome-email',
         'html' => '<p>Hello {{ first_name }}</p>',
@@ -444,6 +500,7 @@ test('a transactional email can be duplicated', function () {
         ->and($copy->status)->toBe(TransactionalEmailStatus::Draft)
         ->and($copy->published_at)->toBeNull()
         ->and($copy->html)->toBe($email->html)
+        ->and($copy->audience_id)->toBe($audience->id)
         ->and($copy->variables)->toBe($email->variables);
 });
 
