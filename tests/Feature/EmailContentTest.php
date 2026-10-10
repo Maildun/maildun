@@ -3,12 +3,15 @@
 use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\StartEmailSend;
+use App\Actions\Emails\StoreEmailAttachments;
 use App\Contracts\DnsResolver;
+use App\Enums\EmailStatus;
 use App\Jobs\PrepareEmailSendChunk;
 use App\Mail\ComposedEmailTest;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Email;
+use App\Models\EmailAttachment;
 use App\Models\EmailDelivery;
 use App\Models\SubscribeForm;
 use App\Models\Subscriber;
@@ -22,7 +25,9 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 test('campaign content options are saved and exposed to the composer', function () {
     $user = User::factory()->create();
@@ -136,6 +141,51 @@ test('campaign attachments reject unsupported file types', function () {
         ->assertInvalid('attachments.0');
 
     expect($email->attachments()->count())->toBe(0);
+});
+
+test('campaign attachments re-check the 10 attachment cap under the campaign lock', function () {
+    Storage::fake('local');
+    $email = Email::factory()->create();
+    EmailAttachment::factory()->count(9)->for($email)->create();
+
+    expect(fn () => app(StoreEmailAttachments::class)->handle($email, [
+        UploadedFile::fake()->create('first.pdf', 10, 'application/pdf'),
+        UploadedFile::fake()->create('second.pdf', 10, 'application/pdf'),
+    ]))->toThrow(ValidationException::class, 'A campaign may have up to 10 attachments.');
+
+    expect($email->attachments()->count())->toBe(9);
+    expect(Storage::disk('local')->allFiles())->toBeEmpty();
+});
+
+test('campaign attachments are refused once the campaign has left draft', function () {
+    Storage::fake('local');
+    $email = Email::factory()->create();
+    Email::query()->whereKey($email->id)->update(['status' => EmailStatus::Queued]);
+
+    expect(fn () => app(StoreEmailAttachments::class)->handle($email, [
+        UploadedFile::fake()->create('guide.pdf', 10, 'application/pdf'),
+    ]))->toThrow(fn (HttpException $exception) => expect($exception->getStatusCode())->toBe(409));
+
+    expect($email->attachments()->count())->toBe(0);
+    expect(Storage::disk('local')->allFiles())->toBeEmpty();
+});
+
+test('campaign attachment files already stored are removed when the upload fails', function () {
+    Storage::fake('local');
+    $email = Email::factory()->create();
+    EmailAttachment::creating(function (EmailAttachment $attachment): void {
+        if ($attachment->original_name === 'second.pdf') {
+            throw new RuntimeException('The attachment row could not be saved.');
+        }
+    });
+
+    expect(fn () => app(StoreEmailAttachments::class)->handle($email, [
+        UploadedFile::fake()->create('first.pdf', 10, 'application/pdf'),
+        UploadedFile::fake()->create('second.pdf', 10, 'application/pdf'),
+    ]))->toThrow(RuntimeException::class, 'The attachment row could not be saved.');
+
+    expect($email->attachments()->count())->toBe(0);
+    expect(Storage::disk('local')->allFiles())->toBeEmpty();
 });
 
 test('campaign personalization is snapshotted and query strings are applied before tracking', function () {
