@@ -43,7 +43,95 @@ export const BUILDER_MERGE_TAGS: MergeTag[] = [
  * handed over as-is at the point where it crosses into the package.
  */
 export function toEmailDocument(document: EmailBuilderDocument): EmailDocument {
-    return document as EmailDocument;
+    return withEmptyObjects(document) as EmailDocument;
+}
+
+const repairedDocuments = new WeakMap<object, EmailBuilderDocument>();
+
+function isEmptyArray(value: unknown): boolean {
+    return Array.isArray(value) && value.length === 0;
+}
+
+const ALT_BLOCK_TYPES = new Set(['image', 'video', 'avatar']);
+
+/** Those blocks require alt to be a string. A missing description is blank. */
+function hasNullAlt(
+    block: Record<string, unknown> | null | undefined,
+): boolean {
+    if (!block || !ALT_BLOCK_TYPES.has(String(block.type))) {
+        return false;
+    }
+
+    const props = block.props;
+
+    return (
+        typeof props === 'object' &&
+        props !== null &&
+        !Array.isArray(props) &&
+        (props as { alt?: unknown }).alt === null
+    );
+}
+
+/**
+ * PHP decodes an empty JSON object as an empty array, so a saved design can
+ * come back with `props: []` (e.g. a container) or `blocks: []`. The package
+ * validates strictly and would reject every edit or proposal on such a
+ * document, so restore those objects. Repaired documents are cached per input
+ * so the editor keeps receiving the same reference between renders.
+ */
+function withEmptyObjects(
+    document: EmailBuilderDocument,
+): EmailBuilderDocument {
+    const cached = repairedDocuments.get(document);
+
+    if (cached) {
+        return cached;
+    }
+
+    const blocks = document.blocks as unknown;
+    const entries = isEmptyArray(blocks)
+        ? []
+        : Object.entries(
+              (blocks ?? {}) as Record<string, Record<string, unknown>>,
+          );
+    const needsRepair =
+        isEmptyArray(blocks) ||
+        entries.some(
+            ([, block]) =>
+                isEmptyArray(block?.props) ||
+                isEmptyArray(block?.style) ||
+                hasNullAlt(block),
+        );
+
+    if (!needsRepair) {
+        return document;
+    }
+
+    const repaired = {
+        ...document,
+        blocks: Object.fromEntries(
+            entries.map(([id, block]) => [
+                id,
+                {
+                    ...block,
+                    ...(isEmptyArray(block.props) ? { props: {} } : {}),
+                    ...(hasNullAlt(block)
+                        ? {
+                              props: {
+                                  ...(block.props as Record<string, unknown>),
+                                  alt: '',
+                              },
+                          }
+                        : {}),
+                    ...(isEmptyArray(block.style) ? { style: {} } : {}),
+                },
+            ]),
+        ),
+    } as EmailBuilderDocument;
+
+    repairedDocuments.set(document, repaired);
+
+    return repaired;
 }
 
 /**
@@ -79,14 +167,29 @@ export function emptyBuilderDocument(): EmailBuilderDocument {
 /**
  * Stored designs may still be EmailBuilder.js documents (written before the
  * switch, or by an MCP client). Convert them on open; the next save stores
- * the new format.
+ * the new format. Designs saved without version, settings or theme (an MCP
+ * client sending only root and blocks) get the blank defaults, because the
+ * renderer reads the theme before anything else.
  */
 export function toBuilderDocument(stored: unknown): EmailBuilderDocument {
     if (isEmailBuilderJsDocument(stored)) {
         return fromEmailBuilderJs(stored).document;
     }
 
-    return stored as EmailBuilderDocument;
+    const document = stored as Partial<EmailBuilderDocument>;
+    const defaults = emptyBuilderDocument();
+
+    return {
+        ...defaults,
+        ...document,
+        settings: { ...defaults.settings, ...document.settings },
+        theme: {
+            colors: { ...defaults.theme.colors, ...document.theme?.colors },
+            fonts: { ...defaults.theme.fonts, ...document.theme?.fonts },
+        },
+        root: document.root ?? defaults.root,
+        blocks: document.blocks ?? defaults.blocks,
+    };
 }
 
 /**

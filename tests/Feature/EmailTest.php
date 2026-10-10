@@ -951,6 +951,30 @@ test('a block email can be saved with every block removed but not without a root
         ->assertInvalid('design');
 });
 
+test('a block email saves an image whose alt text is blank', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $team->update(['email_editor' => EmailEditor::Builder]);
+    $email = Email::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->patch(route('emails.update', [$team, $email]), [
+            'name' => $email->name,
+            'subject' => $email->subject,
+            'html' => '<p>Anything</p>',
+            'design' => EmailTemplate::builderDesign([
+                'photo' => [
+                    'type' => 'image',
+                    'props' => ['src' => 'https://example.com/photo.png', 'alt' => ''],
+                ],
+            ]),
+        ])
+        ->assertValid('design')
+        ->assertRedirect();
+
+    expect(data_get($email->refresh()->design, 'blocks.photo.props.alt'))->toBe('');
+});
+
 test('a segment must belong to the chosen audience', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

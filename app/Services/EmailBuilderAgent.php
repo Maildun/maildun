@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Casts\DesignDocument;
 use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Validation\ValidationException;
@@ -67,9 +68,14 @@ class EmailBuilderAgent
             throw ValidationException::withMessages(['design' => 'The resulting email is too large.']);
         }
 
+        // Keep JSON objects as objects; associative decoding re-encodes `{}` as `[]`,
+        // which breaks JSON Schemas and the `props: {}` of a saved or returned container.
+        $objects = json_decode($process->output(), flags: JSON_THROW_ON_ERROR);
+        $result['document'] = DesignDocument::fromObjects($objects->document);
+        $result['result'] = DesignDocument::fromObjects($objects->result ?? null);
+
         if (isset($result['tools'])) {
-            // Keep JSON Schema objects as objects; associative decoding re-encodes `{}` as invalid `[]`.
-            $result['tools'] = json_decode($process->output(), flags: JSON_THROW_ON_ERROR)->tools;
+            $result['tools'] = $objects->tools;
         }
 
         return $result;

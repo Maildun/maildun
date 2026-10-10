@@ -408,3 +408,25 @@ test('renders native edits using a configured Node runtime', function () {
 
     expect($email->refresh()->design['root'])->toHaveCount(2);
 });
+
+test('accepts empty objects in native tool inputs and saves them as objects', function () {
+    $email = Email::factory()->builder()->create();
+
+    MaildunServer::tool(EditEmailBuilderTool::class, [
+        ...emailBuilderArguments($email),
+        'tool' => 'apply_ops',
+        'input' => ['ops' => [
+            ['op' => 'insert', 'blocks' => [['id' => 'box', 'type' => 'container', 'props' => [], 'children' => []]]],
+            ['op' => 'update', 'id' => 'block-1', 'style' => []],
+            ['op' => 'updateTheme', 'colors' => [], 'fonts' => []],
+        ]],
+    ])->assertOk();
+
+    expect($email->refresh()->getRawOriginal('design'))
+        ->toContain('"box":{"type":"container","props":{}')
+        ->not->toContain('"props":[]');
+
+    MaildunServer::tool(GetEmailBuilderTool::class, [...emailBuilderArguments($email), 'block_id' => 'box'])
+        ->assertOk()
+        ->assertSee('"props":{}');
+});

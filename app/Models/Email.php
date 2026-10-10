@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DesignDocument;
 use App\Enums\EmailEditor;
 use App\Enums\EmailStatus;
 use App\Enums\TestSendStatus;
@@ -218,7 +219,7 @@ class Email extends Model
         return [
             'editor' => EmailEditor::class,
             'status' => EmailStatus::class,
-            'design' => 'array',
+            'design' => DesignDocument::class,
             'track_clicks' => 'boolean',
             'track_opens' => 'boolean',
             'last_tested_at' => 'datetime',

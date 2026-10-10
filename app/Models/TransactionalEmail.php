@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DesignDocument;
 use App\Enums\EmailEditor;
 use App\Enums\TestSendStatus;
 use App\Enums\TransactionalEmailStatus;
@@ -221,7 +222,7 @@ class TransactionalEmail extends Model
         return [
             'editor' => EmailEditor::class,
             'status' => TransactionalEmailStatus::class,
-            'design' => 'array',
+            'design' => DesignDocument::class,
             'variables' => 'array',
             'published_at' => 'datetime',
             'last_tested_at' => 'datetime',
