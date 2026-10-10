@@ -6,6 +6,7 @@ use App\Actions\Emails\BuildCampaignInsights;
 use App\Actions\Emails\BuildSendReadiness;
 use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Actions\Emails\LintCampaignContent;
+use App\Actions\Emails\QueueCampaignTestEmail;
 use App\Actions\Emails\QueueRemainingRecipients;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\RetryEmailDeliveries;
@@ -21,12 +22,10 @@ use App\Enums\EmailProvider;
 use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
-use App\Enums\TestSendStatus;
 use App\Http\Requests\ScheduleEmailRequest;
 use App\Http\Requests\SendTestEmailRequest;
 use App\Http\Requests\StoreEmailRequest;
 use App\Http\Requests\UpdateEmailRequest;
-use App\Jobs\SendCampaignTestEmail;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\CampaignSeries;
@@ -563,28 +562,11 @@ class EmailController extends Controller
         SendTestEmailRequest $request,
         Team $currentTeam,
         Email $email,
-        BuildTrackedEmailHtml $trackedHtml,
-        RenderCampaignContent $renderer,
+        QueueCampaignTestEmail $queueTestEmail,
     ): RedirectResponse {
         abort_unless($email->status === EmailStatus::Draft, 409, __('A queued campaign can no longer send test copies.'));
 
-        $mergeData = $renderer->testData($request->string('to')->value(), now());
-        $email->forceFill([
-            'last_test_status' => TestSendStatus::Queued,
-            'last_test_recipient' => $request->string('to')->value(),
-            'last_test_error' => null,
-        ])->save();
-
-        SendCampaignTestEmail::dispatch(
-            $email->id,
-            $request->string('to')->value(),
-            $renderer->text($email->subject, $mergeData),
-            $trackedHtml->prepareTestHtml(
-                $email,
-                $renderer->html($email->html ?? '', $mergeData),
-            ),
-            $renderer->plainText($email, $mergeData),
-        )->afterCommit();
+        $queueTestEmail->handle($email, $request->string('to')->value());
 
         Inertia::flash('toast', [
             'type' => 'success',

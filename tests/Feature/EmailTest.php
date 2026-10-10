@@ -1032,6 +1032,7 @@ test('a test send uses the audience sender when the draft and team leave it blan
 
     $user = User::factory()->create();
     $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->create();
     $team->update(['email_from_name' => 'Maildun HQ', 'email_from_address' => 'hq@example.com']);
     $audience = Audience::factory()->for($team)->create([
         'from_name' => 'Readers Desk',
@@ -1055,6 +1056,7 @@ test('a test send turns leftover markdown unsubscribe tags into https links', fu
 
     $user = User::factory()->create();
     $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->create();
     $email = Email::factory()->for($team)->create([
         'html' => '<p>You get this email because you subscribe to dibma updates. [An Internal Link]({{ unsubscribe_url }})</p>',
     ]);
@@ -1078,6 +1080,7 @@ test('a test send queues the resolved sender identity', function () {
 
     $user = User::factory()->create();
     $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->create();
     $team->update(['email_from_name' => 'Maildun HQ', 'email_from_address' => 'hq@example.com']);
     $email = Email::factory()->for($team)->create(['from_name' => null, 'from_address' => null]);
 
@@ -1110,6 +1113,7 @@ test('a campaign test send queues before the delivery worker resolves its provid
 
     $user = User::factory()->create();
     $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->create();
     $email = Email::factory()->for($team)->create();
 
     $this->actingAs($user)
