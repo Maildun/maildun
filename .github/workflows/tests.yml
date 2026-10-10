@@ -63,6 +63,9 @@ jobs:
       - name: Audit PHP Dependencies
         run: composer audit --locked --no-interaction
 
+      # The one accepted advisory (braces, reached only through the shadcn
+      # CLI) is listed under audit.ignore in pnpm-workspace.yaml, so a local
+      # pnpm audit and this step agree. See SECURITY.md "Known issues".
       - name: Audit JavaScript Dependencies
         run: pnpm audit --audit-level=high
 

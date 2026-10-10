@@ -14,10 +14,32 @@ minimumReleaseAgeExclude:
 publicHoistPattern:
   - '@inertiajs/core'
 
-# minimatch 10 (reached through typescript-eslint) asks for brace-expansion ^5.0.5,
-# and a lockfile refresh keeps the 5.0.9 it locked, which is affected by
-# GHSA-6j4f-fj2g-mc7p, GHSA-qhr7-859c-m2p7 and GHSA-q2hr-2g5m-vwhr. The floor
-# below is the first patched release; drop it once the lockfile no longer
-# resolves anything older.
+# Each floor below raises a transitive package to its first patched release
+# (or the release the hosted edition already runs); drop an entry once the
+# lockfile no longer resolves anything older.
+# - brace-expansion: minimatch 10 (reached through typescript-eslint) asks for
+#   ^5.0.5, and a lockfile refresh keeps the 5.0.9 it locked, which is affected
+#   by GHSA-6j4f-fj2g-mc7p, GHSA-qhr7-859c-m2p7 and GHSA-q2hr-2g5m-vwhr.
+# - @modelcontextprotocol/sdk: the shadcn CLI locked 1.30.0, affected by
+#   GHSA-6qxp-vccf-f47h. 1.32.1 matches the hosted edition.
+# - proxy-addr: express 5 (shadcn > @modelcontextprotocol/sdk) locked 2.0.7,
+#   affected by GHSA-jqcg-44mw-7w3h.
+# - shell-quote: concurrently 10 pins exactly 1.9.0, affected by
+#   GHSA-pqg4-j6r4-53mv, so only an override can lift it.
+# - source-map-js: postcss (through vite) and @tailwindcss/node locked 1.2.1,
+#   affected by GHSA-68fv-2mgg-jv7q.
 overrides:
+  '@modelcontextprotocol/sdk@>=1.12.0 <1.31.0': ^1.32.1
   brace-expansion@>=4.0.0 <5.0.12: ^5.0.12
+  proxy-addr@<2.0.8: ^2.0.8
+  shell-quote@>=1.8.4 <1.11.0: ^1.11.0
+  source-map-js@>=1.0.0 <1.2.2: ^1.2.2
+
+# braces <=3.0.3 (GHSA-vfj7-8cjw-p6xm) has no patched release on npm. It is
+# reached only through the shadcn CLI (shadcn > fast-glob > micromatch, and
+# shadcn > ts-morph > @ts-morph/common > fast-glob), a development tool for
+# adding components that never runs in the application and is never bundled.
+# Drop the ignore once braces 3.0.4 ships and the lockfile resolves it.
+audit:
+  ignore:
+    - GHSA-vfj7-8cjw-p6xm
