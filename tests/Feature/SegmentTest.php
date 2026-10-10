@@ -2,10 +2,12 @@
 
 use App\Actions\Audiences\ApplySegmentRules;
 use App\Actions\Audiences\SyncSegmentSubscribers;
+use App\Enums\EmailStatus;
 use App\Enums\SegmentMatchType;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
+use App\Models\Email;
 use App\Models\Segment;
 use App\Models\SubscribeForm;
 use App\Models\Subscriber;
@@ -133,6 +135,48 @@ test('segment page shows the materialized subscriber list', function () {
             ->has('subscribers.data.0.tags')
             ->has('subscribers.data.1.tags'));
 });
+
+test('owners can delete a segment no active campaign targets', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $segment = Segment::factory()->for($audience)->create();
+    Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'segment_id' => $segment->id,
+        'status' => EmailStatus::Sent,
+    ]);
+
+    $this->actingAs($user)
+        ->delete(route('audiences.segments.destroy', [$team, $audience, $segment]))
+        ->assertRedirect(route('audiences.show', [$team, $audience]));
+
+    expect(Segment::query()->whereKey($segment->id)->exists())->toBeFalse();
+});
+
+test('segments targeted by a sending or scheduled campaign cannot be deleted', function (array $campaignAttributes) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $segment = Segment::factory()->for($audience)->create();
+    Email::factory()->for($team)->create([
+        'name' => 'Launch',
+        'audience_id' => $audience->id,
+        'segment_id' => $segment->id,
+        ...$campaignAttributes,
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('audiences.segments.show', [$team, $audience, $segment]))
+        ->delete(route('audiences.segments.destroy', [$team, $audience, $segment]))
+        ->assertRedirect(route('audiences.segments.show', [$team, $audience, $segment]))
+        ->assertSessionHasErrors(['segment' => 'This segment is used by scheduled or sending campaigns: Launch.']);
+
+    expect(Segment::query()->whereKey($segment->id)->exists())->toBeTrue();
+})->with([
+    'sending' => [['status' => EmailStatus::Sending]],
+    'scheduled' => [['status' => EmailStatus::Draft, 'scheduled_at' => now()->addDay()]],
+]);
 
 test('creating a segment immediately syncs matching subscribers', function () {
     $user = User::factory()->create();

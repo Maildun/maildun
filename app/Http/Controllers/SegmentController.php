@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Audiences\DeleteSegment;
 use App\Actions\Audiences\SyncSegmentSubscribers;
 use App\Http\Requests\SaveSegmentRequest;
 use App\Models\Audience;
@@ -92,10 +93,10 @@ class SegmentController extends Controller
         return back();
     }
 
-    public function destroy(Team $currentTeam, Audience $audience, Segment $segment): RedirectResponse
+    public function destroy(Team $currentTeam, Audience $audience, Segment $segment, DeleteSegment $deleteSegment): RedirectResponse
     {
         Gate::authorize('delete', $segment);
-        $segment->delete();
+        $deleteSegment->handle($segment);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Segment deleted.')]);
 

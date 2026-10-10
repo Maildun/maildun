@@ -49,6 +49,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { toast } from '@/components/ui/toast';
 import { formatRelativeTime } from '@/lib/format';
 import {
     index as audiencesIndex,
@@ -166,7 +167,14 @@ export default function SegmentShow({
                             <AlertDialogAction
                                 variant="destructive"
                                 onClick={() =>
-                                    router.delete(destroy.url(routeArgs))
+                                    router.delete(destroy.url(routeArgs), {
+                                        onError: (errors) =>
+                                            toast.add({
+                                                type: 'error',
+                                                title: 'Segment not deleted.',
+                                                description: errors.segment,
+                                            }),
+                                    })
                                 }
                             >
                                 Delete segment

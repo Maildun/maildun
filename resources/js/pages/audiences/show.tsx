@@ -86,6 +86,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { toast } from '@/components/ui/toast';
 import { useClipboard } from '@/hooks/use-clipboard';
 import { useListFilters } from '@/hooks/use-list-filters';
 import { formatRelativeTime } from '@/lib/format';
@@ -578,6 +579,17 @@ export default function AudienceShow(props: Props) {
                                                         setSegmentToDelete(
                                                             null,
                                                         ),
+                                                    onError: (errors) => {
+                                                        setSegmentToDelete(
+                                                            null,
+                                                        );
+                                                        toast.add({
+                                                            type: 'error',
+                                                            title: 'Segment not deleted.',
+                                                            description:
+                                                                errors.segment,
+                                                        });
+                                                    },
                                                 },
                                             );
                                         }}
