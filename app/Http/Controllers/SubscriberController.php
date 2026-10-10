@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Audiences\ResubscribeSubscriber;
 use App\Enums\AutomationTrigger;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
@@ -94,19 +95,10 @@ class SubscriberController extends Controller
         return back();
     }
 
-    public function resubscribe(ResubscribeSubscriberRequest $request, Team $currentTeam, Audience $audience, Subscriber $subscriber): RedirectResponse
+    public function resubscribe(ResubscribeSubscriberRequest $request, Team $currentTeam, Audience $audience, Subscriber $subscriber, ResubscribeSubscriber $resubscribeSubscriber): RedirectResponse
     {
         Gate::authorize('update', $subscriber);
-        $subscriber->update([
-            'status' => SubscriberStatus::Subscribed,
-            'consent_text' => 'Marketing consent confirmed by a team member.',
-            'consented_at' => now(),
-            'consent_ip' => $request->ip(),
-            'subscribed_at' => now(),
-            'unsubscribed_at' => null,
-        ]);
-
-        event(new SubscriberLifecycleOccurred(AutomationTrigger::Resubscribed, $subscriber->fresh() ?? $subscriber));
+        $resubscribeSubscriber->handle($subscriber, $request->ip());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber resubscribed.')]);
 
