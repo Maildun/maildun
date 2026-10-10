@@ -555,7 +555,7 @@ test('deleting its audience unlinks a transactional email without deleting it', 
     $audience->delete();
 
     $this->assertNotSoftDeleted($email);
-    expect($email->fresh()->audience)->toBeNull();
+    expect($email->fresh()->audience_id)->toBeNull();
 });
 
 test('members can read transactional emails but cannot change them', function () {
