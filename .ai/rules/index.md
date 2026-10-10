@@ -147,4 +147,4 @@ Before planning or editing, find the row whose globs match the file's path and r
 | resources/css/app.css,resources/js/components/ui/sidebar.tsx,resources/js/components/app-header.tsx | .ai/rules/ui-js-components.md |
 | resources/js/components/ui/tabs.tsx, resources/js/components/ui/badge.tsx, resources/js/components/ui/sonner.tsx, resources/js/components/ui/{input,textarea,select,input-otp,combobox,input-group,code-editor}.tsx, resources/js/components/ui/toast.tsx, resources/js/components/ui/button.tsx, resources/js/components/ui/sidebar.tsx | .ai/rules/ui.md |
 | app/Mail/**,app/Actions/Emails/**,app/Http/Controllers/UnsubscribeController.php,resources/js/pages/unsubscribe/** | .ai/rules/unsubscribe.md |
-| {composer.json,composer.lock,README.md,docs/installation.md,.github/workflows/*.yml}, {package.json,pnpm-lock.yaml,.github/workflows/*.yml,README.md} | .ai/rules/workflows.md |
+| {composer.json,composer.lock,README.md,docs/installation.md,.github/workflows/*.yml}, {package.json,pnpm-lock.yaml,pnpm-workspace.yaml,.github/workflows/*.yml,README.md} | .ai/rules/workflows.md |
