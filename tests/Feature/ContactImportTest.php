@@ -4,6 +4,7 @@ use App\Actions\Audiences\AddContactToAudiences;
 use App\Enums\ContactImportMergeStrategy;
 use App\Enums\ContactImportStatus;
 use App\Enums\SubscriberLanguage;
+use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Jobs\ProcessContactImport;
@@ -230,6 +231,32 @@ test('audience imports read subscriber languages by code or name', function () {
         ->and($languages)->not->toHaveKey('invalid@example.com')
         ->and($contactImport->refresh()->failed_rows)->toBe(1)
         ->and($existing->refresh()->language)->toBe(SubscriberLanguage::English);
+});
+
+test('resubscribing audience imports keep the language an existing member already has', function () {
+    Storage::fake('local');
+
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create();
+    $existing = Subscriber::factory()->for($audience)->for(Contact::factory()->for($team)->state(['email' => 'existing@example.com']))->unsubscribed()->create([
+        'email' => 'existing@example.com',
+        'language' => SubscriberLanguage::English,
+    ]);
+    $contactImport = ContactImport::factory()->for($team)->for($audience)->create([
+        'column_map' => ['email', 'language'],
+        'resubscribe_unsubscribed' => true,
+    ]);
+    Storage::disk('local')->put($contactImport->path, "email,language\nexisting@example.com,fr\n");
+
+    (new ProcessContactImport($contactImport->id))->handle(
+        app(ManageContact::class),
+        app(AddContactToAudiences::class),
+        app(ContactImportCsv::class),
+        app(ImportEmailReview::class),
+    );
+
+    expect($existing->refresh()->status)->toBe(SubscriberStatus::Subscribed)
+        ->and($existing->language)->toBe(SubscriberLanguage::English);
 });
 
 test('imports fail with a useful error and keep the file for retry when the email header is missing', function () {

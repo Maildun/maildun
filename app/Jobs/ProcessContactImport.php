@@ -411,8 +411,8 @@ class ProcessContactImport implements ShouldQueue
         $changes = $merged === $current ? [] : ['attribute_values' => $merged];
 
         // A new membership takes the CSV language over the audience default; an
-        // existing one only gains a language it was missing.
-        if ($language !== null && ($createdMembership > 0 || $existing?->language === null) && $subscriber->language !== $language) {
+        // existing one, even when resubscribed, only gains a language it was missing.
+        if ($language !== null && ($existing === null || $existing->language === null) && $subscriber->language !== $language) {
             $changes['language'] = $language;
         }
 
