@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Media\BuildMediaLibrary;
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\EmailEditor;
 use App\Enums\TestSendStatus;
@@ -103,7 +104,7 @@ class TransactionalEmailController extends Controller
         return to_route('transactional_emails.edit', ['current_team' => $currentTeam, 'transactionalEmail' => $email]);
     }
 
-    public function edit(Team $currentTeam, TransactionalEmail $transactionalEmail): Response
+    public function edit(Team $currentTeam, TransactionalEmail $transactionalEmail, BuildMediaLibrary $mediaLibrary): Response
     {
         Gate::authorize('view', $transactionalEmail);
 
@@ -149,6 +150,9 @@ class TransactionalEmailController extends Controller
                 ])
                 ->all(),
             'canManage' => Gate::allows('update', $transactionalEmail),
+            'mediaLibrary' => fn (): ?array => $currentTeam->email_editor === EmailEditor::Builder
+                ? $mediaLibrary->handle($currentTeam)
+                : null,
         ]);
     }
 

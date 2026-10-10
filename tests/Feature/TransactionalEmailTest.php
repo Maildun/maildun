@@ -6,6 +6,7 @@ use App\Enums\TransactionalEmailStatus;
 use App\Jobs\SendTransactionalEmailTest;
 use App\Models\Audience;
 use App\Models\EmailTemplate;
+use App\Models\Media;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use App\Models\User;
@@ -166,6 +167,36 @@ test('the edit page exposes the email and sender defaults', function () {
             ->where('defaults.from_name', 'Maildun HQ')
             ->where('defaults.from_address', 'hq@example.com')
             ->where('email.variables.0.key', 'first_name'));
+});
+
+test('the builder edit page exposes the team media library', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $team->update(['email_editor' => EmailEditor::Builder]);
+    $email = TransactionalEmail::factory()->for($team)->create();
+    Media::factory()->for($team)->create(['name' => 'receipt-logo.png']);
+    Media::factory()->for(Team::factory()->create())->create(['name' => 'private.png']);
+
+    $this->actingAs($user)
+        ->get(route('transactional_emails.edit', [$team, $email]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('mediaLibrary.canUpload', true)
+            ->has('mediaLibrary.items', 1)
+            ->where('mediaLibrary.items.0.name', 'receipt-logo.png'));
+});
+
+test('the html edit page does not load the media library', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $team->update(['email_editor' => EmailEditor::Html]);
+    $email = TransactionalEmail::factory()->for($team)->create();
+    Media::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->get(route('transactional_emails.edit', [$team, $email]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('mediaLibrary', null));
 });
 
 test('saving merges detected variables and keeps examples', function () {

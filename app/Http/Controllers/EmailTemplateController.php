@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Media\BuildMediaLibrary;
 use App\Enums\EmailEditor;
 use App\Http\Requests\SaveEmailTemplateRequest;
 use App\Models\EmailTemplate;
@@ -66,7 +67,7 @@ class EmailTemplateController extends Controller
         return back();
     }
 
-    public function edit(Team $currentTeam, EmailTemplate $emailTemplate): Response
+    public function edit(Team $currentTeam, EmailTemplate $emailTemplate, BuildMediaLibrary $mediaLibrary): Response
     {
         Gate::authorize('update', $emailTemplate);
 
@@ -87,6 +88,9 @@ class EmailTemplateController extends Controller
             'templates' => $this->templatesFor($currentTeam),
             'defaultEditor' => $currentTeam->email_editor->value,
             'canManage' => Gate::allows('update', $emailTemplate),
+            'mediaLibrary' => fn (): ?array => $emailTemplate->editor === EmailEditor::Builder
+                ? $mediaLibrary->handle($currentTeam)
+                : null,
         ]);
     }
 

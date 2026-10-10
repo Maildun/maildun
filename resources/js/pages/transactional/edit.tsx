@@ -4,6 +4,7 @@ import {
     Copy01Icon,
     Delete02Icon,
     Edit03Icon,
+    FolderLibraryIcon,
     MailSend01Icon,
     MoreHorizontalIcon,
     Upload01Icon,
@@ -11,14 +12,19 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, router, setLayoutProps, useForm } from '@inertiajs/react';
+import type {
+    EmailEditorHandle,
+    ImageResult,
+} from '@maildun/email-builder/editor';
 import type { FormEvent } from 'react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteTransactionalEmailModal from '@/components/delete-transactional-email-modal';
 import { EmailBuilderEditor } from '@/components/email-builder-editor';
 import { EmailHtmlEditor } from '@/components/email-html-editor';
 import { EmailSourceEditor } from '@/components/email-source-editor';
 import { LastTestStatus } from '@/components/last-test-status';
+import MediaLibraryDialog from '@/components/media-library-dialog';
 import SendTestTransactionalEmailDialog from '@/components/send-test-transactional-email-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -58,10 +64,12 @@ import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from '@/components/ui/toast';
 import { useClipboard } from '@/hooks/use-clipboard';
+import { uploadEditorImage } from '@/lib/editor-media-upload';
 import {
     EMPTY_BUILDER_DOCUMENT,
     getChildrenIds,
     htmlToBuilderDocument,
+    insertBuilderMedia,
     isSourceEditor,
     renderBuilderHtml,
     renderSourceHtml,
@@ -79,6 +87,8 @@ import type {
     EmailBuilderDocument,
     EmailEditorMode,
     EmailSenderDefaults,
+    MediaItem,
+    MediaLibraryData,
     TransactionalEmailDetail,
     TransactionalVariable,
 } from '@/types';
@@ -90,6 +100,7 @@ type Props = {
     canManage: boolean;
     currentTeam: { slug: string };
     auth: { user: { email: string } };
+    mediaLibrary: MediaLibraryData | null;
 };
 
 type SectionValue = 'details' | 'sender' | 'design' | 'variables';
@@ -177,8 +188,18 @@ export default function TransactionalEdit({
     canManage,
     currentTeam,
     auth,
+    mediaLibrary,
 }: Props) {
     const [view, setView] = useState<'hub' | 'design'>('hub');
+    const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
+    const builderRef = useRef<EmailEditorHandle>(null);
+    const imagePickerResolve = useRef<
+        ((image: ImageResult | null) => void) | null
+    >(null);
+    const uploadBuilderImage =
+        canManage && mediaLibrary?.canUpload
+            ? (file: File) => uploadEditorImage(currentTeam.slug, file)
+            : undefined;
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
     const [testOpen, setTestOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
@@ -330,6 +351,68 @@ export default function TransactionalEdit({
     const published = email.status === 'published';
     const designing = view === 'design';
 
+    useEffect(() => {
+        return () => imagePickerResolve.current?.(null);
+    }, []);
+
+    const changeMediaDialogOpen = (open: boolean) => {
+        if (!open) {
+            imagePickerResolve.current?.(null);
+            imagePickerResolve.current = null;
+        }
+
+        setMediaDialogOpen(open);
+    };
+
+    const pickBuilderImage = (): Promise<ImageResult | null> => {
+        if (!canManage || form.processing || !mediaLibrary) {
+            return Promise.resolve(null);
+        }
+
+        imagePickerResolve.current?.(null);
+
+        return new Promise((resolve) => {
+            imagePickerResolve.current = resolve;
+            setMediaDialogOpen(true);
+        });
+    };
+
+    const insertMedia = (image: MediaItem): boolean => {
+        if (
+            !canManage ||
+            form.processing ||
+            image.status !== 'ready' ||
+            !image.absolute_url
+        ) {
+            return false;
+        }
+
+        if (imagePickerResolve.current) {
+            imagePickerResolve.current({
+                url: image.absolute_url,
+                alt: image.alt ?? image.name,
+            });
+            imagePickerResolve.current = null;
+
+            return true;
+        }
+
+        if (!builderRef.current) {
+            return false;
+        }
+
+        const inserted = insertBuilderMedia(builderRef.current.store, image);
+
+        if (!inserted) {
+            toast.add({
+                type: 'error',
+                title: 'Could not insert this image. Try again.',
+            });
+        }
+
+        return inserted;
+    };
+
     const addVariable = () => {
         const key = newVariableKey.trim();
 
@@ -412,24 +495,51 @@ export default function TransactionalEdit({
                                     className="hidden truncate md:block"
                                 />
                             </div>
-                            {canManage ? (
-                                <Button
-                                    type="submit"
-                                    size="sm"
-                                    data-test="save-transactional-button"
-                                    disabled={form.processing}
-                                >
-                                    {form.processing && (
-                                        <Spinner data-icon="inline-start" />
-                                    )}
-                                    Save
-                                </Button>
-                            ) : null}
+                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                                {email.editor === 'builder' && mediaLibrary ? (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        aria-label="Open media library"
+                                        data-test="open-media-library"
+                                        onClick={() => setMediaDialogOpen(true)}
+                                    >
+                                        <HugeiconsIcon
+                                            icon={FolderLibraryIcon}
+                                            data-icon="inline-start"
+                                        />
+                                        <span className="hidden lg:inline">
+                                            Open media
+                                        </span>
+                                    </Button>
+                                ) : null}
+                                {canManage ? (
+                                    <Button
+                                        type="submit"
+                                        size="sm"
+                                        data-test="save-transactional-button"
+                                        disabled={form.processing}
+                                    >
+                                        {form.processing && (
+                                            <Spinner data-icon="inline-start" />
+                                        )}
+                                        Save
+                                    </Button>
+                                ) : null}
+                            </div>
                         </header>
                         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                             {email.editor === 'builder' ? (
                                 <>
                                     <EmailBuilderEditor
+                                        ref={builderRef}
+                                        onPickImage={
+                                            mediaLibrary
+                                                ? pickBuilderImage
+                                                : undefined
+                                        }
+                                        onUploadImage={uploadBuilderImage}
                                         document={
                                             form.data.design ??
                                             EMPTY_BUILDER_DOCUMENT
@@ -1190,6 +1300,17 @@ export default function TransactionalEdit({
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {mediaLibrary ? (
+                <MediaLibraryDialog
+                    teamSlug={currentTeam.slug}
+                    library={mediaLibrary}
+                    open={mediaDialogOpen}
+                    onOpenChange={changeMediaDialogOpen}
+                    onInsert={canManage && designing ? insertMedia : undefined}
+                    insertDisabled={form.processing}
+                />
+            ) : null}
 
             {canManage && (
                 <>
