@@ -57,13 +57,19 @@ import {
 } from '@/routes/audiences';
 import { destroy, show, update } from '@/routes/audiences/segments';
 import { show as showSubscriber } from '@/routes/audiences/subscribers';
-import type { Paginated, Segment, Subscriber } from '@/types/audiences';
+import type {
+    Paginated,
+    Segment,
+    Subscriber,
+    SubscriberLanguageOption,
+} from '@/types/audiences';
 
 type Props = {
     audience: { uuid: string; name: string };
     segment: Segment;
     subscribers: Paginated<Subscriber>;
     forms: { uuid: string; name: string }[];
+    languages: SubscriberLanguageOption[];
     canManage: boolean;
     currentTeam: { slug: string };
 };
@@ -73,6 +79,7 @@ export default function SegmentShow({
     segment,
     subscribers,
     forms,
+    languages,
     canManage,
     currentTeam,
 }: Props) {
@@ -246,6 +253,7 @@ export default function SegmentShow({
                 routeArgs={routeArgs}
                 segment={segment}
                 forms={forms}
+                languages={languages}
                 canManage={canManage}
             />
         </>
@@ -258,6 +266,7 @@ function SegmentEditDialog({
     routeArgs,
     segment,
     forms,
+    languages,
     canManage,
 }: {
     open: boolean;
@@ -265,6 +274,7 @@ function SegmentEditDialog({
     routeArgs: [string, string, string];
     segment: Segment;
     forms: { uuid: string; name: string }[];
+    languages: SubscriberLanguageOption[];
     canManage: boolean;
 }) {
     const form = useForm({
@@ -314,6 +324,7 @@ function SegmentEditDialog({
                         setData={form.setData}
                         errors={form.errors}
                         forms={forms}
+                        languages={languages}
                         disabled={!canManage}
                     />
                     {canManage && (

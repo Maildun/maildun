@@ -9,6 +9,7 @@ import {
     MoreHorizontalIcon,
     StatusIcon,
     Tick02Icon,
+    TranslateIcon,
     UserCheck01Icon,
     UserGroupIcon,
     UserIcon,
@@ -120,6 +121,7 @@ import type {
     Subscriber,
     SubscribeFormSummary,
     SubscriberIndexFilters,
+    SubscriberLanguageOption,
     Tag,
 } from '@/types/audiences';
 import type { CompanyOption } from '@/types/contacts';
@@ -132,6 +134,7 @@ type Props = {
     subscriberStats: AudienceSubscriberStats;
     segments: Segment[];
     forms: SubscribeFormSummary[];
+    languages: SubscriberLanguageOption[];
     companies: CompanyOption[];
     tags: Tag[];
     filters: SubscriberIndexFilters;
@@ -160,6 +163,7 @@ export default function AudienceShow(props: Props) {
         subscriberStats,
         segments,
         forms,
+        languages,
         companies,
         tags,
         filters,
@@ -183,7 +187,7 @@ export default function AudienceShow(props: Props) {
     } = useListFilters<SubscriberIndexFilters>({
         url: currentTeam ? show.url([currentTeam.slug, audience.uuid]) : '',
         filters,
-        empty: { search: '', status: 'all', source: 'all' },
+        empty: { search: '', status: 'all', source: 'all', language: 'all' },
         searchField: 'search',
     });
 
@@ -291,6 +295,18 @@ export default function AudienceShow(props: Props) {
                                             visitSubscribers({ source }),
                                         testId: 'subscriber-source-filter',
                                     },
+                                    {
+                                        key: 'language',
+                                        icon: TranslateIcon,
+                                        label: 'Language',
+                                        value: filters.language,
+                                        allValue: 'all',
+                                        allLabel: 'All languages',
+                                        options: languages,
+                                        onValueChange: (language) =>
+                                            visitSubscribers({ language }),
+                                        testId: 'subscriber-language-filter',
+                                    },
                                 ]}
                             />
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -386,6 +402,24 @@ export default function AudienceShow(props: Props) {
                                           },
                                       ]
                                     : []),
+                                ...(filters.language !== 'all'
+                                    ? [
+                                          {
+                                              key: 'language',
+                                              field: 'Language',
+                                              value:
+                                                  languages.find(
+                                                      (language) =>
+                                                          language.value ===
+                                                          filters.language,
+                                                  )?.label ?? filters.language,
+                                              onClear: () =>
+                                                  clearSubscriberFilter({
+                                                      language: 'all',
+                                                  }),
+                                          },
+                                      ]
+                                    : []),
                             ]}
                             onClearAll={clearSubscriberFilters}
                             clearTestId="clear-subscriber-filters"
@@ -421,6 +455,7 @@ export default function AudienceShow(props: Props) {
                                 routeArgs={routeArgs}
                                 canManage={canManage}
                                 tags={tags}
+                                languages={languages}
                                 selected={selected}
                                 onSelectedChange={setSelected}
                             />
@@ -537,6 +572,7 @@ export default function AudienceShow(props: Props) {
                             }}
                             routeArgs={routeArgs}
                             forms={forms}
+                            languages={languages}
                             segment={segmentToEdit}
                         />
                         <AlertDialog
@@ -668,6 +704,7 @@ function SubscriberTable({
     routeArgs,
     canManage,
     tags,
+    languages,
     selected,
     onSelectedChange,
 }: {
@@ -676,6 +713,7 @@ function SubscriberTable({
     routeArgs: [string, string];
     canManage: boolean;
     tags: Tag[];
+    languages: SubscriberLanguageOption[];
     selected: Set<string>;
     onSelectedChange: (selected: Set<string>) => void;
 }) {
@@ -742,6 +780,7 @@ function SubscriberTable({
                         routeArgs={routeArgs}
                         canManage={canManage}
                         tags={tags}
+                        languages={languages}
                         selected={selected}
                         onSelectedChange={onSelectedChange}
                     />
@@ -756,6 +795,7 @@ function SubscriberRow({
     routeArgs,
     canManage,
     tags,
+    languages,
     selected,
     onSelectedChange,
 }: {
@@ -763,6 +803,7 @@ function SubscriberRow({
     routeArgs: [string, string];
     canManage: boolean;
     tags: Tag[];
+    languages: SubscriberLanguageOption[];
     selected: Set<string>;
     onSelectedChange: (selected: Set<string>) => void;
 }) {
@@ -883,6 +924,7 @@ function SubscriberRow({
                         subscriber={subscriber}
                         routeArgs={routeArgs}
                         tags={tags}
+                        languages={languages}
                         editOpen={editOpen}
                         editGeneration={editGeneration}
                         onEdit={openEdit}
@@ -1116,6 +1158,7 @@ function SubscriberActions({
     subscriber,
     routeArgs,
     tags,
+    languages,
     editOpen,
     editGeneration,
     onEdit,
@@ -1124,6 +1167,7 @@ function SubscriberActions({
     subscriber: Subscriber;
     routeArgs: [string, string];
     tags: Tag[];
+    languages: SubscriberLanguageOption[];
     editOpen: boolean;
     editGeneration: number;
     onEdit: () => void;
@@ -1144,6 +1188,7 @@ function SubscriberActions({
                 routeArgs={routeArgs}
                 subscriber={subscriber}
                 tags={tags}
+                languages={languages}
             />
             <DropdownMenu>
                 <DropdownMenuTrigger
@@ -1307,12 +1352,14 @@ function SegmentDialog({
     onOpenChange,
     routeArgs,
     forms,
+    languages,
     segment,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     routeArgs: [string, string];
     forms: SubscribeFormSummary[];
+    languages: SubscriberLanguageOption[];
     segment?: Segment | null;
 }) {
     const form = useForm(emptySegmentForm());
@@ -1375,6 +1422,7 @@ function SegmentDialog({
                         setData={form.setData}
                         errors={form.errors}
                         forms={forms}
+                        languages={languages}
                     />
                     <DialogFooter className="mt-6">
                         <Button type="submit" disabled={form.processing}>

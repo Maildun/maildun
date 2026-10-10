@@ -30,6 +30,8 @@ const SUBSCRIBER_TAGS: TagItem[] = [
     { label: 'Last name', tag: '{{ last_name }}', sample: 'Lovelace' },
     { label: 'Name', tag: '{{ name }}', sample: 'Ada Lovelace' },
     { label: 'Email', tag: '{{ email }}', sample: 'ada@example.com' },
+    { label: 'Language code', tag: '{{ language }}', sample: 'en' },
+    { label: 'Language name', tag: '{{ language_name }}', sample: 'English' },
 ];
 
 const DATE_TAGS: TagItem[] = [

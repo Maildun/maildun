@@ -66,6 +66,7 @@ type Lookups = {
     actionLabels: Record<string, string>;
     conditionLabels: Record<string, string>;
     sourceLabels: Record<string, string>;
+    languageLabels: Record<string, string>;
     delayUnitLabels: Record<string, string>;
     tags: AutomationTagOption[];
     emails: AutomationEmailOption[];
@@ -187,6 +188,7 @@ type CanvasContextValue = Lookups & {
     tagName: (uuid: unknown) => string;
     emailName: (uuid: unknown) => string;
     sourceName: (source: unknown) => string;
+    languageName: (language: unknown) => string;
 };
 
 const AutomationCanvasContext = createContext<CanvasContextValue | null>(null);
@@ -312,8 +314,13 @@ function DelayNode({ id, data, selected }: NodeProps) {
 }
 
 function ConditionNode({ id, data, selected }: NodeProps) {
-    const { conditionLabels, sourceName, tagName, testingNodeId } =
-        useAutomationCanvasContext();
+    const {
+        conditionLabels,
+        languageName,
+        sourceName,
+        tagName,
+        testingNodeId,
+    } = useAutomationCanvasContext();
     const condition = data as AutomationConditionData;
 
     return (
@@ -334,7 +341,9 @@ function ConditionNode({ id, data, selected }: NodeProps) {
                         ? tagName(condition.tag_uuid)
                         : condition.kind === 'source'
                           ? sourceName(condition.source)
-                          : undefined
+                          : condition.kind === 'language'
+                            ? languageName(condition.language)
+                            : undefined
                 }
                 selected={selected}
                 testing={testingNodeId === id}
@@ -473,6 +482,7 @@ export default function AutomationCanvas({
     actionLabels,
     conditionLabels,
     sourceLabels,
+    languageLabels,
     delayUnitLabels,
     tags,
     emails,
@@ -519,12 +529,15 @@ export default function AutomationCanvas({
             'No email chosen';
         const sourceName = (source: unknown) =>
             sourceLabels[String(source)] ?? 'No source chosen';
+        const languageName = (language: unknown) =>
+            languageLabels[String(language)] ?? 'No language chosen';
 
         return {
             triggerLabels,
             actionLabels,
             conditionLabels,
             sourceLabels,
+            languageLabels,
             delayUnitLabels,
             tags,
             emails,
@@ -532,12 +545,14 @@ export default function AutomationCanvas({
             tagName,
             emailName,
             sourceName,
+            languageName,
         };
     }, [
         actionLabels,
         conditionLabels,
         delayUnitLabels,
         emails,
+        languageLabels,
         sourceLabels,
         tags,
         testingNodeId,

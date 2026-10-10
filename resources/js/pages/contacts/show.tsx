@@ -1090,6 +1090,9 @@ function MembershipPanel({
                                     membership.source}
                             </span>
                         </PropertyRow>
+                        <PropertyRow label="Language" className="px-3">
+                            {membership.language_name ?? '—'}
+                        </PropertyRow>
                         <PropertyRow
                             label="Subscribed"
                             title={absoluteTime(membership.subscribed_at)}
