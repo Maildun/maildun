@@ -24,3 +24,6 @@ Raise vulnerable transitive packages with a narrow `overrides` entry in `pnpm-wo
 
 The only ignored advisory is GHSA-vfj7-8cjw-p6xm (braces <=3.0.3, no patched release on npm), listed under `audit.ignore` in `pnpm-workspace.yaml` so local `pnpm audit` and CI agree. braces is reached only through the shadcn CLI (fast-glob > micromatch), which is development tooling and never bundled. Remove the entry once braces 3.0.4 ships; do not ignore other advisories without the same justification here and in SECURITY.md "Known issues".
 
+
+## The Docker image ships only the email builder agent's imports
+The runtime stage has the Node binary and a `node_modules` holding exactly `@maildun/email-builder`, `zod` and `marked`, copied from the builder's own pnpm dependency directory in the assets stage. That is the import closure of `resources/js/lib/email-builder-agent.mjs` (the package's core, agent and compat entry points). When bumping `@maildun/email-builder` or changing what the agent imports, check the closure again and extend the `for dependency in ...` list in the Dockerfile; the docker job's "Verify the email builder runtime" step runs `EmailBuilderAgent` inside the image and fails if a package is missing. Do not copy the full production `node_modules` (about 350 MB) into the runtime image.

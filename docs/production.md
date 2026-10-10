@@ -56,6 +56,8 @@ Preserve `storage/oauth-private.key` and `storage/oauth-public.key` across relea
 
 Set the public HTTPS `APP_URL`, allow only trusted callback origins or native schemes, and make OAuth discovery and token routes reachable through the reverse proxy. Follow [Using MCP](mcp.md#operator-setup) for the configuration defaults and connection checks.
 
+The email builder tools (`get-email-builder`, `edit-email-builder`, `check-email-builder`) run `resources/js/lib/email-builder-agent.mjs` with Node.js on every call. Keep Node.js 20 or newer available to the PHP process (on its `PATH`, or as an absolute path in `MCP_EMAIL_BUILDER_RUNTIME`) and keep the `node_modules` directory from `pnpm install` in place after `pnpm run build`; deleting it after the build breaks these tools with "The email builder runtime is unavailable". The Docker image already includes Node.js and the packages the agent needs.
+
 ## Required long-running processes
 
 ### Queue workers
