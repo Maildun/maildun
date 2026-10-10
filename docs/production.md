@@ -28,6 +28,20 @@ Run the first installation interactively so the administrator password does not 
 php artisan app:install --no-interaction --force --registration=closed --skip-storage
 ```
 
+### Laravel Forge
+
+Forge deploy scripts cannot answer prompts, so run the installer headless from the deploy script, after `composer install` and the frontend build (`pnpm install --frozen-lockfile` and `pnpm run build`):
+
+```bash
+$FORGE_PHP artisan app:install --no-interaction --force --registration=closed --skip-storage --setup-email=you@example.com
+$FORGE_PHP artisan horizon:terminate
+$FORGE_PHP artisan app:system-test --no-interaction --skip=horizon
+```
+
+`app:system-test` runs the same checks as the installer's browser system test and the **Settings → System Check** page, including a temporary storage write, read, and delete, and exits non-zero when any check fails, which stops the deploy. Skip `horizon` here because the daemon is still restarting after `horizon:terminate`; run the full test later to confirm the workers came back. A scheduler that has not run yet is reported as pending and does not fail the deploy. Pass `--no-storage-probe` to skip the file round trip.
+
+Until an administrator exists, each deploy prints a signed browser setup link (valid for 24 hours) to the deployment log and, with `--setup-email`, sends it through the application-wide mailer (the system `MAIL_*` values, not a workspace connection). Once the administrator has been created the option does nothing, so it is safe to leave in the script. If the mailer is not configured yet, the deploy still succeeds and the link stays in the log.
+
 The web server's document root must be the repository's `public` directory. The application process must not run as `root`, and only Laravel's required storage and cache directories should be writable.
 
 ## Remote MCP

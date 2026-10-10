@@ -4,8 +4,10 @@ use App\Enums\TeamPermission;
 use App\Enums\TeamRole;
 use App\Models\EmailTemplate;
 use App\Models\User;
+use App\Notifications\InstallationSetupLink;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Permission;
 
 /**
@@ -158,6 +160,69 @@ test('a non-interactive run without admin details prints a secure browser setup 
         ->run();
 
     expect(User::query()->count())->toBe(0);
+});
+
+test('a headless run can email the browser setup link', function () {
+    Notification::fake();
+
+    $this->artisan('app:install', [
+        '--setup-email' => 'ops@example.com',
+        '--skip-storage' => true,
+        '--no-interaction' => true,
+        '--force' => true,
+    ])
+        ->expectsOutputToContain('/install?expires=')
+        ->assertSuccessful()
+        ->run();
+
+    Notification::assertSentOnDemand(
+        InstallationSetupLink::class,
+        fn (InstallationSetupLink $notification, array $channels, object $notifiable): bool => $notifiable->routes['mail'] === 'ops@example.com'
+            && str_contains($notification->url, '/install?expires='),
+    );
+});
+
+test('it does not email a setup link once an administrator exists', function () {
+    Notification::fake();
+
+    $this->artisan('app:install', [
+        '--admin-name' => 'Ada Lovelace',
+        '--admin-email' => 'ada@example.com',
+        '--admin-password' => 'correct-horse-battery-staple',
+        '--setup-email' => 'ops@example.com',
+        '--skip-storage' => true,
+        '--no-interaction' => true,
+    ])->assertSuccessful()->run();
+
+    Notification::assertNothingSent();
+});
+
+test('a mailer failure still prints the setup link', function () {
+    config()->set('mail.default', 'smtp');
+    config()->set('mail.mailers.smtp.host', 'mail.invalid');
+    config()->set('mail.mailers.smtp.port', 1);
+
+    $this->artisan('app:install', [
+        '--setup-email' => 'ops@example.com',
+        '--skip-storage' => true,
+        '--no-interaction' => true,
+    ])
+        ->expectsOutputToContain('could not be emailed to ops@example.com')
+        ->expectsOutputToContain('/install?expires=')
+        ->assertSuccessful()
+        ->run();
+});
+
+test('it refuses an invalid setup email before touching anything', function () {
+    $before = installEnvContents();
+
+    $this->artisan('app:install', [
+        '--setup-email' => 'not-an-email',
+        '--skip-storage' => true,
+        '--no-interaction' => true,
+    ])->assertFailed()->run();
+
+    expect(installEnvContents())->toBe($before);
 });
 
 test('it asks for the sign-up policy and the administrator when run interactively', function () {
