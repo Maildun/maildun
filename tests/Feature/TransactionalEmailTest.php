@@ -460,6 +460,16 @@ test('a transactional email can be deleted', function () {
     $this->assertSoftDeleted($email);
 });
 
+test('deleting its audience unlinks a transactional email without deleting it', function () {
+    $audience = Audience::factory()->create();
+    $email = TransactionalEmail::factory()->for($audience->team)->create(['audience_id' => $audience->id]);
+
+    $audience->delete();
+
+    $this->assertNotSoftDeleted($email);
+    expect($email->fresh()->audience)->toBeNull();
+});
+
 test('members can read transactional emails but cannot change them', function () {
     Mail::fake();
 
