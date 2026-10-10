@@ -6,6 +6,7 @@ use App\Enums\AutomationAction;
 use App\Enums\AutomationCondition;
 use App\Enums\AutomationDelayUnit;
 use App\Enums\AutomationRunStatus;
+use App\Enums\AutomationTrigger;
 use App\Enums\EmailAddressHealthReason;
 use App\Enums\SubscriberSource;
 use App\Jobs\ProcessAutomationRun;
@@ -392,6 +393,32 @@ test('all outgoing branches execute independently and the run completes after th
     expect($subscriber->tags()->whereKey($delayed->id)->exists())->toBeTrue()
         ->and($run->refresh()->status)->toBe(AutomationRunStatus::Completed)
         ->and($run->steps()->where('status', 'completed')->count())->toBe(6);
+});
+
+test('an add tag step starts tagged automations on every membership but never restarts its own automation', function () {
+    $automation = Automation::factory()->active()->triggeredBy(AutomationTrigger::Tagged)->create();
+    $tag = Tag::factory()->for($automation->team)->create();
+    $automation->update(['trigger_config' => ['audience_uuid' => null, 'tag_uuid' => $tag->uuid]]);
+    $follower = Automation::factory()->for($automation->team)->active()->triggeredBy(AutomationTrigger::Tagged)->create();
+    $follower->update(['trigger_config' => ['audience_uuid' => null, 'tag_uuid' => $tag->uuid]]);
+    $bystander = Automation::factory()->for($automation->team)->active()->triggeredBy(AutomationTrigger::Tagged)->create();
+    $bystander->update(['trigger_config' => ['audience_uuid' => null, 'tag_uuid' => Tag::factory()->for($automation->team)->create()->uuid]]);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($automation->team))->create();
+    $otherMembership = Subscriber::factory()->for(Audience::factory()->for($automation->team))->create(['email' => $subscriber->email]);
+    $run = automationRun(
+        nodes: [['id' => 'tag', 'type' => 'action', 'data' => ['kind' => AutomationAction::AddTag->value, 'tag_uuid' => $tag->uuid]]],
+        edges: [['source' => 'trigger', 'target' => 'tag']],
+        subscriber: $subscriber,
+        automation: $automation,
+    );
+
+    app(AdvanceAutomationRun::class)->handle($run, 'tag');
+
+    expect($subscriber->tags()->whereKey($tag->id)->exists())->toBeTrue()
+        ->and($follower->runs()->pluck('subscriber_id')->sort()->values()->all())
+        ->toBe(collect([$subscriber->id, $otherMembership->id])->sort()->values()->all())
+        ->and($automation->runs()->pluck('subscriber_id')->all())->toBe([$subscriber->id])
+        ->and($bystander->runs()->exists())->toBeFalse();
 });
 
 test('a queued branch job advances only its assigned node', function () {

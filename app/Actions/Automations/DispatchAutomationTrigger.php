@@ -20,11 +20,13 @@ class DispatchAutomationTrigger
 
         $team = $subscriber->audience->team;
         $tagUuid = is_string($context['tag_uuid'] ?? null) ? $context['tag_uuid'] : null;
+        $sourceAutomationUuid = is_string($context['source_automation_uuid'] ?? null) ? $context['source_automation_uuid'] : null;
 
         Automation::query()
             ->where('team_id', $team->id)
             ->where('status', AutomationStatus::Active)
             ->where('trigger', $trigger)
+            ->when($sourceAutomationUuid !== null, fn ($query) => $query->where('uuid', '!=', $sourceAutomationUuid))
             ->each(function (Automation $automation) use ($subscriber, $tagUuid, $context): void {
                 if (! $this->matches($automation, $subscriber, $tagUuid)) {
                     return;

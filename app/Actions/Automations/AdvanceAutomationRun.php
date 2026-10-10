@@ -32,6 +32,7 @@ class AdvanceAutomationRun
         private TeamMailer $teamMailer,
         private RecordEmailAddressHealth $emailHealth,
         private BuildAutomationMergeData $mergeData,
+        private DispatchTaggedTriggers $dispatchTaggedTriggers,
     ) {}
 
     public function handle(AutomationRun $run, ?string $nodeId = null): void
@@ -272,7 +273,11 @@ class AdvanceAutomationRun
         $subscriber = $run->subscriber()->firstOrFail();
 
         if ($add) {
-            $subscriber->tags()->syncWithoutDetaching([$tag->id]);
+            $attached = $subscriber->tags()->syncWithoutDetaching([$tag->id])['attached'];
+
+            if ($attached !== [] && $subscriber->contact !== null) {
+                $this->dispatchTaggedTriggers->handle($subscriber->contact, [$tag->uuid], $run->automation);
+            }
         } else {
             $subscriber->tags()->detach($tag->id);
         }

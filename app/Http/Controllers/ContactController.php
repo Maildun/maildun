@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audiences\AddContactToAudiences;
+use App\Actions\Automations\DispatchTaggedTriggers;
 use App\Enums\ContactCompanyAssignmentMode;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberStatus;
@@ -123,6 +124,7 @@ class ContactController extends Controller
         Team $currentTeam,
         ManageContact $manageContact,
         AddContactToAudiences $addContactToAudiences,
+        DispatchTaggedTriggers $dispatchTaggedTriggers,
     ): RedirectResponse {
         Gate::authorize('create', [Contact::class, $currentTeam]);
         $audienceUuids = $request->validated('audience_uuids', []);
@@ -132,9 +134,10 @@ class ContactController extends Controller
             $currentTeam,
             $manageContact,
             $addContactToAudiences,
+            $dispatchTaggedTriggers,
             $audienceUuids,
         ): array {
-            $contact = $this->saveContact($request, $currentTeam, $manageContact);
+            [$contact, $addedTags] = $this->saveContact($request, $currentTeam, $manageContact);
 
             if (! $contact->wasRecentlyCreated && $audienceUuids === []) {
                 throw ValidationException::withMessages([
@@ -146,6 +149,7 @@ class ContactController extends Controller
                 ->whereIn('uuid', $audienceUuids)
                 ->get();
             $changedMemberships = $addContactToAudiences->handle($contact, $audiences, $request->ip());
+            $dispatchTaggedTriggers->handle($contact, $addedTags);
 
             return [$contact, $changedMemberships];
         });
@@ -311,10 +315,11 @@ class ContactController extends Controller
         ];
     }
 
-    public function update(SaveContactRequest $request, Team $currentTeam, Contact $contact, ManageContact $manageContact): RedirectResponse
+    public function update(SaveContactRequest $request, Team $currentTeam, Contact $contact, ManageContact $manageContact, DispatchTaggedTriggers $dispatchTaggedTriggers): RedirectResponse
     {
         Gate::authorize('update', $contact);
-        $this->saveContact($request, $currentTeam, $manageContact, $contact);
+        [$contact, $addedTags] = $this->saveContact($request, $currentTeam, $manageContact, $contact);
+        $dispatchTaggedTriggers->handle($contact, $addedTags);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Contact updated.')]);
 
@@ -367,7 +372,8 @@ class ContactController extends Controller
         ];
     }
 
-    private function saveContact(SaveContactRequest $request, Team $team, ManageContact $manageContact, ?Contact $contact = null): Contact
+    /** @return array{0: Contact, 1: list<string>} */
+    private function saveContact(SaveContactRequest $request, Team $team, ManageContact $manageContact, ?Contact $contact = null): array
     {
         $attributes = $request->validated();
         $mode = ContactCompanyAssignmentMode::from($attributes['company_assignment_mode']);
@@ -388,10 +394,12 @@ class ContactController extends Controller
             ? $manageContact->findOrCreate($team, $profile)
             : $manageContact->update($contact, $profile);
 
+        $addedTags = [];
+
         if (! $creating || $contact->wasRecentlyCreated) {
-            $manageContact->syncTags($team, $contact, $attributes['tags'] ?? []);
+            $addedTags = $manageContact->syncTags($team, $contact, $attributes['tags'] ?? []);
         }
 
-        return $contact;
+        return [$contact, $addedTags];
     }
 }
