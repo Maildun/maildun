@@ -2,6 +2,7 @@
 
 namespace App\Actions\Emails;
 
+use App\Enums\SubscriberLanguage;
 use App\Models\Email;
 use App\Models\Subscriber;
 use Carbon\CarbonInterface;
@@ -22,6 +23,8 @@ class RenderCampaignContent
             'first_name' => $subscriber->first_name ?? '',
             'last_name' => $subscriber->last_name ?? '',
             'email' => $subscriber->email,
+            'language' => $subscriber->language->value ?? '',
+            'language_name' => $subscriber->language?->label() ?? '',
             'day' => $date->format('d'),
             'day_name' => $date->format('l'),
             'month' => $date->format('m'),
@@ -38,6 +41,8 @@ class RenderCampaignContent
             'first_name' => __('Sample'),
             'last_name' => __('Subscriber'),
             'email' => $email,
+            'language' => SubscriberLanguage::English->value,
+            'language_name' => SubscriberLanguage::English->label(),
             'day' => $date->format('d'),
             'day_name' => $date->format('l'),
             'month' => $date->format('m'),

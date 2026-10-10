@@ -125,6 +125,31 @@ test('a source condition only accepts Manual or Form', function (?string $source
     'API source' => 'api',
 ]);
 
+test('a language condition needs a supported language', function (?string $language) {
+    $user = User::factory()->create();
+    $automation = Automation::factory()->for($user->currentTeam)->create([
+        'graph' => [
+            'nodes' => [
+                ['id' => 'trigger', 'type' => 'trigger', 'data' => ['kind' => AutomationTrigger::Subscribed->value]],
+                ['id' => 'language', 'type' => 'condition', 'data' => [
+                    'kind' => AutomationCondition::Language->value,
+                    'language' => $language,
+                ]],
+            ],
+            'edges' => [['source' => 'trigger', 'target' => 'language']],
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('automations.activate', [$user->currentTeam, $automation]))
+        ->assertSessionHasErrors('graph');
+
+    expect($automation->refresh()->status)->toBe(AutomationStatus::Draft);
+})->with([
+    'missing language' => null,
+    'unsupported language' => 'xx',
+]);
+
 test('parallel branches cannot merge into one step', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

@@ -8,6 +8,7 @@ use App\Enums\AutomationDelayUnit;
 use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationTrigger;
 use App\Enums\EmailAddressHealthReason;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Jobs\ProcessAutomationRun;
 use App\Mail\AutomationEmail;
@@ -132,6 +133,34 @@ test('a source condition follows the branch matching the subscriber source', fun
     'form subscriber matches Form' => [SubscriberSource::Form, SubscriberSource::Form, true],
     'form subscriber does not match Manual' => [SubscriberSource::Manual, SubscriberSource::Form, false],
     'api subscriber does not match Form' => [SubscriberSource::Form, SubscriberSource::Api, false],
+]);
+
+test('a language condition matches only subscribers with that language', function (?SubscriberLanguage $subscriberLanguage, bool $matched) {
+    $automation = Automation::factory()->active()->create();
+    $subscriber = Subscriber::factory()
+        ->for(Audience::factory()->for($automation->team))
+        ->create(['language' => $subscriberLanguage]);
+
+    $run = automationRun(
+        nodes: [
+            ['id' => 'check', 'type' => 'condition', 'data' => [
+                'kind' => AutomationCondition::Language->value,
+                'language' => SubscriberLanguage::Indonesian->value,
+            ]],
+        ],
+        edges: [['source' => 'trigger', 'target' => 'check']],
+        subscriber: $subscriber,
+        automation: $automation,
+    );
+
+    app(AdvanceAutomationRun::class)->handle($run);
+
+    expect($run->refresh()->steps()->where('node_id', 'check')->value('result'))
+        ->toBe(['matched' => $matched]);
+})->with([
+    'same language' => [SubscriberLanguage::Indonesian, true],
+    'other language' => [SubscriberLanguage::English, false],
+    'no language' => [null, false],
 ]);
 
 test('a retried send does not deliver the email twice', function () {

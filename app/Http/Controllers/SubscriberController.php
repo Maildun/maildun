@@ -48,6 +48,7 @@ class SubscriberController extends Controller
             'email' => $contact->email,
             'first_name' => $contact->first_name,
             'last_name' => $contact->last_name,
+            'language' => $request->validated('language') ?? $audience->default_language,
             'status' => SubscriberStatus::Subscribed,
             'source' => SubscriberSource::Manual,
             'consent_text' => 'Marketing consent confirmed by a team member.',
@@ -71,7 +72,10 @@ class SubscriberController extends Controller
         Gate::authorize('update', $subscriber);
         $contact = $subscriber->contact ?? $manageContact->findOrCreate($currentTeam, $this->contactProfile($request));
         $contact = $manageContact->update($contact, Arr::only($request->validated(), ['email', 'first_name', 'last_name']));
-        $subscriber->update(['contact_id' => $contact->id]);
+        $subscriber->update([
+            'contact_id' => $contact->id,
+            ...($request->has('language') ? ['language' => $request->validated('language')] : []),
+        ]);
         $addedTags = $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []));
         $dispatchTaggedTriggers->handle($contact, $addedTags);
 

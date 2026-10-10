@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Audiences\DeleteSegment;
 use App\Actions\Audiences\SyncSegmentSubscribers;
+use App\Enums\SubscriberLanguage;
 use App\Http\Requests\SaveSegmentRequest;
 use App\Models\Audience;
 use App\Models\Segment;
@@ -48,6 +49,8 @@ class SegmentController extends Controller
                 'last_name' => $subscriber->last_name,
                 'status' => $subscriber->status->value,
                 'source' => $subscriber->source->value,
+                'language' => $subscriber->language?->value,
+                'language_name' => $subscriber->language?->label(),
                 'source_form' => $subscriber->subscribeForm ? [
                     'uuid' => $subscriber->subscribeForm->uuid,
                     'name' => $subscriber->subscribeForm->name,
@@ -78,6 +81,7 @@ class SegmentController extends Controller
                 'uuid' => $form->uuid,
                 'name' => $form->name,
             ]),
+            'languages' => SubscriberLanguage::options(),
             'canManage' => Gate::allows('update', $segment),
         ]);
     }

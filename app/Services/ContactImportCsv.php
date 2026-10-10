@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\SubscriberLanguage;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use Illuminate\Support\Str;
@@ -20,6 +21,11 @@ class ContactImportCsv
         'first_name' => ['first_name', 'firstname', 'first', 'given_name', 'fname'],
         'last_name' => ['last_name', 'lastname', 'last', 'surname', 'family_name', 'lname'],
         'tags' => ['tags', 'tag', 'labels'],
+    ];
+
+    /** @var array<string, list<string>> Fields that live on the audience membership, offered only for audience imports. */
+    private const array SUBSCRIBER_FIELD_ALIASES = [
+        'language' => ['language', 'lang', 'language_code', 'locale'],
     ];
 
     /**
@@ -79,6 +85,21 @@ class ContactImportCsv
         ];
     }
 
+    /**
+     * Read a CSV language cell as an ISO 639-1 code ("en", "EN", "en-US") or an
+     * English name ("English").
+     */
+    public function language(string $value): ?SubscriberLanguage
+    {
+        $normalized = Str::lower(trim($value));
+        $code = Str::before(str_replace('_', '-', $normalized), '-');
+
+        return SubscriberLanguage::tryFrom($code)
+            ?? collect(SubscriberLanguage::cases())->first(
+                fn (SubscriberLanguage $language): bool => Str::lower($language->label()) === $normalized,
+            );
+    }
+
     public function detectDelimiter(string $line): string
     {
         $counts = array_map(fn (string $delimiter): int => substr_count($line, $delimiter), self::DELIMITERS);
@@ -121,13 +142,14 @@ class ContactImportCsv
      * @param  array<int, string>  $attributeKeys
      * @return list<string|null>
      */
-    public function suggestMapping(array $headers, array $attributeKeys = []): array
+    public function suggestMapping(array $headers, array $attributeKeys = [], bool $forAudience = false): array
     {
         $used = [];
+        $aliases = $forAudience ? [...self::FIELD_ALIASES, ...self::SUBSCRIBER_FIELD_ALIASES] : self::FIELD_ALIASES;
 
-        return array_map(function (string $header) use ($attributeKeys, &$used): ?string {
+        return array_map(function (string $header) use ($attributeKeys, $aliases, &$used): ?string {
             $slug = Str::of($header)->lower()->replaceMatches('/[^a-z0-9]+/', '_')->trim('_')->toString();
-            $field = collect(self::FIELD_ALIASES)
+            $field = collect($aliases)
                 ->search(fn (array $aliases): bool => in_array($slug, $aliases, true));
 
             if ($field === false && in_array($slug, $attributeKeys, true)) {
@@ -164,6 +186,7 @@ class ContactImportCsv
 
         return [
             ...$options,
+            ['value' => 'language', 'label' => __('Language')],
             ...$audience->audienceAttributes()->orderBy('position')->get(['name', 'key'])
                 ->map(fn (AudienceAttribute $attribute): array => ['value' => 'attribute:'.$attribute->key, 'label' => $attribute->name])
                 ->values()

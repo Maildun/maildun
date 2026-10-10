@@ -4,6 +4,7 @@ namespace App\Actions\Audiences;
 
 use App\Enums\SegmentRuleField;
 use App\Enums\SegmentRuleOperator;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
@@ -41,6 +42,10 @@ class ValidateSegmentRules
 
             if ($field === SegmentRuleField::Source && ! SubscriberSource::tryFrom((string) $value)) {
                 $errors["rules.{$index}.value"] = 'The selected subscriber source is invalid.';
+            }
+
+            if ($field === SegmentRuleField::Language && ! SubscriberLanguage::tryFrom((string) $value)) {
+                $errors["rules.{$index}.value"] = 'The selected language is invalid.';
             }
 
             if ($field === SegmentRuleField::SubscribeForm && ! $audience->subscribeForms()->withTrashed()->where('uuid', $value)->exists()) {

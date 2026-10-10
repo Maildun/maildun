@@ -204,6 +204,8 @@ class ContactController extends Controller
                         ],
                         'status' => $subscriber->status->value,
                         'source' => $subscriber->source->value,
+                        'language' => $subscriber->language?->value,
+                        'language_name' => $subscriber->language?->label(),
                         'can_manage' => Gate::allows('update', $subscriber),
                         'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
                         'source_form' => $subscriber->subscribeForm ? [

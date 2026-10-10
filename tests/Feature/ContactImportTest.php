@@ -1,7 +1,9 @@
 <?php
 
 use App\Actions\Audiences\AddContactToAudiences;
+use App\Enums\ContactImportMergeStrategy;
 use App\Enums\ContactImportStatus;
+use App\Enums\SubscriberLanguage;
 use App\Enums\TeamRole;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Jobs\ProcessContactImport;
@@ -184,6 +186,50 @@ test('audience imports reuse contacts and skip duplicate memberships', function 
         ->and($contactImport->duplicate_rows)->toBe(1)
         ->and($contactImport->failed_rows)->toBe(0);
     Event::assertDispatchedTimes(SubscriberLifecycleOccurred::class, 2);
+});
+
+test('audience imports read subscriber languages by code or name', function () {
+    Storage::fake('local');
+
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en'], 'default_language' => 'en']);
+    $existing = Subscriber::factory()->for($audience)->for(Contact::factory()->for($team)->state(['email' => 'existing@example.com']))->create([
+        'email' => 'existing@example.com',
+        'language' => SubscriberLanguage::English,
+    ]);
+    $contactImport = ContactImport::factory()->for($team)->for($audience)->create([
+        'column_map' => ['email', 'language'],
+        'merge_strategy' => ContactImportMergeStrategy::FillBlanks,
+    ]);
+    Storage::disk('local')->put($contactImport->path, implode("\n", [
+        'email,language',
+        'code@example.com,ID',
+        'region@example.com,pt-BR',
+        'name@example.com,Japanese',
+        'blank@example.com,',
+        'existing@example.com,fr',
+        'invalid@example.com,Elvish',
+    ]));
+
+    (new ProcessContactImport($contactImport->id))->handle(
+        app(ManageContact::class),
+        app(AddContactToAudiences::class),
+        app(ContactImportCsv::class),
+        app(ImportEmailReview::class),
+    );
+
+    $languages = $audience->subscribers()->pluck('language', 'email')->map(fn (?SubscriberLanguage $language): ?string => $language?->value)->all();
+
+    expect($languages)->toMatchArray([
+        'code@example.com' => 'id',
+        'region@example.com' => 'pt',
+        'name@example.com' => 'ja',
+        'blank@example.com' => 'en',
+        'existing@example.com' => 'en',
+    ])
+        ->and($languages)->not->toHaveKey('invalid@example.com')
+        ->and($contactImport->refresh()->failed_rows)->toBe(1)
+        ->and($existing->refresh()->language)->toBe(SubscriberLanguage::English);
 });
 
 test('imports fail with a useful error and keep the file for retry when the email header is missing', function () {

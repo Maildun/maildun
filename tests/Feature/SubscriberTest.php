@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
@@ -459,4 +460,50 @@ test('the subscriber list normalizes its filters and can be filtered by status a
             ->has('subscribers.data', 3)
             ->where('filters.status', 'all')
             ->where('filters.source', 'all'));
+});
+
+test('the subscriber list can be filtered by language', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'budi@example.com', 'language' => SubscriberLanguage::Indonesian]);
+    Subscriber::factory()->for($audience)->create(['email' => 'ada@example.com', 'language' => SubscriberLanguage::English]);
+
+    $this->actingAs($user)
+        ->get(route('audiences.show', [$team, $audience, 'language' => 'id']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('subscribers.data', 1)
+            ->where('subscribers.data.0.email', 'budi@example.com')
+            ->where('subscribers.data.0.language_name', 'Indonesian')
+            ->where('filters.language', 'id'));
+
+    $this->actingAs($user)
+        ->get(route('audiences.show', [$team, $audience, 'language' => 'klingon']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('subscribers.data', 2)
+            ->where('filters.language', 'all'));
+});
+
+test('owners can set, keep, and clear a subscriber language', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+    $update = fn (array $data) => $this->actingAs($user)->put(
+        route('audiences.subscribers.update', [$team, $audience, $subscriber]),
+        ['email' => $subscriber->email, 'tags' => [], ...$data],
+    );
+
+    $update(['language' => 'xx'])->assertInvalid(['language']);
+
+    $update(['language' => 'id'])->assertValid();
+    expect($subscriber->refresh()->language)->toBe(SubscriberLanguage::Indonesian);
+
+    $update([])->assertValid();
+    expect($subscriber->refresh()->language)->toBe(SubscriberLanguage::Indonesian);
+
+    $update(['language' => null])->assertValid();
+    expect($subscriber->refresh()->language)->toBeNull();
 });

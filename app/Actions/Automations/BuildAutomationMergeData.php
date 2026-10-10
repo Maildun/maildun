@@ -28,6 +28,8 @@ class BuildAutomationMergeData
             'first_name' => $subscriber->first_name ?? '',
             'last_name' => $subscriber->last_name ?? '',
             ...($subscriber->attribute_values ?? []),
+            'language' => $subscriber->language->value ?? '',
+            'language_name' => $subscriber->language?->label() ?? '',
             ...$payload,
             // Last so neither a custom attribute nor trigger context can shadow
             // the opt-out or browser copy links with a value of its own.

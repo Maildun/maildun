@@ -4,6 +4,7 @@ use App\Actions\Audiences\ApplySegmentRules;
 use App\Actions\Audiences\SyncSegmentSubscribers;
 use App\Enums\EmailStatus;
 use App\Enums\SegmentMatchType;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
@@ -252,6 +253,7 @@ test('segment rule engine supports every phase one operator', function (string $
         'source' => SubscriberSource::Form,
         'subscribe_form_id' => $form->id,
         'subscribed_at' => '2026-01-15 12:00:00',
+        'language' => SubscriberLanguage::English,
     ]);
     Subscriber::factory()->for($audience)->create([
         'email' => 'beta@example.net',
@@ -261,6 +263,7 @@ test('segment rule engine supports every phase one operator', function (string $
         'source' => SubscriberSource::Manual,
         'subscribe_form_id' => $otherForm->id,
         'subscribed_at' => '2026-03-15 12:00:00',
+        'language' => SubscriberLanguage::Indonesian,
     ]);
 
     $resolvedValue = match ($value) {
@@ -291,4 +294,38 @@ test('segment rule engine supports every phase one operator', function (string $
     'form not equals' => ['subscribe_form', 'not_equals', ':form', 'beta@example.net'],
     'date before' => ['subscribed_at', 'before', '2026-02-01', 'alpha@example.com'],
     'date after' => ['subscribed_at', 'after', '2026-02-01', 'beta@example.net'],
+    'language equals' => ['language', 'equals', 'en', 'alpha@example.com'],
+    'language not equals' => ['language', 'not_equals', 'en', 'beta@example.net'],
 ]);
+
+test('language not equals also matches subscribers without a language', function () {
+    $audience = Audience::factory()->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'english@example.com', 'language' => SubscriberLanguage::English]);
+    Subscriber::factory()->for($audience)->create(['email' => 'unknown@example.com', 'language' => null]);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [
+            ['field' => 'language', 'operator' => 'not_equals', 'value' => 'en'],
+        ], SegmentMatchType::All)
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe(['unknown@example.com']);
+});
+
+test('segment validation rejects unknown languages and text operators on language', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('audiences.segments.store', [$team, $audience]), [
+            'name' => 'Invalid language',
+            'match_type' => 'all',
+            'rules' => [
+                ['field' => 'language', 'operator' => 'equals', 'value' => 'xx'],
+                ['field' => 'language', 'operator' => 'contains', 'value' => 'en'],
+            ],
+        ])
+        ->assertInvalid(['rules.0.value', 'rules.1.operator']);
+});

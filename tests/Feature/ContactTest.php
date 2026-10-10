@@ -2,6 +2,7 @@
 
 use App\Enums\AutomationTrigger;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\SubscriberLanguage;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Models\Audience;
 use App\Models\Company;
@@ -317,4 +318,25 @@ test('a recipient a stopped campaign never sent to has not received that email',
         ->assertInertia(fn (Assert $page) => $page
             ->where('activity.received', 1)
             ->has('contact.deliveries', 2));
+});
+
+test('manually added memberships take the audience default language', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create([
+        'allowed_languages' => ['en', 'id'],
+        'default_language' => 'id',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $team), [
+            'email' => 'new@example.com',
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'audience_uuids' => [$audience->uuid],
+            'consent_confirmed' => true,
+        ])
+        ->assertValid();
+
+    expect($audience->subscribers()->sole()->language)->toBe(SubscriberLanguage::Indonesian);
 });

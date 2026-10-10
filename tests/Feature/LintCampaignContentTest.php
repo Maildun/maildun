@@ -47,7 +47,7 @@ test('standard tags and the audience fields are known merge tags', function () {
     AudienceAttribute::factory()->for($audience)->create(['key' => 'company']);
 
     expect(lintCodes([
-        'html' => '<p>Hi {{ first_name }} at {{ company }}, <a href="{{ unsubscribe_url }}">unsubscribe</a></p>',
+        'html' => '<p>Hi {{ first_name }} ({{ language_name }}) at {{ company }}, <a href="{{ unsubscribe_url }}">unsubscribe</a></p>',
     ], $audience))->not->toContain('unknown_merge_tags');
 });
 

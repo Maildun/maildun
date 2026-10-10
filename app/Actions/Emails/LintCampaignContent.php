@@ -14,7 +14,7 @@ class LintCampaignContent
 
     /** Merge tags every campaign can use, besides the audience's own attributes. */
     private const array STANDARD_TAGS = [
-        'name', 'first_name', 'last_name', 'email',
+        'name', 'first_name', 'last_name', 'email', 'language', 'language_name',
         'day', 'day_name', 'month', 'month_name', 'year',
         'unsubscribe_url', 'web_view_url', 'subscribe_url',
     ];
