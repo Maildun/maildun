@@ -12,6 +12,8 @@ This guide installs Maildun for local development or evaluation. Read [Productio
 - An application-wide mail relay for system email
 - An Amazon SES or SMTP account for each workspace that will send email
 
+The bundled `abduns/laravel-db-backup` package installs from the `packages/` directory through a Composer path repository. Deploy the whole repository, including `packages/`, or `composer install` cannot resolve it.
+
 The default `.env.example` uses SQLite, Redis queues, Redis cache, and a local SMTP relay on port 2525. That relay is only a development default; it is not suitable for a public installation.
 
 ## Configure email delivery

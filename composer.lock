@@ -4,8 +4,70 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c9f038d716468aebba32e1d92d173f85",
+    "content-hash": "e32b25765d4b91a391bdc9c065264d13",
     "packages": [
+        {
+            "name": "abduns/laravel-db-backup",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "packages/abduns/laravel-db-backup",
+                "reference": "99057e61dbc1a7d94b22931952149e91d933f53f"
+            },
+            "require": {
+                "ext-zlib": "*",
+                "illuminate/bus": "^12.0|^13.0",
+                "illuminate/cache": "^12.0|^13.0",
+                "illuminate/console": "^12.0|^13.0",
+                "illuminate/contracts": "^12.0|^13.0",
+                "illuminate/database": "^12.0|^13.0",
+                "illuminate/filesystem": "^12.0|^13.0",
+                "illuminate/process": "^12.0|^13.0",
+                "illuminate/queue": "^12.0|^13.0",
+                "illuminate/support": "^12.0|^13.0",
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "orchestra/testbench": "^10.0|^11.0",
+                "pestphp/pest": "^4.0|^5.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Abduns\\DbBackup\\DbBackupServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Abduns\\DbBackup\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Abduns\\DbBackup\\Tests\\": "tests/"
+                }
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "Back up a Laravel database (PostgreSQL, MySQL/MariaDB or SQLite) to any filesystem disk, with a backup history, retention and a staleness check.",
+            "keywords": [
+                "backup",
+                "database",
+                "laravel",
+                "mysql",
+                "postgresql",
+                "r2",
+                "s3",
+                "sqlite"
+            ],
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
+        },
         {
             "name": "aws/aws-crt-php",
             "version": "v1.2.7",
@@ -13697,7 +13759,9 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "abduns/laravel-db-backup": 20
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {

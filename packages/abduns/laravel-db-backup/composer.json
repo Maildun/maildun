@@ -1,0 +1,58 @@
+{
+    "name": "abduns/laravel-db-backup",
+    "description": "Back up a Laravel database (PostgreSQL, MySQL/MariaDB or SQLite) to any filesystem disk, with a backup history, retention and a staleness check.",
+    "keywords": [
+        "laravel",
+        "backup",
+        "database",
+        "postgresql",
+        "mysql",
+        "sqlite",
+        "s3",
+        "r2"
+    ],
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "ext-zlib": "*",
+        "illuminate/bus": "^12.0|^13.0",
+        "illuminate/cache": "^12.0|^13.0",
+        "illuminate/console": "^12.0|^13.0",
+        "illuminate/contracts": "^12.0|^13.0",
+        "illuminate/database": "^12.0|^13.0",
+        "illuminate/filesystem": "^12.0|^13.0",
+        "illuminate/process": "^12.0|^13.0",
+        "illuminate/queue": "^12.0|^13.0",
+        "illuminate/support": "^12.0|^13.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^4.0|^5.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Abduns\\DbBackup\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Abduns\\DbBackup\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Abduns\\DbBackup\\DbBackupServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

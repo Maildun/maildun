@@ -52,6 +52,8 @@ FROM base AS vendor
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
 COPY composer.json composer.lock ./
+# The database backup package is a path repository, so Composer needs it here.
+COPY packages ./packages
 
 # Resolve dependencies before the source lands so this layer survives ordinary
 # code edits. --no-scripts and --no-autoloader because post-autoload-dump runs
