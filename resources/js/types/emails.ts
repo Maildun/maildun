@@ -256,6 +256,7 @@ export type TransactionalEmailDetail = {
     from_name: string | null;
     from_address: string | null;
     reply_to: string | null;
+    audience: string | null;
     editor: EmailEditorMode;
     status: TransactionalEmailStatus;
     html: string | null;

@@ -1,4 +1,4 @@
-import type { Paginated, Tag } from './audiences';
+import type { Paginated, SubscriberLanguage, Tag } from './audiences';
 
 export type CompanyOption = {
     uuid: string;
@@ -96,6 +96,8 @@ export type ContactMembership = {
     audience: CompanyOption;
     status: 'subscribed' | 'unsubscribed';
     source: 'manual' | 'form' | 'api';
+    language: SubscriberLanguage | null;
+    language_name: string | null;
     can_manage: boolean;
     subscribed_at: string | null;
     source_form: CompanyOption | null;

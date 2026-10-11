@@ -2,20 +2,17 @@
 
 namespace App\Http\Requests;
 
+use App\Actions\Audiences\ValidateSegmentRules;
 use App\Enums\SegmentMatchType;
 use App\Enums\SegmentRuleField;
 use App\Enums\SegmentRuleOperator;
-use App\Enums\SubscriberSource;
-use App\Enums\SubscriberStatus;
 use App\Models\Audience;
 use App\Models\Segment;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
-use Throwable;
 
 class SaveSegmentRequest extends FormRequest
 {
@@ -43,43 +40,15 @@ class SaveSegmentRequest extends FormRequest
     }
 
     /** @return array<callable(Validator): void> */
-    public function after(): array
+    public function after(ValidateSegmentRules $validateSegmentRules): array
     {
-        return [function (Validator $validator): void {
+        return [function (Validator $validator) use ($validateSegmentRules): void {
             $audience = $this->route('audience');
 
             abort_unless($audience instanceof Audience, 404);
 
-            foreach ($this->input('rules', []) as $index => $rule) {
-                $field = SegmentRuleField::tryFrom($rule['field'] ?? '');
-                $operator = SegmentRuleOperator::tryFrom($rule['operator'] ?? '');
-                $value = $rule['value'] ?? null;
-
-                if (! $field || ! $operator || ! in_array($operator, $field->operators(), true)) {
-                    $validator->errors()->add("rules.{$index}.operator", 'The selected operator is not valid for this field.');
-
-                    continue;
-                }
-
-                if ($field === SegmentRuleField::Status && ! SubscriberStatus::tryFrom((string) $value)) {
-                    $validator->errors()->add("rules.{$index}.value", 'The selected subscriber status is invalid.');
-                }
-
-                if ($field === SegmentRuleField::Source && ! SubscriberSource::tryFrom((string) $value)) {
-                    $validator->errors()->add("rules.{$index}.value", 'The selected subscriber source is invalid.');
-                }
-
-                if ($field === SegmentRuleField::SubscribeForm && ! $audience->subscribeForms()->withTrashed()->where('uuid', $value)->exists()) {
-                    $validator->errors()->add("rules.{$index}.value", 'The selected subscribe form is invalid.');
-                }
-
-                if ($field === SegmentRuleField::SubscribedAt) {
-                    try {
-                        Carbon::parse((string) $value);
-                    } catch (Throwable) {
-                        $validator->errors()->add("rules.{$index}.value", 'The value must be a valid date.');
-                    }
-                }
+            foreach ($validateSegmentRules->handle($audience, $this->input('rules', [])) as $key => $message) {
+                $validator->errors()->add($key, $message);
             }
         }];
     }

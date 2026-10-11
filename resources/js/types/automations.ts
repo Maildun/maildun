@@ -9,7 +9,8 @@ export type AutomationTriggerKind =
 
 export type AutomationActionKind = 'send_email' | 'add_tag' | 'remove_tag';
 
-export type AutomationConditionKind = 'has_tag' | 'is_subscribed' | 'source';
+export type AutomationConditionKind =
+    'has_tag' | 'is_subscribed' | 'source' | 'language';
 
 export type AutomationDelayUnit = 'minutes' | 'hours' | 'days';
 
@@ -36,6 +37,7 @@ export type AutomationConditionData = {
     kind: AutomationConditionKind | '';
     tag_uuid?: string | null;
     source?: 'manual' | 'form' | null;
+    language?: string | null;
 };
 
 export type AutomationNodeData =
@@ -95,6 +97,7 @@ export type AutomationCatalog = {
     actions: AutomationCatalogOption[];
     conditions: AutomationCatalogOption[];
     sources: AutomationCatalogOption[];
+    languages: AutomationCatalogOption[];
     delayUnits: AutomationCatalogOption[];
 };
 

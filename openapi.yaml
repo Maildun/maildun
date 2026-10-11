@@ -467,6 +467,11 @@ components:
                     description: |
                         Template variables. Names may contain letters, numbers, and underscores,
                         may not start with a number, and values must be scalar or null.
+
+                        `web_view_url` and `unsubscribe_url` are filled by Maildun and override
+                        any value sent here. `unsubscribe_url` links the recipient out of the
+                        email's Unsubscribe audience, and is empty when no audience is set or the
+                        recipient is not subscribed to it.
                     propertyNames:
                         pattern: '^[a-zA-Z_][a-zA-Z0-9_]*$'
                     additionalProperties:

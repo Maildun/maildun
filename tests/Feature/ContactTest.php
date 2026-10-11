@@ -1,6 +1,9 @@
 <?php
 
+use App\Enums\AutomationTrigger;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\SubscriberLanguage;
+use App\Events\SubscriberLifecycleOccurred;
 use App\Models\Audience;
 use App\Models\Company;
 use App\Models\Contact;
@@ -9,6 +12,7 @@ use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\User;
+use Illuminate\Support\Facades\Event;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('the contact index includes the fields required to edit from its hover card', function () {
@@ -184,6 +188,62 @@ test('adding an existing contact to another audience preserves its shared profil
         ->and($subscriber->last_name)->toBe('Person');
 });
 
+test('creating a contact fires tagged automations once its audience memberships exist', function () {
+    Event::fake([SubscriberLifecycleOccurred::class]);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $team), [
+            'email' => 'new@example.com',
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'tags' => ['Customer'],
+            'audience_uuids' => [$audience->uuid],
+            'consent_confirmed' => true,
+        ])
+        ->assertValid()
+        ->assertRedirect();
+
+    $subscriber = $audience->subscribers()->sole();
+    $customer = $team->tags()->where('name', 'Customer')->sole();
+
+    Event::assertDispatched(SubscriberLifecycleOccurred::class, fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Tagged
+        && $event->subscriber->is($subscriber)
+        && $event->context === ['tag_uuid' => $customer->uuid]);
+});
+
+test('editing a contact fires tagged automations on every membership for newly added tags only', function () {
+    Event::fake([SubscriberLifecycleOccurred::class]);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->create();
+    $otherMembership = Subscriber::factory()->for(Audience::factory()->for($team))->create(['email' => $subscriber->email]);
+    $contact = $subscriber->contact;
+    $contact->tags()->attach(Tag::factory()->for($team)->create(['name' => 'VIP']));
+
+    $this->actingAs($user)
+        ->patch(route('contacts.update', [$team, $contact]), [
+            'email' => $contact->email,
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'tags' => ['VIP', 'Customer'],
+        ])
+        ->assertValid()
+        ->assertRedirect();
+
+    $customer = $team->tags()->where('name', 'Customer')->sole();
+
+    Event::assertDispatchedTimes(SubscriberLifecycleOccurred::class, 2);
+
+    foreach ([$subscriber, $otherMembership] as $membership) {
+        Event::assertDispatched(SubscriberLifecycleOccurred::class, fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Tagged
+            && $event->subscriber->is($membership)
+            && $event->context === ['tag_uuid' => $customer->uuid]);
+    }
+});
+
 test('an existing contact requires an audience when reused from the add dialog', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
@@ -258,4 +318,25 @@ test('a recipient a stopped campaign never sent to has not received that email',
         ->assertInertia(fn (Assert $page) => $page
             ->where('activity.received', 1)
             ->has('contact.deliveries', 2));
+});
+
+test('manually added memberships take the audience default language', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create([
+        'allowed_languages' => ['en', 'id'],
+        'default_language' => 'id',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $team), [
+            'email' => 'new@example.com',
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'audience_uuids' => [$audience->uuid],
+            'consent_confirmed' => true,
+        ])
+        ->assertValid();
+
+    expect($audience->subscribers()->sole()->language)->toBe(SubscriberLanguage::Indonesian);
 });

@@ -2,7 +2,10 @@
 
 use App\Enums\EmailDeliveryStatus;
 use App\Jobs\SendTransactionalEmailDelivery;
+use App\Mail\AutomationEmail;
 use App\Mail\TransactionalEmailMessage;
+use App\Models\Audience;
+use App\Models\Subscriber;
 use App\Models\TeamApiKey;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
@@ -53,6 +56,38 @@ test('a team api key queues a rendered published transactional email', function 
         SendTransactionalEmailDelivery::class,
         fn (SendTransactionalEmailDelivery $job): bool => $job->deliveryId === $delivery->id,
     );
+});
+
+test('the unsubscribe tag links the recipient out of the linked audience', function () {
+    Queue::fake();
+    $email = TransactionalEmail::factory()->published()->create([
+        'html' => '<a href="{{ unsubscribe_url }}">Leave</a> [Unsubscribe](%7B%7B%20unsubscribe_url%20%7D%7D)',
+    ]);
+    $audience = Audience::factory()->for($email->team)->create();
+    $email->update(['audience_id' => $audience->id]);
+    $subscriber = Subscriber::factory()->for($audience)->create(['email' => 'ada@example.com']);
+    TeamEmailIntegration::factory()->for($email->team)->smtp()->create();
+    $sender = TeamSender::factory()->for($email->team)->create();
+    $email->team->forceFill([
+        'active_sender_id' => $sender->id,
+        'email_from_address' => $sender->email,
+    ])->save();
+    $issued = TeamApiKey::issue($email->team, 'Production');
+
+    $send = fn (string $to) => $this->withToken($issued['token'])
+        ->postJson(route('api.v1.transactional-emails.send', $email->slug), ['to' => $to])
+        ->assertAccepted();
+
+    $send('ADA@example.com');
+    $send('stranger@example.com');
+
+    [$subscribed, $stranger] = TransactionalEmailDelivery::query()->orderBy('id')->get()->all();
+    $url = e(AutomationEmail::unsubscribeUrl($subscriber));
+
+    expect($subscribed->html)->toBe('<a href="'.$url.'">Leave</a> <a href="'.$url.'">Unsubscribe</a>')
+        ->and($stranger->html)->toBe('<a href="">Leave</a> <a href="">Unsubscribe</a>');
+
+    $this->get(AutomationEmail::unsubscribeUrl($subscriber))->assertOk();
 });
 
 test('transactional sends require a valid key and a published same-team template', function () {
@@ -179,6 +214,18 @@ test('the delivery job sends once and records the result', function () {
         ->and($delivery->fresh()->uses_team_email_integration)->toBeTrue()
         ->and($delivery->fresh()->sent_at)->not->toBeNull();
 });
+
+test('transactional mail carries its feedback correlation tag only through amazon ses', function (string $provider, bool $tagged) {
+    $email = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create(['provider' => $provider]);
+
+    expect((new TransactionalEmailMessage($delivery))->envelope()->metadata)
+        ->toBe($tagged ? ['transactional_delivery_uuid' => $delivery->uuid] : []);
+})->with([
+    'amazon ses' => ['ses', true],
+    'smtp' => ['smtp', false],
+    'the platform array mailer' => ['array', false],
+]);
 
 test('api errors carry a machine readable code', function () {
     $email = TransactionalEmail::factory()->published()->create();

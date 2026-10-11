@@ -92,6 +92,7 @@ import {
     firstUploadErrorMessage,
     useUploadToast,
 } from '@/hooks/use-upload-toast';
+import { uploadEditorImage } from '@/lib/editor-media-upload';
 import {
     BUILDER_MERGE_TAGS,
     EMPTY_BUILDER_DOCUMENT,
@@ -244,6 +245,10 @@ export default function EmailEdit({
         useState<LinkCheckResponse | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const builderRef = useRef<EmailEditorHandle>(null);
+    const uploadBuilderImage =
+        canManage && mediaLibrary?.canUpload
+            ? (file: File) => uploadEditorImage(currentTeam.slug, file)
+            : undefined;
     const imagePickerResolve = useRef<
         ((image: ImageResult | null) => void) | null
     >(null);
@@ -814,6 +819,7 @@ export default function EmailEdit({
                                                 ? pickBuilderImage
                                                 : undefined
                                         }
+                                        onUploadImage={uploadBuilderImage}
                                         document={
                                             form.data.design ??
                                             EMPTY_BUILDER_DOCUMENT

@@ -6,6 +6,8 @@ use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Exceptions\EmailAddressSuppressedException;
 use App\Exceptions\EmailTransportException;
 use App\Jobs\SendTransactionalEmailDelivery;
+use App\Mail\AutomationEmail;
+use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamApiKey;
 use App\Models\TransactionalEmail;
@@ -143,8 +145,9 @@ class QueueTransactionalEmail
         /** @var array<string, mixed> $data */
         $data = [
             ...($payload['data'] ?? []),
-            // Last so a caller-supplied key cannot shadow the link.
+            // Last so a caller-supplied key cannot shadow the links.
             'web_view_url' => URL::signedRoute('public.web_view.transactional.show', ['delivery' => $uuid]),
+            'unsubscribe_url' => $this->unsubscribeUrl($email, $payload['to']),
         ];
 
         $delivery = $team->transactionalEmailDeliveries()->make([
@@ -159,7 +162,7 @@ class QueueTransactionalEmail
             'from_address' => $email->resolvedFromAddress(),
             'reply_to' => $email->resolvedReplyTo(),
             'provider' => $transport->provider->value,
-            'uses_team_email_integration' => $transport->usesTeamEmailIntegration(),
+            'uses_team_email_integration' => true,
         ]);
         $delivery->uuid = $uuid;
         $delivery->save();
@@ -167,6 +170,22 @@ class QueueTransactionalEmail
         SendTransactionalEmailDelivery::dispatch($delivery->id)->afterCommit();
 
         return $delivery;
+    }
+
+    /**
+     * The recipient's opt-out link for the email's linked audience. Empty when
+     * no audience is linked or the address is not a subscriber there, since a
+     * transactional send has nobody else to unsubscribe.
+     */
+    private function unsubscribeUrl(TransactionalEmail $email, string $to): string
+    {
+        $subscriber = $email->audience?->subscribers()
+            ->where('email', Str::lower(trim($to)))
+            ->first();
+
+        return $subscriber instanceof Subscriber
+            ? AutomationEmail::unsubscribeUrl($subscriber)
+            : '';
     }
 
     private function existingDelivery(TeamApiKey $apiKey, string $idempotencyKey): ?TransactionalEmailDelivery

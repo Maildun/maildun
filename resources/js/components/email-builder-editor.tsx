@@ -18,6 +18,7 @@ type Props = {
     mergeTags?: MergeTag[];
     ref?: Ref<EmailEditorHandle>;
     onPickImage?: () => Promise<ImageResult | null>;
+    onUploadImage?: (file: File) => Promise<ImageResult>;
 };
 
 export function EmailBuilderEditor({
@@ -28,6 +29,7 @@ export function EmailBuilderEditor({
     mergeTags = BUILDER_MERGE_TAGS,
     ref,
     onPickImage,
+    onUploadImage,
 }: Props) {
     const mounted = useMounted();
 
@@ -45,6 +47,7 @@ export function EmailBuilderEditor({
                     readOnly={disabled}
                     mergeTags={mergeTags}
                     onPickImage={onPickImage}
+                    onUploadImage={onUploadImage}
                 />
             ) : (
                 <div className="size-full bg-muted" aria-hidden="true" />

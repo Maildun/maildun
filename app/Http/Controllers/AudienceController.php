@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audiences\BuildAudienceSubscriberStats;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Enums\TransactionalEmailStatus;
@@ -108,6 +109,7 @@ class AudienceController extends Controller
             })
             ->when($filters['status'] !== 'all', fn ($query) => $query->where('status', $filters['status']))
             ->when($filters['source'] !== 'all', fn ($query) => $query->where('source', $filters['source']))
+            ->when($filters['language'] !== 'all', fn ($query) => $query->where('language', $filters['language']))
             ->latest()
             ->paginate(20)
             ->withQueryString()
@@ -119,6 +121,8 @@ class AudienceController extends Controller
                 'last_name' => $subscriber->last_name,
                 'status' => $subscriber->status->value,
                 'source' => $subscriber->source->value,
+                'language' => $subscriber->language?->value,
+                'language_name' => $subscriber->language?->label(),
                 'source_form' => $subscriber->subscribeForm ? [
                     'uuid' => $subscriber->subscribeForm->uuid,
                     'name' => $subscriber->subscribeForm->name,
@@ -163,6 +167,7 @@ class AudienceController extends Controller
             'subscriberStats' => $buildSubscriberStats->handle($audience),
             'segments' => $segments,
             'forms' => $forms,
+            'languages' => SubscriberLanguage::options(),
             'filters' => $filters,
             'canManage' => Gate::allows('update', $audience),
         ]);
@@ -231,7 +236,7 @@ class AudienceController extends Controller
     }
 
     /**
-     * @return array{search: string, status: string, source: string}
+     * @return array{search: string, status: string, source: string, language: string}
      */
     private function subscriberFilters(Request $request): array
     {
@@ -242,6 +247,7 @@ class AudienceController extends Controller
             'search' => $request->string('search')->trim()->toString(),
             'status' => SubscriberStatus::tryFrom($status)->value ?? 'all',
             'source' => SubscriberSource::tryFrom($source)->value ?? 'all',
+            'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())->value ?? 'all',
         ];
     }
 

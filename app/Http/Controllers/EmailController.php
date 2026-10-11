@@ -6,12 +6,14 @@ use App\Actions\Emails\BuildCampaignInsights;
 use App\Actions\Emails\BuildSendReadiness;
 use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Actions\Emails\LintCampaignContent;
+use App\Actions\Emails\QueueCampaignTestEmail;
 use App\Actions\Emails\QueueRemainingRecipients;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\RetryEmailDeliveries;
 use App\Actions\Emails\ScheduleEmailSend;
 use App\Actions\Emails\StartEmailSend;
 use App\Actions\Emails\StopEmailSend;
+use App\Actions\Media\BuildMediaLibrary;
 use App\Concerns\FiltersCampaignRecipients;
 use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailDeliveryStatus;
@@ -21,12 +23,10 @@ use App\Enums\EmailProvider;
 use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
-use App\Enums\TestSendStatus;
 use App\Http\Requests\ScheduleEmailRequest;
 use App\Http\Requests\SendTestEmailRequest;
 use App\Http\Requests\StoreEmailRequest;
 use App\Http\Requests\UpdateEmailRequest;
-use App\Jobs\SendCampaignTestEmail;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\CampaignSeries;
@@ -38,7 +38,6 @@ use App\Models\EmailLinkTrackingAggregate;
 use App\Models\EmailSendRun;
 use App\Models\EmailTemplate;
 use App\Models\EmailTrackingAggregate;
-use App\Models\Media;
 use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Team;
@@ -227,7 +226,7 @@ class EmailController extends Controller
         return to_route('emails.edit', ['current_team' => $currentTeam, 'email' => $email]);
     }
 
-    public function edit(Team $currentTeam, Email $email, BuildSendReadiness $sendReadiness): Response|RedirectResponse
+    public function edit(Team $currentTeam, Email $email, BuildSendReadiness $sendReadiness, BuildMediaLibrary $mediaLibrary): Response|RedirectResponse
     {
         Gate::authorize('view', $email);
 
@@ -345,43 +344,9 @@ class EmailController extends Controller
             ],
             'canManage' => Gate::allows('update', $email),
             'mediaLibrary' => fn (): ?array => $currentTeam->email_editor === EmailEditor::Builder
-                ? $this->mediaLibraryFor($currentTeam)
+                ? $mediaLibrary->handle($currentTeam)
                 : null,
         ]);
-    }
-
-    /**
-     * @return array{
-     *     items: list<array<string, mixed>>,
-     *     canManage: bool,
-     *     canUpload: bool,
-     *     atLimit: bool,
-     *     convertUploadsToWebp: bool,
-     *     hasMore: bool
-     * }
-     */
-    private function mediaLibraryFor(Team $team): array
-    {
-        Gate::authorize('viewAny', [Media::class, $team]);
-
-        $media = $team->media()
-            ->with(['category', 'tags'])
-            ->latest()
-            ->limit(61)
-            ->get();
-        $canManage = Gate::allows('create', [Media::class, $team]);
-
-        return [
-            'items' => array_values($media
-                ->take(60)
-                ->map(fn (Media $item): array => $item->toInertia())
-                ->all()),
-            'canManage' => $canManage,
-            'canUpload' => $canManage,
-            'atLimit' => false,
-            'convertUploadsToWebp' => $team->convert_uploads_to_webp,
-            'hasMore' => $media->count() > 60,
-        ];
     }
 
     public function update(UpdateEmailRequest $request, Team $currentTeam, Email $email): RedirectResponse
@@ -563,28 +528,11 @@ class EmailController extends Controller
         SendTestEmailRequest $request,
         Team $currentTeam,
         Email $email,
-        BuildTrackedEmailHtml $trackedHtml,
-        RenderCampaignContent $renderer,
+        QueueCampaignTestEmail $queueTestEmail,
     ): RedirectResponse {
         abort_unless($email->status === EmailStatus::Draft, 409, __('A queued campaign can no longer send test copies.'));
 
-        $mergeData = $renderer->testData($request->string('to')->value(), now());
-        $email->forceFill([
-            'last_test_status' => TestSendStatus::Queued,
-            'last_test_recipient' => $request->string('to')->value(),
-            'last_test_error' => null,
-        ])->save();
-
-        SendCampaignTestEmail::dispatch(
-            $email->id,
-            $request->string('to')->value(),
-            $renderer->text($email->subject, $mergeData),
-            $trackedHtml->prepareTestHtml(
-                $email,
-                $renderer->html($email->html ?? '', $mergeData),
-            ),
-            $renderer->plainText($email, $mergeData),
-        )->afterCommit();
+        $queueTestEmail->handle($email, $request->string('to')->value());
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -801,10 +749,10 @@ class EmailController extends Controller
             ? $trackingAggregate->unique_clicks_count
             : 0;
         $sesRecipientCount = (clone $deliveries)
-            ->where('provider', EmailProvider::AmazonSes)
+            ->whereIn('provider', EmailProvider::withSesFeedback())
             ->count();
         $deliveredCount = (clone $deliveries)
-            ->where('provider', EmailProvider::AmazonSes)
+            ->whereIn('provider', EmailProvider::withSesFeedback())
             ->whereNotNull('delivered_at')
             ->count();
         $deliveryFeedback = match (true) {

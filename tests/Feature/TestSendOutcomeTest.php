@@ -5,6 +5,7 @@ use App\Exceptions\EmailTransportException;
 use App\Jobs\SendCampaignTestEmail;
 use App\Jobs\SendTransactionalEmailTest;
 use App\Models\Email;
+use App\Models\TeamEmailIntegration;
 use App\Models\TransactionalEmail;
 use App\Models\User;
 use App\Services\TeamMailer;
@@ -16,6 +17,7 @@ use function Pest\Laravel\mock;
 test('requesting a campaign test copy records it as queued for that address', function () {
     Queue::fake([SendCampaignTestEmail::class]);
     $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->create();
     $email = Email::factory()->for($user->currentTeam)->create(['last_test_error' => 'old failure']);
 
     $this->actingAs($user)
@@ -27,6 +29,19 @@ test('requesting a campaign test copy records it as queued for that address', fu
         ->last_test_recipient->toBe('reviewer@example.com')
         ->last_test_error->toBeNull();
     Queue::assertPushed(SendCampaignTestEmail::class);
+});
+
+test('a campaign test copy is refused when the workspace has no email provider', function () {
+    Queue::fake([SendCampaignTestEmail::class]);
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create();
+
+    $this->actingAs($user)
+        ->post(route('emails.test', [$user->currentTeam, $email]), ['to' => 'reviewer@example.com'])
+        ->assertInvalid(['to' => 'Connect and test an email provider']);
+
+    expect($email->fresh())->last_test_status->toBeNull();
+    Queue::assertNothingPushed();
 });
 
 test('a delivered campaign test copy is recorded as sent', function () {

@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\EmailEditor;
+use App\Models\Audience;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use App\Rules\AuthorizedSenderAddress;
@@ -45,6 +46,11 @@ class UpdateTransactionalEmailRequest extends FormRequest
             'from_name' => ['nullable', 'string', 'max:255'],
             'from_address' => ['nullable', 'string', 'email', 'max:255', new AuthorizedSenderAddress($team)],
             'reply_to' => ['nullable', 'string', 'email', 'max:255'],
+            'audience' => [
+                'nullable',
+                'string',
+                Rule::exists(Audience::class, 'uuid')->where('team_id', $team->id),
+            ],
             'html' => ['required', 'string', 'max:2000000'],
             'source' => [$team->email_editor->usesSource() ? 'required' : 'nullable', 'string', 'max:2000000'],
             'design' => ['nullable', 'array', 'required_array_keys:root'],

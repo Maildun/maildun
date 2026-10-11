@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Enums\EmailProvider;
 use App\Models\TransactionalEmailDelivery;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
@@ -42,7 +43,7 @@ class TransactionalEmailMessage extends Mailable
     /** @return array<string, string> */
     private function sesMessageTags(): array
     {
-        if ($this->delivery->provider !== 'ses') {
+        if (EmailProvider::tryFrom($this->delivery->provider)?->publishesSesFeedback() !== true) {
             return [];
         }
 

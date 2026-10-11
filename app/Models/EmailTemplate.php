@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DesignDocument;
 use App\Enums\EmailEditor;
 use Database\Factories\EmailTemplateFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -309,7 +310,7 @@ class EmailTemplate extends Model
     {
         return [
             'editor' => EmailEditor::class,
-            'design' => 'array',
+            'design' => DesignDocument::class,
         ];
     }
 

@@ -98,7 +98,7 @@ class ContactImportController extends Controller
             'delimiter' => $analysis['delimiter'],
             'headers' => $analysis['headers'],
             'sample_rows' => $analysis['sample_rows'],
-            'column_map' => $csv->suggestMapping($analysis['headers'], $attributeKeys),
+            'column_map' => $csv->suggestMapping($analysis['headers'], $attributeKeys, $audience !== null),
             'total_rows' => $analysis['total_rows'],
             'status' => ContactImportStatus::Draft,
         ]);

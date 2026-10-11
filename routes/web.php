@@ -15,6 +15,7 @@ use App\Http\Controllers\ContactController;
 use App\Http\Controllers\ContactExportController;
 use App\Http\Controllers\ContactImportController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EditorMediaController;
 use App\Http\Controllers\EmailAttachmentController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\EmailDeliveryDetailController;
@@ -330,6 +331,11 @@ Route::prefix('{current_team}')
                 ->name('media.settings.edit');
             Route::patch('media/settings', [MediaSettingsController::class, 'update'])
                 ->name('media.settings.update');
+            Route::post('media/editor-uploads', [EditorMediaController::class, 'store'])
+                ->middleware('throttle:30,1')
+                ->name('media.editor_uploads.store');
+            Route::get('media/editor-uploads/{media}', [EditorMediaController::class, 'show'])
+                ->name('media.editor_uploads.show');
             Route::resource('media', MediaController::class)
                 ->parameters(['media' => 'media'])
                 ->only(['index', 'store', 'update', 'destroy']);

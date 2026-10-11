@@ -98,7 +98,7 @@ class SendEmailDelivery implements ShouldQueue
 
             $delivery->forceFill([
                 'provider' => $transport->provider->value,
-                'uses_team_email_integration' => $transport->usesTeamEmailIntegration(),
+                'uses_team_email_integration' => true,
             ])->save();
 
             return [$transport, $attempt];

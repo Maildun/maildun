@@ -332,7 +332,7 @@ export default function CampaignSeriesShow({
                                     : `${summary.delivery_rate}%`
                             }
                             detail="Add a primary CTA to track the sales action"
-                            hint="Share of Amazon SES and Maildun Send sends whose mail server confirmed receipt. SMTP does not report delivery."
+                            hint="Share of Amazon SES sends whose mail server confirmed receipt. SMTP does not report delivery."
                             icon={MailSend01Icon}
                             iconClassName="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                         />
@@ -432,7 +432,7 @@ export default function CampaignSeriesShow({
                                 report. Permanent bounces and complaints are
                                 left unsubscribed.
                                 {summary.delivery_feedback === 'partial' &&
-                                    ' Delivery confirmation only covers sends through Amazon SES or Maildun Send.'}
+                                    ' Delivery confirmation only covers sends through Amazon SES.'}
                             </p>
                         </div>
                     </CardContent>

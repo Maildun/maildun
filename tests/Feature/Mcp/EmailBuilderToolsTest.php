@@ -362,14 +362,17 @@ test('exposes native builder tools through the authenticated remote MCP endpoint
     expect($email->refresh()->html)->toContain('Remote agent edit');
 });
 
-test('includes declared transactional variables in native agent instructions', function () {
+test('includes declared transactional variables and system tags in native agent instructions', function () {
     $email = TransactionalEmail::factory()->builder()->create(['variables' => [
         ['key' => 'order_number', 'example' => '123'],
     ]]);
 
     MaildunServer::tool(GetEmailBuilderTool::class, emailBuilderArguments($email))
         ->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
-        ->where('instructions', fn (string $instructions): bool => str_contains($instructions, 'order_number'))
+        ->where('instructions', fn (string $instructions): bool => preg_match('/^.*Available merge tags:.*$/m', $instructions, $line) === 1
+            && str_contains($line[0], '{{ order_number }}')
+            && str_contains($line[0], '{{ web_view_url }}')
+            && str_contains($line[0], '{{ unsubscribe_url }}'))
         ->etc());
 });
 
@@ -407,4 +410,26 @@ test('renders native edits using a configured Node runtime', function () {
     ])->assertOk();
 
     expect($email->refresh()->design['root'])->toHaveCount(2);
+});
+
+test('accepts empty objects in native tool inputs and saves them as objects', function () {
+    $email = Email::factory()->builder()->create();
+
+    MaildunServer::tool(EditEmailBuilderTool::class, [
+        ...emailBuilderArguments($email),
+        'tool' => 'apply_ops',
+        'input' => ['ops' => [
+            ['op' => 'insert', 'blocks' => [['id' => 'box', 'type' => 'container', 'props' => [], 'children' => []]]],
+            ['op' => 'update', 'id' => 'block-1', 'style' => []],
+            ['op' => 'updateTheme', 'colors' => [], 'fonts' => []],
+        ]],
+    ])->assertOk();
+
+    expect($email->refresh()->getRawOriginal('design'))
+        ->toContain('"box":{"type":"container","props":{}')
+        ->not->toContain('"props":[]');
+
+    MaildunServer::tool(GetEmailBuilderTool::class, [...emailBuilderArguments($email), 'block_id' => 'box'])
+        ->assertOk()
+        ->assertSee('"props":{}');
 });

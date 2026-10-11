@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DesignDocument;
 use App\Enums\EmailEditor;
 use App\Enums\TestSendStatus;
 use App\Enums\TransactionalEmailStatus;
@@ -20,6 +21,7 @@ use Illuminate\Support\Str;
  * @property int $id
  * @property string $uuid
  * @property int $team_id
+ * @property int|null $audience_id
  * @property string $name
  * @property string $slug
  * @property string|null $description
@@ -43,10 +45,12 @@ use Illuminate\Support\Str;
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
  * @property-read Team $team
+ * @property-read Audience|null $audience
  * @property-read Collection<int, TransactionalEmailDelivery> $deliveries
  */
 #[Fillable([
     'team_id',
+    'audience_id',
     'name',
     'slug',
     'description',
@@ -86,6 +90,16 @@ class TransactionalEmail extends Model
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class);
+    }
+
+    /**
+     * The audience {{ unsubscribe_url }} opts a recipient out of.
+     *
+     * @return BelongsTo<Audience, $this>
+     */
+    public function audience(): BelongsTo
+    {
+        return $this->belongsTo(Audience::class);
     }
 
     /** @return HasMany<TransactionalEmailDelivery, $this> */
@@ -208,7 +222,7 @@ class TransactionalEmail extends Model
         return [
             'editor' => EmailEditor::class,
             'status' => TransactionalEmailStatus::class,
-            'design' => 'array',
+            'design' => DesignDocument::class,
             'variables' => 'array',
             'published_at' => 'datetime',
             'last_tested_at' => 'datetime',

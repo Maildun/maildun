@@ -21,12 +21,25 @@ import {
     FieldLabel,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectGroup,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import {
     store as storeSubscriber,
     update as updateSubscriber,
 } from '@/routes/audiences/subscribers';
-import type { Subscriber, Tag } from '@/types/audiences';
+import type {
+    Subscriber,
+    SubscriberLanguage,
+    SubscriberLanguageOption,
+    Tag,
+} from '@/types/audiences';
 
 export function SubscriberDialog({
     open,
@@ -34,23 +47,29 @@ export function SubscriberDialog({
     routeArgs,
     subscriber,
     tags,
+    languages = [],
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     routeArgs: [string, string];
     subscriber?: Subscriber;
     tags: Tag[];
+    languages?: SubscriberLanguageOption[];
 }) {
     const form = useForm({
         email: subscriber?.email ?? '',
         first_name: subscriber?.first_name ?? '',
         last_name: subscriber?.last_name ?? '',
+        language: (subscriber?.language ?? null) as SubscriberLanguage | null,
         tags: subscriber?.tags.map((tag) => tag.name) ?? [],
         consent_confirmed: false,
     });
 
     const submit = (event: React.FormEvent) => {
         event.preventDefault();
+        form.transform(({ language, ...data }) =>
+            languages.length > 0 ? { ...data, language } : data,
+        );
 
         const onSuccess = () => {
             onOpenChange(false);
@@ -165,6 +184,50 @@ export function SubscriberDialog({
                                 <FieldError>{form.errors.last_name}</FieldError>
                             </Field>
                         </div>
+                        {languages.length > 0 && (
+                            <Field data-invalid={Boolean(form.errors.language)}>
+                                <FieldLabel
+                                    htmlFor={`language-${subscriber?.uuid || 'new'}`}
+                                >
+                                    Language
+                                </FieldLabel>
+                                <Select
+                                    value={form.data.language}
+                                    onValueChange={(value) =>
+                                        form.setData(
+                                            'language',
+                                            value as SubscriberLanguage | null,
+                                        )
+                                    }
+                                >
+                                    <SelectTrigger
+                                        id={`language-${subscriber?.uuid || 'new'}`}
+                                        className="w-full"
+                                        aria-invalid={Boolean(
+                                            form.errors.language,
+                                        )}
+                                    >
+                                        <SelectValue placeholder="No language" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectGroup>
+                                            <SelectItem value={null}>
+                                                No language
+                                            </SelectItem>
+                                            {languages.map((language) => (
+                                                <SelectItem
+                                                    key={language.value}
+                                                    value={language.value}
+                                                >
+                                                    {language.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                                <FieldError>{form.errors.language}</FieldError>
+                            </Field>
+                        )}
                         <Field data-invalid={Boolean(form.errors.tags)}>
                             <FieldLabel>Tags</FieldLabel>
                             <TagsCombobox

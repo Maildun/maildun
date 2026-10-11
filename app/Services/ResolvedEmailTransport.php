@@ -12,19 +12,14 @@ final readonly class ResolvedEmailTransport
      */
     public function __construct(
         public EmailProvider $provider,
-        public ?int $integrationId,
-        public ?string $integrationUuid,
+        public int $integrationId,
+        public string $integrationUuid,
         public ?string $integrationName,
         public ?array $configuration,
         public ?string $sesConfigurationSet,
         public ?string $sesSnsTopicArnHash,
         public ?array $authorizedFromAddresses = null,
     ) {}
-
-    public function usesTeamEmailIntegration(): bool
-    {
-        return $this->integrationId !== null;
-    }
 
     /**
      * Whether this transport may carry the given From address.

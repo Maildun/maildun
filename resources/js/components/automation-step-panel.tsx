@@ -433,6 +433,10 @@ export default function AutomationStepPanel({
                                                 kind === 'source'
                                                     ? (data.source ?? null)
                                                     : null,
+                                            language:
+                                                kind === 'language'
+                                                    ? (data.language ?? null)
+                                                    : null,
                                         })
                                     }
                                     disabled={readOnly}
@@ -503,6 +507,47 @@ export default function AutomationStepPanel({
                                             </SelectGroup>
                                         </SelectContent>
                                     </Select>
+                                </Field>
+                            )}
+
+                            {data.kind === 'language' && (
+                                <Field>
+                                    <FieldLabel htmlFor={`${node.id}-language`}>
+                                        Language
+                                    </FieldLabel>
+                                    <Select
+                                        value={(data.language as string) ?? ''}
+                                        onValueChange={(language) =>
+                                            patch({ language })
+                                        }
+                                        disabled={readOnly}
+                                    >
+                                        <SelectTrigger
+                                            id={`${node.id}-language`}
+                                            className="w-full"
+                                            data-test="automation-language-select"
+                                        >
+                                            <SelectValue placeholder="Choose a language" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectGroup>
+                                                {catalog.languages.map(
+                                                    (option) => (
+                                                        <SelectItem
+                                                            key={option.value}
+                                                            value={option.value}
+                                                        >
+                                                            {option.label}
+                                                        </SelectItem>
+                                                    ),
+                                                )}
+                                            </SelectGroup>
+                                        </SelectContent>
+                                    </Select>
+                                    <FieldDescription>
+                                        Subscribers without a language take the
+                                        False branch.
+                                    </FieldDescription>
                                 </Field>
                             )}
                         </>

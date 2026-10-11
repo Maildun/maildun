@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Emails\StoreEmailAttachments;
 use App\Enums\EmailStatus;
-use App\Enums\StorageBackend;
 use App\Http\Requests\StoreEmailAttachmentRequest;
 use App\Models\Email;
 use App\Models\EmailAttachment;
@@ -12,30 +12,15 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
 class EmailAttachmentController extends Controller
 {
-    public function store(StoreEmailAttachmentRequest $request, Team $currentTeam, Email $email): RedirectResponse
+    public function store(StoreEmailAttachmentRequest $request, Team $currentTeam, Email $email, StoreEmailAttachments $store): RedirectResponse
     {
         /** @var list<UploadedFile> $files */
         $files = $request->file('attachments', []);
         $request->ensureDraftCanAccept(count($files));
-        $disk = StorageBackend::current()->privateDisk();
-
-        foreach ($files as $file) {
-            $path = $file->store('email-attachments/'.$currentTeam->uuid.'/'.$email->uuid, $disk);
-
-            abort_unless(is_string($path), 500, __('The attachment could not be stored.'));
-
-            $email->attachments()->create([
-                'disk' => $disk,
-                'path' => $path,
-                'original_name' => Str::limit(basename($file->getClientOriginalName()), 255, ''),
-                'mime_type' => $file->getMimeType() ?? 'application/octet-stream',
-                'size' => $file->getSize(),
-            ]);
-        }
+        $store->handle($email, $files);
 
         return back();
     }

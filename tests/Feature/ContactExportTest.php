@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\TeamRole;
 use App\Models\Audience;
@@ -150,4 +151,25 @@ test('members without contact management permission cannot export contacts', fun
             'format' => 'csv',
         ]))
         ->assertForbidden();
+});
+
+test('audience exports include and filter by subscriber language', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['name' => 'News']);
+    Subscriber::factory()->for($audience)->create(['email' => 'budi@example.com', 'language' => SubscriberLanguage::Indonesian]);
+    Subscriber::factory()->for($audience)->create(['email' => 'ada@example.com', 'language' => SubscriberLanguage::English]);
+
+    $content = $this->actingAs($user)->get(route('audiences.exports.show', [
+        'current_team' => $team,
+        'audience' => $audience,
+        'format' => 'csv',
+        'language' => 'id',
+    ]))->assertOk()->streamedContent();
+
+    expect($content)
+        ->toContain('Email,"First name","Last name",Status,Source,Language,Tags,"Subscribed at"')
+        ->toContain('budi@example.com')
+        ->toContain(',id,')
+        ->not->toContain('ada@example.com');
 });

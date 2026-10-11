@@ -87,7 +87,7 @@ class PrepareEmailSendChunk implements ShouldQueue
             'merge_data' => json_encode($renderer->mergeData($subscriber, $sentAt), JSON_THROW_ON_ERROR),
             'status' => EmailDeliveryStatus::Queued->value,
             'provider' => $transport->provider->value,
-            'uses_team_email_integration' => $transport->usesTeamEmailIntegration(),
+            'uses_team_email_integration' => true,
             'opens_count' => 0,
             'clicks_count' => 0,
             'created_at' => $createdAt,

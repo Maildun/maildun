@@ -9,6 +9,7 @@ use App\Enums\AutomationCondition;
 use App\Enums\AutomationDelayUnit;
 use App\Enums\AutomationRunStatus;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Exceptions\EmailTransportException;
@@ -32,6 +33,7 @@ class AdvanceAutomationRun
         private TeamMailer $teamMailer,
         private RecordEmailAddressHealth $emailHealth,
         private BuildAutomationMergeData $mergeData,
+        private DispatchTaggedTriggers $dispatchTaggedTriggers,
     ) {}
 
     public function handle(AutomationRun $run, ?string $nodeId = null): void
@@ -272,7 +274,11 @@ class AdvanceAutomationRun
         $subscriber = $run->subscriber()->firstOrFail();
 
         if ($add) {
-            $subscriber->tags()->syncWithoutDetaching([$tag->id]);
+            $attached = $subscriber->tags()->syncWithoutDetaching([$tag->id])['attached'];
+
+            if ($attached !== [] && $subscriber->contact !== null) {
+                $this->dispatchTaggedTriggers->handle($subscriber->contact, [$tag->uuid], $run->automation);
+            }
         } else {
             $subscriber->tags()->detach($tag->id);
         }
@@ -301,6 +307,8 @@ class AdvanceAutomationRun
             AutomationCondition::Source => $subscriber->source === SubscriberSource::tryFrom(
                 (string) ($data['source'] ?? ''),
             ),
+            AutomationCondition::Language => $subscriber->language !== null
+                && $subscriber->language === SubscriberLanguage::tryFrom((string) ($data['language'] ?? '')),
             default => throw new \RuntimeException(__('Unknown condition.')),
         };
 

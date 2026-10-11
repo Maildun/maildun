@@ -4,6 +4,7 @@ import {
     Copy01Icon,
     Delete02Icon,
     Edit03Icon,
+    FolderLibraryIcon,
     MailSend01Icon,
     MoreHorizontalIcon,
     Upload01Icon,
@@ -11,14 +12,19 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, router, setLayoutProps, useForm } from '@inertiajs/react';
+import type {
+    EmailEditorHandle,
+    ImageResult,
+} from '@maildun/email-builder/editor';
 import type { FormEvent } from 'react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteTransactionalEmailModal from '@/components/delete-transactional-email-modal';
 import { EmailBuilderEditor } from '@/components/email-builder-editor';
 import { EmailHtmlEditor } from '@/components/email-html-editor';
 import { EmailSourceEditor } from '@/components/email-source-editor';
 import { LastTestStatus } from '@/components/last-test-status';
+import MediaLibraryDialog from '@/components/media-library-dialog';
 import SendTestTransactionalEmailDialog from '@/components/send-test-transactional-email-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -46,14 +52,24 @@ import {
     FieldLabel,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectGroup,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from '@/components/ui/toast';
 import { useClipboard } from '@/hooks/use-clipboard';
+import { uploadEditorImage } from '@/lib/editor-media-upload';
 import {
     EMPTY_BUILDER_DOCUMENT,
     getChildrenIds,
     htmlToBuilderDocument,
+    insertBuilderMedia,
     isSourceEditor,
     renderBuilderHtml,
     renderSourceHtml,
@@ -71,6 +87,8 @@ import type {
     EmailBuilderDocument,
     EmailEditorMode,
     EmailSenderDefaults,
+    MediaItem,
+    MediaLibraryData,
     TransactionalEmailDetail,
     TransactionalVariable,
 } from '@/types';
@@ -78,9 +96,11 @@ import type {
 type Props = {
     email: TransactionalEmailDetail;
     defaults: EmailSenderDefaults;
+    audiences: { uuid: string; name: string }[];
     canManage: boolean;
     currentTeam: { slug: string };
     auth: { user: { email: string } };
+    mediaLibrary: MediaLibraryData | null;
 };
 
 type SectionValue = 'details' | 'sender' | 'design' | 'variables';
@@ -96,7 +116,7 @@ const SECTIONS: { value: SectionValue; fields: string[] }[] = [
         fields: ['from_name', 'from_address', 'reply_to'],
     },
     { value: 'design', fields: ['html', 'source', 'design'] },
-    { value: 'variables', fields: ['variables'] },
+    { value: 'variables', fields: ['variables', 'audience'] },
 ];
 
 const VARIABLE_KEY = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
@@ -108,7 +128,15 @@ const BUILT_IN_TAGS = [
         label: 'View in browser',
         description: 'Opens a hosted copy of the email that was sent.',
     },
+    {
+        key: 'unsubscribe_url',
+        label: 'Unsubscribe',
+        description:
+            'Opts the recipient out of the audience chosen below. Empty when no audience is chosen or the recipient is not subscribed to it.',
+    },
 ] as const;
+
+const NO_AUDIENCE = '__none__';
 
 function TransactionalDesignPreview({
     editor,
@@ -156,17 +184,35 @@ function TransactionalDesignPreview({
 export default function TransactionalEdit({
     email,
     defaults,
+    audiences,
     canManage,
     currentTeam,
     auth,
+    mediaLibrary,
 }: Props) {
     const [view, setView] = useState<'hub' | 'design'>('hub');
+    const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
+    const builderRef = useRef<EmailEditorHandle>(null);
+    const imagePickerResolve = useRef<
+        ((image: ImageResult | null) => void) | null
+    >(null);
+    const uploadBuilderImage =
+        canManage && mediaLibrary?.canUpload
+            ? (file: File) => uploadEditorImage(currentTeam.slug, file)
+            : undefined;
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
     const [testOpen, setTestOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [publishing, setPublishing] = useState(false);
     const [newVariableKey, setNewVariableKey] = useState('');
     const [, copy] = useClipboard();
+    const audienceItems = [
+        { value: NO_AUDIENCE, label: 'Not set' },
+        ...audiences.map((audience) => ({
+            value: audience.uuid,
+            label: audience.name,
+        })),
+    ];
 
     const form = useForm<{
         name: string;
@@ -177,6 +223,7 @@ export default function TransactionalEdit({
         from_name: string;
         from_address: string;
         reply_to: string;
+        audience: string | null;
         html: string;
         source: string;
         design: EmailBuilderDocument | null;
@@ -190,6 +237,7 @@ export default function TransactionalEdit({
         from_name: email.from_name ?? '',
         from_address: email.from_address ?? '',
         reply_to: email.reply_to ?? '',
+        audience: email.audience,
         html: email.html ?? '',
         source: email.source,
         design:
@@ -303,6 +351,68 @@ export default function TransactionalEdit({
     const published = email.status === 'published';
     const designing = view === 'design';
 
+    useEffect(() => {
+        return () => imagePickerResolve.current?.(null);
+    }, []);
+
+    const changeMediaDialogOpen = (open: boolean) => {
+        if (!open) {
+            imagePickerResolve.current?.(null);
+            imagePickerResolve.current = null;
+        }
+
+        setMediaDialogOpen(open);
+    };
+
+    const pickBuilderImage = (): Promise<ImageResult | null> => {
+        if (!canManage || form.processing || !mediaLibrary) {
+            return Promise.resolve(null);
+        }
+
+        imagePickerResolve.current?.(null);
+
+        return new Promise((resolve) => {
+            imagePickerResolve.current = resolve;
+            setMediaDialogOpen(true);
+        });
+    };
+
+    const insertMedia = (image: MediaItem): boolean => {
+        if (
+            !canManage ||
+            form.processing ||
+            image.status !== 'ready' ||
+            !image.absolute_url
+        ) {
+            return false;
+        }
+
+        if (imagePickerResolve.current) {
+            imagePickerResolve.current({
+                url: image.absolute_url,
+                alt: image.alt ?? image.name,
+            });
+            imagePickerResolve.current = null;
+
+            return true;
+        }
+
+        if (!builderRef.current) {
+            return false;
+        }
+
+        const inserted = insertBuilderMedia(builderRef.current.store, image);
+
+        if (!inserted) {
+            toast.add({
+                type: 'error',
+                title: 'Could not insert this image. Try again.',
+            });
+        }
+
+        return inserted;
+    };
+
     const addVariable = () => {
         const key = newVariableKey.trim();
 
@@ -385,24 +495,51 @@ export default function TransactionalEdit({
                                     className="hidden truncate md:block"
                                 />
                             </div>
-                            {canManage ? (
-                                <Button
-                                    type="submit"
-                                    size="sm"
-                                    data-test="save-transactional-button"
-                                    disabled={form.processing}
-                                >
-                                    {form.processing && (
-                                        <Spinner data-icon="inline-start" />
-                                    )}
-                                    Save
-                                </Button>
-                            ) : null}
+                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                                {email.editor === 'builder' && mediaLibrary ? (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        aria-label="Open media library"
+                                        data-test="open-media-library"
+                                        onClick={() => setMediaDialogOpen(true)}
+                                    >
+                                        <HugeiconsIcon
+                                            icon={FolderLibraryIcon}
+                                            data-icon="inline-start"
+                                        />
+                                        <span className="hidden lg:inline">
+                                            Open media
+                                        </span>
+                                    </Button>
+                                ) : null}
+                                {canManage ? (
+                                    <Button
+                                        type="submit"
+                                        size="sm"
+                                        data-test="save-transactional-button"
+                                        disabled={form.processing}
+                                    >
+                                        {form.processing && (
+                                            <Spinner data-icon="inline-start" />
+                                        )}
+                                        Save
+                                    </Button>
+                                ) : null}
+                            </div>
                         </header>
                         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                             {email.editor === 'builder' ? (
                                 <>
                                     <EmailBuilderEditor
+                                        ref={builderRef}
+                                        onPickImage={
+                                            mediaLibrary
+                                                ? pickBuilderImage
+                                                : undefined
+                                        }
+                                        onUploadImage={uploadBuilderImage}
                                         document={
                                             form.data.design ??
                                             EMPTY_BUILDER_DOCUMENT
@@ -979,6 +1116,52 @@ export default function TransactionalEdit({
                             </Field>
                         ))}
 
+                        <Field data-invalid={Boolean(form.errors.audience)}>
+                            <FieldLabel htmlFor="transactional-audience">
+                                Unsubscribe audience
+                            </FieldLabel>
+                            <Select
+                                items={audienceItems}
+                                value={form.data.audience ?? NO_AUDIENCE}
+                                disabled={!canManage}
+                                onValueChange={(value) =>
+                                    form.setData(
+                                        'audience',
+                                        typeof value === 'string' &&
+                                            value !== NO_AUDIENCE
+                                            ? value
+                                            : null,
+                                    )
+                                }
+                            >
+                                <SelectTrigger
+                                    id="transactional-audience"
+                                    className="w-full"
+                                    data-test="transactional-audience"
+                                    aria-invalid={Boolean(form.errors.audience)}
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent alignItemWithTrigger={false}>
+                                    <SelectGroup>
+                                        {audienceItems.map((item) => (
+                                            <SelectItem
+                                                key={item.value}
+                                                value={item.value}
+                                            >
+                                                {item.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectGroup>
+                                </SelectContent>
+                            </Select>
+                            <FieldDescription>
+                                Who {'{{ unsubscribe_url }}'} unsubscribes the
+                                recipient from.
+                            </FieldDescription>
+                            <FieldError>{form.errors.audience}</FieldError>
+                        </Field>
+
                         {form.data.variables.length === 0 ? (
                             <p className="text-sm text-muted-foreground">
                                 No variables yet. Add one below or write a merge
@@ -1117,6 +1300,17 @@ export default function TransactionalEdit({
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {mediaLibrary ? (
+                <MediaLibraryDialog
+                    teamSlug={currentTeam.slug}
+                    library={mediaLibrary}
+                    open={mediaDialogOpen}
+                    onOpenChange={changeMediaDialogOpen}
+                    onInsert={canManage && designing ? insertMedia : undefined}
+                    insertDisabled={form.processing}
+                />
+            ) : null}
 
             {canManage && (
                 <>

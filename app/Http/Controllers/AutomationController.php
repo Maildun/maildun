@@ -9,6 +9,7 @@ use App\Enums\AutomationDelayUnit;
 use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationStatus;
 use App\Enums\AutomationTrigger;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\TransactionalEmailStatus;
 use App\Http\Requests\StoreAutomationRequest;
@@ -134,6 +135,7 @@ class AutomationController extends Controller
                         'label' => $source->label(),
                     ])
                     ->all(),
+                'languages' => SubscriberLanguage::options(),
                 'delayUnits' => collect(AutomationDelayUnit::cases())
                     ->map(fn (AutomationDelayUnit $unit) => [
                         'value' => $unit->value,

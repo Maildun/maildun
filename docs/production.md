@@ -28,6 +28,20 @@ Run the first installation interactively so the administrator password does not 
 php artisan app:install --no-interaction --force --registration=closed --skip-storage
 ```
 
+### Laravel Forge
+
+Forge deploy scripts cannot answer prompts, so run the installer headless from the deploy script, after `composer install` and the frontend build (`pnpm install --frozen-lockfile` and `pnpm run build`):
+
+```bash
+$FORGE_PHP artisan app:install --no-interaction --force --registration=closed --skip-storage --setup-email=you@example.com
+$FORGE_PHP artisan horizon:terminate
+$FORGE_PHP artisan app:system-test --no-interaction --skip=horizon
+```
+
+`app:system-test` runs the same checks as the installer's browser system test and the **Settings → System Check** page, including a temporary storage write, read, and delete, and exits non-zero when any check fails, which stops the deploy. Skip `horizon` here because the daemon is still restarting after `horizon:terminate`; run the full test later to confirm the workers came back. A scheduler that has not run yet is reported as pending and does not fail the deploy. Pass `--no-storage-probe` to skip the file round trip.
+
+Until an administrator exists, each deploy prints a signed browser setup link (valid for 24 hours) to the deployment log and, with `--setup-email`, sends it through the application-wide mailer (the system `MAIL_*` values, not a workspace connection). Once the administrator has been created the option does nothing, so it is safe to leave in the script. If the mailer is not configured yet, the deploy still succeeds and the link stays in the log.
+
 The web server's document root must be the repository's `public` directory. The application process must not run as `root`, and only Laravel's required storage and cache directories should be writable.
 
 ## Remote MCP
@@ -41,6 +55,8 @@ php artisan passport:keys --no-interaction
 Preserve `storage/oauth-private.key` and `storage/oauth-public.key` across releases and application servers, or supply matching `PASSPORT_PRIVATE_KEY` and `PASSPORT_PUBLIC_KEY` values through the secret manager. Both keys must be readable by the PHP process. Do not regenerate them on every deployment or use `--force` as a routine repair; overwriting the pair causes existing access tokens to fail verification.
 
 Set the public HTTPS `APP_URL`, allow only trusted callback origins or native schemes, and make OAuth discovery and token routes reachable through the reverse proxy. Follow [Using MCP](mcp.md#operator-setup) for the configuration defaults and connection checks.
+
+The email builder tools (`get-email-builder`, `edit-email-builder`, `check-email-builder`) run `resources/js/lib/email-builder-agent.mjs` with Node.js on every call. Keep Node.js 20 or newer available to the PHP process (on its `PATH`, or as an absolute path in `MCP_EMAIL_BUILDER_RUNTIME`) and keep the `node_modules` directory from `pnpm install` in place after `pnpm run build`; deleting it after the build breaks these tools with "The email builder runtime is unavailable". The Docker image already includes Node.js and the packages the agent needs.
 
 ## Required long-running processes
 

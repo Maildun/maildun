@@ -151,7 +151,7 @@ Use a block ID and properties appropriate to its type. A dry run returns the pro
 
 Campaign edits are limited to drafts. Transactional definitions follow the existing update policy, including edits to published definitions; the tool does not change publication status. Read-only members can inspect and check designs but cannot edit them, including dry runs. Legacy EmailBuilder.js designs are converted in memory when read and stored in the current format on a successful edit. A builder email with no design preserves its existing HTML as an HTML block.
 
-These tools use the installed `@maildun/email-builder` library, without an AI provider or API key. Keep JavaScript dependencies installed on the application server and make Node.js 20+ available to the PHP process. `MCP_EMAIL_BUILDER_RUNTIME` defaults to `node`; set it to an absolute Node.js or Bun executable path when needed, then rebuild cached configuration. Each operation has a 20-second timeout. Email templates and non-builder editor modes are outside this tool set.
+These tools use the installed `@maildun/email-builder` library, without an AI provider or API key. Keep JavaScript dependencies installed on the application server and make Node.js 20+ available to the PHP process. `MCP_EMAIL_BUILDER_RUNTIME` defaults to `node`; set it to an absolute Node.js or Bun executable path when needed, then rebuild cached configuration. The Docker image ships Node.js and the packages these tools load. Each operation has a 20-second timeout. Email templates and non-builder editor modes are outside this tool set.
 
 ## Authorization and safety
 

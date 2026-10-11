@@ -8,6 +8,7 @@ use App\Enums\AutomationTrigger;
 use App\Enums\ContactImportIssue;
 use App\Enums\ContactImportMergeStrategy;
 use App\Enums\ContactImportStatus;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Models\AudienceAttribute;
@@ -123,7 +124,7 @@ class ProcessContactImport implements ShouldQueue
 
                     if (! $csv->isBlankRow($row)) {
                         $contactImport->processed_rows++;
-                        $this->importRow($contactImport, $row, $fields, $manageContact, $addContactToAudiences, $emailReview);
+                        $this->importRow($contactImport, $row, $fields, $manageContact, $addContactToAudiences, $emailReview, $csv);
                     }
 
                     $contactImport->file_offset = $offset;
@@ -184,6 +185,7 @@ class ProcessContactImport implements ShouldQueue
         ManageContact $manageContact,
         AddContactToAudiences $addContactToAudiences,
         ImportEmailReview $emailReview,
+        ContactImportCsv $csv,
     ): void {
         $email = Str::lower($this->valueAt($row, $fields['email']) ?? '');
         $firstName = $this->valueAt($row, $fields['first_name'] ?? null);
@@ -195,6 +197,12 @@ class ProcessContactImport implements ShouldQueue
         $tags = array_values(array_filter(array_map('trim', $tags)));
         $error = $this->profileError($email, $firstName, $lastName, $tags);
         $attributes = [];
+        $languageValue = $contactImport->audience === null ? null : $this->valueAt($row, $fields['language'] ?? null);
+        $language = $languageValue === null ? null : $csv->language($languageValue);
+
+        if ($error === null && $languageValue !== null && $language === null) {
+            $error = $this->unsupportedLanguageError($languageValue);
+        }
 
         if ($error === null && $contactImport->audience !== null) {
             [$attributes, $error] = $this->attributeValues($contactImport, $row, $fields);
@@ -242,7 +250,7 @@ class ProcessContactImport implements ShouldQueue
 
         [$createdMembership, $updatedMembership, $skippedUnsubscribed] = $contactImport->audience === null
             ? [0, false, false]
-            : $this->syncMembership($contactImport, $contact, $attributes, $fillBlanks, $addContactToAudiences);
+            : $this->syncMembership($contactImport, $contact, $attributes, $language, $fillBlanks, $addContactToAudiences);
 
         $this->dispatchTagged($contact, $addedTags);
 
@@ -349,6 +357,11 @@ class ProcessContactImport implements ShouldQueue
         }
     }
 
+    private function unsupportedLanguageError(string $value): string
+    {
+        return __('Language ":value" is not supported.', ['value' => $value]);
+    }
+
     /** @param list<string> $tags */
     private function profileError(string $email, ?string $firstName, ?string $lastName, array $tags): ?string
     {
@@ -375,6 +388,7 @@ class ProcessContactImport implements ShouldQueue
         ContactImport $contactImport,
         Contact $contact,
         array $attributes,
+        ?SubscriberLanguage $language,
         bool $fillBlanks,
         AddContactToAudiences $addContactToAudiences,
     ): array {
@@ -387,19 +401,26 @@ class ProcessContactImport implements ShouldQueue
 
         $createdMembership = $addContactToAudiences->handle($contact, $audience->newCollection([$audience]), $contactImport->consent_ip);
 
-        if ($attributes === [] || ($existing !== null && $createdMembership === 0 && ! $fillBlanks)) {
+        if (($attributes === [] && $language === null) || ($existing !== null && $createdMembership === 0 && ! $fillBlanks)) {
             return [$createdMembership, false, false];
         }
 
         $subscriber = $audience->subscribers()->where('email', $contact->email)->first();
         $current = $subscriber->attribute_values ?? [];
         $merged = [...$attributes, ...array_filter($current, fn (string|int|float $value): bool => $value !== '')];
+        $changes = $merged === $current ? [] : ['attribute_values' => $merged];
 
-        if ($merged === $current) {
+        // A new membership takes the CSV language over the audience default; an
+        // existing one, even when resubscribed, only gains a language it was missing.
+        if ($language !== null && ($existing === null || $existing->language === null) && $subscriber->language !== $language) {
+            $changes['language'] = $language;
+        }
+
+        if ($changes === []) {
             return [$createdMembership, false, false];
         }
 
-        $subscriber->update(['attribute_values' => $merged]);
+        $subscriber->update($changes);
 
         return [$createdMembership, $existing !== null && $createdMembership === 0, false];
     }

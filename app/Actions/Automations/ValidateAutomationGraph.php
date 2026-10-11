@@ -6,6 +6,7 @@ use App\Enums\AutomationAction;
 use App\Enums\AutomationCondition;
 use App\Enums\AutomationDelayUnit;
 use App\Enums\AutomationTrigger;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\TransactionalEmailStatus;
 use App\Models\Audience;
@@ -292,6 +293,10 @@ class ValidateAutomationGraph
             if (! in_array($source, [SubscriberSource::Manual, SubscriberSource::Form], true)) {
                 return [__('Choose Manual or Form for the source condition.')];
             }
+        }
+
+        if ($kind === AutomationCondition::Language && SubscriberLanguage::tryFrom((string) ($data['language'] ?? '')) === null) {
+            return [__('Choose a language for the condition.')];
         }
 
         return [];
