@@ -13,10 +13,19 @@ class PasswordUpdateRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
+     * An account that signed up with Google has no current password to type;
+     * SecurityController asks it for a recent confirmation instead.
+     *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
+        if ($this->user()?->hasPassword() === false) {
+            return [
+                'password' => $this->passwordRules(),
+            ];
+        }
+
         return [
             'current_password' => $this->currentPasswordRules(),
             'password' => $this->passwordRules(),

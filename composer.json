@@ -34,6 +34,7 @@
         "laravel/horizon": "^5.48",
         "laravel/mcp": "^1.0",
         "laravel/passport": "^13.7",
+        "laravel/socialite": "^5.31",
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.14",
         "league/flysystem-aws-s3-v3": "^3.0",

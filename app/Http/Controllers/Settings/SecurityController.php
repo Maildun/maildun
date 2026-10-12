@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Settings;
 
+use App\Concerns\InteractsWithPasswordConfirmation;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\PasswordUpdateRequest;
 use App\Http\Requests\Settings\TwoFactorAuthenticationRequest;
+use App\Services\GoogleSignIn;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
@@ -13,10 +15,12 @@ use Laravel\Fortify\Features;
 
 class SecurityController extends Controller
 {
+    use InteractsWithPasswordConfirmation;
+
     /**
      * Show the user's security settings page.
      */
-    public function edit(TwoFactorAuthenticationRequest $request): Response
+    public function edit(TwoFactorAuthenticationRequest $request, GoogleSignIn $googleSignIn): Response
     {
         $props = [
             'canManageTwoFactor' => Features::canManageTwoFactorAuthentication(),
@@ -38,6 +42,9 @@ class SecurityController extends Controller
                     ->all()
                 : [],
             'passwordRules' => Password::defaults()->toPasswordRulesString(),
+            'hasPassword' => $request->user()->hasPassword(),
+            'canManageGoogle' => $googleSignIn->isEnabled(),
+            'googleConnected' => $request->user()->google_id !== null,
         ];
 
         if (Features::canManageTwoFactorAuthentication()) {
@@ -51,15 +58,29 @@ class SecurityController extends Controller
     }
 
     /**
-     * Update the user's password.
+     * Update the user's password, or set the first one.
+     *
+     * An account that signed up with Google has no current password to check,
+     * so setting its first one rests on a recent confirmation instead, made
+     * through the connected Google account.
      */
     public function update(PasswordUpdateRequest $request): RedirectResponse
     {
-        $request->user()->update([
+        $user = $request->user();
+        $hadPassword = $user->hasPassword();
+
+        if (! $hadPassword && ! $this->passwordRecentlyConfirmed($request)) {
+            return $this->redirectToPasswordConfirmation(route('security.edit'));
+        }
+
+        $user->update([
             'password' => $request->password,
         ]);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Password updated.')]);
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => $hadPassword ? __('Password updated.') : __('Password set.'),
+        ]);
 
         return back();
     }

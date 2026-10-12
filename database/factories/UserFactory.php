@@ -67,6 +67,26 @@ class UserFactory extends Factory
     }
 
     /**
+     * Indicate that the user has never set a password, as after signing up with Google.
+     */
+    public function withoutPassword(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'password' => null,
+        ]);
+    }
+
+    /**
+     * Indicate that the user has connected a Google account.
+     */
+    public function withGoogle(?string $googleId = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'google_id' => $googleId ?? fake()->unique()->numerify('1####################'),
+        ]);
+    }
+
+    /**
      * Indicate that the model has two-factor authentication configured.
      */
     public function withTwoFactor(): static

@@ -13,6 +13,7 @@ test('fresh migrations preserve the consolidated application schema', function (
 
     expect(Schema::hasColumns('users', [
         'uuid',
+        'google_id',
         'avatar_path',
         'two_factor_secret',
         'two_factor_recovery_codes',

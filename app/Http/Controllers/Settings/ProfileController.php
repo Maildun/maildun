@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Actions\Teams\ReleaseUserTeams;
+use App\Concerns\InteractsWithPasswordConfirmation;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileDeleteRequest;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
@@ -17,6 +18,8 @@ use Inertia\Response;
 
 class ProfileController extends Controller
 {
+    use InteractsWithPasswordConfirmation;
+
     /**
      * Show the user's profile settings page.
      */
@@ -25,6 +28,7 @@ class ProfileController extends Controller
         return Inertia::render('settings/profile', [
             'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
             'status' => $request->session()->get('status'),
+            'hasPassword' => $request->user()->hasPassword(),
         ]);
     }
 
@@ -69,10 +73,18 @@ class ProfileController extends Controller
 
     /**
      * Delete the user's profile.
+     *
+     * An account that signed up with Google has no password to re-enter, so
+     * deleting it rests on a recent confirmation instead, made through the
+     * connected Google account.
      */
     public function destroy(ProfileDeleteRequest $request, ReleaseUserTeams $releaseTeams): RedirectResponse
     {
         $user = $request->user();
+
+        if (! $user->hasPassword() && ! $this->passwordRecentlyConfirmed($request)) {
+            return $this->redirectToPasswordConfirmation(route('profile.edit'));
+        }
 
         Auth::logout();
 

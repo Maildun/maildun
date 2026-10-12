@@ -81,7 +81,8 @@ test('password can be updated', function () {
 
     $response
         ->assertSessionHasNoErrors()
-        ->assertRedirect(route('security.edit'));
+        ->assertRedirect(route('security.edit'))
+        ->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Password updated.']);
 
     expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
 });

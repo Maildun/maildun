@@ -12,9 +12,24 @@ Copy `.env.example` to `.env` and treat the resulting file as a secret. This pag
 | `APP_DEBUG` | Detailed exception output | Always `false` in production |
 | `PASSKEYS_USER_HANDLE_SECRET` | Derives the WebAuthn user handle | Set it explicitly; left empty it defaults to `APP_KEY` |
 | `REGISTRATION_ENABLED` | Allows public account creation | Prefer `false` unless open registration is intentional |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Enables "Continue with Google" | Leave empty to hide the button; set both from a Google Cloud OAuth client |
+| `GOOGLE_REDIRECT_URI` | Callback URL sent to Google | Leave unset; it defaults to `APP_URL` + `/auth/google/callback` |
 | `TRUSTED_PROXIES` | Trusts proxy-provided client addresses | Use explicit proxy addresses when possible; never set `*` on a directly exposed server |
 
 Invited teammates can finish registration even when public registration is disabled.
+
+"Continue with Google" appears on the login, registration, and password confirmation
+screens once both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set; with either one
+empty the button is hidden and every Google route responds 404. In Google Cloud Console,
+create a Web application OAuth client and add `{APP_URL}/auth/google/callback` as an
+authorized redirect URI. Google sign-in follows the same rules as the register form:
+new accounts need `REGISTRATION_ENABLED=true` or a pending workspace invitation for that
+address, none can be created before installation finishes, and each starts with its
+own personal workspace. Only addresses Google
+reports as verified are accepted. An existing account is linked by email only if its own
+address is verified, and after that it is matched by its Google account ID. Two-factor
+authentication still applies, and people who signed up with Google can set a password
+later from Security settings.
 
 `APP_URL` carries more weight than its name suggests. Queue workers serve no request and
 cannot infer the host, so open pixels, click redirects, and unsubscribe links are signed

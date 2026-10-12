@@ -24,6 +24,7 @@ use App\Http\Controllers\EmailLinkCheckController;
 use App\Http\Controllers\EmailTemplateController;
 use App\Http\Controllers\EmailTrackingController;
 use App\Http\Controllers\EmailWebViewController;
+use App\Http\Controllers\GoogleAuthController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\InstallationController;
 use App\Http\Controllers\ListHygieneController;
@@ -91,6 +92,20 @@ Route::get('avatars/{style}/{seed}.svg', AvatarController::class)
         StartSession::class,
     ])
     ->name('avatars.show');
+
+// "Continue with Google". Registered even when GOOGLE_CLIENT_ID is empty so
+// Wayfinder can generate their helpers; the controllers answer 404 instead.
+// The callback carries no guest middleware because connecting an account and
+// confirming a password finish there too.
+Route::get('auth/google/redirect', [GoogleAuthController::class, 'redirect'])
+    ->middleware(['guest:web', 'throttle:google'])
+    ->name('google.redirect');
+Route::get('auth/google/callback', [GoogleAuthController::class, 'callback'])
+    ->middleware('throttle:google')
+    ->name('google.callback');
+Route::get('user/confirm-password/google', [GoogleAuthController::class, 'confirm'])
+    ->middleware(['auth', 'throttle:google'])
+    ->name('google.confirm');
 
 Route::get('forms/{subscribeForm}', [PublicSubscribeFormController::class, 'show'])
     ->name('public.subscribe_forms.show');

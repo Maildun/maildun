@@ -1,4 +1,8 @@
 import { Form, Head } from '@inertiajs/react';
+import {
+    ContinueWithGoogle,
+    ContinueWithGoogleDivider,
+} from '@/components/continue-with-google';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import TeamInvitationAlert from '@/components/team-invitation-alert';
@@ -8,15 +12,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { login } from '@/routes';
+import { redirect as googleRedirect } from '@/routes/google';
 import { store } from '@/routes/register';
 import type { TeamInvitationContext } from '@/types';
 
 type Props = {
     passwordRules: string;
+    canLoginWithGoogle: boolean;
     teamInvitation?: TeamInvitationContext | null;
 };
 
-export default function Register({ passwordRules, teamInvitation }: Props) {
+export default function Register({
+    passwordRules,
+    canLoginWithGoogle,
+    teamInvitation,
+}: Props) {
     return (
         <>
             <Head title="Register" />
@@ -33,6 +43,22 @@ export default function Register({ passwordRules, teamInvitation }: Props) {
                                 invitation={teamInvitation}
                                 action="Register"
                             />
+                        )}
+
+                        {canLoginWithGoogle && (
+                            <>
+                                {/* Same tabIndex as the name field; DOM order keeps it first. */}
+                                <ContinueWithGoogle
+                                    href={googleRedirect.url({
+                                        query: {
+                                            invitation: teamInvitation?.code,
+                                        },
+                                    })}
+                                    tabIndex={1}
+                                />
+
+                                <ContinueWithGoogleDivider />
+                            </>
                         )}
 
                         <div className="grid gap-6">
