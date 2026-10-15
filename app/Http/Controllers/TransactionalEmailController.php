@@ -49,7 +49,10 @@ class TransactionalEmailController extends Controller
             ])
             ->when($filters['q'] !== '', function ($query) use ($filters): void {
                 $search = '%'.addcslashes($filters['q'], '%_\\').'%';
-                $query->whereAny(['name', 'slug', 'subject'], 'like', $search);
+                $query->where(fn ($inner) => $inner
+                    ->whereLike('name', $search)
+                    ->orWhereLike('slug', $search)
+                    ->orWhereLike('subject', $search));
             })
             ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']))
             ->when($filters['editor'] !== '', fn ($query) => $query->where('editor', $filters['editor']))

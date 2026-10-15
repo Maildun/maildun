@@ -41,7 +41,9 @@ class ListWorkspacesTool extends Tool
             ->when($search !== '', function ($query) use ($search): void {
                 $pattern = '%'.addcslashes($search, '%_\\').'%';
 
-                $query->whereAny(['name', 'slug'], 'like', $pattern);
+                $query->where(fn ($inner) => $inner
+                    ->whereLike('name', $pattern)
+                    ->orWhereLike('slug', $pattern));
             })
             ->orderByRaw('LOWER(name)')
             ->orderBy('id')

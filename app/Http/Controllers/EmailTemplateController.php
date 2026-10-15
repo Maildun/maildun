@@ -27,7 +27,10 @@ class EmailTemplateController extends Controller
             ->availableTo($currentTeam)
             ->when($filters['q'] !== '', function ($query) use ($filters): void {
                 $search = '%'.addcslashes($filters['q'], '%_\\').'%';
-                $query->whereAny(['name', 'description', 'subject'], 'like', $search);
+                $query->where(fn ($inner) => $inner
+                    ->whereLike('name', $search)
+                    ->orWhereLike('description', $search)
+                    ->orWhereLike('subject', $search));
             })
             ->when($filters['editor'] !== '', fn ($query) => $query->where('editor', $filters['editor']))
             ->when($filters['type'] === 'starter', fn ($query) => $query->whereNull('team_id'))

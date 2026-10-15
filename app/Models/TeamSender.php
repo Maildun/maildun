@@ -174,7 +174,7 @@ class TeamSender extends Model
                     $query->orWhere(function (Builder $query) use ($testedDomain): void {
                         $query->where('verified_by_provider', true)
                             ->whereNull('verified_sender_domain_id')
-                            ->where('email', 'like', '%@'.$testedDomain);
+                            ->whereLike('email', '%@'.$testedDomain);
                     });
                 }
 

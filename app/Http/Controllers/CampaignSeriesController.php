@@ -36,7 +36,10 @@ class CampaignSeriesController extends Controller
             ])
             ->when($search !== '', function ($query) use ($search): void {
                 $term = '%'.addcslashes($search, '%_\\').'%';
-                $query->whereAny(['name', 'description', 'objective'], 'like', $term);
+                $query->where(fn ($inner) => $inner
+                    ->whereLike('name', $term)
+                    ->orWhereLike('description', $term)
+                    ->orWhereLike('objective', $term));
             })
             ->orderByDesc('updated_at')
             ->paginate(15)

@@ -270,7 +270,7 @@ class AutomationController extends Controller
             ->with(['subscriber:id,uuid,email,first_name,last_name,audience_id', 'subscriber.audience:id,uuid', 'steps'])
             ->when($filters['q'] !== '', function ($query) use ($filters): void {
                 $search = '%'.addcslashes($filters['q'], '%_\\').'%';
-                $query->whereHas('subscriber', fn ($subscriber) => $subscriber->where('email', 'like', $search));
+                $query->whereHas('subscriber', fn ($subscriber) => $subscriber->whereLike('email', $search));
             })
             ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']))
             ->orderByDesc('id')

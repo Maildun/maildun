@@ -114,7 +114,9 @@ class EmailController extends Controller
             ])
             ->when($filters['q'] !== '', function ($query) use ($filters): void {
                 $search = '%'.addcslashes($filters['q'], '%_\\').'%';
-                $query->whereAny(['name', 'subject'], 'like', $search);
+                $query->where(fn ($inner) => $inner
+                    ->whereLike('name', $search)
+                    ->orWhereLike('subject', $search));
             })
             ->when($filters['status'] !== '', function ($query) use ($filters): void {
                 $this->applyCampaignStatusFilter($query, $filters['status']);
@@ -1244,7 +1246,10 @@ class EmailController extends Controller
                 ->when($search !== '', function (Builder $query) use ($search): void {
                     $term = '%'.addcslashes($search, '%_\\').'%';
 
-                    $query->whereAny(['subscribers.first_name', 'subscribers.last_name', 'subscribers.email'], 'like', $term);
+                    $query->where(fn ($inner) => $inner
+                        ->whereLike('subscribers.first_name', $term)
+                        ->orWhereLike('subscribers.last_name', $term)
+                        ->orWhereLike('subscribers.email', $term));
                 })
                 ->orderBy('subscribers.email')
                 ->orderBy('subscribers.id')

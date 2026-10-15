@@ -32,7 +32,7 @@ class CompanyController extends Controller
                 $search = '%'.mb_strtolower($filters['search']).'%';
                 $query->where(fn ($companyQuery) => $companyQuery
                     ->whereRaw('LOWER(name) LIKE ?', [$search])
-                    ->orWhereHas('domains', fn ($domainQuery) => $domainQuery->where('domain', 'like', $search)));
+                    ->orWhereHas('domains', fn ($domainQuery) => $domainQuery->whereLike('domain', $search)));
             });
 
         $companies = match ($filters['sort']) {

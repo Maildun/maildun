@@ -48,7 +48,9 @@ class ListAudiencesTool extends Tool
             ->when($search !== '', function ($query) use ($search): void {
                 $pattern = '%'.addcslashes($search, '%_\\').'%';
 
-                $query->whereAny(['name', 'description'], 'like', $pattern);
+                $query->where(fn ($inner) => $inner
+                    ->whereLike('name', $pattern)
+                    ->orWhereLike('description', $pattern));
             })
             ->orderByDesc('updated_at')
             ->orderByDesc('id')

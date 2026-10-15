@@ -45,7 +45,10 @@ class ListTransactionalEmailsTool extends Tool
             ->when($search !== '', function ($query) use ($search): void {
                 $pattern = '%'.addcslashes($search, '%_\\').'%';
 
-                $query->whereAny(['name', 'slug', 'subject'], 'like', $pattern);
+                $query->where(fn ($inner) => $inner
+                    ->whereLike('name', $pattern)
+                    ->orWhereLike('slug', $pattern)
+                    ->orWhereLike('subject', $pattern));
             })
             ->when(isset($validated['status']), fn ($query) => $query->where('status', $validated['status']))
             ->orderByDesc('updated_at')

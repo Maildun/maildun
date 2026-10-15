@@ -50,7 +50,9 @@ class ListAutomationsTool extends Tool
             ->when($search !== '', function ($query) use ($search): void {
                 $pattern = '%'.addcslashes($search, '%_\\').'%';
 
-                $query->whereAny(['name', 'description'], 'like', $pattern);
+                $query->where(fn ($inner) => $inner
+                    ->whereLike('name', $pattern)
+                    ->orWhereLike('description', $pattern));
             })
             ->when(isset($validated['status']), fn ($query) => $query->where('status', $validated['status']))
             ->orderByDesc('updated_at')
