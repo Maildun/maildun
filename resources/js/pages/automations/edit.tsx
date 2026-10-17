@@ -23,6 +23,7 @@ import type {
     XYPosition,
 } from '@xyflow/react';
 import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import AutomationCanvas from '@/components/automation-canvas';
 import AutomationStepPanel from '@/components/automation-step-panel';
 import { Badge } from '@/components/ui/badge';
@@ -53,6 +54,11 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
     AUTOMATION_STEP_DRAG_TYPE,
     automationConnectionError,
@@ -103,6 +109,12 @@ const STATUS_VARIANTS: Record<
     draft: 'secondary',
     active: 'success',
     paused: 'amber',
+};
+
+const STATUS_SWITCH_HINTS: Record<AutomationStatus, string> = {
+    draft: 'Activate to start enrolling people when the trigger fires.',
+    active: 'Pausing stops new people from entering. People already in the flow wait at their current step until you activate it again.',
+    paused: 'Activating lets people held in the flow continue from their current step. Waits that ended during the pause continue right away.',
 };
 
 const NEW_STEPS: {
@@ -220,6 +232,32 @@ function visualTestOrder(
     }
 
     return ordered;
+}
+
+/**
+ * The status switch cannot say on its own what happens to people already in
+ * the flow, so the tooltip does.
+ */
+function StatusSwitchHint({
+    status,
+    children,
+}: {
+    status: AutomationStatus;
+    children: ReactNode;
+}) {
+    return (
+        <Tooltip>
+            <TooltipTrigger render={<span className="hidden md:inline-flex" />}>
+                {children}
+            </TooltipTrigger>
+            <TooltipContent
+                className="max-w-64"
+                data-test="automation-status-hint"
+            >
+                {STATUS_SWITCH_HINTS[status]}
+            </TooltipContent>
+        </Tooltip>
+    );
 }
 
 export default function AutomationEdit({
@@ -684,27 +722,28 @@ export default function AutomationEdit({
                                           ? 'Unsaved changes'
                                           : 'Saved'}
                                 </p>
-                                <Switch
-                                    id="automation-active"
-                                    className="hidden md:inline-flex"
-                                    checked={automation.status === 'active'}
-                                    disabled={saving || hasUnsavedChanges}
-                                    data-test={
-                                        automation.status === 'active'
-                                            ? 'pause-automation-button'
-                                            : 'activate-automation-button'
-                                    }
-                                    aria-label={
-                                        automation.status === 'active'
-                                            ? 'Pause automation'
-                                            : 'Activate automation'
-                                    }
-                                    onCheckedChange={(checked) => {
-                                        changeStatus(
-                                            checked ? 'activate' : 'pause',
-                                        );
-                                    }}
-                                />
+                                <StatusSwitchHint status={automation.status}>
+                                    <Switch
+                                        id="automation-active"
+                                        checked={automation.status === 'active'}
+                                        disabled={saving || hasUnsavedChanges}
+                                        data-test={
+                                            automation.status === 'active'
+                                                ? 'pause-automation-button'
+                                                : 'activate-automation-button'
+                                        }
+                                        aria-label={
+                                            automation.status === 'active'
+                                                ? 'Pause automation'
+                                                : 'Activate automation'
+                                        }
+                                        onCheckedChange={(checked) => {
+                                            changeStatus(
+                                                checked ? 'activate' : 'pause',
+                                            );
+                                        }}
+                                    />
+                                </StatusSwitchHint>
                             </>
                         )}
 

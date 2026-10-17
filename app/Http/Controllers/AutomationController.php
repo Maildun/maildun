@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Automations\DispatchDueAutomationSteps;
 use App\Actions\Automations\ValidateAutomationGraph;
 use App\Enums\AutomationAction;
 use App\Enums\AutomationCondition;
@@ -176,10 +177,16 @@ class AutomationController extends Controller
         return back();
     }
 
+    /**
+     * Reactivating a paused automation re-queues the runs it held. Pending
+     * steps and waits that ran out during the pause continue right away; waits
+     * still running keep their original end time.
+     */
     public function activate(
         Team $currentTeam,
         Automation $automation,
         ValidateAutomationGraph $validator,
+        DispatchDueAutomationSteps $dispatchDueSteps,
     ): RedirectResponse {
         Gate::authorize('activate', $automation);
 
@@ -189,11 +196,23 @@ class AutomationController extends Controller
             throw ValidationException::withMessages(['graph' => $errors]);
         }
 
+        $wasPaused = $automation->isPaused();
+
         $automation->syncTriggerFromGraph();
         $automation->status = AutomationStatus::Active;
         $automation->save();
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Automation activated.')]);
+        if ($wasPaused) {
+            $dispatchDueSteps->handle($automation);
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Automation activated.'),
+            'description' => $wasPaused
+                ? __('People already in the flow continue from the step they were held at.')
+                : null,
+        ]);
 
         return back();
     }
@@ -210,7 +229,11 @@ class AutomationController extends Controller
 
         $automation->update(['status' => AutomationStatus::Paused]);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Automation paused.')]);
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Automation paused.'),
+            'description' => __('No one new enters. People already in the flow wait at their current step until you activate it again.'),
+        ]);
 
         return back();
     }

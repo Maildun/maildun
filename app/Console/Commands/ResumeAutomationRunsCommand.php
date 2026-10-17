@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Actions\Automations\DispatchDueAutomationSteps;
 use App\Enums\AutomationRunStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Jobs\ProcessAutomationRun;
@@ -24,12 +25,11 @@ class ResumeAutomationRunsCommand extends Command
      * work queue this command sweeps back onto Redis.
      *
      * Re-dispatching is safe because AdvanceAutomationRun claims each step with
-     * a conditional update before executing it.
+     * a conditional update before executing it. Steps of a paused automation
+     * are left parked until it is activated again.
      */
-    public function handle(): int
+    public function handle(DispatchDueAutomationSteps $dispatchDueSteps): int
     {
-        $resumed = 0;
-
         $staleBefore = now()->subMinutes(max(5, (int) config('delivery.recovery.stalled_after_minutes', 15)));
         AutomationRunStep::query()
             ->where('status', 'running')
@@ -57,23 +57,7 @@ class ResumeAutomationRunsCommand extends Command
                 }
             });
 
-        AutomationRunStep::query()
-            ->whereHas('run', fn ($query) => $query->whereIn('status', AutomationRunStatus::open()))
-            ->where(function ($query): void {
-                $query->where('status', 'pending')
-                    ->orWhere(function ($query): void {
-                        $query->where('status', 'waiting')
-                            ->whereNotNull('scheduled_at')
-                            ->where('scheduled_at', '<=', now());
-                    });
-            })
-            ->orderBy('id')
-            ->chunkById(100, function ($steps) use (&$resumed): void {
-                foreach ($steps as $step) {
-                    ProcessAutomationRun::dispatch($step->automation_run_id, $step->node_id);
-                    $resumed++;
-                }
-            });
+        $resumed = $dispatchDueSteps->handle();
 
         if ($resumed > 0) {
             $this->info(__(':count automation branch(es) resumed.', ['count' => $resumed]));

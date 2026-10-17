@@ -283,7 +283,7 @@ test('automation mail offers a visible unsubscribe url as a merge tag', function
 
     $automation = Automation::factory()->active()->create();
     TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
-    $email = TransactionalEmail::factory()->for($automation->team)->create([
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create([
         'html' => '<p>Hello</p><a href="{{ unsubscribe_url }}">Unsubscribe</a>',
     ]);
     $subscriber = Subscriber::factory()

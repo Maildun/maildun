@@ -52,6 +52,12 @@ class AdvanceAutomationRun
             return;
         }
 
+        // Paused runs stay parked at their step, unclaimed and not re-queued.
+        // Activating the automation dispatches them again.
+        if ($run->automation->isPaused()) {
+            return;
+        }
+
         $nodeId ??= $run->current_node_id;
 
         if ($nodeId === null) {
@@ -181,6 +187,12 @@ class AdvanceAutomationRun
 
         if ($email === null) {
             throw new \RuntimeException(__('The transactional email is no longer available.'));
+        }
+
+        // ValidateAutomationGraph only checks this on save and activation; the
+        // email can be unpublished while runs are already heading for it.
+        if (! $email->isPublished()) {
+            throw new \RuntimeException(__('The transactional email is no longer published.'));
         }
 
         if ($this->emailHealth->isSuppressed($run->automation->team, $subscriber->email)) {
