@@ -264,21 +264,29 @@ class BuildTrackedEmailHtml
         ) ?? $html;
 
         if ($placed === 0) {
-            $footer = $this->unsubscribeFooter($unsubscribeUrl);
-
-            if (preg_match('/<\/body>/i', $html) === 1) {
-                return preg_replace_callback(
-                    '/<\/body>/i',
-                    fn (): string => $footer.'</body>',
-                    $html,
-                    1,
-                ) ?? ($html.$footer);
-            }
-
-            return $html.$footer;
+            return $this->withUnsubscribeFooter($html, $unsubscribeUrl);
         }
 
         return $html;
+    }
+
+    /**
+     * Add the visible opt-out link before </body>, or at the end of a fragment.
+     */
+    public function withUnsubscribeFooter(string $html, string $unsubscribeUrl): string
+    {
+        $footer = $this->unsubscribeFooter($unsubscribeUrl);
+
+        if (preg_match('/<\/body>/i', $html) === 1) {
+            return preg_replace_callback(
+                '/<\/body>/i',
+                fn (): string => $footer.'</body>',
+                $html,
+                1,
+            ) ?? ($html.$footer);
+        }
+
+        return $html.$footer;
     }
 
     public function appendQueryString(string $html, ?string $queryString): string

@@ -2,6 +2,8 @@
 
 namespace App\Actions\Automations;
 
+use App\Actions\Emails\BuildTrackedEmailHtml;
+use App\Actions\Emails\ConvertHtmlToText;
 use App\Actions\Emails\InsertPreheader;
 use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Actions\Transactional\RenderTransactionalContent;
@@ -37,6 +39,8 @@ class AdvanceAutomationRun
         private BuildAutomationMergeData $mergeData,
         private DispatchTaggedTriggers $dispatchTaggedTriggers,
         private InsertPreheader $insertPreheader,
+        private BuildTrackedEmailHtml $trackedHtml,
+        private ConvertHtmlToText $htmlToText,
     ) {}
 
     public function handle(AutomationRun $run, ?string $nodeId = null): void
@@ -216,6 +220,16 @@ class AdvanceAutomationRun
 
         // After the delivery exists: the browser copy link is keyed to it.
         $merge = $this->mergeData->handle($subscriber, $run->context, $delivery);
+        $html = $this->insertPreheader->handle(
+            $this->renderer->html($email->html ?? '', $merge),
+            $this->renderer->text($email->preheader ?? '', $merge),
+        );
+
+        // Automation mail is marketing mail, so it gets the campaign's visible
+        // opt-out unless the author already placed {{ unsubscribe_url }}.
+        if (! $this->trackedHtml->authorPlacedUnsubscribe($email->html ?? '')) {
+            $html = $this->trackedHtml->withUnsubscribeFooter($html, (string) $merge['unsubscribe_url']);
+        }
 
         try {
             $sentMessage = $this->teamMailer->sendResolved(
@@ -225,11 +239,9 @@ class AdvanceAutomationRun
                     $email,
                     $subscriber,
                     $this->renderer->text($email->subject, $merge),
-                    $this->insertPreheader->handle(
-                        $this->renderer->html($email->html ?? '', $merge),
-                        $this->renderer->text($email->preheader ?? '', $merge),
-                    ),
+                    $html,
                     $delivery,
+                    $this->htmlToText->handle($html),
                 ),
                 $email->resolvedFromAddress(),
             );
