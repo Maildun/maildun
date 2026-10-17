@@ -134,8 +134,10 @@ paths:
 
                 `status` moves from `queued` through `sending` to `sent`. With Amazon SES
                 feedback connected it then becomes `delivered`, `delayed`, `bounced`,
-                `complained`, or `rejected`. `failed` means Maildun could not hand the
-                message to the provider, and `failure_reason` says why.
+                `complained`, or `rejected`. A message to an address the workspace has
+                suppressed goes straight from `queued` to `rejected` without being sent.
+                `failed` means Maildun could not hand the message to the provider.
+                `failure_reason` says why a message was `failed` or `rejected`.
             security:
                 - TeamApiKey: []
             parameters:
@@ -623,7 +625,7 @@ components:
                             type:
                                 - string
                                 - 'null'
-                            description: Why Maildun could not hand the message over, when it failed.
+                            description: Why the message was failed or rejected.
                         created_at:
                             type:
                                 - string

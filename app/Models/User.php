@@ -24,6 +24,7 @@ use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Passport\Contracts\OAuthenticatable;
 use Laravel\Passport\HasApiTokens;
+use Laravel\Passport\Passport;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
@@ -74,6 +75,28 @@ class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable,
         static::creating(function (User $user): void {
             $user->uuid ??= (string) Str::uuid();
         });
+
+        // A new password is how an owner takes an account back, so MCP
+        // clients approved with the old one lose access too.
+        static::updated(function (User $user): void {
+            if ($user->wasChanged('password')) {
+                $user->revokeOAuthTokens();
+            }
+        });
+    }
+
+    /**
+     * Revoke every OAuth access token, refresh token and unexchanged
+     * authorization code issued to this user.
+     */
+    public function revokeOAuthTokens(): void
+    {
+        $tokens = Passport::tokenModel()::query()->where('user_id', $this->getKey());
+        $tokenIds = (clone $tokens)->pluck('id');
+
+        $tokens->update(['revoked' => true]);
+        Passport::refreshTokenModel()::query()->whereIn('access_token_id', $tokenIds)->update(['revoked' => true]);
+        Passport::authCodeModel()::query()->where('user_id', $this->getKey())->update(['revoked' => true]);
     }
 
     /**

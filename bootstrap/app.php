@@ -3,6 +3,7 @@
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PreserveDesignEmptyStrings;
+use App\Http\Middleware\RequireVerifiedEmailForOAuth;
 use App\Http\Middleware\SetTeamUrlDefaults;
 use App\Http\Middleware\ValidateInboxSignature;
 use Illuminate\Foundation\Application;
@@ -50,6 +51,7 @@ return Application::configure(basePath: dirname(__DIR__))
             // Signs out every other session once the account password changes:
             // a password update, a reset link, or an admin-generated password.
             AuthenticateSession::class,
+            RequireVerifiedEmailForOAuth::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,

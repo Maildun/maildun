@@ -85,7 +85,7 @@ Use the `id` returned by a send to see where that message stands. Only deliverie
 }
 ```
 
-`status` moves from `queued` through `sending` to `sent`. With Amazon SES feedback connected it then becomes `delivered`, `delayed`, `bounced`, `complained`, or `rejected`. `failed` means Maildun could not hand the message to the provider, and `failure_reason` says why.
+`status` moves from `queued` through `sending` to `sent`. With Amazon SES feedback connected it then becomes `delivered`, `delayed`, `bounced`, `complained`, or `rejected`. A message to an address the workspace has suppressed goes straight from `queued` to `rejected` without being sent. `failed` means Maildun could not hand the message to the provider. `failure_reason` says why a message was `failed` or `rejected`.
 
 ## Subscribe an address
 

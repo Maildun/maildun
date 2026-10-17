@@ -67,6 +67,11 @@ Route::post('install/system', [InstallationController::class, 'testSystem'])
 
 Route::get('/', HomeController::class)->middleware('auth')->name('home');
 
+// Fortify falls back to its `home` path (/dashboard) when nothing more specific
+// is intended, for example on the verification notice of a verified user. The
+// real dashboard lives under the workspace slug, so send them through home.
+Route::redirect('dashboard', '/');
+
 Route::get('avatars/{style}/{seed}.svg', AvatarController::class)
     ->whereIn('style', DiceBearAvatarGenerator::STYLES)
     ->where('seed', '[A-Za-z0-9-]{1,36}')
