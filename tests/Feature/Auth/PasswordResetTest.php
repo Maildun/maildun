@@ -4,6 +4,7 @@ use App\Models\User;
 use App\Notifications\ResetPassword;
 use Illuminate\Notifications\SendQueuedNotifications;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Fortify\Features;
 
@@ -68,6 +69,35 @@ test('password can be reset with valid token', function () {
         return true;
     });
 });
+
+test('resetting a password signs out the account\'s other sessions', function (bool $browsedAfterSigningIn) {
+    $user = User::factory()->create();
+    $dashboard = route('dashboard', ['current_team' => $user->currentTeam]);
+
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => 'password']);
+
+    if ($browsedAfterSigningIn) {
+        $this->get($dashboard)->assertOk();
+    }
+
+    $otherSession = session()->all();
+    switchSession();
+
+    $this->post(route('password.update'), [
+        'token' => Password::broker(config('fortify.passwords'))->createToken($user),
+        'email' => $user->email,
+        'password' => 'new-password',
+        'password_confirmation' => 'new-password',
+    ])->assertSessionHasNoErrors();
+
+    switchSession($otherSession);
+
+    $this->get($dashboard)->assertRedirect(route('login'));
+    $this->assertGuest();
+})->with([
+    'after browsing' => true,
+    'straight after signing in' => false,
+]);
 
 test('password cannot be reset with invalid token', function () {
     $user = User::factory()->create();

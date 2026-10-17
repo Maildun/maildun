@@ -87,6 +87,18 @@ function assignViewerRole(Team $team, User $user): void
 }
 
 /**
+ * Continue the test as another browser: forget the resolved user and swap in that browser's session.
+ *
+ * @param  array<string, mixed>  $session  Data captured earlier with session()->all(); empty for a fresh browser.
+ */
+function switchSession(array $session = []): void
+{
+    app('auth')->forgetGuards();
+
+    test()->flushSession()->withSession($session);
+}
+
+/**
  * Answer mail-domain DNS lookups without touching the network.
  *
  * @param  array<string, bool|null>  $domains  Domains that do (true) or do not (false) accept mail; others are unknown.
