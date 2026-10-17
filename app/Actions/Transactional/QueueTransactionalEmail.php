@@ -2,6 +2,7 @@
 
 namespace App\Actions\Transactional;
 
+use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Exceptions\EmailAddressSuppressedException;
 use App\Exceptions\EmailTransportException;
@@ -26,6 +27,7 @@ class QueueTransactionalEmail
         private RenderTransactionalContent $renderer,
         private TeamMailer $teamMailer,
         private RecordEmailAddressHealth $emailHealth,
+        private BuildTrackedEmailHtml $emailBody,
     ) {}
 
     /**
@@ -157,7 +159,10 @@ class QueueTransactionalEmail
             'request_hash' => $requestHash,
             'to_address' => $payload['to'],
             'subject' => $this->renderer->text($email->subject, $data),
-            'html' => $this->renderer->html($email->html ?? '', $data),
+            'html' => $this->emailBody->insertPreheader(
+                $this->renderer->html($email->html ?? '', $data),
+                $this->renderer->text((string) $email->preheader, $data),
+            ),
             'from_name' => $email->resolvedFromName(),
             'from_address' => $email->resolvedFromAddress(),
             'reply_to' => $email->resolvedReplyTo(),

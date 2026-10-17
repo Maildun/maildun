@@ -36,11 +36,14 @@ class QueueCampaignTestEmail
             $email->id,
             $recipient,
             $this->renderer->text($email->subject, $mergeData),
-            $this->trackedHtml->prepareTestHtml(
-                $email,
-                $this->renderer->html($email->html ?? '', $mergeData),
+            $this->trackedHtml->insertPreheader(
+                $this->trackedHtml->prepareTestHtml(
+                    $email,
+                    $this->renderer->html($email->html ?? '', $mergeData),
+                ),
+                $this->renderer->text((string) $email->preheader, $mergeData),
             ),
-            $this->renderer->plainText($email, $mergeData),
+            $this->trackedHtml->prepareTestText($email, $mergeData),
         )->afterCommit();
     }
 

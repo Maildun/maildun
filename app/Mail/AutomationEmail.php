@@ -23,6 +23,7 @@ class AutomationEmail extends Mailable
         public string $subjectLine,
         public string $htmlBody,
         public ?AutomationEmailDelivery $delivery = null,
+        public ?string $plainText = null,
     ) {}
 
     public function envelope(): Envelope
@@ -41,6 +42,8 @@ class AutomationEmail extends Mailable
     {
         return new Content(
             htmlString: $this->htmlBody,
+            text: $this->plainText === null ? null : 'mail.campaign-text',
+            with: ['plainText' => $this->plainText],
         );
     }
 

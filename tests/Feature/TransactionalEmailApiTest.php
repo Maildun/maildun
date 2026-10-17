@@ -19,6 +19,7 @@ test('a team api key queues a rendered published transactional email', function 
     Queue::fake();
     $email = TransactionalEmail::factory()->published()->create([
         'subject' => 'Hi {{ first_name }}',
+        'preheader' => null,
         'html' => '<p>Order {{ order_number }} for {{ first_name }}</p>',
     ]);
     $integration = TeamEmailIntegration::factory()->for($email->team)->ses()->create();
@@ -61,6 +62,7 @@ test('a team api key queues a rendered published transactional email', function 
 test('the unsubscribe tag links the recipient out of the linked audience', function () {
     Queue::fake();
     $email = TransactionalEmail::factory()->published()->create([
+        'preheader' => null,
         'html' => '<a href="{{ unsubscribe_url }}">Leave</a> [Unsubscribe](%7B%7B%20unsubscribe_url%20%7D%7D)',
     ]);
     $audience = Audience::factory()->for($email->team)->create();

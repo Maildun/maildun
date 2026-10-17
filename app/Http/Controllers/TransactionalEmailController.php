@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Actions\Media\BuildMediaLibrary;
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\EmailEditor;
@@ -202,6 +203,7 @@ class TransactionalEmailController extends Controller
         Team $currentTeam,
         TransactionalEmail $transactionalEmail,
         RenderTransactionalContent $renderer,
+        BuildTrackedEmailHtml $emailBody,
     ): RedirectResponse {
         /** @var array<string, mixed> $data */
         $data = [
@@ -219,7 +221,10 @@ class TransactionalEmailController extends Controller
             $transactionalEmail->id,
             $request->string('to')->value(),
             $renderer->text($transactionalEmail->subject, $data),
-            $renderer->html($transactionalEmail->html ?? '', $data),
+            $emailBody->insertPreheader(
+                $renderer->html($transactionalEmail->html ?? '', $data),
+                $renderer->text((string) $transactionalEmail->preheader, $data),
+            ),
         )->afterCommit();
 
         Inertia::flash('toast', [

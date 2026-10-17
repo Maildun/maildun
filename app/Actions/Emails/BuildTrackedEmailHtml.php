@@ -34,6 +34,24 @@ class BuildTrackedEmailHtml
      */
     private const array LINK_KEYS = ['unsubscribe_url', 'web_view_url', 'subscribe_url'];
 
+    /**
+     * The hidden preview block @maildun/email-builder renders for its own
+     * preheader setting, so ours reads the same in every client.
+     */
+    private const string PREHEADER_STYLE = 'display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all';
+
+    /**
+     * Invisible padding after the preheader so inboxes do not pull body copy
+     * into the preview.
+     */
+    private const string PREHEADER_FILLER = '&#847;&zwnj;&nbsp;';
+
+    /**
+     * A tag-free hidden block leading the body: the builder's preheader, or one
+     * an author wrote into raw HTML.
+     */
+    private const string LEADING_PREHEADER = '/^\s*<(div|span)\b[^>]*\bstyle\s*=\s*(["\'])[^"\']*display\s*:\s*none[^>]*>[^<]*<\/\1>/i';
+
     public function __construct(private readonly RenderCampaignContent $renderer) {}
 
     /** @return list<string> */
@@ -81,7 +99,7 @@ class BuildTrackedEmailHtml
             ) ?? $html;
         }
 
-        $unsubscribeUrl = URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]);
+        $unsubscribeUrl = self::unsubscribeUrl($delivery);
         $placed = 0;
         $html = preg_replace(
             self::UNSUBSCRIBE_TAG,
@@ -107,6 +125,10 @@ class BuildTrackedEmailHtml
             ) ?? $html;
         }
 
+        // After the link tags, so a tag in the preheader is never counted as
+        // the author's opt-out.
+        $html = $this->insertPreheader($html, $this->renderer->text((string) $email->preheader, $mergeData));
+
         $appended = '';
 
         if ($email->track_opens) {
@@ -125,6 +147,87 @@ class BuildTrackedEmailHtml
         }
 
         return $html.$appended;
+    }
+
+    /**
+     * The text/plain part, carrying the same delivery links as the HTML part.
+     * Merge data snapshots no links, so they are filled in here, and a text
+     * that does not already link the opt-out gets one appended.
+     */
+    public function buildText(EmailDelivery $delivery): string
+    {
+        $delivery->loadMissing('email');
+        $email = $delivery->email;
+        $unsubscribeUrl = self::unsubscribeUrl($delivery);
+        $links = [
+            'unsubscribe_url' => $unsubscribeUrl,
+            'web_view_url' => self::webViewUrl($delivery),
+        ];
+        $subscribeUrl = $this->subscribeFormUrl($email);
+
+        if ($subscribeUrl !== null) {
+            $links['subscribe_url'] = $subscribeUrl;
+        }
+
+        $text = $this->renderer->plainText($email, [
+            ...Arr::except($delivery->merge_data ?? [], self::LINK_KEYS),
+            ...$links,
+        ]);
+
+        return $this->appendTextUnsubscribeFooter($text, $unsubscribeUrl);
+    }
+
+    /**
+     * Automation mail is rendered by the run rather than from a delivery row,
+     * but it is marketing mail all the same: it gets the campaign fallback
+     * footer, the preheader, and a text part that links the opt-out.
+     *
+     * @return array{html: string, text: string}
+     */
+    public function buildAutomationBody(string $html, ?string $preheader, string $unsubscribeUrl): array
+    {
+        // The rendered body only holds the URL if the author placed the tag.
+        if (! str_contains($html, e($unsubscribeUrl))) {
+            $html = $this->appendUnsubscribeFooter($html, $unsubscribeUrl);
+        }
+
+        return [
+            'html' => $this->insertPreheader($html, $preheader),
+            'text' => $this->appendTextUnsubscribeFooter($this->renderer->htmlToText($html), $unsubscribeUrl),
+        ];
+    }
+
+    /**
+     * Show the preheader as inbox preview text. A hidden block already leading
+     * the body, such as the one the block editor renders from its own
+     * preheader setting, is replaced so the message never carries two.
+     */
+    public function insertPreheader(string $html, ?string $preheader): string
+    {
+        if (blank($preheader)) {
+            return $html;
+        }
+
+        $block = '<div style="'.self::PREHEADER_STYLE.'">'
+            .htmlspecialchars($preheader, ENT_QUOTES | ENT_HTML5)
+            .str_repeat(self::PREHEADER_FILLER, 80)
+            .'</div>';
+
+        if (preg_match('/<body\b[^>]*>/i', $html, $matches, PREG_OFFSET_CAPTURE) !== 1) {
+            return $block.$this->withoutLeadingPreheader($html);
+        }
+
+        $bodyStart = $matches[0][1] + strlen($matches[0][0]);
+
+        return substr($html, 0, $bodyStart).$block.$this->withoutLeadingPreheader(substr($html, $bodyStart));
+    }
+
+    /**
+     * The signed confirmation page this delivery's opt-out links to.
+     */
+    public static function unsubscribeUrl(EmailDelivery $delivery): string
+    {
+        return URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]);
     }
 
     /**
@@ -190,6 +293,24 @@ class BuildTrackedEmailHtml
     }
 
     /**
+     * The text part of a test copy links the same harmless pages as its HTML.
+     *
+     * @param  array<string, mixed>  $mergeData
+     */
+    public function prepareTestText(Email $email, array $mergeData): string
+    {
+        $unsubscribeUrl = route('public.unsubscribe.test');
+        $text = $this->renderer->plainText($email, [
+            ...$mergeData,
+            'unsubscribe_url' => $unsubscribeUrl,
+            'web_view_url' => route('public.web_view.test'),
+            'subscribe_url' => $this->subscribeFormUrl($email) ?? route('public.web_view.test'),
+        ]);
+
+        return $this->appendTextUnsubscribeFooter($text, $unsubscribeUrl);
+    }
+
+    /**
      * Draft preview uses the same query string, merge-tag links, and footer as
      * a send, but with placeholder hrefs instead of signed delivery URLs.
      */
@@ -224,21 +345,41 @@ class BuildTrackedEmailHtml
         ) ?? $html;
 
         if ($placed === 0) {
-            $footer = $this->unsubscribeFooter($unsubscribeUrl);
-
-            if (preg_match('/<\/body>/i', $html) === 1) {
-                return preg_replace_callback(
-                    '/<\/body>/i',
-                    fn (): string => $footer.'</body>',
-                    $html,
-                    1,
-                ) ?? ($html.$footer);
-            }
-
-            return $html.$footer;
+            return $this->appendUnsubscribeFooter($html, $unsubscribeUrl);
         }
 
         return $html;
+    }
+
+    /**
+     * Put the visible opt-out footer just before </body>.
+     */
+    public function appendUnsubscribeFooter(string $html, string $url): string
+    {
+        $footer = $this->unsubscribeFooter($url);
+
+        if (preg_match('/<\/body>/i', $html) === 1) {
+            return preg_replace_callback(
+                '/<\/body>/i',
+                fn (): string => $footer.'</body>',
+                $html,
+                1,
+            ) ?? ($html.$footer);
+        }
+
+        return $html.$footer;
+    }
+
+    /**
+     * Readers who only see the text part still need a working opt-out.
+     */
+    public function appendTextUnsubscribeFooter(string $text, string $url): string
+    {
+        if (str_contains($text, $url)) {
+            return $text;
+        }
+
+        return ltrim(rtrim($text)."\n\n".__('Unsubscribe').': '.$url);
     }
 
     public function appendQueryString(string $html, ?string $queryString): string
@@ -271,5 +412,10 @@ class BuildTrackedEmailHtml
             .__('Unsubscribe')
             .'</a>'
             .'</div>';
+    }
+
+    private function withoutLeadingPreheader(string $html): string
+    {
+        return preg_replace(self::LEADING_PREHEADER, '', $html, 1) ?? $html;
     }
 }

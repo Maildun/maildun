@@ -442,6 +442,7 @@ test('a test send queues rendered merge tags', function () {
         'from_name' => null,
         'from_address' => null,
         'subject' => 'Hi {{ first_name }}',
+        'preheader' => null,
         'html' => '<p>Hello {{ first_name }}</p>',
     ]);
 
@@ -466,6 +467,7 @@ test('a test send links the unsubscribe tag to a page that opts nobody out', fun
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $email = TransactionalEmail::factory()->for($team)->create([
+        'preheader' => null,
         'html' => '<a href="{{ unsubscribe_url }}">Unsubscribe</a>',
     ]);
 

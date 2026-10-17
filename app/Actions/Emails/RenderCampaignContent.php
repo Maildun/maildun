@@ -89,11 +89,39 @@ class RenderCampaignContent
         return $this->text($content, $data);
     }
 
+    /**
+     * Readable text for the text/plain part. Head content and hidden preview
+     * text are not body copy, and a link keeps its target after its label so
+     * text-only readers can still follow it.
+     */
+    public function htmlToText(string $html): string
+    {
+        $body = preg_replace([
+            '/<head\b[^>]*>.*?<\/head>/is',
+            '/<(style|script|title)\b[^>]*>.*?<\/\1>/is',
+            '/<(div|span)\b[^>]*\bstyle\s*=\s*(["\'])[^"\']*display\s*:\s*none[^>]*>[^<]*<\/\1>/i',
+        ], '', $html) ?? $html;
+        $body = preg_replace_callback(
+            '/<a\b[^>]*?\bhref\s*=\s*(["\'])(.*?)\1[^>]*>(.*?)<\/a>/is',
+            fn (array $matches): string => $this->linkText(strip_tags($matches[3]), trim($matches[2])),
+            $body,
+        ) ?? $body;
+        $withLineBreaks = preg_replace('/<br\b[^>]*>|<\/(p|div|li|h[1-6]|tr|td|th|table|blockquote)>/i', "\n", $body) ?? $body;
+        $text = html_entity_decode(strip_tags($withLineBreaks), ENT_QUOTES | ENT_HTML5);
+
+        return Str::of($text)
+            ->replaceMatches('/[ \t]+/', ' ')
+            ->replaceMatches('/ *\n */', "\n")
+            ->replaceMatches('/\n{3,}/', "\n\n")
+            ->trim()
+            ->toString();
+    }
+
     /** @param array<string, mixed> $data */
     private function replace(string $content, array $data, bool $escape): string
     {
         $content = $this->decodeEncodedTags($content);
-        $content = $this->hydrateMarkdownMergeLinks($content);
+        $content = $this->hydrateMarkdownMergeLinks($content, $escape);
 
         return (string) preg_replace_callback(self::PATTERN, function (array $matches) use ($data, $escape): string {
             $key = $matches[1];
@@ -112,13 +140,16 @@ class RenderCampaignContent
     /**
      * EmailBuilder markdown often leaves `[Unsubscribe]({{ unsubscribe_url }})`
      * as text when marked cannot parse the merge tag as a URL. Turn those into
-     * anchors before replacement so inboxes see a real link.
+     * anchors before replacement so inboxes see a real link. Text has no
+     * anchors, so there the link is written out after its label.
      */
-    private function hydrateMarkdownMergeLinks(string $content): string
+    private function hydrateMarkdownMergeLinks(string $content, bool $asAnchors): string
     {
         return (string) preg_replace_callback(
             '/\[([^\]]+)\]\((\{\{\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\}\})\)/',
-            fn (array $matches): string => '<a href="'.$matches[2].'">'.e($matches[1]).'</a>',
+            fn (array $matches): string => $asAnchors
+                ? '<a href="'.$matches[2].'">'.e($matches[1]).'</a>'
+                : $matches[1].' ('.$matches[2].')',
             $content,
         );
     }
@@ -136,15 +167,22 @@ class RenderCampaignContent
         );
     }
 
-    private function htmlToText(string $html): string
+    /**
+     * Only links a reader can follow are written out; merge tags count, since
+     * they become delivery links once the text is rendered.
+     */
+    private function linkText(string $label, string $href): string
     {
-        $withLineBreaks = preg_replace('/<(br\s*\/?>|\/(p|div|li|h[1-6]))>/i', "\n", $html) ?? $html;
-        $text = html_entity_decode(strip_tags($withLineBreaks), ENT_QUOTES | ENT_HTML5);
+        $label = trim(preg_replace('/\s+/', ' ', $label) ?? $label);
 
-        return Str::of($text)
-            ->replaceMatches('/[ \t]+\n/', "\n")
-            ->replaceMatches('/\n{3,}/', "\n\n")
-            ->trim()
-            ->toString();
+        if (preg_match('/^(https?:|mailto:|tel:|\{\{|%7B%7B)/i', $href) !== 1) {
+            return $label;
+        }
+
+        if ($label === '' || $label === $href || 'mailto:'.$label === $href) {
+            return $href;
+        }
+
+        return $label.' ('.$href.')';
     }
 }

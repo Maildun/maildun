@@ -103,6 +103,7 @@ test('a transactional send stores the signed web view link in its body', functio
     Queue::fake();
     $email = TransactionalEmail::factory()->published()->create([
         'subject' => 'Receipt for {{ first_name }}',
+        'preheader' => null,
         'html' => '<p>Hi {{ first_name }}</p><a href="{{ web_view_url }}">Open in browser</a>',
     ]);
     TeamEmailIntegration::factory()->for($email->team)->ses()->create();

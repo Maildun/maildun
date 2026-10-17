@@ -2,6 +2,7 @@
 
 namespace App\Actions\Automations;
 
+use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\AutomationAction;
@@ -34,6 +35,7 @@ class AdvanceAutomationRun
         private RecordEmailAddressHealth $emailHealth,
         private BuildAutomationMergeData $mergeData,
         private DispatchTaggedTriggers $dispatchTaggedTriggers,
+        private BuildTrackedEmailHtml $emailBody,
     ) {}
 
     public function handle(AutomationRun $run, ?string $nodeId = null): void
@@ -209,6 +211,11 @@ class AdvanceAutomationRun
         $merge = $this->mergeData->handle($subscriber, $run->context, $delivery);
 
         try {
+            $body = $this->emailBody->buildAutomationBody(
+                $this->renderer->html($email->html ?? '', $merge),
+                $this->renderer->text((string) $email->preheader, $merge),
+                AutomationEmail::unsubscribeUrl($subscriber),
+            );
             $sentMessage = $this->teamMailer->sendResolved(
                 $transport,
                 $subscriber->email,
@@ -216,8 +223,9 @@ class AdvanceAutomationRun
                     $email,
                     $subscriber,
                     $this->renderer->text($email->subject, $merge),
-                    $this->renderer->html($email->html ?? '', $merge),
+                    $body['html'],
                     $delivery,
+                    $body['text'],
                 ),
                 $email->resolvedFromAddress(),
             );

@@ -76,7 +76,7 @@ class SendEmailDelivery implements ShouldQueue
         $html = $trackedHtml->build($delivery);
         $mergeData = $delivery->merge_data ?? [];
         $subject = $renderer->text($delivery->email->subject, $mergeData);
-        $plainText = $renderer->plainText($delivery->email, $mergeData);
+        $plainText = $trackedHtml->buildText($delivery);
 
         /** @var array{ResolvedEmailTransport, EmailDeliveryAttempt}|null $claimedAttempt */
         $claimedAttempt = DB::transaction(function () use ($delivery, $teamMailer): ?array {
