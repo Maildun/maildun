@@ -52,7 +52,7 @@ class UpdateTransactionalEmailRequest extends FormRequest
                 Rule::exists(Audience::class, 'uuid')->where('team_id', $team->id),
             ],
             'html' => ['required', 'string', 'max:2000000'],
-            'source' => [$team->email_editor->usesSource() ? 'required' : 'nullable', 'string', 'max:2000000'],
+            'source' => [$email->editor->usesSource() ? 'required' : 'nullable', 'string', 'max:2000000'],
             'design' => ['nullable', 'array', 'required_array_keys:root'],
             'design.root' => ['array'],
             'variables' => ['nullable', 'array'],
@@ -96,11 +96,11 @@ class UpdateTransactionalEmailRequest extends FormRequest
 
     protected function validateDesignPresentForBuilder(Validator $validator): void
     {
-        $team = $this->route('current_team');
+        $email = $this->route('transactionalEmail');
 
-        abort_unless($team instanceof Team, 404);
+        abort_unless($email instanceof TransactionalEmail, 404);
 
-        if ($team->email_editor !== EmailEditor::Builder) {
+        if ($email->editor !== EmailEditor::Builder) {
             return;
         }
 

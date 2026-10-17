@@ -5,5 +5,5 @@ paths:
 
 # Transactional Http Controllers Http Requests
 
-## Transactional editor is team scoped
-The team email_editor determines every transactional compose page and persisted save. Do not expose or accept a per-email editor switch. The compose picker only offers campaign templates using the active team editor.
+## New transactional emails take the team editor; existing ones keep their own
+The team email_editor only picks the editor for new transactional emails. Edit, update, duplicate, and the MCP update tool use the email's stored editor, so changing the team setting never drops an existing block design or source. Do not expose or accept a per-email editor switch. The compose picker only offers campaign templates using the active team editor.

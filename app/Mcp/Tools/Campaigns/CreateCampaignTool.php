@@ -58,6 +58,7 @@ class CreateCampaignTool extends Tool
             'audience_uuid' => ['nullable', 'uuid', Rule::exists(Audience::class, 'uuid')->where('team_id', $team->id)],
             'segment_uuid' => ['nullable', 'uuid'],
         ]);
+        $validated = $this->context->withFullDesign($request, $validated);
 
         [$audienceId, $segmentId] = $this->recipientSelection($team, $validated);
         $body = EmailTemplate::blankBodyFor($team->email_editor);
