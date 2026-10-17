@@ -1849,6 +1849,8 @@ export default function EmailEdit({
                     {templateBody && (
                         <SaveEmailAsTemplateDialog
                             teamSlug={currentTeam.slug}
+                            emailType="campaign"
+                            emailUuid={email.uuid}
                             defaultName={form.data.name}
                             subject={templateBody.subject}
                             preheader={templateBody.preheader}

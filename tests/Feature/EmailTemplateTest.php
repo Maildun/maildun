@@ -2,9 +2,11 @@
 
 use App\Enums\EmailEditor;
 use App\Enums\TeamRole;
+use App\Models\Email;
 use App\Models\EmailTemplate;
 use App\Models\Media;
 use App\Models\Team;
+use App\Models\TransactionalEmail;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -356,6 +358,79 @@ test('saving a campaign as a template copies subject and preheader', function ()
         ->and($template->preheader)->toBe('A short look back')
         ->and($template->html)->toBe('<p>Campaign body</p>')
         ->and($template->editor)->toBe(EmailEditor::Html);
+});
+
+test('a block campaign saved as a template keeps its editor and design in an html workspace', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $team->update(['email_editor' => EmailEditor::Html]);
+    $design = EmailTemplate::builderDesign([
+        'block-1' => ['type' => 'heading', 'props' => ['text' => 'March update', 'level' => 'h1']],
+        'block-2' => ['type' => 'text', 'props' => ['markdown' => 'What we shipped.']],
+    ]);
+    $email = Email::factory()->for($team)->builder()->create(['design' => $design]);
+
+    $this->actingAs($user)
+        ->post(route('email_templates.store', $team), [
+            'name' => 'March layout',
+            'email_type' => 'campaign',
+            'email_uuid' => $email->uuid,
+            'html' => '<h1>March update</h1><p>What we shipped.</p>',
+            'design' => $design,
+        ])
+        ->assertValid()
+        ->assertRedirect();
+
+    $template = $team->emailTemplates()->firstOrFail();
+
+    expect($template->editor)->toBe(EmailEditor::Builder)
+        ->and($template->design)->toBe($design)
+        ->and($template->html)->toBe('<h1>March update</h1><p>What we shipped.</p>');
+});
+
+test('a markdown transactional email saved as a template keeps its editor and source', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $team->update(['email_editor' => EmailEditor::Builder]);
+    $email = TransactionalEmail::factory()->for($team)->create([
+        'editor' => EmailEditor::Markdown,
+        'source' => '# Reset your password',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('email_templates.store', $team), [
+            'name' => 'Password reset',
+            'email_type' => 'transactional',
+            'email_uuid' => $email->uuid,
+            'html' => '<h1>Reset your password</h1>',
+            'source' => '# Reset your password',
+        ])
+        ->assertValid()
+        ->assertRedirect();
+
+    $template = $team->emailTemplates()->firstOrFail();
+
+    expect($template->editor)->toBe(EmailEditor::Markdown)
+        ->and($template->source)->toBe('# Reset your password')
+        ->and($template->design)->toBeNull();
+});
+
+test('a template cannot be saved from another team\'s email', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $foreign = Email::factory()->for(Team::factory()->create())->builder()->create();
+
+    $this->actingAs($user)
+        ->post(route('email_templates.store', $team), [
+            'name' => 'Borrowed layout',
+            'email_type' => 'campaign',
+            'email_uuid' => $foreign->uuid,
+            'html' => $foreign->html,
+            'design' => $foreign->design,
+        ])
+        ->assertNotFound();
+
+    expect($team->emailTemplates()->count())->toBe(0);
 });
 
 test('the gallery can be searched and filtered by editor and type', function () {
