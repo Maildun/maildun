@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Audiences\NotifyAudienceOfSubscriptionChange;
 use App\Enums\AutomationTrigger;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
@@ -16,6 +17,8 @@ use Inertia\Response;
 
 class UnsubscribeController extends Controller
 {
+    public function __construct(private NotifyAudienceOfSubscriptionChange $notifyAudience) {}
+
     /**
      * Test copies have no delivery to sign, so this page explains the link
      * without opting anyone out.
@@ -130,6 +133,7 @@ class UnsubscribeController extends Controller
         ]);
 
         event(new SubscriberLifecycleOccurred(AutomationTrigger::Unsubscribed, $subscriber));
+        $this->notifyAudience->handle($subscriber, subscribed: false);
     }
 
     /**

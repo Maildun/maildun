@@ -17,6 +17,7 @@ class SubscribeViaApi
     public function __construct(
         private QueueAudienceConfirmationEmail $queueConfirmationEmail,
         private ManageContact $manageContact,
+        private NotifyAudienceOfSubscriptionChange $notifyAudience,
     ) {}
 
     /** @param array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, consent_text?: string|null, attributes?: array<string, string|int|float|null>} $data */
@@ -110,6 +111,7 @@ class SubscribeViaApi
 
         if ($trigger instanceof AutomationTrigger) {
             event(new SubscriberLifecycleOccurred($trigger, $subscriber));
+            $this->notifyAudience->handle($subscriber, subscribed: true);
         }
 
         return $subscriber;
