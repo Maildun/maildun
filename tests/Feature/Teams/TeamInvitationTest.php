@@ -6,6 +6,7 @@ use App\Models\TeamInvitation;
 use App\Models\User;
 use App\Notifications\Teams\TeamInvitation as TeamInvitationNotification;
 use App\Rules\ValidTeamInvitation;
+use Illuminate\Auth\Middleware\EnsureEmailIsVerified;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Validator;
 
@@ -291,6 +292,80 @@ test('team invitations cannot be accepted by uninvited user', function () {
 
     expect($uninvitedUser->fresh()->belongsToTeam($team))->toBeFalse();
 });
+
+test('an unverified user cannot accept an invitation sent to their address', function () {
+    $owner = User::factory()->create();
+    $unverifiedUser = User::factory()->unverified()->create(['email' => 'invited@example.com']);
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'email' => 'invited@example.com',
+        'role' => TeamRole::Admin,
+        'invited_by' => $owner->id,
+    ]);
+
+    $this->actingAs($unverifiedUser)
+        ->post(route('invitations.accept', $invitation))
+        ->assertRedirect(route('verification.notice'));
+
+    expect($unverifiedUser->fresh()->belongsToTeam($team))->toBeFalse()
+        ->and($invitation->fresh()->accepted_at)->toBeNull();
+});
+
+test('an unverified user cannot decline an invitation sent to their address', function () {
+    $owner = User::factory()->create();
+    $unverifiedUser = User::factory()->unverified()->create(['email' => 'invited@example.com']);
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'email' => 'invited@example.com',
+        'invited_by' => $owner->id,
+    ]);
+
+    $this->actingAs($unverifiedUser)
+        ->delete(route('invitations.decline', $invitation))
+        ->assertRedirect(route('verification.notice'));
+
+    $this->assertDatabaseHas('team_invitations', [
+        'id' => $invitation->id,
+    ]);
+});
+
+test('an invitation response is refused for an unverified address even without the verified middleware', function (string $method, string $routeName) {
+    $owner = User::factory()->create();
+    $unverifiedUser = User::factory()->unverified()->create(['email' => 'invited@example.com']);
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'email' => 'invited@example.com',
+        'invited_by' => $owner->id,
+    ]);
+
+    $this->withoutMiddleware(EnsureEmailIsVerified::class)
+        ->actingAs($unverifiedUser)
+        ->{$method}(route($routeName, $invitation))
+        ->assertSessionHasErrors([
+            'invitation' => 'Verify your email address before responding to this invitation.',
+        ]);
+
+    expect($unverifiedUser->fresh()->belongsToTeam($team))->toBeFalse();
+    $this->assertDatabaseHas('team_invitations', [
+        'id' => $invitation->id,
+        'accepted_at' => null,
+    ]);
+})->with([
+    'accept' => ['post', 'invitations.accept'],
+    'decline' => ['delete', 'invitations.decline'],
+]);
 
 test('expired invitations cannot be accepted', function () {
     $owner = User::factory()->create();

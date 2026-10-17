@@ -56,6 +56,8 @@ test('new users are sent an email verification link', function () {
 });
 
 test('new users can register', function () {
+    Notification::fake();
+
     $response = $this->post(route('register.store'), [
         'name' => 'Test User',
         'email' => 'test@example.com',
@@ -67,4 +69,7 @@ test('new users can register', function () {
 
     $user = User::where('email', 'test@example.com')->first();
     $response->assertRedirect(route('dashboard'));
+
+    expect($user->hasVerifiedEmail())->toBeFalse();
+    Notification::assertSentTo($user, VerifyEmail::class);
 });
