@@ -3,7 +3,7 @@ openapi: 3.1.0
 info:
     title: Maildun API
     version: 1.0.0
-    summary: Send transactional email, manage audience subscriptions, and trigger automations.
+    summary: Send transactional email, check its delivery status, manage audience subscriptions, and trigger automations.
     description: |
         Maildun exposes a JSON API for server-to-server integrations.
 
@@ -23,7 +23,7 @@ servers:
 
 tags:
     - name: Transactional email
-      description: Queue deliveries from published transactional email templates.
+      description: Queue deliveries from published transactional email templates and check their status.
     - name: Subscribers
       description: Subscribe or unsubscribe an address in an audience.
     - name: Automations

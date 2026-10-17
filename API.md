@@ -1,6 +1,6 @@
 # Maildun API
 
-Maildun exposes a versioned JSON API for sending published transactional emails and managing audience subscriptions.
+Maildun exposes a versioned JSON API for sending published transactional emails, checking their delivery status, and managing audience subscriptions. A separate endpoint starts automations that use the API trigger.
 
 ## Authentication
 
@@ -14,7 +14,7 @@ Accept: application/json
 Content-Type: application/json
 ```
 
-The base path is `/api/v1`. Invalid or revoked keys return `401`. Requests are limited to 120 requests per minute per key, with an additional pre-authentication limit to slow key guessing.
+The base path is `/api/v1`; the [automation trigger](#trigger-an-automation) uses its own path and token. Invalid or revoked keys return `401`. Requests are limited to 120 requests per minute per key, with an additional pre-authentication limit to slow key guessing.
 
 ## Send a transactional email
 
@@ -149,6 +149,46 @@ Unsubscribe is idempotent. Repeating the request, or requesting an address that 
   }
 }
 ```
+
+## Trigger an automation
+
+```http
+POST /api/automations/{automation_uuid}/trigger
+```
+
+This endpoint is outside `/api/v1` and does not accept a team API key. It only accepts active automations that use the API trigger, and authenticates with that automation's secret token. Copy the token from the **API trigger** panel in the automation editor and send it in the `X-Automation-Token` header (preferred) or as a bearer token:
+
+```http
+X-Automation-Token: <automation token>
+Accept: application/json
+Content-Type: application/json
+```
+
+The subscriber must already exist in the automation's team. Include `audience` when the email belongs to more than one audience in that team. The optional `data` object is available to later automation steps.
+
+```json
+{
+  "email": "ada@example.com",
+  "audience": "a1946f2e-74a0-4c2e-9186-819b10ddd90f",
+  "data": {
+    "plan": "pro",
+    "source": "checkout"
+  }
+}
+```
+
+The request returns `202 Accepted` after the run is started:
+
+```json
+{
+  "run": "db39d403-0375-495b-bf62-c2f79ad0c081",
+  "status": "pending",
+  "automation": "f9aef07f-0e7b-462d-8afd-b5caed677019",
+  "subscriber": "ff55fd14-4b87-4923-b933-4912e14566f4"
+}
+```
+
+An automation that does not exist, is inactive, or does not use the API trigger returns `404`. A missing or invalid token returns `401`. An unknown subscriber, or an email that matches several audiences without `audience`, returns `422`. A subscriber who already has an open run for the automation returns `409 Conflict`. Requests are limited to 60 per minute per token and 120 per minute per IP address for each automation.
 
 ## Errors
 
