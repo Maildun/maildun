@@ -8,12 +8,12 @@ use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\URL;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 class UnsubscribeController extends Controller
 {
@@ -59,7 +59,7 @@ class UnsubscribeController extends Controller
      * Mail providers deliver RFC 8058 one-click requests here with no session,
      * so this route is signed rather than authenticated and is exempt from CSRF.
      */
-    public function store(Request $request, EmailDelivery $delivery): RedirectResponse|HttpResponse
+    public function store(Request $request, EmailDelivery $delivery): SymfonyResponse
     {
         $delivery->loadMissing(['subscriber', 'email' => fn ($query) => $query->withTrashed()->with('audience')]);
 
@@ -72,8 +72,10 @@ class UnsubscribeController extends Controller
 
         $landingPage = $delivery->email->audience?->unsubscribed_url;
 
+        // An Inertia visit cannot follow a cross-origin redirect, so the
+        // browser is told to load the landing page itself.
         if (filled($landingPage)) {
-            return redirect()->away($landingPage);
+            return Inertia::location($landingPage);
         }
 
         return redirect()->to($this->showUrl($delivery));
@@ -98,7 +100,7 @@ class UnsubscribeController extends Controller
      * Signed rather than authenticated and CSRF exempt for the same RFC 8058
      * one-click reason as the campaign route above.
      */
-    public function storeForSubscriber(Request $request, Subscriber $subscriber): RedirectResponse|HttpResponse
+    public function storeForSubscriber(Request $request, Subscriber $subscriber): SymfonyResponse
     {
         $subscriber->loadMissing('audience');
 
@@ -110,8 +112,10 @@ class UnsubscribeController extends Controller
 
         $landingPage = $subscriber->audience->unsubscribed_url;
 
+        // An Inertia visit cannot follow a cross-origin redirect, so the
+        // browser is told to load the landing page itself.
         if (filled($landingPage)) {
-            return redirect()->away($landingPage);
+            return Inertia::location($landingPage);
         }
 
         return redirect()->to($this->subscriberShowUrl($subscriber));
