@@ -66,6 +66,42 @@ test('the api subscribes idempotently without replacing the shared contact profi
     Event::assertDispatchedTimes(SubscriberLifecycleOccurred::class, 1);
 });
 
+test('the api records the consenting person ip when the caller passes it', function () {
+    $audience = Audience::factory()->create();
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+
+    $this->withToken($issued['token'])
+        ->withServerVariables(['REMOTE_ADDR' => '198.51.100.7'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'ada@example.com',
+            'consent_ip' => '203.0.113.24',
+        ])
+        ->assertOk();
+    $this->withToken($issued['token'])
+        ->withServerVariables(['REMOTE_ADDR' => '198.51.100.7'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'grace@example.com',
+        ])
+        ->assertOk();
+
+    expect($audience->subscribers()->where('email', 'ada@example.com')->value('consent_ip'))->toBe('203.0.113.24')
+        ->and($audience->subscribers()->where('email', 'grace@example.com')->value('consent_ip'))->toBe('198.51.100.7');
+});
+
+test('the api rejects a consent ip that is not an ip address', function () {
+    $audience = Audience::factory()->create();
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'ada@example.com',
+            'consent_ip' => 'not-an-ip',
+        ])
+        ->assertJsonValidationErrors(['consent_ip' => 'The consent ip field must be a valid IP address.']);
+
+    expect($audience->subscribers()->exists())->toBeFalse();
+});
+
 test('the api accepts only audience languages and falls back to the default', function () {
     $audience = Audience::factory()->create([
         'allowed_languages' => [SubscriberLanguage::Indonesian->value],

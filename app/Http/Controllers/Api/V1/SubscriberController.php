@@ -9,14 +9,19 @@ use App\Http\Requests\Api\SubscribeSubscriberRequest;
 use App\Http\Requests\Api\UnsubscribeSubscriberRequest;
 use App\Models\Subscriber;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Arr;
 
 class SubscriberController extends Controller
 {
     public function store(SubscribeSubscriberRequest $request, SubscribeViaApi $subscribe): JsonResponse
     {
         /** @var array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, consent_text?: string|null, attributes?: array<string, string|int|float|null>} $data */
-        $data = $request->validated();
-        $subscriber = $subscribe->handle($request->audience(), $data, $request->ip());
+        $data = Arr::except($request->validated(), 'consent_ip');
+
+        // The caller is usually a server acting for the person who consented,
+        // so it may pass that person's address; otherwise the caller's is kept.
+        $consentIp = $request->validated('consent_ip') ?? $request->ip();
+        $subscriber = $subscribe->handle($request->audience(), $data, $consentIp);
 
         return response()->json([
             'data' => $this->subscriberPayload($subscriber),
