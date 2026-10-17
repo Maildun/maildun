@@ -43,7 +43,7 @@ class DeleteTransactionalEmailTool extends Tool
         ]);
 
         $blockReason = $email->doubleOptInBlockReason()
-            ?? Automation::referenceBlockReason($team, $email->uuid, __('email'));
+            ?? Automation::referenceBlockReason(Automation::namesUsing($team, [$email->uuid])[$email->uuid] ?? [], __('email'));
 
         if ($blockReason !== null) {
             throw ValidationException::withMessages(['uuid' => $blockReason]);

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AutomationRunStatus;
 use App\Enums\TeamRole;
 use App\Models\Audience;
 use App\Models\Automation;
@@ -310,6 +311,47 @@ test('a tag an automation uses cannot be deleted alone or in bulk', function () 
 
     $this->assertModelExists($used);
     $this->assertModelExists($unused);
+});
+
+test('a tag left on a step that no longer uses it does not block deleting it', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $tag = Tag::factory()->for($team)->create();
+    Automation::factory()->for($team)->create([
+        'graph' => [
+            'nodes' => [
+                ['id' => 'send', 'type' => 'action', 'data' => ['kind' => 'send_email', 'tag_uuid' => $tag->uuid]],
+            ],
+            'edges' => [],
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->delete(route('tags.destroy', [$team, $tag]))
+        ->assertSessionHasNoErrors();
+
+    $this->assertModelMissing($tag);
+});
+
+test('a tag an in-flight run still needs cannot be deleted', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $tag = Tag::factory()->for($team)->create();
+    $automation = Automation::factory()->active()->for($team)->create(['name' => 'Upgrade path']);
+    $automation->runs()->create([
+        'subscriber_id' => Subscriber::factory()->for(Audience::factory()->for($team))->create()->id,
+        'status' => AutomationRunStatus::Waiting,
+        'graph' => [
+            'nodes' => [['id' => 'tag', 'type' => 'action', 'data' => ['kind' => 'add_tag', 'tag_uuid' => $tag->uuid]]],
+            'edges' => [],
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->delete(route('tags.destroy', [$team, $tag]))
+        ->assertInvalid(['tag' => 'The Upgrade path automation uses this tag.']);
+
+    $this->assertModelExists($tag);
 });
 
 test('bulk tag deletion stays scoped to the team for members and owners', function () {

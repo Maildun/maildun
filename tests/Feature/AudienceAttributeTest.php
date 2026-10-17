@@ -4,6 +4,7 @@ use App\Enums\AudienceAttributeType;
 use App\Enums\SubscribeFormFieldMode;
 use App\Enums\SubscriberLanguage;
 use App\Enums\TeamRole;
+use App\Jobs\MoveAudienceAttributeValues;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Subscriber;
@@ -77,6 +78,19 @@ test('renaming an attribute key moves the stored subscriber values to it', funct
     expect($moved->fresh()->attribute_values)->toBe(['plan' => 'pro', 'company_name' => 'Acme'])
         ->and($newer->fresh()->attribute_values)->toBe(['company_name' => 'New'])
         ->and($elsewhere->fresh()->attribute_values)->toBe(['company' => 'Untouched']);
+});
+
+test('a rename that runs after a later one still lands on the final key', function () {
+    $audience = Audience::factory()->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create(['key' => 'company']);
+    $subscriber = Subscriber::factory()->for($audience)->create(['attribute_values' => ['company' => 'Acme']]);
+
+    // company -> organisation -> employer, with the second move running first.
+    $attribute->update(['key' => 'employer']);
+    (new MoveAudienceAttributeValues($audience->id, 'organisation', $attribute->id))->handle();
+    (new MoveAudienceAttributeValues($audience->id, 'company', $attribute->id))->handle();
+
+    expect($subscriber->fresh()->attribute_values)->toBe(['employer' => 'Acme']);
 });
 
 test('deleting an attribute removes its stored subscriber values', function () {

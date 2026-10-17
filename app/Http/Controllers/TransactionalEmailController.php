@@ -323,7 +323,10 @@ class TransactionalEmailController extends Controller
     private function ensureNotInUse(TransactionalEmail $transactionalEmail): void
     {
         $reason = $transactionalEmail->doubleOptInBlockReason()
-            ?? Automation::referenceBlockReason($transactionalEmail->team, $transactionalEmail->uuid, __('email'));
+            ?? Automation::referenceBlockReason(
+                Automation::namesUsing($transactionalEmail->team, [$transactionalEmail->uuid])[$transactionalEmail->uuid] ?? [],
+                __('email'),
+            );
 
         if ($reason !== null) {
             throw ValidationException::withMessages(['email' => $reason]);

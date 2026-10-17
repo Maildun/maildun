@@ -97,8 +97,10 @@ class TagController extends Controller
      */
     private function ensureNotInUse(Team $team, Collection $tags): void
     {
+        $namesUsing = Automation::namesUsing($team, array_values($tags->map(fn (Tag $tag): string => $tag->uuid)->all()));
+
         foreach ($tags as $tag) {
-            $reason = Automation::referenceBlockReason($team, $tag->uuid, __('tag'));
+            $reason = Automation::referenceBlockReason($namesUsing[$tag->uuid] ?? [], __('tag'));
 
             if ($reason !== null) {
                 throw ValidationException::withMessages([

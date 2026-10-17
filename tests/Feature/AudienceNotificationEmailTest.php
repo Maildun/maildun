@@ -121,3 +121,19 @@ test('the alert escapes the subscriber details it shows', function () {
         ->not->toContain("<script>alert('x')</script>")
         ->not->toContain('<b>letter</b>');
 });
+
+test('the alert shows a markdown link typed into a name as text', function () {
+    $notification = new AudienceSubscriptionChanged(
+        audienceName: 'Newsletter',
+        email: 'reader@example.com',
+        name: '[Claim your prize](https://evil.example)',
+        subscribed: true,
+        profileUrl: 'https://maildun.test/subscribers/1',
+    );
+
+    $html = (string) $notification->toMail(new AnonymousNotifiable)->render();
+
+    expect($html)
+        ->toContain('Claim your prize')
+        ->not->toContain('href="https://evil.example"');
+});

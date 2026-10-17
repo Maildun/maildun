@@ -28,7 +28,7 @@ class AudienceAttributeController extends Controller
         $audienceAttribute->update($request->validated());
 
         if ($audienceAttribute->key !== $previousKey) {
-            MoveAudienceAttributeValues::dispatch($audience->id, $previousKey, $audienceAttribute->key);
+            MoveAudienceAttributeValues::dispatch($audience->id, $previousKey, $audienceAttribute->id);
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Attribute updated.')]);
