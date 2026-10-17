@@ -343,6 +343,24 @@ test('a run is cancelled when its automation is deleted', function () {
         ->and($run->failure_reason)->toBe('The automation was deleted.');
 });
 
+test('a paused automation holds an open branch at its current step', function () {
+    $automation = Automation::factory()->paused()->create();
+    $tag = Tag::factory()->for($automation->team)->create();
+
+    $run = automationRun(
+        nodes: [['id' => 'tag', 'type' => 'action', 'data' => ['kind' => AutomationAction::AddTag->value, 'tag_uuid' => $tag->uuid]]],
+        edges: [['source' => 'trigger', 'target' => 'tag']],
+        automation: $automation,
+    );
+    $run->steps()->create(['node_id' => 'tag', 'status' => 'pending']);
+
+    app(AdvanceAutomationRun::class)->handle($run, 'tag');
+
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Pending)
+        ->and($run->steps()->where('node_id', 'tag')->value('status'))->toBe('pending')
+        ->and($run->subscriber->tags()->exists())->toBeFalse();
+});
+
 test('starting a run logs the trigger step and refuses a second open run', function () {
     $automation = Automation::factory()->active()->create([
         'graph' => [

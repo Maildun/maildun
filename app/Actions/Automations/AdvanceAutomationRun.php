@@ -8,6 +8,7 @@ use App\Enums\AutomationAction;
 use App\Enums\AutomationCondition;
 use App\Enums\AutomationDelayUnit;
 use App\Enums\AutomationRunStatus;
+use App\Enums\AutomationStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
@@ -49,6 +50,12 @@ class AdvanceAutomationRun
         if ($run->automation()->withTrashed()->first()?->trashed()) {
             $this->cancel($run, __('The automation was deleted.'));
 
+            return;
+        }
+
+        // Pausing holds every open branch where it is. The step stays pending
+        // or waiting, and activating the automation dispatches it again.
+        if ($run->automation->status !== AutomationStatus::Active) {
             return;
         }
 

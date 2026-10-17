@@ -3,6 +3,7 @@
 use App\Actions\Automations\AdvanceAutomationRun;
 use App\Enums\AutomationAction;
 use App\Enums\AutomationRunStatus;
+use App\Enums\AutomationStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Jobs\ProcessAutomationRun;
 use App\Models\Audience;
@@ -63,6 +64,15 @@ test('a run whose delay is due is put back on the queue', function () {
         fn (ProcessAutomationRun $job): bool => $job->automationRunId === $run->id
             && $job->nodeId === 'wait',
     );
+});
+
+test('a due branch of a paused automation stays parked', function () {
+    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
+    $run->automation->update(['status' => AutomationStatus::Paused]);
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertNothingPushed();
 });
 
 test('a run whose delay has not arrived is left parked', function () {

@@ -5,6 +5,7 @@ use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationStatus;
 use App\Enums\AutomationTrigger;
 use App\Enums\TeamRole;
+use App\Jobs\ProcessAutomationRun;
 use App\Models\Audience;
 use App\Models\Automation;
 use App\Models\Subscriber;
@@ -203,6 +204,38 @@ test('an automation can be activated and then paused', function () {
         ->assertRedirect();
 
     expect($automation->refresh()->status)->toBe(AutomationStatus::Paused);
+});
+
+test('activating a paused automation picks up the branches it held', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $tag = $team->tags()->create(['name' => 'VIP']);
+    $graph = [
+        'nodes' => [
+            ['id' => 'trigger', 'type' => 'trigger', 'data' => ['kind' => AutomationTrigger::Subscribed->value]],
+            ['id' => 'tag', 'type' => 'action', 'data' => ['kind' => 'add_tag', 'tag_uuid' => $tag->uuid]],
+        ],
+        'edges' => [['source' => 'trigger', 'target' => 'tag']],
+    ];
+    $automation = Automation::factory()->paused()->for($team)->create(['graph' => $graph]);
+    $held = $automation->runs()->create([
+        'subscriber_id' => Subscriber::factory()->for(Audience::factory()->for($team))->create()->id,
+        'status' => AutomationRunStatus::Pending,
+        'graph' => $graph,
+        'current_node_id' => 'tag',
+    ]);
+    $held->steps()->create(['node_id' => 'tag', 'status' => 'pending']);
+
+    $this->actingAs($user)
+        ->post(route('automations.activate', [$team, $automation]))
+        ->assertRedirect();
+
+    Queue::assertPushed(
+        ProcessAutomationRun::class,
+        fn (ProcessAutomationRun $job): bool => $job->automationRunId === $held->id && $job->nodeId === 'tag',
+    );
 });
 
 test('pausing an automation that is not active fails', function () {
