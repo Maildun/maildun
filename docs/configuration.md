@@ -10,7 +10,7 @@ Copy `.env.example` to `.env` and treat the resulting file as a secret. This pag
 | `APP_PREVIOUS_KEYS` | Former `APP_KEY` values kept as decryption fallbacks | Set during a rotation so encrypted workspace credentials keep working |
 | `APP_URL` | Canonical origin for signed links and the passkey relying party | Use the public HTTPS origin |
 | `APP_DEBUG` | Detailed exception output | Always `false` in production |
-| `PASSKEYS_USER_HANDLE_SECRET` | Derives the WebAuthn user handle | Set it explicitly; left empty it defaults to `APP_KEY` |
+| `PASSKEYS_USER_HANDLE_SECRET` | Derives the WebAuthn user handle | Set it once to its own random, stable value; when empty or absent it falls back to `APP_KEY` |
 | `REGISTRATION_ENABLED` | Allows public account creation | Prefer `false` unless open registration is intentional |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Enables "Continue with Google" | Leave empty to hide the button; set both from a Google Cloud OAuth client |
 | `GOOGLE_REDIRECT_URI` | Callback URL sent to Google | Leave unset; it defaults to `APP_URL` + `/auth/google/callback` |
@@ -34,8 +34,20 @@ later from Security settings.
 `APP_URL` carries more weight than its name suggests. Queue workers serve no request and
 cannot infer the host, so open pixels, click redirects, and unsubscribe links are signed
 against this value; changing it invalidates the links in every message already delivered.
-Its host is also the passkey relying party ID, so a change locks people out of passkey
-sign-in unless `PASSKEYS_USER_HANDLE_SECRET` was set independently.
+Its host is also the passkey relying party ID, so changing the host invalidates every
+registered passkey, whatever `PASSKEYS_USER_HANDLE_SECRET` is set to.
+
+`PASSKEYS_USER_HANDLE_SECRET` keys the HMAC that derives the WebAuthn user handle given to
+an authenticator when a passkey is registered. Left empty, as the
+`PASSKEYS_USER_HANDLE_SECRET=` line in `.env.example` ships, or removed, it falls back to
+`APP_KEY`. Set it once to its own random, stable value, for example from
+`openssl rand -base64 32`, so the handle stays the same if `APP_KEY` is ever rotated.
+
+The secret is used only at registration. Sign-in checks the handle stored with each
+passkey, so changing the secret, or rotating `APP_KEY` while it is unset, leaves existing
+passkeys working; only passkeys registered afterwards get a handle derived from the new
+value. Passkeys registered by earlier releases, which used an empty secret when the line
+was left blank, also keep working.
 
 ## Database, Redis, and queues
 
