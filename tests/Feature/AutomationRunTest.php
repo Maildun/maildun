@@ -168,7 +168,7 @@ test('a retried send does not deliver the email twice', function () {
 
     $automation = Automation::factory()->active()->create();
     TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
-    $email = TransactionalEmail::factory()->for($automation->team)->create();
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create();
     $subscriber = Subscriber::factory()->for(Audience::factory()->for($automation->team))->create();
 
     $run = automationRun(
@@ -199,7 +199,7 @@ test('an automation email carries the transactional preheader', function () {
 
     $automation = Automation::factory()->active()->create();
     TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
-    $email = TransactionalEmail::factory()->for($automation->team)->create([
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create([
         'preheader' => 'Welcome aboard, {{ first_name }}',
         'html' => '<p>Hi</p>',
     ]);
@@ -226,7 +226,7 @@ test('an automation email gets the visible opt-out and a text part', function ()
 
     $automation = Automation::factory()->active()->create();
     TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
-    $email = TransactionalEmail::factory()->for($automation->team)->create([
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create([
         'preheader' => null,
         'html' => '<p>Hi {{ first_name }}</p>',
     ]);
@@ -255,7 +255,7 @@ test('an automation email whose author placed the opt-out gets no second footer'
 
     $automation = Automation::factory()->active()->create();
     TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
-    $email = TransactionalEmail::factory()->for($automation->team)->create([
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create([
         'preheader' => null,
         'html' => '<p>Hi</p><a href="{{ unsubscribe_url }}">Leave</a>',
     ]);
@@ -284,7 +284,7 @@ test('only one worker can advance a run', function () {
 
     $automation = Automation::factory()->active()->create();
     TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
-    $email = TransactionalEmail::factory()->for($automation->team)->create();
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create();
 
     $run = automationRun(
         nodes: [['id' => 'send', 'type' => 'action', 'data' => [
@@ -345,7 +345,7 @@ test('a suppressed subscriber skips an automation email', function () {
     Mail::fake();
 
     $automation = Automation::factory()->active()->create();
-    $email = TransactionalEmail::factory()->for($automation->team)->create();
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create();
     $subscriber = Subscriber::factory()
         ->for(Audience::factory()->for($automation->team))
         ->create();
@@ -444,6 +444,103 @@ test('a paused automation holds an open branch at its current step', function ()
     expect($run->refresh()->status)->toBe(AutomationRunStatus::Pending)
         ->and($run->steps()->where('node_id', 'tag')->value('status'))->toBe('pending')
         ->and($run->subscriber->tags()->exists())->toBeFalse();
+});
+
+test('a paused automation does not send the next email for an in-flight run', function () {
+    Mail::fake();
+
+    $automation = Automation::factory()->paused()->create();
+    TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create();
+    $run = automationRun(
+        nodes: [['id' => 'send', 'type' => 'action', 'data' => [
+            'kind' => AutomationAction::SendEmail->value,
+            'transactional_email_uuid' => $email->uuid,
+        ]]],
+        edges: [['source' => 'trigger', 'target' => 'send']],
+        automation: $automation,
+    );
+    $run->steps()->create(['node_id' => 'send', 'status' => 'pending']);
+
+    app(AdvanceAutomationRun::class)->handle($run, 'send');
+
+    Mail::assertNothingSent();
+    Queue::assertNothingPushed();
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Pending)
+        ->and($run->steps()->where('node_id', 'send')->value('status'))->toBe('pending');
+});
+
+test('reactivating a paused automation continues a run whose wait ran out during the pause', function () {
+    Mail::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->ses()->create();
+    $email = TransactionalEmail::factory()->for($team)->published()->create();
+    $automation = Automation::factory()->paused()->for($team)->create(['graph' => [
+        'nodes' => [
+            ['id' => 'trigger', 'type' => 'trigger', 'data' => ['kind' => AutomationTrigger::Subscribed->value]],
+            ['id' => 'wait', 'type' => 'delay', 'data' => ['amount' => 1, 'unit' => AutomationDelayUnit::Days->value]],
+            ['id' => 'send', 'type' => 'action', 'data' => [
+                'kind' => AutomationAction::SendEmail->value,
+                'transactional_email_uuid' => $email->uuid,
+            ]],
+        ],
+        'edges' => [
+            ['source' => 'trigger', 'target' => 'wait'],
+            ['source' => 'wait', 'target' => 'send'],
+        ],
+    ]]);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->create();
+    $run = $automation->runs()->create([
+        'subscriber_id' => $subscriber->id,
+        'status' => AutomationRunStatus::Waiting,
+        'graph' => $automation->graph,
+        'current_node_id' => 'wait',
+        'scheduled_at' => now()->subHour(),
+    ]);
+    $run->steps()->create(['node_id' => 'wait', 'status' => 'waiting', 'scheduled_at' => now()->subHour()]);
+
+    $this->actingAs($user)
+        ->post(route('automations.activate', [$team, $automation]))
+        ->assertSessionHasNoErrors();
+
+    // The held step goes straight back on the queue rather than waiting again.
+    Queue::assertPushed(
+        ProcessAutomationRun::class,
+        fn (ProcessAutomationRun $job): bool => $job->automationRunId === $run->id
+            && $job->nodeId === 'wait'
+            && $job->delay === null,
+    );
+
+    app(AdvanceAutomationRun::class)->handle($run, 'wait');
+    app(AdvanceAutomationRun::class)->handle($run, 'send');
+
+    Mail::assertSent(AutomationEmail::class, fn (AutomationEmail $mail): bool => $mail->hasTo($subscriber->email));
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Completed);
+});
+
+test('a send step fails the run instead of sending an email that is no longer published', function () {
+    Mail::fake();
+
+    $automation = Automation::factory()->active()->create();
+    TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
+    $email = TransactionalEmail::factory()->for($automation->team)->create();
+    $run = automationRun(
+        nodes: [['id' => 'send', 'type' => 'action', 'data' => [
+            'kind' => AutomationAction::SendEmail->value,
+            'transactional_email_uuid' => $email->uuid,
+        ]]],
+        edges: [['source' => 'trigger', 'target' => 'send']],
+        automation: $automation,
+    );
+
+    app(AdvanceAutomationRun::class)->handle($run);
+
+    Mail::assertNothingSent();
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Failed)
+        ->and($run->failure_reason)->toBe('The transactional email is no longer published.')
+        ->and(AutomationEmailDelivery::query()->count())->toBe(0);
 });
 
 test('starting a run logs the trigger step and refuses a second open run', function () {

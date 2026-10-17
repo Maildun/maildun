@@ -299,7 +299,7 @@ test('campaign transactional and automation failures persist only the safe trans
             'sns_topic_arn' => 'arn:aws:sns:us-east-1:123456789012:maildun-feedback',
         ],
     ]);
-    $email = TransactionalEmail::factory()->for($automation->team)->create();
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create();
     $subscriber = Subscriber::factory()
         ->for(Audience::factory()->for($automation->team))
         ->create();

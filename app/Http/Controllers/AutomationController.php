@@ -177,6 +177,11 @@ class AutomationController extends Controller
         return back();
     }
 
+    /**
+     * Reactivating a paused automation re-queues the runs it held. Pending
+     * steps and waits that ran out during the pause continue right away; waits
+     * still running keep their original end time.
+     */
     public function activate(
         Team $currentTeam,
         Automation $automation,
@@ -189,6 +194,8 @@ class AutomationController extends Controller
         if ($errors !== []) {
             throw ValidationException::withMessages(['graph' => $errors]);
         }
+
+        $wasPaused = $automation->isPaused();
 
         $automation->syncTriggerFromGraph();
         $automation->status = AutomationStatus::Active;
@@ -205,7 +212,13 @@ class AutomationController extends Controller
                 }
             });
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Automation activated.')]);
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Automation activated.'),
+            'description' => $wasPaused
+                ? __('People already in the flow continue from the step they were held at.')
+                : null,
+        ]);
 
         return back();
     }
@@ -224,7 +237,8 @@ class AutomationController extends Controller
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => __('Automation paused. Subscribers already in it wait at their current step until you activate it again.'),
+            'message' => __('Automation paused.'),
+            'description' => __('No one new enters. People already in the flow wait at their current step until you activate it again.'),
         ]);
 
         return back();
