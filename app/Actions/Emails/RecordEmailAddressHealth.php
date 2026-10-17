@@ -13,6 +13,13 @@ use Illuminate\Support\Str;
 
 class RecordEmailAddressHealth
 {
+    /**
+     * Temporary bounces in a row, with no delivery in between, after which an
+     * address is treated as undeliverable. Mailbox providers read repeated
+     * sends to a mailbox that keeps deferring as a sign of a stale list.
+     */
+    public const int CONSECUTIVE_SOFT_BOUNCE_LIMIT = 3;
+
     public function isSuppressed(Team $team, string $email): bool
     {
         return EmailAddressHealth::query()
@@ -41,6 +48,12 @@ class RecordEmailAddressHealth
                 ]);
             }
 
+            // A delivery ends the run of temporary bounces, unless it is older
+            // than the latest failure and only arrived late.
+            if ($health->last_failed_at === null || $occurredAt->greaterThanOrEqualTo($health->last_failed_at)) {
+                $health->consecutive_soft_bounce_count = 0;
+            }
+
             $health->forceFill([
                 'last_event_at' => $this->latest($health->last_event_at, $occurredAt),
                 'last_delivered_at' => $this->latest($health->last_delivered_at, $occurredAt),
@@ -67,6 +80,22 @@ class RecordEmailAddressHealth
                     'reason' => EmailAddressHealthReason::TransientBounce,
                     'provider' => $provider,
                     'detail' => $detail,
+                ]);
+            }
+
+            // Only a bounce after the latest delivery extends the run.
+            if ($health->last_delivered_at === null || $occurredAt->greaterThan($health->last_delivered_at)) {
+                $health->consecutive_soft_bounce_count++;
+            }
+
+            if ($health->status !== EmailAddressHealthStatus::Suppressed
+                && $health->consecutive_soft_bounce_count >= self::CONSECUTIVE_SOFT_BOUNCE_LIMIT) {
+                $health->forceFill([
+                    'status' => EmailAddressHealthStatus::Suppressed,
+                    'reason' => EmailAddressHealthReason::RepeatedTransientBounce,
+                    'provider' => $provider,
+                    'detail' => $detail,
+                    'suppressed_at' => $occurredAt,
                 ]);
             }
 

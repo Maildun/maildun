@@ -61,6 +61,51 @@ test('permanent feedback suppresses a normalized address and suppression remains
         ->and($healthRecorder->isSuppressed($otherTeam, 'user@example.com'))->toBeFalse();
 });
 
+test('three temporary bounces in a row suppress the address', function () {
+    $team = Team::factory()->create();
+    $healthRecorder = app(RecordEmailAddressHealth::class);
+
+    foreach ([3, 2] as $daysAgo) {
+        $healthRecorder->recordTransientBounce($team, 'user@example.com', EmailProvider::AmazonSes, now()->subDays($daysAgo), 'MailboxFull');
+    }
+
+    expect($healthRecorder->isSuppressed($team, 'user@example.com'))->toBeFalse();
+
+    $health = $healthRecorder->recordTransientBounce($team, 'user@example.com', EmailProvider::AmazonSes, now()->subDay(), 'MailboxFull');
+
+    expect($health->status)->toBe(EmailAddressHealthStatus::Suppressed)
+        ->and($health->reason)->toBe(EmailAddressHealthReason::RepeatedTransientBounce)
+        ->and($health->consecutive_soft_bounce_count)->toBe(3)
+        ->and($health->suppressed_at)->not->toBeNull();
+});
+
+test('a delivery between temporary bounces restarts the count', function () {
+    $team = Team::factory()->create();
+    $healthRecorder = app(RecordEmailAddressHealth::class);
+
+    $healthRecorder->recordTransientBounce($team, 'user@example.com', EmailProvider::AmazonSes, now()->subDays(5));
+    $healthRecorder->recordTransientBounce($team, 'user@example.com', EmailProvider::AmazonSes, now()->subDays(4));
+    $healthRecorder->recordDelivered($team, 'user@example.com', EmailProvider::AmazonSes, now()->subDays(3));
+    $healthRecorder->recordTransientBounce($team, 'user@example.com', EmailProvider::AmazonSes, now()->subDays(2));
+    $health = $healthRecorder->recordTransientBounce($team, 'user@example.com', EmailProvider::AmazonSes, now()->subDay());
+
+    expect($health->status)->toBe(EmailAddressHealthStatus::Risky)
+        ->and($health->consecutive_soft_bounce_count)->toBe(2)
+        ->and($health->soft_bounce_count)->toBe(4);
+});
+
+test('a late delivery report older than the latest bounce does not restart the count', function () {
+    $team = Team::factory()->create();
+    $healthRecorder = app(RecordEmailAddressHealth::class);
+
+    $healthRecorder->recordTransientBounce($team, 'user@example.com', EmailProvider::AmazonSes, now()->subDays(2));
+    $healthRecorder->recordTransientBounce($team, 'user@example.com', EmailProvider::AmazonSes, now()->subDay());
+    $healthRecorder->recordDelivered($team, 'user@example.com', EmailProvider::AmazonSes, now()->subDays(10));
+    $health = $healthRecorder->recordTransientBounce($team, 'user@example.com', EmailProvider::AmazonSes, now());
+
+    expect($health->status)->toBe(EmailAddressHealthStatus::Suppressed);
+});
+
 test('send failures are recorded without suppressing the address', function () {
     $team = Team::factory()->create();
 

@@ -8,6 +8,7 @@ enum EmailAddressHealthReason: string
     case SendFailure = 'send_failure';
     case TransientBounce = 'transient_bounce';
     case PermanentBounce = 'permanent_bounce';
+    case RepeatedTransientBounce = 'repeated_transient_bounce';
     case Complaint = 'complaint';
 
     public function label(): string
@@ -17,6 +18,7 @@ enum EmailAddressHealthReason: string
             self::SendFailure => 'Send failed',
             self::TransientBounce => 'Temporary bounce',
             self::PermanentBounce => 'Permanent bounce',
+            self::RepeatedTransientBounce => 'Repeated temporary bounces',
             self::Complaint => 'Spam complaint',
         };
     }

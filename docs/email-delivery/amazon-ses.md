@@ -36,7 +36,7 @@ Maildun adds the configuration set and its own correlation tags to campaign mess
 | ------------------------ | ------------------------------------------------------------------------------------ |
 | SMTP accepts the message | The delivery becomes `Sent`. This is not final delivery confirmation.                |
 | Delivery                 | The latest matching attempt becomes `Delivered`.                                     |
-| Transient bounce         | The matching non-terminal attempt becomes `Delayed`.                                 |
+| Transient bounce         | The matching non-terminal attempt becomes `Delayed`. After three in a row with no delivery in between, the address is suppressed. |
 | Permanent bounce         | The matching attempt becomes `Bounced`, and a subscribed contact is unsubscribed.    |
 | Complaint                | The matching attempt becomes `Complained`, and a subscribed contact is unsubscribed. |
 | Reject                   | The matching attempt becomes `Rejected` unless it already has a final outcome. The address is not suppressed. |
