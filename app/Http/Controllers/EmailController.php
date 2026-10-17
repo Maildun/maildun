@@ -398,8 +398,10 @@ class EmailController extends Controller
             'plain_text' => $editor === EmailEditor::PlainText
                 ? $request->input('source')
                 : $request->input('plain_text'),
-            // HTML emails keep the rendered markup but do not store a block document.
-            'design' => $editor === EmailEditor::Builder ? $request->input('design') : null,
+            // Other editors only edit the rendered markup. A block document the
+            // draft already has is kept, so switching the workspace editor back
+            // to the builder finds it again instead of an empty canvas.
+            'design' => $editor === EmailEditor::Builder ? $request->input('design') : $email->design,
             'audience_id' => $this->resolveAudienceId($currentTeam, $request->input('audience')),
             'segment_id' => $this->resolveSegmentId($currentTeam, $request->input('segment')),
         ]);

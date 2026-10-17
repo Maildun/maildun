@@ -816,23 +816,26 @@ test('an email can be updated with recipients and html content', function () {
         ->and($email->segment_id)->toBe($segment->id);
 });
 
-test('saving an email uses the team editor and drops an incompatible block document', function () {
+test('saving an email from another editor uses the team editor and keeps its block document', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $email = Email::factory()->for($team)->builder()->create();
+    $design = $email->design;
 
-    expect($email->design)->not->toBeNull();
+    expect($design)->not->toBeNull();
 
     $this->actingAs($user)
         ->patch(route('emails.update', [$team, $email]), [
             'name' => $email->name,
             'subject' => $email->subject,
             'html' => '<p>Hand written</p>',
+            'design' => ['root' => []],
         ])
         ->assertRedirect();
 
     expect($email->fresh()->editor)->toBe(EmailEditor::Html)
-        ->and($email->fresh()->design)->toBeNull();
+        ->and($email->fresh()->html)->toBe('<p>Hand written</p>')
+        ->and($email->fresh()->design)->toEqual($design);
 });
 
 test('a markdown campaign keeps its source and rendered html', function () {
@@ -840,6 +843,7 @@ test('a markdown campaign keeps its source and rendered html', function () {
     $team = $user->currentTeam;
     $team->update(['email_editor' => EmailEditor::Markdown]);
     $email = Email::factory()->for($team)->builder()->create();
+    $design = $email->design;
 
     $this->actingAs($user)
         ->patch(route('emails.update', [$team, $email]), [
@@ -855,7 +859,7 @@ test('a markdown campaign keeps its source and rendered html', function () {
     expect($email->editor)->toBe(EmailEditor::Markdown)
         ->and($email->source)->toBe('# Hello **there**')
         ->and($email->html)->toBe('<h1>Hello <strong>there</strong></h1>')
-        ->and($email->design)->toBeNull();
+        ->and($email->design)->toEqual($design);
 
     $this->actingAs($user)
         ->get(route('emails.edit', [$team, $email]))

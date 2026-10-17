@@ -112,6 +112,23 @@ test('keeps plain text source when campaigns are managed through MCP', function 
         ->etc());
 });
 
+test('keeps a campaign block document when another editor updates it through MCP', function () {
+    $team = Team::factory()->create(['slug' => 'html-campaigns', 'email_editor' => EmailEditor::Html]);
+    $campaign = Email::factory()->for($team)->builder()->create();
+    $design = $campaign->design;
+
+    MaildunServer::tool(UpdateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $campaign->uuid,
+        'html' => '<p>Hand written</p>',
+        'design' => null,
+    ])->assertOk();
+
+    expect($campaign->refresh())
+        ->html->toBe('<p>Hand written</p>')
+        ->design->toEqual($design);
+});
+
 test('drafts a source-based campaign through MCP before its body is written', function () {
     $team = Team::factory()->create([
         'slug' => 'plain-drafts',

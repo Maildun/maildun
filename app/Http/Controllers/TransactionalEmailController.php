@@ -189,7 +189,9 @@ class TransactionalEmailController extends Controller
             'audience_id' => $this->resolveAudienceId($currentTeam, $request->input('audience')),
             'editor' => $editor,
             'source' => $editor->usesSource() ? $request->input('source') : null,
-            'design' => $editor === EmailEditor::Builder ? $request->input('design') : null,
+            // A block document the email already has survives a save from
+            // another workspace editor, so switching back finds it again.
+            'design' => $editor === EmailEditor::Builder ? $request->input('design') : $transactionalEmail->design,
             'variables' => $renderer->merge($declared, $detected),
         ]);
 

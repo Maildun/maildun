@@ -296,9 +296,10 @@ test('a block transactional email can be saved with every block removed', functi
     expect($email->fresh()->design)->toHaveKey('root', []);
 });
 
-test('saving uses the team editor and drops an incompatible block document', function () {
+test('saving from another editor uses the team editor and keeps the block document', function () {
     $user = User::factory()->create();
     $email = TransactionalEmail::factory()->for($user->currentTeam)->builder()->create();
+    $design = $email->design;
 
     $this->actingAs($user)
         ->patch(route('transactional_emails.update', [$user->currentTeam, $email]), [
@@ -306,11 +307,13 @@ test('saving uses the team editor and drops an incompatible block document', fun
             'slug' => $email->slug,
             'subject' => $email->subject,
             'html' => '<p>Hand written</p>',
+            'design' => ['root' => []],
         ])
         ->assertRedirect();
 
     expect($email->fresh()->editor)->toBe(EmailEditor::Html)
-        ->and($email->fresh()->design)->toBeNull();
+        ->and($email->fresh()->html)->toBe('<p>Hand written</p>')
+        ->and($email->fresh()->design)->toEqual($design);
 });
 
 test('a plain text transactional email keeps its source and rendered html', function () {

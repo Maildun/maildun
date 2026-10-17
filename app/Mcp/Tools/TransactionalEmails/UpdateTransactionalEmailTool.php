@@ -99,9 +99,11 @@ class UpdateTransactionalEmailTool extends Tool
         $changes['source'] = $team->email_editor->usesSource()
             ? ($changes['source'] ?? $email->source)
             : null;
+        // Only the builder edits the block document; any other editor leaves
+        // the one the email already has in place.
         $changes['design'] = $team->email_editor === EmailEditor::Builder
             ? ($changes['design'] ?? $email->design)
-            : null;
+            : $email->design;
         $changes['variables'] = $this->renderer->merge(
             $declared,
             $this->renderer->detect($subject, $preheader, $html),

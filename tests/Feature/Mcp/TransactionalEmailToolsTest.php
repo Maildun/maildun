@@ -96,6 +96,22 @@ test('refuses to delete a transactional email an audience confirms signups with'
     $this->assertNotSoftDeleted($email);
 });
 
+test('keeps a transactional block document when another editor updates it through MCP', function () {
+    $team = Team::factory()->create(['slug' => 'html-transactional', 'email_editor' => EmailEditor::Html]);
+    $email = TransactionalEmail::factory()->for($team)->builder()->create();
+    $design = $email->design;
+
+    MaildunServer::tool(UpdateTransactionalEmailTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $email->uuid,
+        'html' => '<p>Hand written</p>',
+    ])->assertOk();
+
+    expect($email->refresh())
+        ->html->toBe('<p>Hand written</p>')
+        ->design->toEqual($design);
+});
+
 test('keeps markdown source when transactional email is managed through MCP', function () {
     $team = Team::factory()->create([
         'slug' => 'markdown-transactional',
