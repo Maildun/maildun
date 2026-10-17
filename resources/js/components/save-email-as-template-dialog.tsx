@@ -24,6 +24,8 @@ import type { EmailBuilderDocument } from '@/types';
 
 type Props = {
     teamSlug: string;
+    emailType: 'campaign' | 'transactional';
+    emailUuid: string;
     defaultName: string;
     subject: string;
     preheader: string;
@@ -37,10 +39,13 @@ type Props = {
 /**
  * Freezes the email's current body into a reusable template. The body travels
  * with the form rather than being read back off the email, so what gets saved
- * is exactly what the author is looking at.
+ * is exactly what the author is looking at. The editor is not sent: the server
+ * reads it off the email named by emailType and emailUuid.
  */
 export default function SaveEmailAsTemplateDialog({
     teamSlug,
+    emailType,
+    emailUuid,
     defaultName,
     subject,
     preheader,
@@ -73,6 +78,8 @@ export default function SaveEmailAsTemplateDialog({
 
         form.transform((data) => ({
             ...data,
+            email_type: emailType,
+            email_uuid: emailUuid,
             subject,
             preheader,
             html,

@@ -3,8 +3,10 @@
 namespace App\Http\Requests;
 
 use App\Enums\EmailEditor;
+use App\Models\Email;
 use App\Models\EmailTemplate;
 use App\Models\Team;
+use App\Models\TransactionalEmail;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
@@ -23,8 +25,11 @@ class SaveEmailTemplateRequest extends FormRequest
     }
 
     /**
-     * New templates take the team editor. Existing ones keep the editor they
-     * were saved with — the compose page does not switch it.
+     * A template saved from a campaign or transactional email takes that
+     * email's stored editor, which can differ from the team editor once the
+     * team default changes. Other new templates take the team editor. Existing
+     * ones keep the editor they were saved with — the compose page does not
+     * switch it.
      */
     public function editor(): EmailEditor
     {
@@ -38,7 +43,24 @@ class SaveEmailTemplateRequest extends FormRequest
 
         abort_unless($team instanceof Team, 404);
 
-        return $team->email_editor;
+        return $this->sourceEmail($team)->editor ?? $team->email_editor;
+    }
+
+    /**
+     * The campaign or transactional email the template is being saved from,
+     * found within the current team so another team's uuid 404s.
+     */
+    protected function sourceEmail(Team $team): Email|TransactionalEmail|null
+    {
+        if (blank($this->input('email_uuid'))) {
+            return null;
+        }
+
+        $emails = $this->input('email_type') === 'transactional'
+            ? $team->transactionalEmails()
+            : $team->emails();
+
+        return $emails->where('uuid', $this->input('email_uuid'))->firstOrFail();
     }
 
     /** @return array<string, ValidationRule|array<mixed>|string> */
@@ -69,6 +91,8 @@ class SaveEmailTemplateRequest extends FormRequest
             'source' => ['nullable', 'string', 'max:2000000'],
             'design' => ['nullable', 'array', 'required_array_keys:root'],
             'design.root' => ['array'],
+            'email_type' => ['nullable', 'required_with:email_uuid', Rule::in(['campaign', 'transactional'])],
+            'email_uuid' => ['nullable', 'required_with:email_type', 'uuid'],
         ];
     }
 
@@ -82,14 +106,15 @@ class SaveEmailTemplateRequest extends FormRequest
 
             $savingBody = $this->filled('html') || $this->filled('source') || $this->filled('design');
             $updating = $this->route('emailTemplate') instanceof EmailTemplate;
+            $editor = $this->editor();
 
-            if ($this->editor() === EmailEditor::Builder
+            if ($editor === EmailEditor::Builder
                 && ($updating || $savingBody)
                 && blank($this->input('design'))) {
                 $validator->errors()->add('design', __('The block layout is missing.'));
             }
 
-            if ($this->editor()->usesSource()
+            if ($editor->usesSource()
                 && ($updating || $savingBody)
                 && blank($this->input('source'))) {
                 $validator->errors()->add('source', __('The email content is missing.'));
