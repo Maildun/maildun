@@ -13,6 +13,7 @@ use App\Http\Requests\StoreTransactionalEmailRequest;
 use App\Http\Requests\UpdateTransactionalEmailRequest;
 use App\Jobs\SendTransactionalEmailTest;
 use App\Models\Audience;
+use App\Models\Automation;
 use App\Models\EmailTemplate;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
@@ -260,7 +261,7 @@ class TransactionalEmailController extends Controller
     public function unpublish(Team $currentTeam, TransactionalEmail $transactionalEmail): RedirectResponse
     {
         Gate::authorize('publish', $transactionalEmail);
-        $this->ensureNotDoubleOptInEmail($transactionalEmail);
+        $this->ensureNotInUse($transactionalEmail);
 
         $transactionalEmail->update([
             'status' => TransactionalEmailStatus::Draft,
@@ -302,7 +303,7 @@ class TransactionalEmailController extends Controller
     public function destroy(Team $currentTeam, TransactionalEmail $transactionalEmail): RedirectResponse
     {
         Gate::authorize('delete', $transactionalEmail);
-        $this->ensureNotDoubleOptInEmail($transactionalEmail);
+        $this->ensureNotInUse($transactionalEmail);
         $transactionalEmail->delete();
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Transactional email deleted.')]);
@@ -319,9 +320,10 @@ class TransactionalEmailController extends Controller
         return $team->audiences()->where('uuid', $uuid)->value('id');
     }
 
-    private function ensureNotDoubleOptInEmail(TransactionalEmail $transactionalEmail): void
+    private function ensureNotInUse(TransactionalEmail $transactionalEmail): void
     {
-        $reason = $transactionalEmail->doubleOptInBlockReason();
+        $reason = $transactionalEmail->doubleOptInBlockReason()
+            ?? Automation::referenceBlockReason($transactionalEmail->team, $transactionalEmail->uuid, __('email'));
 
         if ($reason !== null) {
             throw ValidationException::withMessages(['email' => $reason]);

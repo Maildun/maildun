@@ -195,7 +195,6 @@ class AdvanceAutomationRun
         if ($email === null) {
             throw new \RuntimeException(__('The transactional email is no longer available.'));
         }
-
         if ($this->emailHealth->isSuppressed($run->automation->team, $subscriber->email)) {
             return [
                 'status' => 'skipped',

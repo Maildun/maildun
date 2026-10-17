@@ -4,11 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\BulkTagRequest;
 use App\Http\Requests\SaveTagRequest;
+use App\Models\Automation;
 use App\Models\Tag;
 use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -64,6 +67,7 @@ class TagController extends Controller
     public function destroy(Team $team, Tag $tag): RedirectResponse
     {
         Gate::authorize('delete', $tag);
+        $this->ensureNotInUse($team, collect([$tag]));
         $tag->delete();
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Tag deleted.')]);
@@ -75,12 +79,32 @@ class TagController extends Controller
     {
         Gate::authorize('create', [Tag::class, $team]);
 
-        $team->tags()
-            ->whereIn('uuid', $request->validated('ids'))
-            ->delete();
+        $tags = $team->tags()->whereIn('uuid', $request->validated('ids'))->get(['id', 'uuid', 'name']);
+        $this->ensureNotInUse($team, $tags);
+
+        $team->tags()->whereKey($tags->modelKeys())->delete();
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Selected tags deleted.')]);
 
         return back();
+    }
+
+    /**
+     * Deleting a tag an automation step names would make that step fail on
+     * every run, so the automation has to let go of it first.
+     *
+     * @param  Collection<int, Tag>  $tags
+     */
+    private function ensureNotInUse(Team $team, Collection $tags): void
+    {
+        foreach ($tags as $tag) {
+            $reason = Automation::referenceBlockReason($team, $tag->uuid, __('tag'));
+
+            if ($reason !== null) {
+                throw ValidationException::withMessages([
+                    'tag' => $tags->count() > 1 ? $tag->name.': '.$reason : $reason,
+                ]);
+            }
+        }
     }
 }

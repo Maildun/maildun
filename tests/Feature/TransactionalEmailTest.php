@@ -5,6 +5,7 @@ use App\Enums\TeamRole;
 use App\Enums\TransactionalEmailStatus;
 use App\Jobs\SendTransactionalEmailTest;
 use App\Models\Audience;
+use App\Models\Automation;
 use App\Models\EmailTemplate;
 use App\Models\Media;
 use App\Models\Team;
@@ -380,6 +381,31 @@ test('an email an audience confirms signups with cannot be unpublished or delete
     $this->actingAs($user)
         ->{$method}(route($routeName, [$user->currentTeam, $email]))
         ->assertInvalid(['email' => 'Newsletter uses this as its double opt-in confirmation email.']);
+
+    expect($email->fresh()->status)->toBe(TransactionalEmailStatus::Published);
+    $this->assertNotSoftDeleted($email);
+})->with([
+    'unpublish' => ['post', 'transactional_emails.unpublish'],
+    'delete' => ['delete', 'transactional_emails.destroy'],
+]);
+
+test('an email an automation sends cannot be unpublished or deleted', function (string $method, string $routeName) {
+    $user = User::factory()->create();
+    $email = TransactionalEmail::factory()->for($user->currentTeam)->published()->create();
+    Automation::factory()->for($user->currentTeam)->create([
+        'name' => 'Welcome series',
+        'graph' => [
+            'nodes' => [
+                ['id' => 'trigger', 'type' => 'trigger', 'data' => ['kind' => 'subscriber.subscribed']],
+                ['id' => 'send', 'type' => 'action', 'data' => ['kind' => 'send_email', 'transactional_email_uuid' => $email->uuid]],
+            ],
+            'edges' => [['source' => 'trigger', 'target' => 'send']],
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->{$method}(route($routeName, [$user->currentTeam, $email]))
+        ->assertInvalid(['email' => 'The Welcome series automation uses this email. Remove it from that automation first.']);
 
     expect($email->fresh()->status)->toBe(TransactionalEmailStatus::Published);
     $this->assertNotSoftDeleted($email);

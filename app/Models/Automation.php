@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Str;
 
 /**
@@ -113,6 +114,57 @@ class Automation extends Model
     public function runs(): HasMany
     {
         return $this->hasMany(AutomationRun::class);
+    }
+
+    /**
+     * Names of the team's automations whose saved graph uses the given tag or
+     * transactional email, so deleting it would break their steps.
+     *
+     * @return SupportCollection<int, string>
+     */
+    public static function namesReferencing(Team $team, string $uuid): SupportCollection
+    {
+        return static::query()
+            ->where('team_id', $team->id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'graph'])
+            ->filter(fn (Automation $automation): bool => $automation->references($uuid))
+            ->pluck('name')
+            ->values();
+    }
+
+    /**
+     * Whether any step of the saved graph names the given tag or email.
+     */
+    public function references(string $uuid): bool
+    {
+        foreach ($this->graph['nodes'] ?? [] as $node) {
+            $data = is_array($node['data'] ?? null) ? $node['data'] : [];
+
+            if (in_array($uuid, [$data['tag_uuid'] ?? null, $data['transactional_email_uuid'] ?? null], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Why the given tag or email cannot be deleted or unpublished yet, or null.
+     */
+    public static function referenceBlockReason(Team $team, string $uuid, string $thing): ?string
+    {
+        $names = static::namesReferencing($team, $uuid);
+
+        if ($names->isEmpty()) {
+            return null;
+        }
+
+        return trans_choice(
+            'The :automations automation uses this :thing. Remove it from that automation first.|The :automations automations use this :thing. Remove it from those automations first.',
+            $names->count(),
+            ['automations' => $names->join(', ', ' and '), 'thing' => $thing],
+        );
     }
 
     public function isActive(): bool

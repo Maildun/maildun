@@ -46,12 +46,13 @@ export default function DeleteTagModal({
                 onDeleted?.();
                 onOpenChange(false);
             },
-            onError: () =>
+            onError: (errors: Record<string, string>) =>
                 toast.add({
                     type: 'error',
                     title: isBulk
                         ? 'Failed to delete the selected tags.'
                         : 'Failed to delete the tag.',
+                    description: errors.tag,
                 }),
         };
 

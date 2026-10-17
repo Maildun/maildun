@@ -8,6 +8,7 @@ use App\Mcp\Tools\TransactionalEmails\GetTransactionalEmailTool;
 use App\Mcp\Tools\TransactionalEmails\ListTransactionalEmailsTool;
 use App\Mcp\Tools\TransactionalEmails\UpdateTransactionalEmailTool;
 use App\Models\Audience;
+use App\Models\Automation;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use Illuminate\Testing\Fluent\AssertableJson;
@@ -76,6 +77,26 @@ test('manages a transactional email through its MCP lifecycle', function () {
     ])->assertOk();
 
     expect($email->refresh()->trashed())->toBeTrue();
+});
+
+test('refuses to delete a transactional email an automation sends', function () {
+    $team = Team::factory()->create(['slug' => 'onboarding']);
+    $email = TransactionalEmail::factory()->for($team)->published()->create();
+    Automation::factory()->for($team)->create([
+        'name' => 'Welcome series',
+        'graph' => [
+            'nodes' => [['id' => 'send', 'type' => 'action', 'data' => ['kind' => 'send_email', 'transactional_email_uuid' => $email->uuid]]],
+            'edges' => [],
+        ],
+    ]);
+
+    MaildunServer::tool(DeleteTransactionalEmailTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $email->uuid,
+        'confirm_name' => $email->name,
+    ])->assertHasErrors(['The Welcome series automation uses this email.']);
+
+    $this->assertNotSoftDeleted($email);
 });
 
 test('refuses to delete a transactional email an audience confirms signups with', function () {
