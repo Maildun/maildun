@@ -282,6 +282,28 @@ test('team owners can generate a new password for a member', function () {
         ->assertInertia(fn (Assert $page) => $page->missingFlash('memberPassword'));
 });
 
+test('admins who generate their own password stay signed in to see it', function () {
+    $owner = User::factory()->create();
+    $admin = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
+
+    $this->post(route('login.store'), ['email' => $admin->email, 'password' => 'password']);
+
+    $this
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('teams.members.generate-password', [$team, $admin]))
+        ->assertRedirect(route('teams.members.index', $team));
+
+    switchSession(session()->all());
+
+    $this
+        ->get(route('teams.members.index', $team))
+        ->assertInertia(fn (Assert $page) => $page->hasFlash('memberPassword.memberId', $admin->id));
+});
+
 test('team owners can send a password reset link to a member', function () {
     Queue::fake();
 
@@ -359,24 +381,6 @@ test('member password actions require the target to belong to the selected team'
     'generate password' => 'teams.members.generate-password',
     'send reset link' => 'teams.members.send-password-reset-link',
 ]);
-
-test('admins cannot generate a new password for themselves', function () {
-    $owner = User::factory()->create();
-    $admin = User::factory()->create();
-    $team = Team::factory()->create();
-
-    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
-    $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
-    $previousPassword = $admin->password;
-
-    $this
-        ->actingAs($admin)
-        ->withSession(['auth.password_confirmed_at' => time()])
-        ->post(route('teams.members.generate-password', [$team, $admin]))
-        ->assertForbidden();
-
-    expect($admin->fresh()->password)->toBe($previousPassword);
-});
 
 test('team owners cannot manage their own passwords from member actions', function (string $routeName) {
     $owner = User::factory()->create();

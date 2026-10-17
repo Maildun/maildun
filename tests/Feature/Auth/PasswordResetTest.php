@@ -116,6 +116,35 @@ test('resetting a verified account keeps its passkeys and two factor authenticat
         ->and($user->two_factor_confirmed_at)->not->toBeNull();
 });
 
+test('resetting a password signs out the account\'s other sessions', function (bool $browsedAfterSigningIn) {
+    $user = User::factory()->create();
+    $dashboard = route('dashboard', ['current_team' => $user->currentTeam]);
+
+    $this->post(route('login.store'), ['email' => $user->email, 'password' => 'password']);
+
+    if ($browsedAfterSigningIn) {
+        $this->get($dashboard)->assertOk();
+    }
+
+    $otherSession = session()->all();
+    switchSession();
+
+    $this->post(route('password.update'), [
+        'token' => Password::broker(config('fortify.passwords'))->createToken($user),
+        'email' => $user->email,
+        'password' => 'new-password',
+        'password_confirmation' => 'new-password',
+    ])->assertSessionHasNoErrors();
+
+    switchSession($otherSession);
+
+    $this->get($dashboard)->assertRedirect(route('login'));
+    $this->assertGuest();
+})->with([
+    'after browsing' => true,
+    'straight after signing in' => false,
+]);
+
 test('password cannot be reset with invalid token', function () {
     $user = User::factory()->create();
 
