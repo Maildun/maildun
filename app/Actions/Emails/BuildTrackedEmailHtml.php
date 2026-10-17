@@ -302,14 +302,26 @@ class BuildTrackedEmailHtml
                 return $matches[0];
             }
 
-            $fragmentPosition = strpos($url, '#');
-            $fragment = $fragmentPosition === false ? '' : substr($url, $fragmentPosition);
-            $baseUrl = $fragmentPosition === false ? $url : substr($url, 0, $fragmentPosition);
-            $separator = str_contains($baseUrl, '?') ? '&' : '?';
-            $taggedUrl = $baseUrl.$separator.$queryString.$fragment;
-
-            return 'href='.$matches[1].htmlspecialchars($taggedUrl, ENT_QUOTES | ENT_HTML5).$matches[1];
+            return 'href='.$matches[1].htmlspecialchars(self::tagUrl($url, $queryString), ENT_QUOTES | ENT_HTML5).$matches[1];
         }, $html) ?? $html;
+    }
+
+    /**
+     * The URL a link is stored and tracked under once the campaign query
+     * string is applied, keeping any #fragment last.
+     */
+    public static function tagUrl(string $url, ?string $queryString): string
+    {
+        if (blank($queryString)) {
+            return $url;
+        }
+
+        $fragmentPosition = strpos($url, '#');
+        $fragment = $fragmentPosition === false ? '' : substr($url, $fragmentPosition);
+        $baseUrl = $fragmentPosition === false ? $url : substr($url, 0, $fragmentPosition);
+        $separator = str_contains($baseUrl, '?') ? '&' : '?';
+
+        return $baseUrl.$separator.$queryString.$fragment;
     }
 
     private function unsubscribeFooter(string $url): string

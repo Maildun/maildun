@@ -11,6 +11,7 @@ use App\Models\EmailDelivery;
 use App\Models\EmailLinkTrackingAggregate;
 use App\Models\EmailTrackingAggregate;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -24,7 +25,7 @@ class BuildCampaignSeriesReport
         $campaigns = $campaignSeries->emails()
             ->select([
                 'id', 'uuid', 'name', 'subject', 'status', 'audience_id', 'segment_id',
-                'recipient_count', 'send_started_at', 'sent_at', 'updated_at',
+                'recipient_count', 'send_started_at', 'sent_at', 'updated_at', 'query_string',
             ])
             ->with([
                 'audience:id,uuid,name',
@@ -47,7 +48,7 @@ class BuildCampaignSeriesReport
         /** @var list<int> $campaignIds */
         $campaignIds = array_values(array_map(intval(...), $campaigns->modelKeys()));
         $deliveryStats = $this->deliveryStats($campaignIds);
-        $ctaStats = $this->ctaStats($campaignIds, $campaignSeries->primary_cta_url);
+        $ctaStats = $this->ctaStats($campaigns, $campaignSeries->primary_cta_url);
         $deliveries = EmailDelivery::query()->whereIn('email_id', $campaignIds);
         $uniqueRecipients = $this->countDistinctRecipients(clone $deliveries);
         $uniqueOpened = $this->countDistinctRecipients((clone $deliveries)->whereNotNull('first_opened_at'));
@@ -166,10 +167,13 @@ class BuildCampaignSeriesReport
     }
 
     /**
-     * @param  list<int>  $campaignIds
+     * Each campaign stores its links with its own query string applied, so the
+     * CTA is matched per campaign in that tagged form.
+     *
+     * @param  EloquentCollection<int, Email>  $campaigns
      * @return Collection<int|string, EmailLinkTrackingAggregate>
      */
-    private function ctaStats(array $campaignIds, ?string $primaryCtaUrl): Collection
+    private function ctaStats(EloquentCollection $campaigns, ?string $primaryCtaUrl): Collection
     {
         if (blank($primaryCtaUrl)) {
             return collect();
@@ -180,8 +184,13 @@ class BuildCampaignSeriesReport
             ->select('email_links.email_id')
             ->selectRaw('SUM(email_link_tracking_aggregates.total_clicks_count) AS total_clicks_count')
             ->selectRaw('SUM(email_link_tracking_aggregates.unique_clicks_count) AS unique_clicks_count')
-            ->whereIn('email_links.email_id', $campaignIds)
-            ->where('email_links.url', $primaryCtaUrl)
+            ->where(function (Builder $links) use ($campaigns, $primaryCtaUrl): void {
+                foreach ($campaigns as $campaign) {
+                    $links->orWhere(fn (Builder $link) => $link
+                        ->where('email_links.email_id', $campaign->id)
+                        ->where('email_links.url', BuildTrackedEmailHtml::tagUrl($primaryCtaUrl, $campaign->query_string)));
+                }
+            })
             ->groupBy('email_links.email_id')
             ->get()
             ->keyBy('email_id')
