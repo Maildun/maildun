@@ -134,6 +134,38 @@ class BuildTrackedEmailHtml
     }
 
     /**
+     * What the link tags resolve to in this delivery's text part. The HTML
+     * replaces the same tags inside build().
+     *
+     * @return array<string, string>
+     */
+    public function linkData(EmailDelivery $delivery): array
+    {
+        $delivery->loadMissing('email');
+
+        return array_filter([
+            'unsubscribe_url' => URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]),
+            'web_view_url' => self::webViewUrl($delivery),
+            'subscribe_url' => $this->subscribeFormUrl($delivery->email),
+        ], fn (?string $url): bool => $url !== null);
+    }
+
+    /**
+     * Test copies go to a real inbox, so the link tags point at https pages
+     * that explain the link without opting anyone out.
+     *
+     * @return array{unsubscribe_url: string, web_view_url: string, subscribe_url: string}
+     */
+    public function testLinkData(Email $email): array
+    {
+        return [
+            'unsubscribe_url' => route('public.unsubscribe.test'),
+            'web_view_url' => route('public.web_view.test'),
+            'subscribe_url' => $this->subscribeFormUrl($email) ?? route('public.web_view.test'),
+        ];
+    }
+
+    /**
      * The signed page that serves this delivery's rendered body in a browser.
      */
     public static function webViewUrl(EmailDelivery $delivery): string
@@ -186,12 +218,14 @@ class BuildTrackedEmailHtml
      */
     public function prepareTestHtml(Email $email, string $html): string
     {
+        $links = $this->testLinkData($email);
+
         return $this->preparePreviewHtml(
             $html,
-            route('public.unsubscribe.test'),
-            route('public.web_view.test'),
+            $links['unsubscribe_url'],
+            $links['web_view_url'],
             $email->query_string,
-            $this->subscribeFormUrl($email) ?? route('public.web_view.test'),
+            $links['subscribe_url'],
         );
     }
 

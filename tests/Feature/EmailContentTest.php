@@ -434,6 +434,39 @@ test('a send without a preheader adds no hidden preview text', function () {
         ->not->toContain('mso-hide:all');
 });
 
+test('a generated text part keeps link targets and leaves out styles and hidden preview text', function () {
+    $email = Email::factory()->make([
+        'plain_text' => null,
+        'html' => '<!DOCTYPE html><html><head><title>Weekly</title><style>p { color: red; }</style></head>'
+            .'<body><div style="display:none;max-height:0">Hidden preview</div>'
+            .'<p>Big news &amp; more</p><p><a href="https://example.com/news">Read the story</a></p>'
+            .'<p><a href="https://example.com">https://example.com</a> <a href="#top">Top</a></p></body></html>',
+    ]);
+
+    $text = app(RenderCampaignContent::class)->plainText($email, []);
+
+    expect($text)->toBe("Big news & more\nRead the story (https://example.com/news)\nhttps://example.com Top");
+});
+
+test('a campaign test send fills the text part links with pages that opt nobody out', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'html' => '<p>Hello</p>',
+        'plain_text' => 'Hello. Browser copy: {{ web_view_url }}',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.test', [$user->currentTeam, $email]), ['to' => 'reviewer@example.com'])
+        ->assertRedirect();
+
+    $expected = 'Hello. Browser copy: '.route('public.web_view.test')."\n\nUnsubscribe: ".route('public.unsubscribe.test');
+
+    Queue::assertPushed(SendCampaignTestEmail::class, fn (SendCampaignTestEmail $job): bool => $job->plainText === $expected);
+});
+
 test('a campaign test send carries the preheader', function () {
     Queue::fake();
 

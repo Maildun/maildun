@@ -44,7 +44,7 @@ class QueueCampaignTestEmail
                     $this->renderer->text($email->preheader ?? '', $mergeData),
                 ),
             ),
-            $this->renderer->plainText($email, $mergeData),
+            $this->renderer->plainText($email, [...$mergeData, ...$this->trackedHtml->testLinkData($email)]),
         )->afterCommit();
     }
 

@@ -33,6 +33,7 @@ use Illuminate\Bus\Batch;
 use Illuminate\Bus\PendingBatch;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\URL;
 use Inertia\Testing\AssertableInertia as Assert;
 use Symfony\Component\Mailer\Header\MetadataHeader;
 
@@ -416,6 +417,50 @@ test('a delivery job sends one tracked message through the configured mailer', f
     Mail::assertSent(CampaignEmail::class, fn (CampaignEmail $mail): bool => $mail->hasTo('reader@example.com')
         && str_contains($mail->trackedHtml, '/track/emails/'));
     expect($delivery->fresh()->status->value)->toBe('sent');
+});
+
+test('a delivery gives its text part a working unsubscribe link', function () {
+    Mail::fake();
+    $email = Email::factory()->create([
+        'html' => '<p>Hello there</p>',
+        'plain_text' => null,
+        'status' => EmailStatus::Sending,
+    ]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $delivery = $email->deliveries()->create([
+        'email_address' => 'reader@example.com',
+        'status' => 'queued',
+        'provider' => 'smtp',
+    ]);
+
+    app()->call([new SendEmailDelivery($delivery->id), 'handle']);
+
+    $unsubscribeUrl = URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]);
+
+    Mail::assertSent(CampaignEmail::class, fn (CampaignEmail $mail): bool => $mail->plainText === "Hello there\n\nUnsubscribe: {$unsubscribeUrl}");
+});
+
+test('an author placed text unsubscribe tag is filled instead of getting a second link', function () {
+    Mail::fake();
+    $email = Email::factory()->create([
+        'html' => '<p>Hello there</p>',
+        'plain_text' => "Hello there\nLeave the list: {{ unsubscribe_url }}\nRead online: {{ web_view_url }}",
+        'status' => EmailStatus::Sending,
+    ]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $delivery = $email->deliveries()->create([
+        'email_address' => 'reader@example.com',
+        'status' => 'queued',
+        'provider' => 'smtp',
+        'merge_data' => ['unsubscribe_url' => 'https://attacker.example'],
+    ]);
+
+    app()->call([new SendEmailDelivery($delivery->id), 'handle']);
+
+    $unsubscribeUrl = URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]);
+    $webViewUrl = BuildTrackedEmailHtml::webViewUrl($delivery);
+
+    Mail::assertSent(CampaignEmail::class, fn (CampaignEmail $mail): bool => $mail->plainText === "Hello there\nLeave the list: {$unsubscribeUrl}\nRead online: {$webViewUrl}");
 });
 
 test('ses messages carry the configuration set and delivery correlation tags', function () {
