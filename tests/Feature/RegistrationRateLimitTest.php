@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use App\Notifications\VerifyEmail;
 use Illuminate\Support\Facades\Notification;
 
 beforeEach(function () {
@@ -72,7 +73,8 @@ test('registration remains available to another IP after one IP is throttled', f
 
     $this->assertAuthenticated();
     $this->assertDatabaseHas('users', ['email' => 'allowed@example.com']);
-    Notification::assertNothingSent();
+    Notification::assertCount(1);
+    Notification::assertSentTo(User::query()->where('email', 'allowed@example.com')->sole(), VerifyEmail::class);
 });
 
 test('registration throttling does not block auth pages or use the login allowance', function () {

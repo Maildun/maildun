@@ -13,6 +13,18 @@ test('email verification screen can be rendered', function () {
     $response->assertOk();
 });
 
+test('unverified users are sent to the verification notice from workspace routes', function (string $routeName, string $parameter) {
+    $user = User::factory()->unverified()->create();
+
+    $this->actingAs($user)
+        ->get(route($routeName, [$parameter => $user->currentTeam]))
+        ->assertRedirect(route('verification.notice'));
+})->with([
+    'workspace dashboard' => ['dashboard', 'current_team'],
+    'workspace contacts' => ['contacts.index', 'current_team'],
+    'workspace settings' => ['teams.edit', 'team'],
+]);
+
 test('email can be verified', function () {
     $user = User::factory()->unverified()->create();
     $team = $user->personalTeam();

@@ -41,8 +41,10 @@ class ProfileController extends Controller
 
         $user->fill($validated);
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        $emailChanged = $user->isDirty('email');
+
+        if ($emailChanged) {
+            $user->email_verified_at = null;
         }
 
         if ($request->hasFile('avatar')) {
@@ -51,6 +53,10 @@ class ProfileController extends Controller
         }
 
         $user->save();
+
+        if ($emailChanged) {
+            $user->sendEmailVerificationNotification();
+        }
 
         if ($oldAvatarPath) {
             Storage::disk('public')->delete($oldAvatarPath);

@@ -11,6 +11,7 @@ use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamInvitation;
+use App\Models\User;
 use Carbon\CarbonInterface;
 use Carbon\CarbonPeriod;
 use Illuminate\Database\Eloquent\Builder;
@@ -28,12 +29,30 @@ class DashboardController extends Controller
 
     public function __invoke(Request $request, Team $currentTeam): Response
     {
-        $email = strtolower($request->user()->email);
         $period = $this->period($request);
 
-        $pendingInvitations = TeamInvitation::query()
+        return Inertia::render('dashboard', [
+            'pendingInvitations' => $this->pendingInvitations($request->user()),
+            'canManageCampaigns' => Gate::allows('create', [Email::class, $currentTeam]),
+            'dashboard' => $this->dashboardData($currentTeam, $period),
+        ]);
+    }
+
+    /**
+     * Invitations are matched on the address alone, so they are only listed,
+     * codes included, once the user has proven they own it.
+     *
+     * @return Collection<int, array{code: string, inviterName: string, team: array{name: string, slug: string}}>
+     */
+    private function pendingInvitations(User $user): Collection
+    {
+        if (! $user->hasVerifiedEmail()) {
+            return collect();
+        }
+
+        return TeamInvitation::query()
             ->with(['inviter', 'team'])
-            ->whereRaw('LOWER(email) = ?', [$email])
+            ->whereRaw('LOWER(email) = ?', [strtolower($user->email)])
             ->whereNull('accepted_at')
             ->where(fn ($query) => $query
                 ->whereNull('expires_at')
@@ -48,12 +67,6 @@ class DashboardController extends Controller
                     'slug' => $invitation->team->slug,
                 ],
             ]);
-
-        return Inertia::render('dashboard', [
-            'pendingInvitations' => $pendingInvitations,
-            'canManageCampaigns' => Gate::allows('create', [Email::class, $currentTeam]),
-            'dashboard' => $this->dashboardData($currentTeam, $period),
-        ]);
     }
 
     /**

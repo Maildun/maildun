@@ -13,6 +13,7 @@ use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamInvitation;
 use App\Models\User;
+use Illuminate\Auth\Middleware\EnsureEmailIsVerified;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('guests are redirected to the login page', function () {
@@ -216,6 +217,31 @@ test('dashboard includes pending invitations for the authenticated user', functi
         ->where('pendingInvitations.0.team.name', 'Laravel Team')
         ->where('pendingInvitations.0.team.slug', $team->slug)
         ->missing('pendingInvitations.0.teamName'),
+    );
+});
+
+test('dashboard withholds invitations from an unverified address even without the verified middleware', function () {
+    $owner = User::factory()->create();
+    $unverifiedUser = User::factory()->unverified()->create(['email' => 'invited@example.com']);
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+
+    TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'email' => 'invited@example.com',
+        'invited_by' => $owner->id,
+    ]);
+
+    $response = $this
+        ->withoutMiddleware(EnsureEmailIsVerified::class)
+        ->actingAs($unverifiedUser)
+        ->get(route('dashboard', ['current_team' => $unverifiedUser->currentTeam]));
+
+    $response->assertOk();
+    $response->assertInertia(fn (Assert $page) => $page
+        ->component('dashboard')
+        ->has('pendingInvitations', 0),
     );
 });
 
