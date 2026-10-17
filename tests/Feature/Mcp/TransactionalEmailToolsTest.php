@@ -96,6 +96,25 @@ test('refuses to delete a transactional email an audience confirms signups with'
     $this->assertNotSoftDeleted($email);
 });
 
+test('keeps a block transactional email in the block editor after the workspace switches editors', function () {
+    $team = Team::factory()->create(['slug' => 'switched-transactional', 'email_editor' => EmailEditor::Html]);
+    $email = TransactionalEmail::factory()->for($team)->builder()->create();
+    $design = $email->design;
+
+    MaildunServer::tool(UpdateTransactionalEmailTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $email->uuid,
+        'subject' => 'Renamed after the switch',
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('transactional_email.editor', EmailEditor::Builder->value)
+        ->etc());
+
+    expect($email->refresh())
+        ->subject->toBe('Renamed after the switch')
+        ->editor->toBe(EmailEditor::Builder)
+        ->design->toBe($design);
+});
+
 test('keeps markdown source when transactional email is managed through MCP', function () {
     $team = Team::factory()->create([
         'slug' => 'markdown-transactional',

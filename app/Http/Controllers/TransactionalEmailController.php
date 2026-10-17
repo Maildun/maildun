@@ -120,10 +120,10 @@ class TransactionalEmailController extends Controller
                 'from_address' => $transactionalEmail->from_address,
                 'reply_to' => $transactionalEmail->reply_to,
                 'audience' => $transactionalEmail->audience?->uuid,
-                'editor' => $currentTeam->email_editor->value,
+                'editor' => $transactionalEmail->editor->value,
                 'status' => $transactionalEmail->status->value,
                 'html' => $transactionalEmail->html ?? '',
-                'source' => $transactionalEmail->source ?? ($currentTeam->email_editor->usesSource() ? ($transactionalEmail->html ?? '') : ''),
+                'source' => $transactionalEmail->source ?? ($transactionalEmail->editor->usesSource() ? ($transactionalEmail->html ?? '') : ''),
                 'design' => $transactionalEmail->design,
                 'variables' => $transactionalEmail->variables,
                 'slug_frozen' => $transactionalEmail->slugIsFrozen(),
@@ -150,7 +150,7 @@ class TransactionalEmailController extends Controller
                 ])
                 ->all(),
             'canManage' => Gate::allows('update', $transactionalEmail),
-            'mediaLibrary' => fn (): ?array => $currentTeam->email_editor === EmailEditor::Builder
+            'mediaLibrary' => fn (): ?array => $transactionalEmail->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)
                 : null,
         ]);
@@ -162,7 +162,8 @@ class TransactionalEmailController extends Controller
         TransactionalEmail $transactionalEmail,
         RenderTransactionalContent $renderer,
     ): RedirectResponse {
-        $editor = $currentTeam->email_editor;
+        // An email keeps the editor it was composed in; the team setting only picks it for new emails.
+        $editor = $transactionalEmail->editor;
         $detected = $renderer->detect(
             $request->string('subject')->value(),
             (string) $request->input('preheader', ''),
@@ -186,7 +187,6 @@ class TransactionalEmailController extends Controller
                 'source',
             ]),
             'audience_id' => $this->resolveAudienceId($currentTeam, $request->input('audience')),
-            'editor' => $editor,
             'source' => $editor->usesSource() ? $request->input('source') : null,
             'design' => $editor === EmailEditor::Builder ? $request->input('design') : null,
             'variables' => $renderer->merge($declared, $detected),
@@ -280,7 +280,7 @@ class TransactionalEmailController extends Controller
             'from_address' => $transactionalEmail->from_address,
             'reply_to' => $transactionalEmail->reply_to,
             'audience_id' => $transactionalEmail->audience_id,
-            'editor' => $currentTeam->email_editor,
+            'editor' => $transactionalEmail->editor,
             'html' => $transactionalEmail->html,
             'source' => $transactionalEmail->source,
             'design' => $transactionalEmail->design,

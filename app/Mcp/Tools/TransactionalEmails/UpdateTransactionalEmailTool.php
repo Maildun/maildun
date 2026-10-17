@@ -81,7 +81,10 @@ class UpdateTransactionalEmailTool extends Tool
             ]);
         }
 
-        if (array_key_exists('design', $changes) && $team->email_editor === EmailEditor::Builder && $changes['design'] === null) {
+        // An email keeps the editor it was composed in; the workspace setting only picks it for new emails.
+        $editor = $email->editor;
+
+        if (array_key_exists('design', $changes) && $editor === EmailEditor::Builder && $changes['design'] === null) {
             throw ValidationException::withMessages([
                 'design' => 'The block layout is missing.',
             ]);
@@ -95,11 +98,10 @@ class UpdateTransactionalEmailTool extends Tool
             ? $changes['variables']
             : $email->variables;
 
-        $changes['editor'] = $team->email_editor;
-        $changes['source'] = $team->email_editor->usesSource()
+        $changes['source'] = $editor->usesSource()
             ? ($changes['source'] ?? $email->source)
             : null;
-        $changes['design'] = $team->email_editor === EmailEditor::Builder
+        $changes['design'] = $editor === EmailEditor::Builder
             ? ($changes['design'] ?? $email->design)
             : null;
         $changes['variables'] = $this->renderer->merge(
@@ -135,7 +137,7 @@ class UpdateTransactionalEmailTool extends Tool
             'from_address' => $schema->string()->description('Authorized sender email.')->format('email')->max(255)->nullable(),
             'reply_to' => $schema->string()->description('Reply-to email.')->format('email')->max(255)->nullable(),
             'html' => $schema->string()->description('Rendered HTML content.')->max(2000000),
-            'source' => $schema->string()->description('Editable Markdown or plain-text source for source-based workspace editors.')->max(2000000),
+            'source' => $schema->string()->description('Editable Markdown or plain-text source for an email that uses a source-based editor.')->max(2000000),
             'design' => $schema->object()->description('@maildun/email-builder design document: {version: 1, settings, theme, root: ordered top-level block ids, blocks: map of id => {type, props, style?, children?}}.')->nullable(),
             'variables' => $this->variablesSchema($schema),
         ];

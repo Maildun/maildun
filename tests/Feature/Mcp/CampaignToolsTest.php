@@ -172,6 +172,25 @@ test('creates a block campaign that has no blocks yet', function () {
         ->toHaveKey('root', []);
 });
 
+test('keeps a block campaign in the block editor after the workspace switches editors', function () {
+    $team = Team::factory()->create(['slug' => 'switched-editor', 'email_editor' => EmailEditor::Html]);
+    $campaign = Email::factory()->for($team)->builder()->create();
+    $design = $campaign->design;
+
+    MaildunServer::tool(UpdateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $campaign->uuid,
+        'subject' => 'Renamed after the switch',
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('campaign.editor', EmailEditor::Builder->value)
+        ->etc());
+
+    expect($campaign->refresh())
+        ->subject->toBe('Renamed after the switch')
+        ->editor->toBe(EmailEditor::Builder)
+        ->design->toBe($design);
+});
+
 test('refuses to delete a campaign that is still sending', function () {
     $team = Team::factory()->create(['slug' => 'sending-workspace']);
     $campaign = Email::factory()->for($team)->create(['status' => EmailStatus::Sending]);

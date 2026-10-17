@@ -184,7 +184,7 @@ test('the compose page exposes the draft, audiences, and sender defaults', funct
     TeamSender::factory()->for($team)->pending()->create();
     TeamEmailIntegration::factory()->for($team)->smtp()->create();
     $segment = Segment::factory()->for($audience)->create(['name' => 'Engaged']);
-    $email = Email::factory()->for($team)->create([
+    $email = Email::factory()->for($team)->builder()->create([
         'audience_id' => $audience->id,
         'segment_id' => $segment->id,
     ]);
@@ -816,12 +816,38 @@ test('an email can be updated with recipients and html content', function () {
         ->and($email->segment_id)->toBe($segment->id);
 });
 
-test('saving an email uses the team editor and drops an incompatible block document', function () {
+test('a block draft keeps its editor and design after the team switches editors', function (EmailEditor $teamEditor) {
     $user = User::factory()->create();
     $team = $user->currentTeam;
+    $team->update(['email_editor' => EmailEditor::Builder]);
     $email = Email::factory()->for($team)->builder()->create();
+    $team->update(['email_editor' => $teamEditor]);
+    $design = EmailTemplate::builderDesign([
+        'block-1' => ['type' => 'text', 'props' => ['markdown' => 'Edited after the switch']],
+    ]);
 
-    expect($email->design)->not->toBeNull();
+    $this->actingAs($user)
+        ->get(route('emails.edit', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('email.editor', EmailEditor::Builder->value)
+            ->where('email.design', $email->design)
+            ->whereNot('mediaLibrary', null));
+
+    $this->actingAs($user)
+        ->patch(route('emails.update', [$team, $email]), [
+            'name' => $email->name,
+            'subject' => $email->subject,
+            'html' => '<p>Edited after the switch</p>',
+            'design' => $design,
+        ])
+        ->assertValid()
+        ->assertRedirect();
+
+    $email->refresh();
+
+    expect($email->editor)->toBe(EmailEditor::Builder)
+        ->and($email->design)->toBe($design)
+        ->and($email->html)->toBe('<p>Edited after the switch</p>');
 
     $this->actingAs($user)
         ->patch(route('emails.update', [$team, $email]), [
@@ -829,17 +855,20 @@ test('saving an email uses the team editor and drops an incompatible block docum
             'subject' => $email->subject,
             'html' => '<p>Hand written</p>',
         ])
-        ->assertRedirect();
+        ->assertInvalid('design');
 
-    expect($email->fresh()->editor)->toBe(EmailEditor::Html)
-        ->and($email->fresh()->design)->toBeNull();
-});
+    expect($email->refresh()->design)->toBe($design);
+})->with([
+    'html' => EmailEditor::Html,
+    'markdown' => EmailEditor::Markdown,
+    'plain text' => EmailEditor::PlainText,
+]);
 
 test('a markdown campaign keeps its source and rendered html', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $team->update(['email_editor' => EmailEditor::Markdown]);
-    $email = Email::factory()->for($team)->builder()->create();
+    $email = Email::factory()->for($team)->create(['editor' => EmailEditor::Markdown]);
 
     $this->actingAs($user)
         ->patch(route('emails.update', [$team, $email]), [
@@ -868,7 +897,7 @@ test('a plain text campaign uses its source as the text alternative', function (
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $team->update(['email_editor' => EmailEditor::PlainText]);
-    $email = Email::factory()->for($team)->create();
+    $email = Email::factory()->for($team)->create(['editor' => EmailEditor::PlainText]);
 
     $this->actingAs($user)
         ->patch(route('emails.update', [$team, $email]), [
@@ -890,7 +919,7 @@ test('a source-based draft saves before its body is written', function (EmailEdi
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $team->update(['email_editor' => $editor]);
-    $email = Email::factory()->for($team)->create();
+    $email = Email::factory()->for($team)->create(['editor' => $editor]);
 
     $this->actingAs($user)
         ->patch(route('emails.update', [$team, $email]), [
@@ -917,7 +946,7 @@ test('the block editor requires a document', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $team->update(['email_editor' => EmailEditor::Builder]);
-    $email = Email::factory()->for($team)->create();
+    $email = Email::factory()->for($team)->builder()->create();
 
     $this->actingAs($user)
         ->patch(route('emails.update', [$team, $email]), [
@@ -932,7 +961,7 @@ test('a block email can be saved with every block removed but not without a root
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $team->update(['email_editor' => EmailEditor::Builder]);
-    $email = Email::factory()->for($team)->create();
+    $email = Email::factory()->for($team)->builder()->create();
     $payload = [
         'name' => $email->name,
         'subject' => $email->subject,
@@ -955,7 +984,7 @@ test('a block email saves an image whose alt text is blank', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $team->update(['email_editor' => EmailEditor::Builder]);
-    $email = Email::factory()->for($team)->create();
+    $email = Email::factory()->for($team)->builder()->create();
 
     $this->actingAs($user)
         ->patch(route('emails.update', [$team, $email]), [
