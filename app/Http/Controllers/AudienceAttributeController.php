@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\SaveAudienceAttributeRequest;
+use App\Jobs\MoveAudienceAttributeValues;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Team;
@@ -23,7 +24,12 @@ class AudienceAttributeController extends Controller
 
     public function update(SaveAudienceAttributeRequest $request, Team $currentTeam, Audience $audience, AudienceAttribute $audienceAttribute): RedirectResponse
     {
+        $previousKey = $audienceAttribute->key;
         $audienceAttribute->update($request->validated());
+
+        if ($audienceAttribute->key !== $previousKey) {
+            MoveAudienceAttributeValues::dispatch($audience->id, $previousKey, $audienceAttribute->key);
+        }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Attribute updated.')]);
 
@@ -34,6 +40,7 @@ class AudienceAttributeController extends Controller
     {
         Gate::authorize('delete', $audienceAttribute);
         $audienceAttribute->delete();
+        MoveAudienceAttributeValues::dispatch($audience->id, $audienceAttribute->key);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Attribute deleted.')]);
 
