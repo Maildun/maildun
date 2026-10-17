@@ -2,12 +2,16 @@
 
 namespace App\Actions\Automations;
 
+use App\Actions\Emails\BuildTrackedEmailHtml;
+use App\Actions\Emails\ConvertHtmlToText;
+use App\Actions\Emails\InsertPreheader;
 use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\AutomationAction;
 use App\Enums\AutomationCondition;
 use App\Enums\AutomationDelayUnit;
 use App\Enums\AutomationRunStatus;
+use App\Enums\AutomationStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
@@ -34,6 +38,9 @@ class AdvanceAutomationRun
         private RecordEmailAddressHealth $emailHealth,
         private BuildAutomationMergeData $mergeData,
         private DispatchTaggedTriggers $dispatchTaggedTriggers,
+        private InsertPreheader $insertPreheader,
+        private BuildTrackedEmailHtml $trackedHtml,
+        private ConvertHtmlToText $htmlToText,
     ) {}
 
     public function handle(AutomationRun $run, ?string $nodeId = null): void
@@ -49,6 +56,12 @@ class AdvanceAutomationRun
         if ($run->automation()->withTrashed()->first()?->trashed()) {
             $this->cancel($run, __('The automation was deleted.'));
 
+            return;
+        }
+
+        // Pausing holds every open branch where it is. The step stays pending
+        // or waiting, and activating the automation dispatches it again.
+        if ($run->automation->status !== AutomationStatus::Active) {
             return;
         }
 
@@ -182,7 +195,6 @@ class AdvanceAutomationRun
         if ($email === null) {
             throw new \RuntimeException(__('The transactional email is no longer available.'));
         }
-
         if ($this->emailHealth->isSuppressed($run->automation->team, $subscriber->email)) {
             return [
                 'status' => 'skipped',
@@ -207,6 +219,16 @@ class AdvanceAutomationRun
 
         // After the delivery exists: the browser copy link is keyed to it.
         $merge = $this->mergeData->handle($subscriber, $run->context, $delivery);
+        $html = $this->insertPreheader->handle(
+            $this->renderer->html($email->html ?? '', $merge),
+            $this->renderer->text($email->preheader ?? '', $merge),
+        );
+
+        // Automation mail is marketing mail, so it gets the campaign's visible
+        // opt-out unless the author already placed {{ unsubscribe_url }}.
+        if (! $this->trackedHtml->authorPlacedUnsubscribe($email->html ?? '')) {
+            $html = $this->trackedHtml->withUnsubscribeFooter($html, (string) $merge['unsubscribe_url']);
+        }
 
         try {
             $sentMessage = $this->teamMailer->sendResolved(
@@ -216,8 +238,9 @@ class AdvanceAutomationRun
                     $email,
                     $subscriber,
                     $this->renderer->text($email->subject, $merge),
-                    $this->renderer->html($email->html ?? '', $merge),
+                    $html,
                     $delivery,
+                    $this->htmlToText->handle($html),
                 ),
                 $email->resolvedFromAddress(),
             );

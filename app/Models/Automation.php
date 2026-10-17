@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\AutomationAction;
+use App\Enums\AutomationCondition;
+use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationStatus;
 use App\Enums\AutomationTrigger;
 use Database\Factories\AutomationFactory;
@@ -113,6 +116,95 @@ class Automation extends Model
     public function runs(): HasMany
     {
         return $this->hasMany(AutomationRun::class);
+    }
+
+    /**
+     * For each given tag or transactional email uuid, the names of the team's
+     * automations that would break without it: a step of the saved graph uses
+     * it, or a run still in flight carries a graph snapshot that does.
+     *
+     * @param  list<string>  $uuids
+     * @return array<string, list<string>>
+     */
+    public static function namesUsing(Team $team, array $uuids): array
+    {
+        $automations = static::query()
+            ->where('team_id', $team->id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'graph']);
+        $names = $automations->pluck('name', 'id');
+        $using = [];
+
+        $collect = function (int $automationId, ?array $graph) use ($uuids, $names, &$using): void {
+            foreach (array_intersect(static::stepReferences($graph), $uuids) as $uuid) {
+                $using[$uuid][$automationId] = $names[$automationId];
+            }
+        };
+
+        foreach ($automations as $automation) {
+            $collect($automation->id, $automation->graph);
+        }
+
+        AutomationRun::query()
+            ->whereIn('automation_id', $automations->modelKeys())
+            ->whereIn('status', AutomationRunStatus::open())
+            ->select(['id', 'automation_id', 'graph'])
+            ->chunkById(200, function ($runs) use ($collect): void {
+                foreach ($runs as $run) {
+                    $collect($run->automation_id, $run->graph);
+                }
+            });
+
+        return array_map(fn (array $byAutomation): array => array_values($byAutomation), $using);
+    }
+
+    /**
+     * The tag and transactional email uuids a graph's steps actually use.
+     * Keys left behind on a step whose kind changed are ignored.
+     *
+     * @param  array<string, mixed>|null  $graph
+     * @return list<string>
+     */
+    public static function stepReferences(?array $graph): array
+    {
+        $uuids = [];
+
+        foreach ($graph['nodes'] ?? [] as $node) {
+            $data = is_array($node['data'] ?? null) ? $node['data'] : [];
+            $kind = $data['kind'] ?? null;
+
+            $uuid = match (true) {
+                ($node['type'] ?? null) === 'action' && $kind === AutomationAction::SendEmail->value => $data['transactional_email_uuid'] ?? null,
+                ($node['type'] ?? null) === 'action' && in_array($kind, [AutomationAction::AddTag->value, AutomationAction::RemoveTag->value], true),
+                ($node['type'] ?? null) === 'condition' && $kind === AutomationCondition::HasTag->value,
+                ($node['type'] ?? null) === 'trigger' && $kind === AutomationTrigger::Tagged->value => $data['tag_uuid'] ?? null,
+                default => null,
+            };
+
+            if (is_string($uuid) && $uuid !== '') {
+                $uuids[] = $uuid;
+            }
+        }
+
+        return array_values(array_unique($uuids));
+    }
+
+    /**
+     * Why the given tag or email cannot be deleted or unpublished yet, or null.
+     *
+     * @param  list<string>  $names
+     */
+    public static function referenceBlockReason(array $names, string $thing): ?string
+    {
+        if ($names === []) {
+            return null;
+        }
+
+        return trans_choice(
+            'The :automations automation uses this :thing. Remove it from that automation first.|The :automations automations use this :thing. Remove it from those automations first.',
+            count($names),
+            ['automations' => collect($names)->join(', ', ' and '), 'thing' => $thing],
+        );
     }
 
     public function isActive(): bool

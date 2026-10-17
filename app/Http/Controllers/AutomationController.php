@@ -14,6 +14,7 @@ use App\Enums\SubscriberSource;
 use App\Enums\TransactionalEmailStatus;
 use App\Http\Requests\StoreAutomationRequest;
 use App\Http\Requests\UpdateAutomationRequest;
+use App\Jobs\ProcessAutomationRun;
 use App\Models\Automation;
 use App\Models\AutomationRun;
 use App\Models\AutomationRunStep;
@@ -193,6 +194,17 @@ class AutomationController extends Controller
         $automation->status = AutomationStatus::Active;
         $automation->save();
 
+        // Branches held while the automation was paused carry on from where
+        // they stopped; delays that are not due yet keep their own wake-up job.
+        AutomationRunStep::query()
+            ->dueForDispatch()
+            ->whereHas('run', fn ($query) => $query->where('automation_id', $automation->id))
+            ->chunkById(100, function ($steps): void {
+                foreach ($steps as $step) {
+                    ProcessAutomationRun::dispatch($step->automation_run_id, $step->node_id);
+                }
+            });
+
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Automation activated.')]);
 
         return back();
@@ -210,7 +222,10 @@ class AutomationController extends Controller
 
         $automation->update(['status' => AutomationStatus::Paused]);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Automation paused.')]);
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Automation paused. Subscribers already in it wait at their current step until you activate it again.'),
+        ]);
 
         return back();
     }

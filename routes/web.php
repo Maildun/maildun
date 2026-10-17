@@ -67,6 +67,11 @@ Route::post('install/system', [InstallationController::class, 'testSystem'])
 
 Route::get('/', HomeController::class)->middleware('auth')->name('home');
 
+// Fortify falls back to its `home` path (/dashboard) when nothing more specific
+// is intended, for example on the verification notice of a verified user. The
+// real dashboard lives under the workspace slug, so send them through home.
+Route::redirect('dashboard', '/');
+
 Route::get('avatars/{style}/{seed}.svg', AvatarController::class)
     ->whereIn('style', DiceBearAvatarGenerator::STYLES)
     ->where('seed', '[A-Za-z0-9-]{1,36}')
@@ -358,7 +363,9 @@ Route::prefix('{current_team}')
             ->name('email_templates.duplicate');
     });
 
-Route::middleware(['auth'])->group(function () {
+// Invitations are matched on the account's email address, so only a proven
+// owner of that address may answer one.
+Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('invitations/{invitation}/accept', [TeamInvitationController::class, 'accept'])->name('invitations.accept');
     Route::delete('invitations/{invitation}', [TeamInvitationController::class, 'decline'])->name('invitations.decline');
 });

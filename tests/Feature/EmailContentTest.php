@@ -8,6 +8,7 @@ use App\Contracts\DnsResolver;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberLanguage;
 use App\Jobs\PrepareEmailSendChunk;
+use App\Jobs\SendCampaignTestEmail;
 use App\Mail\ComposedEmailTest;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
@@ -24,6 +25,7 @@ use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\ValidationException;
@@ -403,6 +405,117 @@ test('the link checker retries with GET when a server refuses HEAD', function ()
         ->assertJsonCount(0, 'broken');
 
     Http::assertSentCount(2);
+});
+
+test('a send opens the body with the personalised preheader', function () {
+    $email = Email::factory()->create([
+        'preheader' => 'Fresh picks for {{ first_name }}',
+        'html' => '<html><body><p>Hello</p></body></html>',
+    ]);
+    $delivery = EmailDelivery::factory()->for($email)->create(['merge_data' => ['first_name' => 'Ada']]);
+
+    $html = app(BuildTrackedEmailHtml::class)->build($delivery);
+
+    expect($html)
+        ->toStartWith('<html><body><div style="display:none')
+        ->toContain('Fresh picks for Ada')
+        ->and(strpos($html, 'Fresh picks for Ada'))->toBeLessThan(strpos($html, '<p>Hello</p>'));
+});
+
+test('a send without a preheader adds no hidden preview text', function () {
+    $email = Email::factory()->create([
+        'preheader' => null,
+        'html' => '<html><body><p>Hello</p></body></html>',
+    ]);
+    $delivery = EmailDelivery::factory()->for($email)->create();
+
+    expect(app(BuildTrackedEmailHtml::class)->build($delivery))
+        ->toStartWith('<html><body><p>Hello</p>')
+        ->not->toContain('mso-hide:all');
+});
+
+test('a generated text part keeps link targets and leaves out styles and hidden preview text', function () {
+    $email = Email::factory()->make([
+        'plain_text' => null,
+        'html' => '<!DOCTYPE html><html><head><title>Weekly</title><style>p { color: red; }</style></head>'
+            .'<body><div style="display:none;max-height:0">Hidden preview</div>'
+            .'<p>Big news &amp; more</p><p><a href="https://example.com/news">Read the story</a></p>'
+            .'<p><a href="https://example.com">https://example.com</a> <a href="#top">Top</a></p></body></html>',
+    ]);
+
+    $text = app(RenderCampaignContent::class)->plainText($email, []);
+
+    expect($text)->toBe("Big news & more\nRead the story (https://example.com/news)\nhttps://example.com Top");
+});
+
+test('a generated text part breaks lines at line breaks and builder blocks', function () {
+    $email = Email::factory()->make([
+        'plain_text' => null,
+        'html' => '<table><tr><td>First line<br>Second line<br />Third</td></tr></table>'
+            .'<table><tr><td><a href="https://example.com/banner"><img src="b.png" alt=""></a></td></tr></table>'
+            .'<table><tr><td>Closing words</td></tr></table>',
+    ]);
+
+    expect(app(RenderCampaignContent::class)->plainText($email, []))
+        ->toBe("First line\nSecond line\nThird\n\nhttps://example.com/banner\n\nClosing words");
+});
+
+test('a preheader holding the unsubscribe tag does not stand in for the visible footer', function () {
+    $email = Email::factory()->create([
+        'preheader' => 'Leave any time: {{ unsubscribe_url }}',
+        'html' => '<html><body><p>Hello</p></body></html>',
+    ]);
+    $delivery = EmailDelivery::factory()->for($email)->create();
+
+    expect(app(BuildTrackedEmailHtml::class)->build($delivery))->toContain('>Unsubscribe</a>');
+});
+
+test('a document without a body tag gets its preheader after the head', function () {
+    $email = Email::factory()->create([
+        'preheader' => 'Inside the document',
+        'html' => '<!DOCTYPE html><html><head><title>T</title></head><p>Hello</p></html>',
+    ]);
+    $delivery = EmailDelivery::factory()->for($email)->create();
+
+    expect(app(BuildTrackedEmailHtml::class)->build($delivery))
+        ->toStartWith('<!DOCTYPE html><html><head><title>T</title></head><div style="display:none');
+});
+
+test('a campaign test send fills the text part links with pages that opt nobody out', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'html' => '<p>Hello</p>',
+        'plain_text' => 'Hello. Browser copy: {{ web_view_url }}',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.test', [$user->currentTeam, $email]), ['to' => 'reviewer@example.com'])
+        ->assertRedirect();
+
+    $expected = 'Hello. Browser copy: '.route('public.web_view.test')."\n\nUnsubscribe: ".route('public.unsubscribe.test');
+
+    Queue::assertPushed(SendCampaignTestEmail::class, fn (SendCampaignTestEmail $job): bool => $job->plainText === $expected);
+});
+
+test('a campaign test send carries the preheader', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'preheader' => 'Sneak peek inside',
+        'html' => '<p>Hello</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.test', [$user->currentTeam, $email]), ['to' => 'reviewer@example.com'])
+        ->assertRedirect();
+
+    Queue::assertPushed(SendCampaignTestEmail::class, fn (SendCampaignTestEmail $job): bool => str_starts_with($job->html, '<div style="display:none')
+        && str_contains($job->html, 'Sneak peek inside'));
 });
 
 test('a send replaces the subscribe tag with the published form url', function () {

@@ -138,7 +138,7 @@ class Subscriber extends Model
     /**
      * The subscribed people a campaign may actually mail. Double opt-in
      * signups who never confirmed (subscribed_at is null) are skipped, as is
-     * anyone the workspace suppressed after a permanent bounce or complaint.
+     * anyone the workspace suppressed after bounces or a complaint.
      *
      * @param  Builder<$this>  $query
      */

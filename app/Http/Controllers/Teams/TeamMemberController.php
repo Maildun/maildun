@@ -122,10 +122,14 @@ class TeamMemberController extends Controller
     /**
      * Generate a new password for the specified team member.
      */
-    public function generatePassword(Team $team, User $user): RedirectResponse
+    public function generatePassword(Request $request, Team $team, User $user): RedirectResponse
     {
         Gate::authorize('updateMember', $team);
         $this->ensureMemberPasswordCanBeManaged($team, $user);
+
+        // A new password signs out every session started with the old one,
+        // including the one asking, so the flashed password would be lost.
+        abort_if($user->is($request->user()), 403, __('Change your own password from Security settings.'));
 
         $password = $this->newPassword();
 

@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\DB;
 
 class ConfirmSubscriberSubscription
 {
+    public function __construct(private NotifyAudienceOfSubscriptionChange $notifyAudience) {}
+
     public function handle(Subscriber $subscriber): Subscriber
     {
         $confirmed = false;
@@ -34,6 +36,7 @@ class ConfirmSubscriberSubscription
 
         if ($confirmed) {
             event(new SubscriberLifecycleOccurred(AutomationTrigger::Subscribed, $subscriber));
+            $this->notifyAudience->handle($subscriber, subscribed: true);
         }
 
         return $subscriber;

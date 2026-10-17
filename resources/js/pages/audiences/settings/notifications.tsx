@@ -73,8 +73,11 @@ export default function AudienceNotificationSettings({ audience }: Props) {
                                         )}
                                     />
                                     <FieldDescription>
-                                        Subscribe and unsubscribe alerts will
-                                        use this address.
+                                        Sent when someone subscribes through a
+                                        form or the API, confirms their
+                                        subscription, or unsubscribes. Imports
+                                        and changes your team makes in the app
+                                        don&apos;t send one.
                                     </FieldDescription>
                                     <FieldError>
                                         {errors.notification_email}

@@ -38,7 +38,7 @@ class SendTransactionalEmailDelivery implements ShouldQueue
     {
         $delivery = TransactionalEmailDelivery::query()->with('team')->findOrFail($this->deliveryId);
 
-        if (app(RecordEmailAddressHealth::class)->isSuppressed($delivery->team, $delivery->to_address)) {
+        if (app(RecordEmailAddressHealth::class)->isSuppressed($delivery->team, $delivery->to_address, transactional: true)) {
             TransactionalEmailDelivery::query()
                 ->whereKey($delivery->id)
                 ->where('status', EmailDeliveryStatus::Queued)

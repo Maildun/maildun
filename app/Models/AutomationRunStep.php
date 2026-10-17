@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Enums\AutomationRunStatus;
 use Database\Factories\AutomationRunStepFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -54,6 +56,26 @@ class AutomationRunStep extends Model
     public function run(): BelongsTo
     {
         return $this->belongsTo(AutomationRun::class, 'automation_run_id');
+    }
+
+    /**
+     * Branches of an open run that a worker should pick up now: ones waiting
+     * for their first attempt, and delays whose time has come.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeDueForDispatch(Builder $query): void
+    {
+        $query
+            ->whereHas('run', fn (Builder $runs) => $runs->whereIn('status', AutomationRunStatus::open()))
+            ->where(function (Builder $steps): void {
+                $steps->where('status', 'pending')
+                    ->orWhere(function (Builder $steps): void {
+                        $steps->where('status', 'waiting')
+                            ->whereNotNull('scheduled_at')
+                            ->where('scheduled_at', '<=', now());
+                    });
+            });
     }
 
     /**

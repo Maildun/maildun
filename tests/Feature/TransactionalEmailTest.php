@@ -5,6 +5,7 @@ use App\Enums\TeamRole;
 use App\Enums\TransactionalEmailStatus;
 use App\Jobs\SendTransactionalEmailTest;
 use App\Models\Audience;
+use App\Models\Automation;
 use App\Models\EmailTemplate;
 use App\Models\Media;
 use App\Models\Team;
@@ -296,9 +297,10 @@ test('a block transactional email can be saved with every block removed', functi
     expect($email->fresh()->design)->toHaveKey('root', []);
 });
 
-test('saving uses the team editor and drops an incompatible block document', function () {
+test('saving from another editor uses the team editor and keeps the block document', function () {
     $user = User::factory()->create();
     $email = TransactionalEmail::factory()->for($user->currentTeam)->builder()->create();
+    $design = $email->design;
 
     $this->actingAs($user)
         ->patch(route('transactional_emails.update', [$user->currentTeam, $email]), [
@@ -306,11 +308,13 @@ test('saving uses the team editor and drops an incompatible block document', fun
             'slug' => $email->slug,
             'subject' => $email->subject,
             'html' => '<p>Hand written</p>',
+            'design' => ['root' => []],
         ])
         ->assertRedirect();
 
     expect($email->fresh()->editor)->toBe(EmailEditor::Html)
-        ->and($email->fresh()->design)->toBeNull();
+        ->and($email->fresh()->html)->toBe('<p>Hand written</p>')
+        ->and($email->fresh()->design)->toEqual($design);
 });
 
 test('a plain text transactional email keeps its source and rendered html', function () {
@@ -385,6 +389,31 @@ test('an email an audience confirms signups with cannot be unpublished or delete
     'delete' => ['delete', 'transactional_emails.destroy'],
 ]);
 
+test('an email an automation sends cannot be unpublished or deleted', function (string $method, string $routeName) {
+    $user = User::factory()->create();
+    $email = TransactionalEmail::factory()->for($user->currentTeam)->published()->create();
+    Automation::factory()->for($user->currentTeam)->create([
+        'name' => 'Welcome series',
+        'graph' => [
+            'nodes' => [
+                ['id' => 'trigger', 'type' => 'trigger', 'data' => ['kind' => 'subscriber.subscribed']],
+                ['id' => 'send', 'type' => 'action', 'data' => ['kind' => 'send_email', 'transactional_email_uuid' => $email->uuid]],
+            ],
+            'edges' => [['source' => 'trigger', 'target' => 'send']],
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->{$method}(route($routeName, [$user->currentTeam, $email]))
+        ->assertInvalid(['email' => 'The Welcome series automation uses this email. Remove it from that automation first.']);
+
+    expect($email->fresh()->status)->toBe(TransactionalEmailStatus::Published);
+    $this->assertNotSoftDeleted($email);
+})->with([
+    'unpublish' => ['post', 'transactional_emails.unpublish'],
+    'delete' => ['delete', 'transactional_emails.destroy'],
+]);
+
 test('an email stays unpublishable when its audience turned double opt-in off', function () {
     $user = User::factory()->create();
     $email = TransactionalEmail::factory()->for($user->currentTeam)->published()->create();
@@ -442,6 +471,7 @@ test('a test send queues rendered merge tags', function () {
         'from_name' => null,
         'from_address' => null,
         'subject' => 'Hi {{ first_name }}',
+        'preheader' => null,
         'html' => '<p>Hello {{ first_name }}</p>',
     ]);
 
@@ -460,12 +490,35 @@ test('a test send queues rendered merge tags', function () {
     expect($email->fresh()->last_tested_at)->toBeNull();
 });
 
+test('a test send carries the rendered preheader as hidden preview text', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = TransactionalEmail::factory()->for($team)->create([
+        'preheader' => 'Your receipt, {{ first_name }}',
+        'html' => '<p>Hello</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('transactional_emails.test', [$team, $email]), [
+            'to' => 'reviewer@example.com',
+            'data' => ['first_name' => 'Ada'],
+        ])
+        ->assertRedirect();
+
+    Queue::assertPushed(SendTransactionalEmailTest::class, fn (SendTransactionalEmailTest $job): bool => str_starts_with($job->html, '<div style="display:none')
+        && str_contains($job->html, 'Your receipt, Ada')
+        && str_ends_with($job->html, '<p>Hello</p>'));
+});
+
 test('a test send links the unsubscribe tag to a page that opts nobody out', function () {
     Queue::fake();
 
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $email = TransactionalEmail::factory()->for($team)->create([
+        'preheader' => null,
         'html' => '<a href="{{ unsubscribe_url }}">Unsubscribe</a>',
     ]);
 

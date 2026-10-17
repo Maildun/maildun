@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\DB;
 
 class UnsubscribeViaApi
 {
+    public function __construct(private NotifyAudienceOfSubscriptionChange $notifyAudience) {}
+
     public function handle(Audience $audience, string $email): ?Subscriber
     {
         $changed = false;
@@ -36,6 +38,7 @@ class UnsubscribeViaApi
 
         if ($changed && $subscriber instanceof Subscriber) {
             event(new SubscriberLifecycleOccurred(AutomationTrigger::Unsubscribed, $subscriber));
+            $this->notifyAudience->handle($subscriber, subscribed: false);
         }
 
         return $subscriber;

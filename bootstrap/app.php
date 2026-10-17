@@ -3,6 +3,7 @@
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PreserveDesignEmptyStrings;
+use App\Http\Middleware\RequireVerifiedEmailForOAuth;
 use App\Http\Middleware\SetTeamUrlDefaults;
 use App\Http\Middleware\ValidateInboxSignature;
 use Illuminate\Foundation\Application;
@@ -11,6 +12,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Illuminate\Session\Middleware\AuthenticateSession;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
@@ -46,6 +48,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->web(append: [
+            // Signs out every other session once the account password changes:
+            // a password update, a reset link, or an admin-generated password.
+            AuthenticateSession::class,
+            RequireVerifiedEmailForOAuth::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,

@@ -82,8 +82,10 @@ class UpdateCampaignTool extends Tool
 
         unset($changes['audience_uuid'], $changes['segment_uuid']);
 
-        if (array_key_exists('design', $changes) && $team->email_editor !== EmailEditor::Builder) {
-            $changes['design'] = null;
+        // Only the builder edits the block document; any other editor leaves
+        // the one the draft already has in place.
+        if ($team->email_editor !== EmailEditor::Builder) {
+            unset($changes['design']);
         }
 
         // A draft body may be cleared, so only an omitted source keeps the current one.

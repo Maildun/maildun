@@ -12,6 +12,8 @@ class RenderCampaignContent
 {
     public const string PATTERN = '/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/';
 
+    public function __construct(private readonly ConvertHtmlToText $htmlToText = new ConvertHtmlToText) {}
+
     /** @return array<string, mixed> */
     public function mergeData(Subscriber $subscriber, CarbonInterface $date): array
     {
@@ -79,12 +81,24 @@ class RenderCampaignContent
         return $this->replace($content, $data, escape: false);
     }
 
-    /** @param array<string, mixed> $data */
+    /**
+     * The text part of a send. Pass the delivery's link data so
+     * {{ unsubscribe_url }} and the other link tags resolve; when the author
+     * did not place the opt-out, it is appended the way the HTML footer is.
+     *
+     * @param  array<string, mixed>  $data
+     */
     public function plainText(Email $email, array $data): string
     {
         $content = filled($email->plain_text)
             ? (string) $email->plain_text
-            : $this->htmlToText($email->html ?? '');
+            : $this->htmlToText->handle($email->html ?? '');
+
+        $content = $this->decodeEncodedTags($content);
+
+        if (filled($data['unsubscribe_url'] ?? null) && preg_match(BuildTrackedEmailHtml::UNSUBSCRIBE_TAG, $content) !== 1) {
+            $content = rtrim($content)."\n\n".__('Unsubscribe').': {{ unsubscribe_url }}';
+        }
 
         return $this->text($content, $data);
     }
@@ -93,7 +107,11 @@ class RenderCampaignContent
     private function replace(string $content, array $data, bool $escape): string
     {
         $content = $this->decodeEncodedTags($content);
-        $content = $this->hydrateMarkdownMergeLinks($content);
+
+        // Only markup gets anchors; a text part keeps the author's link text.
+        if ($escape) {
+            $content = $this->hydrateMarkdownMergeLinks($content);
+        }
 
         return (string) preg_replace_callback(self::PATTERN, function (array $matches) use ($data, $escape): string {
             $key = $matches[1];
@@ -134,17 +152,5 @@ class RenderCampaignContent
             '{{ $1 }}',
             $content,
         );
-    }
-
-    private function htmlToText(string $html): string
-    {
-        $withLineBreaks = preg_replace('/<(br\s*\/?>|\/(p|div|li|h[1-6]))>/i', "\n", $html) ?? $html;
-        $text = html_entity_decode(strip_tags($withLineBreaks), ENT_QUOTES | ENT_HTML5);
-
-        return Str::of($text)
-            ->replaceMatches('/[ \t]+\n/', "\n")
-            ->replaceMatches('/\n{3,}/', "\n\n")
-            ->trim()
-            ->toString();
     }
 }

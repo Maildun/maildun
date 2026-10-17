@@ -7,6 +7,7 @@ use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Models\Audience;
 use App\Models\Email;
+use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use App\Models\Team;
@@ -121,6 +122,23 @@ test('dashboard includes team scoped activity metrics', function () {
         ->where('dashboard.recentCampaigns.0.clickRate', 50)
         ->where('canManageCampaigns', true),
     );
+});
+
+test('dashboard counts each mailable person once', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $news = Audience::factory()->for($team)->create();
+    $offers = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($news)->create(['email' => 'both@example.com']);
+    Subscriber::factory()->for($offers)->create(['email' => 'both@example.com']);
+    Subscriber::factory()->for($news)->create(['email' => 'pending@example.com', 'subscribed_at' => null]);
+    Subscriber::factory()->for($news)->create(['email' => 'bounced@example.com']);
+    Subscriber::factory()->for($news)->create(['email' => 'left@example.com', 'status' => SubscriberStatus::Unsubscribed]);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => 'bounced@example.com']);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page->where('dashboard.overview.subscribers', 1));
 });
 
 test('dashboard does not report a delivery rate for SMTP-only sends', function () {

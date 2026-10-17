@@ -360,6 +360,24 @@ test('member password actions require the target to belong to the selected team'
     'send reset link' => 'teams.members.send-password-reset-link',
 ]);
 
+test('admins cannot generate a new password for themselves', function () {
+    $owner = User::factory()->create();
+    $admin = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
+    $previousPassword = $admin->password;
+
+    $this
+        ->actingAs($admin)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('teams.members.generate-password', [$team, $admin]))
+        ->assertForbidden();
+
+    expect($admin->fresh()->password)->toBe($previousPassword);
+});
+
 test('team owners cannot manage their own passwords from member actions', function (string $routeName) {
     $owner = User::factory()->create();
     $team = Team::factory()->create();

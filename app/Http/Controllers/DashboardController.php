@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailProvider;
 use App\Enums\EmailStatus;
-use App\Enums\SubscriberStatus;
 use App\Models\Email;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
@@ -126,9 +125,12 @@ class DashboardController extends Controller
         return [
             'period' => $period,
             'overview' => [
+                // The people a campaign could mail today: confirmed, not
+                // suppressed, and counted once however many audiences hold them.
                 'subscribers' => (clone $subscribers)
-                    ->where('status', SubscriberStatus::Subscribed)
-                    ->count(),
+                    ->sendableFor($team)
+                    ->distinct()
+                    ->count('subscribers.email'),
                 'newSubscribers' => (clone $subscribers)
                     ->whereNotNull('subscribed_at')
                     ->where('subscribed_at', '>=', $periodStart)

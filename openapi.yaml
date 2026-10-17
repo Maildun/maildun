@@ -121,6 +121,62 @@ paths:
                                     value:
                                         message: The From address for this email is not authorized for the connected email provider.
 
+    /v1/transactional-deliveries/{delivery}:
+        get:
+            operationId: getTransactionalDelivery
+            tags:
+                - Transactional email
+            summary: Check a transactional delivery
+            description: |
+                Returns where one queued message stands. Only deliveries from the
+                authenticated workspace are visible, and the rendered body is never
+                returned.
+
+                `status` moves from `queued` through `sending` to `sent`. With Amazon SES
+                feedback connected it then becomes `delivered`, `delayed`, `bounced`,
+                `complained`, or `rejected`. A message to an address the workspace has
+                suppressed goes straight from `queued` to `rejected` without being sent.
+                `failed` means Maildun could not hand the message to the provider.
+                `failure_reason` says why a message was `failed` or `rejected`.
+            security:
+                - TeamApiKey: []
+            parameters:
+                - $ref: '#/components/parameters/DeliveryUuid'
+            responses:
+                '200':
+                    description: The delivery's current status.
+                    headers:
+                        X-RateLimit-Limit:
+                            $ref: '#/components/headers/RateLimitLimit'
+                        X-RateLimit-Remaining:
+                            $ref: '#/components/headers/RateLimitRemaining'
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TransactionalDeliveryStatusResponse'
+                            example:
+                                data:
+                                    id: e7a9a935-2651-4d97-a815-05de77825dbf
+                                    status: delivered
+                                    transactional_email: order-receipt
+                                    to: ada@example.com
+                                    failure_reason: null
+                                    created_at: '2026-08-23T03:00:00.000000Z'
+                                    sent_at: '2026-08-23T03:00:02.000000Z'
+                '401':
+                    $ref: '#/components/responses/Unauthenticated'
+                '404':
+                    description: No delivery with this id exists in the authenticated workspace.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                message: No message with this id exists in this workspace.
+                                code: delivery_not_found
+                '429':
+                    $ref: '#/components/responses/TooManyRequests'
+
     /v1/audiences/{audience}/subscribers:
         parameters:
             - $ref: '#/components/parameters/AudienceUuid'
@@ -359,6 +415,15 @@ components:
                 type: string
                 minLength: 1
             example: order-receipt
+        DeliveryUuid:
+            name: delivery
+            in: path
+            required: true
+            description: The delivery `id` returned when the transactional email was sent.
+            schema:
+                type: string
+                format: uuid
+            example: e7a9a935-2651-4d97-a815-05de77825dbf
         AudienceUuid:
             name: audience
             in: path
@@ -527,6 +592,52 @@ components:
                         - 'null'
                     format: date-time
 
+        TransactionalDeliveryStatusResponse:
+            type: object
+            additionalProperties: false
+            required:
+                - data
+            properties:
+                data:
+                    type: object
+                    additionalProperties: false
+                    required:
+                        - id
+                        - status
+                        - transactional_email
+                        - to
+                        - failure_reason
+                        - created_at
+                        - sent_at
+                    properties:
+                        id:
+                            type: string
+                            format: uuid
+                        status:
+                            $ref: '#/components/schemas/EmailDeliveryStatus'
+                        transactional_email:
+                            type: string
+                            description: The transactional email slug.
+                        to:
+                            type: string
+                            format: email
+                        failure_reason:
+                            type:
+                                - string
+                                - 'null'
+                            description: Why the message was failed or rejected.
+                        created_at:
+                            type:
+                                - string
+                                - 'null'
+                            format: date-time
+                        sent_at:
+                            type:
+                                - string
+                                - 'null'
+                            format: date-time
+                            description: When the provider accepted the message.
+
         EmailDeliveryStatus:
             type: string
             enum:
@@ -574,6 +685,15 @@ components:
                         - 'null'
                     maxLength: 1000
                     description: Defaults to `Marketing consent confirmed via API.` when omitted.
+                consent_ip:
+                    type:
+                        - string
+                        - 'null'
+                    description: |
+                        IPv4 or IPv6 address of the person who gave consent, kept on their
+                        consent record. When omitted, Maildun records the IP address of the API
+                        request instead.
+                    example: 203.0.113.24
                 attributes:
                     type:
                         - object

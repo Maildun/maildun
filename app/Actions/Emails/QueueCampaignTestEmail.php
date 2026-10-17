@@ -15,6 +15,7 @@ class QueueCampaignTestEmail
         private BuildTrackedEmailHtml $trackedHtml,
         private RenderCampaignContent $renderer,
         private TeamMailer $teamMailer,
+        private InsertPreheader $insertPreheader,
     ) {}
 
     /**
@@ -36,11 +37,16 @@ class QueueCampaignTestEmail
             $email->id,
             $recipient,
             $this->renderer->text($email->subject, $mergeData),
-            $this->trackedHtml->prepareTestHtml(
-                $email,
-                $this->renderer->html($email->html ?? '', $mergeData),
+            // The preheader goes in after the link tags and footer are settled,
+            // so a tag in the hidden preview line never stands in for the footer.
+            $this->insertPreheader->handle(
+                $this->trackedHtml->prepareTestHtml(
+                    $email,
+                    $this->renderer->html($email->html ?? '', $mergeData),
+                ),
+                $this->renderer->text($email->preheader ?? '', $mergeData),
             ),
-            $this->renderer->plainText($email, $mergeData),
+            $this->renderer->plainText($email, [...$mergeData, ...$this->trackedHtml->testLinkData($email)]),
         )->afterCommit();
     }
 

@@ -251,7 +251,7 @@ export default function Dashboard({
                     <MetricCard
                         label="Subscribers"
                         value={dashboardData.overview.subscribers.toLocaleString()}
-                        detail="Active across all audiences"
+                        detail="Mailable people across all audiences"
                         icon={UserGroupIcon}
                         iconClassName="bg-violet-500/10 text-violet-600 dark:text-violet-400"
                     />

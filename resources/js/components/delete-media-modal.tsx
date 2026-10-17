@@ -52,8 +52,9 @@ export default function DeleteMediaModal({
                 <DialogHeader>
                     <DialogTitle>Delete media</DialogTitle>
                     <DialogDescription>
-                        <strong>{media?.name}</strong> will be removed from this
-                        team. This cannot be undone from the app.
+                        <strong>{media?.name}</strong> will be removed from the
+                        media library. Emails that already use it keep showing
+                        the image.
                     </DialogDescription>
                 </DialogHeader>
 

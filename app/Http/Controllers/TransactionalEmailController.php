@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Emails\InsertPreheader;
 use App\Actions\Media\BuildMediaLibrary;
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\EmailEditor;
@@ -12,6 +13,7 @@ use App\Http\Requests\StoreTransactionalEmailRequest;
 use App\Http\Requests\UpdateTransactionalEmailRequest;
 use App\Jobs\SendTransactionalEmailTest;
 use App\Models\Audience;
+use App\Models\Automation;
 use App\Models\EmailTemplate;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
@@ -188,7 +190,9 @@ class TransactionalEmailController extends Controller
             'audience_id' => $this->resolveAudienceId($currentTeam, $request->input('audience')),
             'editor' => $editor,
             'source' => $editor->usesSource() ? $request->input('source') : null,
-            'design' => $editor === EmailEditor::Builder ? $request->input('design') : null,
+            // A block document the email already has survives a save from
+            // another workspace editor, so switching back finds it again.
+            'design' => $editor === EmailEditor::Builder ? $request->input('design') : $transactionalEmail->design,
             'variables' => $renderer->merge($declared, $detected),
         ]);
 
@@ -202,6 +206,7 @@ class TransactionalEmailController extends Controller
         Team $currentTeam,
         TransactionalEmail $transactionalEmail,
         RenderTransactionalContent $renderer,
+        InsertPreheader $insertPreheader,
     ): RedirectResponse {
         /** @var array<string, mixed> $data */
         $data = [
@@ -219,7 +224,10 @@ class TransactionalEmailController extends Controller
             $transactionalEmail->id,
             $request->string('to')->value(),
             $renderer->text($transactionalEmail->subject, $data),
-            $renderer->html($transactionalEmail->html ?? '', $data),
+            $insertPreheader->handle(
+                $renderer->html($transactionalEmail->html ?? '', $data),
+                $renderer->text($transactionalEmail->preheader ?? '', $data),
+            ),
         )->afterCommit();
 
         Inertia::flash('toast', [
@@ -253,7 +261,7 @@ class TransactionalEmailController extends Controller
     public function unpublish(Team $currentTeam, TransactionalEmail $transactionalEmail): RedirectResponse
     {
         Gate::authorize('publish', $transactionalEmail);
-        $this->ensureNotDoubleOptInEmail($transactionalEmail);
+        $this->ensureNotInUse($transactionalEmail);
 
         $transactionalEmail->update([
             'status' => TransactionalEmailStatus::Draft,
@@ -295,7 +303,7 @@ class TransactionalEmailController extends Controller
     public function destroy(Team $currentTeam, TransactionalEmail $transactionalEmail): RedirectResponse
     {
         Gate::authorize('delete', $transactionalEmail);
-        $this->ensureNotDoubleOptInEmail($transactionalEmail);
+        $this->ensureNotInUse($transactionalEmail);
         $transactionalEmail->delete();
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Transactional email deleted.')]);
@@ -312,9 +320,13 @@ class TransactionalEmailController extends Controller
         return $team->audiences()->where('uuid', $uuid)->value('id');
     }
 
-    private function ensureNotDoubleOptInEmail(TransactionalEmail $transactionalEmail): void
+    private function ensureNotInUse(TransactionalEmail $transactionalEmail): void
     {
-        $reason = $transactionalEmail->doubleOptInBlockReason();
+        $reason = $transactionalEmail->doubleOptInBlockReason()
+            ?? Automation::referenceBlockReason(
+                Automation::namesUsing($transactionalEmail->team, [$transactionalEmail->uuid])[$transactionalEmail->uuid] ?? [],
+                __('email'),
+            );
 
         if ($reason !== null) {
             throw ValidationException::withMessages(['email' => $reason]);

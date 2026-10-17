@@ -117,6 +117,7 @@ export default function TeamMembers({
 }: Props) {
     const getInitials = useInitials();
 
+    const { auth } = usePage().props;
     const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
     const [removeMemberDialogOpen, setRemoveMemberDialogOpen] = useState(false);
     const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(
@@ -302,6 +303,10 @@ export default function TeamMembers({
                                                     member={member}
                                                     canEdit={
                                                         permissions.canUpdateMember
+                                                    }
+                                                    canResetPassword={
+                                                        member.id !==
+                                                        auth.user.id
                                                     }
                                                     canDelete={
                                                         permissions.canRemoveMember
@@ -612,6 +617,7 @@ export default function TeamMembers({
 function MemberActions({
     member,
     canEdit,
+    canResetPassword,
     canDelete,
     onEdit,
     onResetPassword,
@@ -619,6 +625,7 @@ function MemberActions({
 }: {
     member: TeamMember;
     canEdit: boolean;
+    canResetPassword: boolean;
     canDelete: boolean;
     onEdit: (member: TeamMember) => void;
     onResetPassword: (member: TeamMember) => void;
@@ -648,13 +655,15 @@ function MemberActions({
                             <HugeiconsIcon icon={Edit03Icon} />
                             Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                            data-test="member-reset-password-button"
-                            onClick={() => onResetPassword(member)}
-                        >
-                            <HugeiconsIcon icon={Mail01Icon} />
-                            Reset password
-                        </DropdownMenuItem>
+                        {canResetPassword ? (
+                            <DropdownMenuItem
+                                data-test="member-reset-password-button"
+                                onClick={() => onResetPassword(member)}
+                            >
+                                <HugeiconsIcon icon={Mail01Icon} />
+                                Reset password
+                            </DropdownMenuItem>
+                        ) : null}
                     </DropdownMenuGroup>
                 ) : null}
                 {canEdit && canDelete ? <DropdownMenuSeparator /> : null}

@@ -2,6 +2,7 @@
 
 namespace App\Actions\Transactional;
 
+use App\Actions\Emails\InsertPreheader;
 use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Exceptions\EmailAddressSuppressedException;
 use App\Exceptions\EmailTransportException;
@@ -26,6 +27,7 @@ class QueueTransactionalEmail
         private RenderTransactionalContent $renderer,
         private TeamMailer $teamMailer,
         private RecordEmailAddressHealth $emailHealth,
+        private InsertPreheader $insertPreheader,
     ) {}
 
     /**
@@ -69,7 +71,7 @@ class QueueTransactionalEmail
             ], 503));
         }
 
-        if ($this->emailHealth->isSuppressed($apiKey->team, $payload['to'])) {
+        if ($this->emailHealth->isSuppressed($apiKey->team, $payload['to'], transactional: true)) {
             throw new HttpResponseException(response()->json([
                 'message' => __(EmailAddressSuppressedException::MESSAGE),
                 'code' => 'address_suppressed',
@@ -119,7 +121,7 @@ class QueueTransactionalEmail
             throw EmailTransportException::unauthorizedSender();
         }
 
-        if ($this->emailHealth->isSuppressed($team, $payload['to'])) {
+        if ($this->emailHealth->isSuppressed($team, $payload['to'], transactional: true)) {
             throw new EmailAddressSuppressedException;
         }
 
@@ -157,7 +159,10 @@ class QueueTransactionalEmail
             'request_hash' => $requestHash,
             'to_address' => $payload['to'],
             'subject' => $this->renderer->text($email->subject, $data),
-            'html' => $this->renderer->html($email->html ?? '', $data),
+            'html' => $this->insertPreheader->handle(
+                $this->renderer->html($email->html ?? '', $data),
+                $this->renderer->text($email->preheader ?? '', $data),
+            ),
             'from_name' => $email->resolvedFromName(),
             'from_address' => $email->resolvedFromAddress(),
             'reply_to' => $email->resolvedReplyTo(),

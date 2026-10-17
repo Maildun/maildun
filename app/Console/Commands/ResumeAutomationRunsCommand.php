@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Enums\AutomationRunStatus;
+use App\Enums\AutomationStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Jobs\ProcessAutomationRun;
 use App\Models\AutomationEmailDelivery;
@@ -57,16 +58,12 @@ class ResumeAutomationRunsCommand extends Command
                 }
             });
 
+        // A paused automation holds its branches until it is activated again,
+        // which re-dispatches them itself. Branches of a deleted automation
+        // still go out so the engine can cancel them.
         AutomationRunStep::query()
-            ->whereHas('run', fn ($query) => $query->whereIn('status', AutomationRunStatus::open()))
-            ->where(function ($query): void {
-                $query->where('status', 'pending')
-                    ->orWhere(function ($query): void {
-                        $query->where('status', 'waiting')
-                            ->whereNotNull('scheduled_at')
-                            ->where('scheduled_at', '<=', now());
-                    });
-            })
+            ->dueForDispatch()
+            ->whereDoesntHave('run.automation', fn ($query) => $query->where('status', '!=', AutomationStatus::Active))
             ->orderBy('id')
             ->chunkById(100, function ($steps) use (&$resumed): void {
                 foreach ($steps as $step) {

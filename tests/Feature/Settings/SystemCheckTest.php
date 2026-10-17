@@ -56,6 +56,30 @@ test('owners can view and run system checks', function () {
     Storage::disk('local_public')->assertDirectoryEmpty('/');
 });
 
+test('live checks stay current after a system test', function () {
+    Storage::fake('local');
+    Storage::fake('local_public');
+    config()->set([
+        'filesystems.default' => 'local',
+        'filesystems.disks.public' => config('filesystems.disks.local_public'),
+        'queue.default' => 'redis',
+    ]);
+
+    $owner = User::factory()->create();
+
+    $this->actingAs($owner)->post(route('system-check.test'))->assertRedirect();
+
+    config()->set('queue.default', 'sync');
+
+    $this->actingAs($owner)
+        ->get(route('system-check.show'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('checks.4.key', 'queue')
+            ->where('checks.4.status', 'failed')
+            ->where('checks.7.key', 'storage-round-trip')
+            ->where('checks.7.status', 'ready'));
+});
+
 test('owners can refresh the cached Maildun update status', function () {
     config()->set([
         'version.current' => '1.2.0',
