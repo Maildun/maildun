@@ -8,6 +8,7 @@ use App\Contracts\DnsResolver;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberLanguage;
 use App\Jobs\PrepareEmailSendChunk;
+use App\Jobs\SendCampaignTestEmail;
 use App\Mail\ComposedEmailTest;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
@@ -24,6 +25,7 @@ use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\ValidationException;
@@ -403,6 +405,51 @@ test('the link checker retries with GET when a server refuses HEAD', function ()
         ->assertJsonCount(0, 'broken');
 
     Http::assertSentCount(2);
+});
+
+test('a send opens the body with the personalised preheader', function () {
+    $email = Email::factory()->create([
+        'preheader' => 'Fresh picks for {{ first_name }}',
+        'html' => '<html><body><p>Hello</p></body></html>',
+    ]);
+    $delivery = EmailDelivery::factory()->for($email)->create(['merge_data' => ['first_name' => 'Ada']]);
+
+    $html = app(BuildTrackedEmailHtml::class)->build($delivery);
+
+    expect($html)
+        ->toStartWith('<html><body><div style="display:none')
+        ->toContain('Fresh picks for Ada')
+        ->and(strpos($html, 'Fresh picks for Ada'))->toBeLessThan(strpos($html, '<p>Hello</p>'));
+});
+
+test('a send without a preheader adds no hidden preview text', function () {
+    $email = Email::factory()->create([
+        'preheader' => null,
+        'html' => '<html><body><p>Hello</p></body></html>',
+    ]);
+    $delivery = EmailDelivery::factory()->for($email)->create();
+
+    expect(app(BuildTrackedEmailHtml::class)->build($delivery))
+        ->toStartWith('<html><body><p>Hello</p>')
+        ->not->toContain('mso-hide:all');
+});
+
+test('a campaign test send carries the preheader', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'preheader' => 'Sneak peek inside',
+        'html' => '<p>Hello</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.test', [$user->currentTeam, $email]), ['to' => 'reviewer@example.com'])
+        ->assertRedirect();
+
+    Queue::assertPushed(SendCampaignTestEmail::class, fn (SendCampaignTestEmail $job): bool => str_starts_with($job->html, '<div style="display:none')
+        && str_contains($job->html, 'Sneak peek inside'));
 });
 
 test('a send replaces the subscribe tag with the published form url', function () {

@@ -2,6 +2,7 @@
 
 namespace App\Actions\Automations;
 
+use App\Actions\Emails\InsertPreheader;
 use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\AutomationAction;
@@ -35,6 +36,7 @@ class AdvanceAutomationRun
         private RecordEmailAddressHealth $emailHealth,
         private BuildAutomationMergeData $mergeData,
         private DispatchTaggedTriggers $dispatchTaggedTriggers,
+        private InsertPreheader $insertPreheader,
     ) {}
 
     public function handle(AutomationRun $run, ?string $nodeId = null): void
@@ -223,7 +225,10 @@ class AdvanceAutomationRun
                     $email,
                     $subscriber,
                     $this->renderer->text($email->subject, $merge),
-                    $this->renderer->html($email->html ?? '', $merge),
+                    $this->insertPreheader->handle(
+                        $this->renderer->html($email->html ?? '', $merge),
+                        $this->renderer->text($email->preheader ?? '', $merge),
+                    ),
                     $delivery,
                 ),
                 $email->resolvedFromAddress(),

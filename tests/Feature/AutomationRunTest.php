@@ -194,6 +194,33 @@ test('a retried send does not deliver the email twice', function () {
         ->toBe(['transactional_email_uuid' => $email->uuid]);
 });
 
+test('an automation email carries the transactional preheader', function () {
+    Mail::fake();
+
+    $automation = Automation::factory()->active()->create();
+    TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
+    $email = TransactionalEmail::factory()->for($automation->team)->create([
+        'preheader' => 'Welcome aboard, {{ first_name }}',
+        'html' => '<p>Hi</p>',
+    ]);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($automation->team))->create(['first_name' => 'Ada']);
+
+    $run = automationRun(
+        nodes: [['id' => 'send', 'type' => 'action', 'data' => [
+            'kind' => AutomationAction::SendEmail->value,
+            'transactional_email_uuid' => $email->uuid,
+        ]]],
+        edges: [['source' => 'trigger', 'target' => 'send']],
+        subscriber: $subscriber,
+        automation: $automation,
+    );
+
+    app(AdvanceAutomationRun::class)->handle($run);
+
+    Mail::assertSent(AutomationEmail::class, fn (AutomationEmail $mail): bool => str_starts_with($mail->htmlBody, '<div style="display:none')
+        && str_contains($mail->htmlBody, 'Welcome aboard, Ada'));
+});
+
 test('only one worker can advance a run', function () {
     Mail::fake();
 

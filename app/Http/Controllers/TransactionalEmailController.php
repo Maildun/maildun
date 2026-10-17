@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Emails\InsertPreheader;
 use App\Actions\Media\BuildMediaLibrary;
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\EmailEditor;
@@ -202,6 +203,7 @@ class TransactionalEmailController extends Controller
         Team $currentTeam,
         TransactionalEmail $transactionalEmail,
         RenderTransactionalContent $renderer,
+        InsertPreheader $insertPreheader,
     ): RedirectResponse {
         /** @var array<string, mixed> $data */
         $data = [
@@ -219,7 +221,10 @@ class TransactionalEmailController extends Controller
             $transactionalEmail->id,
             $request->string('to')->value(),
             $renderer->text($transactionalEmail->subject, $data),
-            $renderer->html($transactionalEmail->html ?? '', $data),
+            $insertPreheader->handle(
+                $renderer->html($transactionalEmail->html ?? '', $data),
+                $renderer->text($transactionalEmail->preheader ?? '', $data),
+            ),
         )->afterCommit();
 
         Inertia::flash('toast', [

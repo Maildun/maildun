@@ -15,6 +15,7 @@ class QueueCampaignTestEmail
         private BuildTrackedEmailHtml $trackedHtml,
         private RenderCampaignContent $renderer,
         private TeamMailer $teamMailer,
+        private InsertPreheader $insertPreheader,
     ) {}
 
     /**
@@ -38,7 +39,10 @@ class QueueCampaignTestEmail
             $this->renderer->text($email->subject, $mergeData),
             $this->trackedHtml->prepareTestHtml(
                 $email,
-                $this->renderer->html($email->html ?? '', $mergeData),
+                $this->insertPreheader->handle(
+                    $this->renderer->html($email->html ?? '', $mergeData),
+                    $this->renderer->text($email->preheader ?? '', $mergeData),
+                ),
             ),
             $this->renderer->plainText($email, $mergeData),
         )->afterCommit();

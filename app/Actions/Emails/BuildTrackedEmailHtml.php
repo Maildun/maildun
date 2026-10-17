@@ -34,7 +34,10 @@ class BuildTrackedEmailHtml
      */
     private const array LINK_KEYS = ['unsubscribe_url', 'web_view_url', 'subscribe_url'];
 
-    public function __construct(private readonly RenderCampaignContent $renderer) {}
+    public function __construct(
+        private readonly RenderCampaignContent $renderer,
+        private readonly InsertPreheader $insertPreheader,
+    ) {}
 
     /** @return list<string> */
     public function extractLinks(string $html, ?string $queryString = null): array
@@ -56,7 +59,10 @@ class BuildTrackedEmailHtml
         $email = $delivery->email;
         $links = $email->links->keyBy('url_hash');
         $mergeData = Arr::except($delivery->merge_data ?? [], self::LINK_KEYS);
-        $html = $this->renderer->html($email->html ?? '', $mergeData);
+        $html = $this->insertPreheader->handle(
+            $this->renderer->html($email->html ?? '', $mergeData),
+            $this->renderer->text($email->preheader ?? '', $mergeData),
+        );
         $html = $this->appendQueryString($html, $email->query_string);
 
         if ($email->track_clicks) {

@@ -442,6 +442,7 @@ test('a test send queues rendered merge tags', function () {
         'from_name' => null,
         'from_address' => null,
         'subject' => 'Hi {{ first_name }}',
+        'preheader' => null,
         'html' => '<p>Hello {{ first_name }}</p>',
     ]);
 
@@ -460,12 +461,35 @@ test('a test send queues rendered merge tags', function () {
     expect($email->fresh()->last_tested_at)->toBeNull();
 });
 
+test('a test send carries the rendered preheader as hidden preview text', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = TransactionalEmail::factory()->for($team)->create([
+        'preheader' => 'Your receipt, {{ first_name }}',
+        'html' => '<p>Hello</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('transactional_emails.test', [$team, $email]), [
+            'to' => 'reviewer@example.com',
+            'data' => ['first_name' => 'Ada'],
+        ])
+        ->assertRedirect();
+
+    Queue::assertPushed(SendTransactionalEmailTest::class, fn (SendTransactionalEmailTest $job): bool => str_starts_with($job->html, '<div style="display:none')
+        && str_contains($job->html, 'Your receipt, Ada')
+        && str_ends_with($job->html, '<p>Hello</p>'));
+});
+
 test('a test send links the unsubscribe tag to a page that opts nobody out', function () {
     Queue::fake();
 
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $email = TransactionalEmail::factory()->for($team)->create([
+        'preheader' => null,
         'html' => '<a href="{{ unsubscribe_url }}">Unsubscribe</a>',
     ]);
 
