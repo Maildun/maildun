@@ -54,6 +54,8 @@ export type TeamMember = {
     role: TeamRole;
     role_label: string;
     can_manage_password: boolean;
+    /** Whether an admin may set a password for this member rather than only emailing a reset link. */
+    can_generate_password: boolean;
 };
 
 export type TeamInvitation = {

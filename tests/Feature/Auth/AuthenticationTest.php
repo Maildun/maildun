@@ -117,3 +117,23 @@ test('users are rate limited', function () {
 
     $response->assertTooManyRequests();
 });
+
+test('changing the password ends every other session', function () {
+    $user = User::factory()->create();
+
+    $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => 'password',
+    ]);
+
+    $this->get(route('dashboard'))->assertOk();
+
+    $user->forceFill(['password' => 'a-new-password-set-elsewhere'])->save();
+
+    // The test client keeps one guard instance across requests, which holds
+    // the user it resolved at login. A real browser request resolves afresh.
+    $this->app['auth']->forgetGuards();
+
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
+    $this->assertGuest();
+});

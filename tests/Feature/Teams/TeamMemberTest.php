@@ -494,3 +494,39 @@ test('the members page offers a password reset only for members the user can man
         'Invitation expired' => true,
     ]);
 });
+
+test('a password cannot be generated for a member who signs in without one', function () {
+    $owner = User::factory()->create();
+    $member = User::query()->create(User::factory()->withGoogle()->withoutPassword()->raw());
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+
+    $this
+        ->actingAs($owner)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route('teams.members.generate-password', [$team, $member]))
+        ->assertForbidden();
+
+    expect($member->fresh()->password)->toBeNull();
+});
+
+test('the members page only offers password generation for members confined to this workspace', function () {
+    $owner = User::factory()->create();
+    $member = User::query()->create(User::factory()->raw());
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+
+    $this
+        ->actingAs($owner)
+        ->get(route('teams.members.index', $team))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('members.data.0.id', $owner->id)
+            ->where('members.data.0.can_generate_password', false)
+            ->where('members.data.1.id', $member->id)
+            ->where('members.data.1.can_generate_password', true),
+        );
+});
