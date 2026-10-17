@@ -5,7 +5,9 @@ use App\Models\Team;
 use App\Models\TeamInvitation;
 use App\Models\User;
 use App\Notifications\Teams\TeamInvitation as TeamInvitationNotification;
+use App\Rules\ValidTeamInvitation;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Validator;
 
 test('team invitations can be created', function () {
     Notification::fake();
@@ -310,6 +312,73 @@ test('expired invitations cannot be accepted', function () {
     $response->assertSessionHasErrors('invitation');
 
     expect($invitedUser->fresh()->belongsToTeam($team))->toBeFalse();
+});
+
+test('team invitations cannot be accepted until the invited address is verified', function () {
+    $owner = User::factory()->create();
+    $claimant = User::factory()->unverified()->create(['email' => 'invited@example.com']);
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'email' => 'invited@example.com',
+        'invited_by' => $owner->id,
+    ]);
+
+    $response = $this
+        ->actingAs($claimant)
+        ->post(route('invitations.accept', $invitation));
+
+    $response->assertRedirect(route('verification.notice'));
+
+    expect($claimant->fresh()->belongsToTeam($team))->toBeFalse()
+        ->and($invitation->fresh()->accepted_at)->toBeNull();
+});
+
+test('team invitations cannot be declined until the invited address is verified', function () {
+    $owner = User::factory()->create();
+    $claimant = User::factory()->unverified()->create(['email' => 'invited@example.com']);
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'email' => 'invited@example.com',
+        'invited_by' => $owner->id,
+    ]);
+
+    $response = $this
+        ->actingAs($claimant)
+        ->delete(route('invitations.decline', $invitation));
+
+    $response->assertRedirect(route('verification.notice'));
+
+    $this->assertDatabaseHas('team_invitations', ['id' => $invitation->id]);
+});
+
+test('the invitation rule refuses an unverified address on its own', function () {
+    $owner = User::factory()->create();
+    $claimant = User::factory()->unverified()->create(['email' => 'invited@example.com']);
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'email' => 'invited@example.com',
+        'invited_by' => $owner->id,
+    ]);
+
+    $validator = Validator::make(
+        ['invitation' => $invitation],
+        ['invitation' => [new ValidTeamInvitation($claimant)]],
+    );
+
+    expect($validator->errors()->first('invitation'))
+        ->toBe('Verify your email address before responding to this invitation.');
 });
 
 test('an admin cannot mint an owner through an invitation', function () {

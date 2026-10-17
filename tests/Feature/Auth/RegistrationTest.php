@@ -4,6 +4,8 @@ use App\Enums\TeamRole;
 use App\Models\Team;
 use App\Models\TeamInvitation;
 use App\Models\User;
+use App\Notifications\VerifyEmail;
+use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
@@ -35,6 +37,22 @@ test('registration screen includes team invitation context', function () {
         ->where('teamInvitation.code', $invitation->code)
         ->where('teamInvitation.teamName', 'Laravel Team'),
     );
+});
+
+test('new users are sent an email verification link', function () {
+    Notification::fake();
+
+    $this->post(route('register.store'), [
+        'name' => 'Test User',
+        'email' => 'test@example.com',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+    ]);
+
+    $user = User::where('email', 'test@example.com')->firstOrFail();
+
+    expect($user->hasVerifiedEmail())->toBeFalse();
+    Notification::assertSentTo($user, VerifyEmail::class);
 });
 
 test('new users can register', function () {

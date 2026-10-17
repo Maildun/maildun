@@ -5,6 +5,15 @@ use Illuminate\Auth\Events\Verified;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\URL;
 
+test('unverified users are sent to the verification notice from workspace pages', function () {
+    $user = User::factory()->unverified()->create();
+    $team = $user->personalTeam();
+
+    $response = $this->actingAs($user)->get(route('dashboard', $team));
+
+    $response->assertRedirect(route('verification.notice'));
+});
+
 test('email verification screen can be rendered', function () {
     $user = User::factory()->unverified()->create();
 

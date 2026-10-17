@@ -1,8 +1,10 @@
 <?php
 
 use App\Models\User;
+use App\Notifications\VerifyEmail;
 use App\Services\DiceBearAvatarGenerator;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 
@@ -52,6 +54,38 @@ test('email verification status is unchanged when the email address is unchanged
         ->assertRedirect(route('profile.edit'));
 
     expect($user->refresh()->email_verified_at)->not->toBeNull();
+});
+
+test('changing the email address sends a verification link to the new address', function () {
+    Notification::fake();
+
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'new-address@example.com',
+        ])
+        ->assertSessionHasNoErrors();
+
+    Notification::assertSentTo($user->refresh(), VerifyEmail::class);
+});
+
+test('keeping the email address sends no verification link', function () {
+    Notification::fake();
+
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => 'Test User',
+            'email' => $user->email,
+        ])
+        ->assertSessionHasNoErrors();
+
+    Notification::assertNothingSent();
 });
 
 test('profile avatar can be uploaded', function () {

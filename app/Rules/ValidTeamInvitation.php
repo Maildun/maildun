@@ -42,6 +42,12 @@ class ValidTeamInvitation implements ValidationRule
 
         if (strtolower($value->email) !== strtolower($this->user->email)) {
             $fail(__('This invitation was sent to a different email address.'));
+
+            return;
+        }
+
+        if (! $this->user->hasVerifiedEmail()) {
+            $fail(__('Verify your email address before responding to this invitation.'));
         }
     }
 }
