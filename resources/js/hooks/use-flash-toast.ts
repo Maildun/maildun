@@ -20,6 +20,7 @@ export function useFlashToast(): void {
             toast.add({
                 type: data.type,
                 title: data.message,
+                description: data.description ?? undefined,
             });
         });
     }, []);

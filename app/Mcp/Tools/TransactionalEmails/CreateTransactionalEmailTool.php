@@ -56,6 +56,7 @@ class CreateTransactionalEmailTool extends Tool
             'variables.*.key' => ['required', 'string', 'max:64', 'regex:/^[a-zA-Z_][a-zA-Z0-9_]*$/'],
             'variables.*.example' => ['nullable', 'string', 'max:255'],
         ]);
+        $validated = $this->context->withFullDesign($request, $validated);
 
         $attributes = $this->context->blankStringsToNull($validated, [
             'slug', 'description', 'subject', 'preheader', 'from_name', 'from_address', 'reply_to', 'html', 'source',

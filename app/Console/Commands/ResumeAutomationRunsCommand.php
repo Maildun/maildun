@@ -25,7 +25,8 @@ class ResumeAutomationRunsCommand extends Command
      * work queue this command sweeps back onto Redis.
      *
      * Re-dispatching is safe because AdvanceAutomationRun claims each step with
-     * a conditional update before executing it.
+     * a conditional update before executing it. Steps of a paused automation
+     * are left parked until it is activated again.
      */
     public function handle(): int
     {

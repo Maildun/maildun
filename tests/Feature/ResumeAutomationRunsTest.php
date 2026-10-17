@@ -115,6 +115,20 @@ test('branches that are not ready to resume are left alone', function () {
     Queue::assertNothingPushed();
 });
 
+test('branches of a paused automation are left parked', function () {
+    // Re-queuing these would only hand the engine work it skips, every sweep.
+    foreach ([
+        parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString()),
+        parkedRun(AutomationRunStatus::Pending, null),
+    ] as $run) {
+        $run->automation->update(['status' => AutomationStatus::Paused]);
+    }
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertNothingPushed();
+});
+
 test('a resumed run walks on from the step it was parked at', function () {
     $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
 

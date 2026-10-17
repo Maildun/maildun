@@ -13,6 +13,7 @@ use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Auth\Passwords\PasswordBroker;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -121,15 +122,14 @@ class TeamMemberController extends Controller
 
     /**
      * Generate a new password for the specified team member.
+     *
+     * Admins who regenerate their own password keep this session: AuthenticateSession
+     * re-stores the signed-in user's hash, so that user must be the updated model.
      */
-    public function generatePassword(Request $request, Team $team, User $user): RedirectResponse
+    public function generatePassword(Team $team, User $user): RedirectResponse
     {
         Gate::authorize('updateMember', $team);
         $this->ensureMemberPasswordCanBeManaged($team, $user);
-
-        // A new password signs out every session started with the old one,
-        // including the one asking, so the flashed password would be lost.
-        abort_if($user->is($request->user()), 403, __('Change your own password from Security settings.'));
 
         $password = $this->newPassword();
 
@@ -137,6 +137,10 @@ class TeamMemberController extends Controller
             'password' => $password,
             'remember_token' => Str::random(60),
         ])->save();
+
+        if ($user->is(Auth::user())) {
+            Auth::setUser($user);
+        }
 
         $broker = Password::broker(config('fortify.passwords'));
         assert($broker instanceof PasswordBroker);

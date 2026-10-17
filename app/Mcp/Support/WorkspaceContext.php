@@ -114,6 +114,22 @@ class WorkspaceContext
     }
 
     /**
+     * Put the whole block document back into validated input. The rules only
+     * check its root, and validated() drops every nested key without a rule.
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    public function withFullDesign(Request $request, array $validated): array
+    {
+        if (array_key_exists('design', $validated)) {
+            $validated['design'] = $request->get('design');
+        }
+
+        return $validated;
+    }
+
+    /**
      * @param  array<string, mixed>  $values
      * @param  list<string>  $fields
      * @return array<string, mixed>

@@ -9,6 +9,7 @@ use App\Mcp\Tools\TransactionalEmails\ListTransactionalEmailsTool;
 use App\Mcp\Tools\TransactionalEmails\UpdateTransactionalEmailTool;
 use App\Models\Audience;
 use App\Models\Automation;
+use App\Models\EmailTemplate;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use Illuminate\Testing\Fluent\AssertableJson;
@@ -131,6 +132,56 @@ test('keeps a transactional block document when another editor updates it throug
     expect($email->refresh())
         ->html->toBe('<p>Hand written</p>')
         ->design->toEqual($design);
+});
+
+test('stores the whole block document when a transactional email is created and updated through MCP', function () {
+    $team = Team::factory()->create(['slug' => 'block-receipts', 'email_editor' => EmailEditor::Builder]);
+    $design = EmailTemplate::builderDesign([
+        'block-1' => ['type' => 'text', 'props' => ['markdown' => 'First draft']],
+    ]);
+
+    MaildunServer::tool(CreateTransactionalEmailTool::class, [
+        'workspace' => $team->slug,
+        'name' => 'Block receipt',
+        'html' => '<p>First draft</p>',
+        'design' => $design,
+    ])->assertOk();
+
+    $email = TransactionalEmail::query()->whereBelongsTo($team)->where('name', 'Block receipt')->firstOrFail();
+
+    expect($email->design)->toBe($design);
+
+    $revised = EmailTemplate::builderDesign([
+        'block-1' => ['type' => 'text', 'props' => ['markdown' => 'Second draft']],
+    ]);
+
+    MaildunServer::tool(UpdateTransactionalEmailTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $email->uuid,
+        'html' => '<p>Second draft</p>',
+        'design' => $revised,
+    ])->assertOk();
+
+    expect($email->refresh()->design)->toBe($revised);
+});
+
+test('keeps a block transactional email in the block editor after the workspace switches editors', function () {
+    $team = Team::factory()->create(['slug' => 'switched-transactional', 'email_editor' => EmailEditor::Html]);
+    $email = TransactionalEmail::factory()->for($team)->builder()->create();
+    $design = $email->design;
+
+    MaildunServer::tool(UpdateTransactionalEmailTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $email->uuid,
+        'subject' => 'Renamed after the switch',
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('transactional_email.editor', EmailEditor::Builder->value)
+        ->etc());
+
+    expect($email->refresh())
+        ->subject->toBe('Renamed after the switch')
+        ->editor->toBe(EmailEditor::Builder)
+        ->design->toBe($design);
 });
 
 test('keeps markdown source when transactional email is managed through MCP', function () {

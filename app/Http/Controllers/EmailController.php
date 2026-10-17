@@ -269,9 +269,9 @@ class EmailController extends Controller
                 'from_name' => $email->from_name,
                 'from_address' => $email->from_address,
                 'reply_to' => $email->reply_to,
-                'editor' => $currentTeam->email_editor->value,
+                'editor' => $email->editor->value,
                 'html' => $email->html ?? '',
-                'source' => $email->source ?? ($currentTeam->email_editor->usesSource() ? ($email->html ?? '') : ''),
+                'source' => $email->source ?? ($email->editor->usesSource() ? ($email->html ?? '') : ''),
                 'plain_text' => $email->plain_text ?? '',
                 'query_string' => $email->query_string ?? '',
                 'track_clicks' => $email->track_clicks,
@@ -343,7 +343,7 @@ class EmailController extends Controller
                 'reply_to' => $currentTeam->email_reply_to,
             ],
             'canManage' => Gate::allows('update', $email),
-            'mediaLibrary' => fn (): ?array => $currentTeam->email_editor === EmailEditor::Builder
+            'mediaLibrary' => fn (): ?array => $email->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)
                 : null,
         ]);
@@ -353,7 +353,8 @@ class EmailController extends Controller
     {
         abort_unless($email->status === EmailStatus::Draft, 409, __('A queued campaign can no longer be edited.'));
 
-        $editor = $currentTeam->email_editor;
+        // A draft keeps the editor it was composed in; the team setting only picks it for new drafts.
+        $editor = $email->editor;
         $senderAttributes = [];
 
         if ($request->has('sender_uuid')) {
@@ -393,7 +394,6 @@ class EmailController extends Controller
                 'track_opens',
             ]),
             ...$senderAttributes,
-            'editor' => $editor,
             'source' => $editor->usesSource() ? $request->input('source') : null,
             'plain_text' => $editor === EmailEditor::PlainText
                 ? $request->input('source')
