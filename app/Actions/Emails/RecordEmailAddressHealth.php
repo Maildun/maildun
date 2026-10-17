@@ -108,12 +108,9 @@ class RecordEmailAddressHealth
                 && ($health->last_delivered_at === null || $occurredAt->greaterThan($health->last_delivered_at));
 
             if ($countsTowardRun) {
-                $health->recent_soft_bounces = collect([...($health->recent_soft_bounces ?? []), $occurredAt->toIso8601String()])
-                    ->unique()
-                    ->sort()
-                    ->take(-self::CONSECUTIVE_SOFT_BOUNCE_LIMIT)
-                    ->values()
-                    ->all();
+                $bounces = array_unique([...($health->recent_soft_bounces ?? []), $occurredAt->toIso8601String()]);
+                sort($bounces);
+                $health->recent_soft_bounces = array_slice($bounces, -self::CONSECUTIVE_SOFT_BOUNCE_LIMIT);
             }
 
             if ($health->status !== EmailAddressHealthStatus::Suppressed
