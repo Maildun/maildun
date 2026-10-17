@@ -286,7 +286,7 @@ test('owners can update the name and alt text', function () {
         ->media_category_id->toBe($category->id);
 });
 
-test('owners can delete media and its files', function () {
+test('deleting media hides it from the library but keeps the file emails embed', function () {
     Storage::fake('public');
 
     $user = User::factory()->create();
@@ -299,8 +299,29 @@ test('owners can delete media and its files', function () {
         ->delete(route('media.destroy', [$user->currentTeam, $media]))
         ->assertRedirect();
 
-    $this->assertModelMissing($media);
-    Storage::disk('public')->assertMissing('media/'.$user->currentTeam->uuid.'/hero.png');
+    $this->assertSoftDeleted($media);
+    expect($user->currentTeam->media()->exists())->toBeFalse();
+    Storage::disk('public')->assertExists('media/'.$user->currentTeam->uuid.'/hero.png');
+});
+
+test('deleting media still converting removes its private original', function () {
+    Storage::fake('local');
+
+    $user = User::factory()->create();
+    $media = Media::factory()->for($user->currentTeam)->create([
+        'status' => MediaStatus::Processing,
+        'path' => null,
+        'disk' => 'local',
+        'upload_path' => 'media-uploads/'.$user->currentTeam->uuid.'/hero.png',
+    ]);
+    Storage::disk('local')->put($media->upload_path, 'image');
+
+    $this->actingAs($user)
+        ->delete(route('media.destroy', [$user->currentTeam, $media]))
+        ->assertRedirect();
+
+    $this->assertSoftDeleted($media);
+    Storage::disk('local')->assertMissing('media-uploads/'.$user->currentTeam->uuid.'/hero.png');
 });
 
 test('the list can be searched by name', function () {

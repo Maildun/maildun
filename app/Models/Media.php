@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Number;
@@ -37,6 +38,7 @@ use Illuminate\Support\Str;
  * @property string|null $failed_reason
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
+ * @property Carbon|null $deleted_at
  * @property-read Team $team
  * @property-read MediaCategory|null $category
  * @property-read Collection<int, MediaTag> $tags
@@ -64,7 +66,7 @@ use Illuminate\Support\Str;
 class Media extends Model
 {
     /** @use HasFactory<MediaFactory> */
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     /**
      * @var array<string, mixed>
@@ -80,8 +82,17 @@ class Media extends Model
             $media->uuid ??= (string) Str::uuid();
         });
 
+        // Sent campaigns and live templates keep the image's public URL, so
+        // removing an item from the library only hides it. The private
+        // original of an upload still converting is never embedded anywhere.
         static::deleting(function (Media $media): void {
-            $media->deleteStoredFiles();
+            if ($media->isForceDeleting()) {
+                $media->deleteStoredFiles();
+
+                return;
+            }
+
+            $media->deletePendingUpload();
         });
     }
 
@@ -228,6 +239,14 @@ class Media extends Model
             Storage::disk('public')->delete($this->path);
         }
 
+        $this->deletePendingUpload();
+    }
+
+    /**
+     * Remove the private original an upload keeps while it converts.
+     */
+    public function deletePendingUpload(): void
+    {
         if (filled($this->upload_path)) {
             Storage::disk($this->disk ?? StorageBackend::current()->privateDisk())->delete($this->upload_path);
         }
