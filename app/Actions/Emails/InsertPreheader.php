@@ -7,15 +7,22 @@ namespace App\Actions\Emails;
  * show next to the subject.
  *
  * It goes straight after the opening body tag so it is the first text an
- * inbox reads, ahead of any preheader a builder design carries itself. The
- * filler stops the inbox from pulling body text into the rest of the preview,
- * matching the @maildun/email-builder renderer.
+ * inbox reads, and replaces any hidden preview block already opening the body,
+ * such as the builder design's own preheader, so the message carries only one.
+ * The filler stops the inbox from pulling body text into the rest of the
+ * preview, matching the @maildun/email-builder renderer.
  */
 class InsertPreheader
 {
     private const string FILLER = '&#847;&zwnj;&nbsp;';
 
     private const int FILLER_REPEAT = 80;
+
+    /**
+     * A tag-free hidden block opening the body: the builder's own preheader,
+     * or one an author wrote into raw HTML.
+     */
+    private const string LEADING_PREHEADER = '/^\s*<(div|span)\b[^>]*\bstyle\s*=\s*(["\'])[^"\']*display\s*:\s*none[^>]*>[^<]*<\/\1>/i';
 
     /**
      * @param  string  $preheader  Plain text with merge tags already replaced.
@@ -40,10 +47,15 @@ class InsertPreheader
             if (preg_match($pattern, $html, $matches, PREG_OFFSET_CAPTURE) === 1) {
                 $position = $matches[0][1] + strlen($matches[0][0]);
 
-                return substr($html, 0, $position).$block.substr($html, $position);
+                return substr($html, 0, $position).$block.$this->withoutLeadingPreheader(substr($html, $position));
             }
         }
 
-        return $block.$html;
+        return $block.$this->withoutLeadingPreheader($html);
+    }
+
+    private function withoutLeadingPreheader(string $html): string
+    {
+        return preg_replace(self::LEADING_PREHEADER, '', $html, 1) ?? $html;
     }
 }
