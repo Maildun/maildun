@@ -6,7 +6,7 @@ use RuntimeException;
 
 final class EmailAddressSuppressedException extends RuntimeException
 {
-    public const string MESSAGE = 'This email address is suppressed after a permanent bounce or complaint.';
+    public const string MESSAGE = 'This email address is suppressed after it bounced or reported a complaint.';
 
     public function __construct()
     {

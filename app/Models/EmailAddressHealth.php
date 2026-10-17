@@ -25,7 +25,7 @@ use Illuminate\Support\Str;
  * @property string|null $detail
  * @property int $hard_bounce_count
  * @property int $soft_bounce_count
- * @property int $consecutive_soft_bounce_count
+ * @property list<string>|null $recent_soft_bounces
  * @property int $complaint_count
  * @property int $failure_count
  * @property Carbon|null $last_event_at
@@ -36,7 +36,7 @@ use Illuminate\Support\Str;
  */
 #[Fillable([
     'uuid', 'team_id', 'email', 'status', 'reason', 'provider', 'detail',
-    'hard_bounce_count', 'soft_bounce_count', 'consecutive_soft_bounce_count', 'complaint_count', 'failure_count',
+    'hard_bounce_count', 'soft_bounce_count', 'recent_soft_bounces', 'complaint_count', 'failure_count',
     'last_event_at', 'last_delivered_at', 'last_failed_at', 'suppressed_at',
 ])]
 class EmailAddressHealth extends Model
@@ -49,7 +49,6 @@ class EmailAddressHealth extends Model
         'status' => EmailAddressHealthStatus::Unknown->value,
         'hard_bounce_count' => 0,
         'soft_bounce_count' => 0,
-        'consecutive_soft_bounce_count' => 0,
         'complaint_count' => 0,
         'failure_count' => 0,
     ];
@@ -93,7 +92,7 @@ class EmailAddressHealth extends Model
             'provider' => EmailProvider::class,
             'hard_bounce_count' => 'integer',
             'soft_bounce_count' => 'integer',
-            'consecutive_soft_bounce_count' => 'integer',
+            'recent_soft_bounces' => 'array',
             'complaint_count' => 'integer',
             'failure_count' => 'integer',
             'last_event_at' => 'datetime',

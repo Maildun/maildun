@@ -919,7 +919,7 @@ test('each recipient row says whether it can be retried and why not', function (
     'a failed send' => [EmailStatus::PartiallyFailed, EmailDeliveryStatus::Failed, SubscriberStatus::Subscribed, false, true, null],
     'a campaign still sending' => [EmailStatus::Sending, EmailDeliveryStatus::Failed, SubscriberStatus::Subscribed, false, false, 'Wait until this campaign finishes sending.'],
     'an unsubscribed recipient' => [EmailStatus::PartiallyFailed, EmailDeliveryStatus::Failed, SubscriberStatus::Unsubscribed, false, false, 'This recipient has unsubscribed.'],
-    'a suppressed address' => [EmailStatus::PartiallyFailed, EmailDeliveryStatus::Failed, SubscriberStatus::Subscribed, true, false, 'This address is suppressed after a permanent bounce or spam complaint.'],
+    'a suppressed address' => [EmailStatus::PartiallyFailed, EmailDeliveryStatus::Failed, SubscriberStatus::Subscribed, true, false, 'This address is suppressed after it bounced or reported a spam complaint.'],
     'a permanent bounce' => [EmailStatus::Sent, EmailDeliveryStatus::Bounced, SubscriberStatus::Subscribed, false, false, 'Permanent bounces are never retried.'],
     'a spam complaint' => [EmailStatus::Sent, EmailDeliveryStatus::Complained, SubscriberStatus::Subscribed, false, false, 'Spam complaints are never retried.'],
     'a delivered message' => [EmailStatus::Sent, EmailDeliveryStatus::Delivered, SubscriberStatus::Subscribed, false, false, null],

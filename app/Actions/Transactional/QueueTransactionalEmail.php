@@ -71,7 +71,7 @@ class QueueTransactionalEmail
             ], 503));
         }
 
-        if ($this->emailHealth->isSuppressed($apiKey->team, $payload['to'])) {
+        if ($this->emailHealth->isSuppressed($apiKey->team, $payload['to'], transactional: true)) {
             throw new HttpResponseException(response()->json([
                 'message' => __(EmailAddressSuppressedException::MESSAGE),
                 'code' => 'address_suppressed',
@@ -121,7 +121,7 @@ class QueueTransactionalEmail
             throw EmailTransportException::unauthorizedSender();
         }
 
-        if ($this->emailHealth->isSuppressed($team, $payload['to'])) {
+        if ($this->emailHealth->isSuppressed($team, $payload['to'], transactional: true)) {
             throw new EmailAddressSuppressedException;
         }
 

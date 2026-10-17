@@ -7,13 +7,14 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * soft_bounce_count is a lifetime total. Suppression needs the run of
-     * temporary bounces since the last successful delivery.
+     * soft_bounce_count is a lifetime total. Suppression needs the temporary
+     * bounces since the last successful delivery, with their times, so a
+     * delivery report that arrives late can still end the run correctly.
      */
     public function up(): void
     {
         Schema::table('email_address_healths', function (Blueprint $table): void {
-            $table->unsignedInteger('consecutive_soft_bounce_count')->default(0)->after('soft_bounce_count');
+            $table->json('recent_soft_bounces')->nullable()->after('soft_bounce_count');
         });
     }
 
@@ -23,7 +24,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('email_address_healths', function (Blueprint $table): void {
-            $table->dropColumn('consecutive_soft_bounce_count');
+            $table->dropColumn('recent_soft_bounces');
         });
     }
 };

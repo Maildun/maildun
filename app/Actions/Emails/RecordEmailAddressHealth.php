@@ -8,6 +8,7 @@ use App\Enums\EmailProvider;
 use App\Models\EmailAddressHealth;
 use App\Models\Team;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -15,17 +16,36 @@ class RecordEmailAddressHealth
 {
     /**
      * Temporary bounces in a row, with no delivery in between, after which an
-     * address is treated as undeliverable. Mailbox providers read repeated
-     * sends to a mailbox that keeps deferring as a sign of a stale list.
+     * address is treated as undeliverable for marketing mail. Mailbox
+     * providers read repeated sends to a mailbox that keeps deferring as a
+     * sign of a stale list.
      */
     public const int CONSECUTIVE_SOFT_BOUNCE_LIMIT = 3;
 
-    public function isSuppressed(Team $team, string $email): bool
+    /**
+     * SES bounce subtypes that say something about the mailbox itself. A
+     * message that was too large or had its content or attachment refused
+     * says nothing about whether the next one will arrive.
+     *
+     * @var list<string>
+     */
+    public const array MAILBOX_SOFT_BOUNCES = ['General', 'MailboxFull'];
+
+    /**
+     * Whether the workspace must not send to the address. A run of temporary
+     * bounces stops marketing mail only; transactional mail such as receipts
+     * still goes, and its next delivery lifts that suppression.
+     */
+    public function isSuppressed(Team $team, string $email, bool $transactional = false): bool
     {
         return EmailAddressHealth::query()
             ->whereBelongsTo($team)
             ->where('email', $this->normalize($email))
             ->where('status', EmailAddressHealthStatus::Suppressed)
+            ->when($transactional, fn ($query) => $query->where(
+                fn ($query) => $query->whereNull('reason')
+                    ->orWhere('reason', '!=', EmailAddressHealthReason::RepeatedTransientBounce),
+            ))
             ->exists();
     }
 
@@ -37,22 +57,23 @@ class RecordEmailAddressHealth
     ): EmailAddressHealth {
         return DB::transaction(function () use ($team, $email, $provider, $occurredAt): EmailAddressHealth {
             $health = $this->healthForUpdate($team, $email);
+            $liftsSoftBounceSuppression = $health->status === EmailAddressHealthStatus::Suppressed
+                && $health->reason === EmailAddressHealthReason::RepeatedTransientBounce;
 
-            if ($health->status !== EmailAddressHealthStatus::Suppressed
+            if (($health->status !== EmailAddressHealthStatus::Suppressed || $liftsSoftBounceSuppression)
                 && $this->isCurrent($health, $occurredAt)) {
                 $health->forceFill([
                     'status' => EmailAddressHealthStatus::Deliverable,
                     'reason' => EmailAddressHealthReason::Delivered,
                     'provider' => $provider,
                     'detail' => null,
+                    'suppressed_at' => $liftsSoftBounceSuppression ? null : $health->suppressed_at,
                 ]);
             }
 
-            // A delivery ends the run of temporary bounces, unless it is older
-            // than the latest failure and only arrived late.
-            if ($health->last_failed_at === null || $occurredAt->greaterThanOrEqualTo($health->last_failed_at)) {
-                $health->consecutive_soft_bounce_count = 0;
-            }
+            // Bounces before this delivery no longer count toward a run, even
+            // when its report arrives after a later bounce.
+            $health->recent_soft_bounces = $this->bouncesAfter($health->recent_soft_bounces, $occurredAt);
 
             $health->forceFill([
                 'last_event_at' => $this->latest($health->last_event_at, $occurredAt),
@@ -83,13 +104,20 @@ class RecordEmailAddressHealth
                 ]);
             }
 
-            // Only a bounce after the latest delivery extends the run.
-            if ($health->last_delivered_at === null || $occurredAt->greaterThan($health->last_delivered_at)) {
-                $health->consecutive_soft_bounce_count++;
+            $countsTowardRun = ($detail === null || in_array($detail, self::MAILBOX_SOFT_BOUNCES, true))
+                && ($health->last_delivered_at === null || $occurredAt->greaterThan($health->last_delivered_at));
+
+            if ($countsTowardRun) {
+                $health->recent_soft_bounces = collect([...($health->recent_soft_bounces ?? []), $occurredAt->toIso8601String()])
+                    ->unique()
+                    ->sort()
+                    ->take(-self::CONSECUTIVE_SOFT_BOUNCE_LIMIT)
+                    ->values()
+                    ->all();
             }
 
             if ($health->status !== EmailAddressHealthStatus::Suppressed
-                && $health->consecutive_soft_bounce_count >= self::CONSECUTIVE_SOFT_BOUNCE_LIMIT) {
+                && count($health->recent_soft_bounces ?? []) >= self::CONSECUTIVE_SOFT_BOUNCE_LIMIT) {
                 $health->forceFill([
                     'status' => EmailAddressHealthStatus::Suppressed,
                     'reason' => EmailAddressHealthReason::RepeatedTransientBounce,
@@ -107,6 +135,18 @@ class RecordEmailAddressHealth
 
             return $health;
         }, attempts: 3);
+    }
+
+    /**
+     * @param  list<string>|null  $bounces
+     * @return list<string>
+     */
+    private function bouncesAfter(?array $bounces, CarbonInterface $deliveredAt): array
+    {
+        return array_values(array_filter(
+            $bounces ?? [],
+            fn (string $bouncedAt): bool => Carbon::parse($bouncedAt)->greaterThan($deliveredAt),
+        ));
     }
 
     public function recordPermanentBounce(
