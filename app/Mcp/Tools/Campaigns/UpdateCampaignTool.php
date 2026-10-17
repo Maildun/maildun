@@ -73,6 +73,7 @@ class UpdateCampaignTool extends Tool
             'audience_uuid' => ['sometimes', 'nullable', 'uuid', Rule::exists(Audience::class, 'uuid')->where('team_id', $team->id)],
             'segment_uuid' => ['sometimes', 'nullable', 'uuid'],
         ]);
+        $validated = $this->context->withFullDesign($request, $validated);
 
         $changes = $this->context->changes($validated, self::FIELDS);
         $changes = $this->context->blankStringsToNull($changes, [

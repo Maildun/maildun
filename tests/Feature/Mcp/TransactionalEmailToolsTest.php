@@ -8,6 +8,7 @@ use App\Mcp\Tools\TransactionalEmails\GetTransactionalEmailTool;
 use App\Mcp\Tools\TransactionalEmails\ListTransactionalEmailsTool;
 use App\Mcp\Tools\TransactionalEmails\UpdateTransactionalEmailTool;
 use App\Models\Audience;
+use App\Models\EmailTemplate;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use Illuminate\Testing\Fluent\AssertableJson;
@@ -94,6 +95,37 @@ test('refuses to delete a transactional email an audience confirms signups with'
     ])->assertHasErrors(['Newsletter uses this as its double opt-in confirmation email.']);
 
     $this->assertNotSoftDeleted($email);
+});
+
+test('stores the whole block document when a transactional email is created and updated through MCP', function () {
+    $team = Team::factory()->create(['slug' => 'block-receipts', 'email_editor' => EmailEditor::Builder]);
+    $design = EmailTemplate::builderDesign([
+        'block-1' => ['type' => 'text', 'props' => ['markdown' => 'First draft']],
+    ]);
+
+    MaildunServer::tool(CreateTransactionalEmailTool::class, [
+        'workspace' => $team->slug,
+        'name' => 'Block receipt',
+        'html' => '<p>First draft</p>',
+        'design' => $design,
+    ])->assertOk();
+
+    $email = TransactionalEmail::query()->whereBelongsTo($team)->where('name', 'Block receipt')->firstOrFail();
+
+    expect($email->design)->toBe($design);
+
+    $revised = EmailTemplate::builderDesign([
+        'block-1' => ['type' => 'text', 'props' => ['markdown' => 'Second draft']],
+    ]);
+
+    MaildunServer::tool(UpdateTransactionalEmailTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $email->uuid,
+        'html' => '<p>Second draft</p>',
+        'design' => $revised,
+    ])->assertOk();
+
+    expect($email->refresh()->design)->toBe($revised);
 });
 
 test('keeps a block transactional email in the block editor after the workspace switches editors', function () {

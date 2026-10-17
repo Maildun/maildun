@@ -172,6 +172,37 @@ test('creates a block campaign that has no blocks yet', function () {
         ->toHaveKey('root', []);
 });
 
+test('stores the whole block document when a campaign is created and updated through MCP', function () {
+    $team = Team::factory()->create(['slug' => 'block-documents', 'email_editor' => EmailEditor::Builder]);
+    $design = EmailTemplate::builderDesign([
+        'block-1' => ['type' => 'text', 'props' => ['markdown' => 'First draft']],
+    ]);
+
+    MaildunServer::tool(CreateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'name' => 'Block document',
+        'html' => '<p>First draft</p>',
+        'design' => $design,
+    ])->assertOk();
+
+    $campaign = Email::query()->whereBelongsTo($team)->where('name', 'Block document')->firstOrFail();
+
+    expect($campaign->design)->toBe($design);
+
+    $revised = EmailTemplate::builderDesign([
+        'block-1' => ['type' => 'text', 'props' => ['markdown' => 'Second draft']],
+    ]);
+
+    MaildunServer::tool(UpdateCampaignTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $campaign->uuid,
+        'html' => '<p>Second draft</p>',
+        'design' => $revised,
+    ])->assertOk();
+
+    expect($campaign->refresh()->design)->toBe($revised);
+});
+
 test('keeps a block campaign in the block editor after the workspace switches editors', function () {
     $team = Team::factory()->create(['slug' => 'switched-editor', 'email_editor' => EmailEditor::Html]);
     $campaign = Email::factory()->for($team)->builder()->create();

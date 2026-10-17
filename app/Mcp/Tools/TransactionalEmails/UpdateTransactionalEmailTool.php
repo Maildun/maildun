@@ -63,6 +63,7 @@ class UpdateTransactionalEmailTool extends Tool
             'variables.*.key' => ['required', 'string', 'max:64', 'regex:/^[a-zA-Z_][a-zA-Z0-9_]*$/'],
             'variables.*.example' => ['nullable', 'string', 'max:255'],
         ]);
+        $validated = $this->context->withFullDesign($request, $validated);
 
         $changes = $this->context->changes($validated, self::FIELDS);
         $changes = $this->context->blankStringsToNull($changes, [
