@@ -185,10 +185,15 @@ class BuildCampaignSeriesReport
             ->selectRaw('SUM(email_link_tracking_aggregates.total_clicks_count) AS total_clicks_count')
             ->selectRaw('SUM(email_link_tracking_aggregates.unique_clicks_count) AS unique_clicks_count')
             ->where(function (Builder $links) use ($campaigns, $primaryCtaUrl): void {
+                // Either form: a CTA entered with the query string already on
+                // it was stored as written, not tagged a second time.
                 foreach ($campaigns as $campaign) {
                     $links->orWhere(fn (Builder $link) => $link
                         ->where('email_links.email_id', $campaign->id)
-                        ->where('email_links.url', BuildTrackedEmailHtml::tagUrl($primaryCtaUrl, $campaign->query_string)));
+                        ->whereIn('email_links.url', array_unique([
+                            $primaryCtaUrl,
+                            BuildTrackedEmailHtml::tagUrl($primaryCtaUrl, $campaign->query_string),
+                        ])));
                 }
             })
             ->groupBy('email_links.email_id')

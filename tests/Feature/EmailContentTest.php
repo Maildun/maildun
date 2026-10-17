@@ -448,6 +448,39 @@ test('a generated text part keeps link targets and leaves out styles and hidden 
     expect($text)->toBe("Big news & more\nRead the story (https://example.com/news)\nhttps://example.com Top");
 });
 
+test('a generated text part breaks lines at line breaks and builder blocks', function () {
+    $email = Email::factory()->make([
+        'plain_text' => null,
+        'html' => '<table><tr><td>First line<br>Second line<br />Third</td></tr></table>'
+            .'<table><tr><td><a href="https://example.com/banner"><img src="b.png" alt=""></a></td></tr></table>'
+            .'<table><tr><td>Closing words</td></tr></table>',
+    ]);
+
+    expect(app(RenderCampaignContent::class)->plainText($email, []))
+        ->toBe("First line\nSecond line\nThird\n\nhttps://example.com/banner\n\nClosing words");
+});
+
+test('a preheader holding the unsubscribe tag does not stand in for the visible footer', function () {
+    $email = Email::factory()->create([
+        'preheader' => 'Leave any time: {{ unsubscribe_url }}',
+        'html' => '<html><body><p>Hello</p></body></html>',
+    ]);
+    $delivery = EmailDelivery::factory()->for($email)->create();
+
+    expect(app(BuildTrackedEmailHtml::class)->build($delivery))->toContain('>Unsubscribe</a>');
+});
+
+test('a document without a body tag gets its preheader after the head', function () {
+    $email = Email::factory()->create([
+        'preheader' => 'Inside the document',
+        'html' => '<!DOCTYPE html><html><head><title>T</title></head><p>Hello</p></html>',
+    ]);
+    $delivery = EmailDelivery::factory()->for($email)->create();
+
+    expect(app(BuildTrackedEmailHtml::class)->build($delivery))
+        ->toStartWith('<!DOCTYPE html><html><head><title>T</title></head><div style="display:none');
+});
+
 test('a campaign test send fills the text part links with pages that opt nobody out', function () {
     Queue::fake();
 

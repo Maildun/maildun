@@ -25,24 +25,27 @@ class ConvertHtmlToText
                 $label = trim(html_entity_decode(strip_tags($matches[3]), ENT_QUOTES | ENT_HTML5));
                 $leadsSomewhere = $url !== '' && ! str_starts_with($url, '#');
 
+                // Spaces keep a bare URL from running into the text around it.
                 if ($label === '') {
-                    return $leadsSomewhere ? $matches[2] : '';
+                    return $leadsSomewhere ? ' '.$matches[2].' ' : '';
                 }
 
                 if (! $leadsSomewhere || $label === $url) {
                     return $matches[3];
                 }
 
-                return $matches[3].' ('.$matches[2].')';
+                return $matches[3].' ('.$matches[2].') ';
             },
             $html,
         ) ?? $html;
 
-        $withLineBreaks = preg_replace('/<(br\s*\/?>|\/(p|div|li|h[1-6]))>/i', "\n", $html) ?? $html;
+        // Builder blocks are separate tables, so cells and rows end lines too.
+        $withLineBreaks = preg_replace('/<br\s*\/?>|<\/(p|div|li|h[1-6]|td|tr|table)\s*>/i', "\n", $html) ?? $html;
         $text = html_entity_decode(strip_tags($withLineBreaks), ENT_QUOTES | ENT_HTML5);
 
         return Str::of($text)
             ->replaceMatches('/[ \t]+\n/', "\n")
+            ->replaceMatches('/\n[ \t]+/', "\n")
             ->replaceMatches('/\n{3,}/', "\n\n")
             ->trim()
             ->toString();

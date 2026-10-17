@@ -88,13 +88,10 @@ class BuildTrackedEmailHtml
         }
 
         $unsubscribeUrl = URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]);
-        $placed = 0;
         $html = preg_replace(
             self::UNSUBSCRIBE_TAG,
             htmlspecialchars($unsubscribeUrl, ENT_QUOTES | ENT_HTML5),
             $html,
-            -1,
-            $placed,
         ) ?? $html;
 
         $html = preg_replace(
@@ -121,8 +118,9 @@ class BuildTrackedEmailHtml
         }
 
         // Every campaign needs a visible opt-out, but an author who placed the
-        // merge tag themselves has already chosen where it goes.
-        if ($placed === 0) {
+        // merge tag in the body has already chosen where it goes. The hidden
+        // preheader does not count as a place.
+        if (! $this->authorPlacedUnsubscribe($email->html ?? '')) {
             $appended = $this->unsubscribeFooter($unsubscribeUrl).$appended;
         }
 

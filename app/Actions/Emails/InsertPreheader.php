@@ -33,10 +33,15 @@ class InsertPreheader
             .str_repeat(self::FILLER, self::FILLER_REPEAT)
             .'</div>';
 
-        if (preg_match('/<body\b[^>]*>/i', $html, $matches, PREG_OFFSET_CAPTURE) === 1) {
-            $position = $matches[0][1] + strlen($matches[0][0]);
+        // A document may leave out the optional <body> tag, so fall back to
+        // the end of the head, then the <html> tag, then the doctype, and only
+        // prepend to a true fragment.
+        foreach (['/<body\b[^>]*>/i', '/<\/head\s*>/i', '/<html\b[^>]*>/i', '/<!doctype\b[^>]*>/i'] as $pattern) {
+            if (preg_match($pattern, $html, $matches, PREG_OFFSET_CAPTURE) === 1) {
+                $position = $matches[0][1] + strlen($matches[0][0]);
 
-            return substr($html, 0, $position).$block.substr($html, $position);
+                return substr($html, 0, $position).$block.substr($html, $position);
+            }
         }
 
         return $block.$html;
