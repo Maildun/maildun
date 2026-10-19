@@ -56,6 +56,10 @@ class ContactExportController extends Controller
             ->when($filters['audience'] !== '', fn (Builder $query) => $query->whereHas(
                 'subscribers.audience',
                 fn (Builder $audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
+            ))
+            ->when($filters['language'] !== '', fn (Builder $query) => $query->whereHas(
+                'subscribers',
+                fn (Builder $subscriberQuery) => $subscriberQuery->where('language', $filters['language']),
             ));
 
         return $this->download(
@@ -219,7 +223,7 @@ class ContactExportController extends Controller
         echo '</Row>';
     }
 
-    /** @return array{search: string, company: string, audience: string} */
+    /** @return array{search: string, company: string, audience: string, language: string} */
     private function contactFilters(Request $request): array
     {
         $company = $request->string('company')->toString();
@@ -231,6 +235,7 @@ class ContactExportController extends Controller
                 ? $company
                 : '',
             'audience' => Str::isUuid($audience) ? $audience : '',
+            'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())?->value ?? '',
         ];
     }
 

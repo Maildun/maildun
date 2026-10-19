@@ -397,3 +397,33 @@ test('an interrupted import retries the rolled back row without losing progress 
     expect($import->imported_contacts)->toBe(1);
     expect($import->duplicate_rows)->toBe(0);
 });
+
+test('the import language fills rows whose language cell is empty', function () {
+    Storage::fake('local');
+
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create(['default_language' => 'en', 'allowed_languages' => ['en', 'id', 'fr']]);
+    $contactImport = ContactImport::factory()->for($team)->for($audience)->create([
+        'column_map' => ['email', 'language'],
+        'language' => SubscriberLanguage::Indonesian,
+    ]);
+    Storage::disk('local')->put($contactImport->path, implode("\n", [
+        'email,language',
+        'blank@example.com,',
+        'french@example.com,fr',
+    ]));
+
+    (new ProcessContactImport($contactImport->id))->handle(
+        app(ManageContact::class),
+        app(AddContactToAudiences::class),
+        app(ContactImportCsv::class),
+        app(ImportEmailReview::class),
+    );
+
+    $languages = $audience->subscribers()->pluck('language', 'email')->map(fn (?SubscriberLanguage $language): ?string => $language?->value)->all();
+
+    expect($languages)->toBe([
+        'blank@example.com' => 'id',
+        'french@example.com' => 'fr',
+    ]);
+});

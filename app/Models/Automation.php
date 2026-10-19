@@ -173,16 +173,24 @@ class Automation extends Model
             $data = is_array($node['data'] ?? null) ? $node['data'] : [];
             $kind = $data['kind'] ?? null;
 
-            $uuid = match (true) {
-                ($node['type'] ?? null) === 'action' && $kind === AutomationAction::SendEmail->value => $data['transactional_email_uuid'] ?? null,
+            $references = match (true) {
+                ($node['type'] ?? null) === 'action' && $kind === AutomationAction::SendEmail->value => [
+                    $data['transactional_email_uuid'] ?? null,
+                    ...array_map(
+                        fn (mixed $variant): mixed => is_array($variant) ? ($variant['transactional_email_uuid'] ?? null) : null,
+                        is_array($data['language_emails'] ?? null) ? $data['language_emails'] : [],
+                    ),
+                ],
                 ($node['type'] ?? null) === 'action' && in_array($kind, [AutomationAction::AddTag->value, AutomationAction::RemoveTag->value], true),
                 ($node['type'] ?? null) === 'condition' && $kind === AutomationCondition::HasTag->value,
-                ($node['type'] ?? null) === 'trigger' && $kind === AutomationTrigger::Tagged->value => $data['tag_uuid'] ?? null,
-                default => null,
+                ($node['type'] ?? null) === 'trigger' && $kind === AutomationTrigger::Tagged->value => [$data['tag_uuid'] ?? null],
+                default => [],
             };
 
-            if (is_string($uuid) && $uuid !== '') {
-                $uuids[] = $uuid;
+            foreach ($references as $uuid) {
+                if (is_string($uuid) && $uuid !== '') {
+                    $uuids[] = $uuid;
+                }
             }
         }
 

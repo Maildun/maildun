@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\ContactImportIssue;
 use App\Enums\ContactImportMergeStrategy;
 use App\Enums\ContactImportStatus;
+use App\Enums\SubscriberLanguage;
 use Database\Factories\ContactImportFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -29,6 +30,7 @@ use Illuminate\Support\Str;
  * @property list<string|null>|null $column_map
  * @property ContactImportMergeStrategy $merge_strategy
  * @property list<string>|null $tag_names
+ * @property SubscriberLanguage|null $language
  * @property bool $resubscribe_unsubscribed
  * @property array<string, string>|null $review_options
  * @property Carbon|null $consent_confirmed_at
@@ -71,6 +73,7 @@ use Illuminate\Support\Str;
     'column_map',
     'merge_strategy',
     'tag_names',
+    'language',
     'resubscribe_unsubscribed',
     'review_options',
     'consent_confirmed_at',
@@ -141,6 +144,7 @@ class ContactImport extends Model
             'sample_rows' => 'array',
             'column_map' => 'array',
             'tag_names' => 'array',
+            'language' => SubscriberLanguage::class,
             'resubscribe_unsubscribed' => 'boolean',
             'review_options' => 'array',
             'review_counts' => 'array',
@@ -191,6 +195,7 @@ class ContactImport extends Model
      *     failure_message: string|null,
      *     merge_strategy: string,
      *     tag_names: list<string>,
+     *     language: string|null,
      *     resubscribe_unsubscribed: bool,
      *     created_at: string|null,
      *     started_at: string|null,
@@ -226,6 +231,7 @@ class ContactImport extends Model
             'failure_message' => $this->failure_message,
             'merge_strategy' => $this->merge_strategy->value,
             'tag_names' => $this->tag_names ?? [],
+            'language' => $this->language?->value,
             'resubscribe_unsubscribed' => $this->resubscribe_unsubscribed,
             'created_at' => $this->created_at?->toISOString(),
             'started_at' => $this->started_at?->toISOString(),

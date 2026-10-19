@@ -548,3 +548,78 @@ test('the contact profile offers delete to members with audience access for a co
             ->component('contacts/show')
             ->where('canDelete', true));
 });
+
+test('contacts can be filtered by the language of any of their memberships', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $english = Subscriber::factory()->for($audience)->for(Contact::factory()->for($team)->state(['email' => 'en@example.com']))->create([
+        'email' => 'en@example.com',
+        'language' => SubscriberLanguage::English,
+    ]);
+    Subscriber::factory()->for($audience)->for(Contact::factory()->for($team)->state(['email' => 'id@example.com']))->create([
+        'email' => 'id@example.com',
+        'language' => SubscriberLanguage::Indonesian,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('contacts.index', [$team, 'language' => 'en']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.language', 'en')
+            ->has('contacts.data', 1)
+            ->where('contacts.data.0.uuid', $english->contact->uuid));
+});
+
+test('selected contacts can be unsubscribed from every audience at once', function () {
+    Event::fake([SubscriberLifecycleOccurred::class]);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $contact = Contact::factory()->for($team)->create(['email' => 'ada@example.com']);
+    $memberships = Audience::factory()->for($team)->count(2)->create()->map(
+        fn (Audience $audience): Subscriber => Subscriber::factory()->for($audience)->for($contact)->create(['email' => $contact->email]),
+    );
+    $other = Subscriber::factory()->for(Audience::factory()->for($team))->for(Contact::factory()->for($team)->state(['email' => 'grace@example.com']))->create(['email' => 'grace@example.com']);
+
+    $this->actingAs($user)
+        ->patch(route('contacts.bulk-unsubscribe', $team), ['ids' => [$contact->uuid]])
+        ->assertRedirect();
+
+    $memberships->each(fn (Subscriber $subscriber) => expect($subscriber->refresh()->status)->toBe(SubscriberStatus::Unsubscribed));
+    expect($other->refresh()->status)->toBe(SubscriberStatus::Subscribed);
+    Event::assertDispatchedTimes(SubscriberLifecycleOccurred::class, 2);
+});
+
+test('selected contacts can be deleted together but only within the current team', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $selected = Contact::factory()->for($team)->count(2)->create();
+    $kept = Contact::factory()->for($team)->create();
+    $foreign = Contact::factory()->create();
+
+    $this->actingAs($user)
+        ->delete(route('contacts.bulk-destroy', $team), ['ids' => [$foreign->uuid]])
+        ->assertSessionHasErrors('ids.0');
+
+    $this->actingAs($user)
+        ->delete(route('contacts.bulk-destroy', $team), ['ids' => $selected->pluck('uuid')->all()])
+        ->assertRedirect();
+
+    expect(Contact::query()->whereKey($selected->modelKeys())->exists())->toBeFalse()
+        ->and($kept->fresh())->not->toBeNull()
+        ->and($foreign->fresh())->not->toBeNull();
+});
+
+test('viewers cannot bulk delete contacts', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignViewerRole($team, $member);
+    $contact = Contact::factory()->for($team)->create();
+
+    $this->actingAs($member)
+        ->delete(route('contacts.bulk-destroy', $team), ['ids' => [$contact->uuid]])
+        ->assertForbidden();
+
+    expect($contact->fresh())->not->toBeNull();
+});

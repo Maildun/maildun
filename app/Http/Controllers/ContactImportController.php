@@ -6,6 +6,7 @@ use App\Concerns\SanitizesCsvCells;
 use App\Enums\ContactImportIssue;
 use App\Enums\ContactImportStatus;
 use App\Enums\StorageBackend;
+use App\Enums\SubscriberLanguage;
 use App\Http\Requests\StartContactImportRequest;
 use App\Http\Requests\StoreContactImportRequest;
 use App\Jobs\ProcessContactImport;
@@ -130,6 +131,7 @@ class ContactImportController extends Controller
                 'columnMap' => $contactImport->column_map ?? [],
                 'fields' => $csv->fieldOptions($contactImport->audience),
                 'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
+                'languages' => SubscriberLanguage::options(),
             ] : null,
             'canRetry' => $contactImport->status === ContactImportStatus::Failed
                 && Storage::disk($contactImport->disk)->exists($contactImport->path),
@@ -149,6 +151,7 @@ class ContactImportController extends Controller
             'merge_strategy' => $request->validated('merge_strategy'),
             'tag_names' => array_values($request->validated('tags', [])),
             'resubscribe_unsubscribed' => $contactImport->audience_id !== null && $request->boolean('resubscribe_unsubscribed'),
+            'language' => $contactImport->audience_id === null ? null : $request->validated('language'),
             'review_options' => [
                 ...ContactImportIssue::defaultOptions(),
                 ...Arr::only($request->validated('review_options', []), array_keys(ContactImportIssue::defaultOptions())),

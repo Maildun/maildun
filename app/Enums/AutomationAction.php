@@ -7,6 +7,7 @@ enum AutomationAction: string
     case SendEmail = 'send_email';
     case AddTag = 'add_tag';
     case RemoveTag = 'remove_tag';
+    case SetLanguage = 'set_language';
 
     public function label(): string
     {
@@ -14,6 +15,7 @@ enum AutomationAction: string
             self::SendEmail => 'Send email',
             self::AddTag => 'Add tag',
             self::RemoveTag => 'Remove tag',
+            self::SetLanguage => 'Set language',
         };
     }
 }

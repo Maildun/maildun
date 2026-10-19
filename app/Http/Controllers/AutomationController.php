@@ -469,6 +469,10 @@ class AutomationController extends Controller
             }
         }
 
+        if (is_string($result['language'] ?? null)) {
+            return SubscriberLanguage::tryFrom($result['language'])?->label();
+        }
+
         if (is_string($result['trigger'] ?? null)) {
             return AutomationTrigger::tryFrom($result['trigger'])?->label();
         }

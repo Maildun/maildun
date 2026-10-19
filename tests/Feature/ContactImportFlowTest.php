@@ -2,6 +2,7 @@
 
 use App\Enums\ContactImportMergeStrategy;
 use App\Enums\ContactImportStatus;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Jobs\ProcessContactImport;
@@ -122,6 +123,25 @@ test('starting an import requires an email column and unique fields', function (
     'no email' => [['first_name', null], 'Choose which column holds the email address.'],
     'duplicate field' => [['email', 'email'], 'Each field can only be mapped to one column.'],
 ]);
+
+test('audience imports save a language for rows without one', function () {
+    Queue::fake([ProcessContactImport::class]);
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create(['allowed_languages' => ['en', 'id']]);
+    $contactImport = draftImport($user->currentTeam, "email\nada@example.com\n", ['audience_id' => $audience->id]);
+
+    $this->actingAs($user)
+        ->post(route('contacts.imports.start', [$user->currentTeam, $contactImport]), [
+            'column_map' => ['email'],
+            'merge_strategy' => 'skip',
+            'language' => 'id',
+            'consent_confirmed' => true,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($contactImport->refresh()->language)->toBe(SubscriberLanguage::Indonesian);
+});
 
 test('audience imports require consent confirmation before starting', function () {
     Queue::fake([ProcessContactImport::class]);
@@ -498,4 +518,23 @@ test('starting an import rejects a check action the check does not offer', funct
         ->assertSessionHasErrors('review_options.disposable');
 
     Queue::assertNothingPushed();
+});
+
+test('audience imports refuse a language the audience does not offer', function () {
+    Queue::fake([ProcessContactImport::class]);
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create(['allowed_languages' => ['en']]);
+    $contactImport = draftImport($user->currentTeam, "email\nada@example.com\n", ['audience_id' => $audience->id]);
+
+    $this->actingAs($user)
+        ->post(route('contacts.imports.start', [$user->currentTeam, $contactImport]), [
+            'column_map' => ['email'],
+            'merge_strategy' => 'skip',
+            'language' => 'id',
+            'consent_confirmed' => true,
+        ])
+        ->assertSessionHasErrors('language');
+
+    expect($contactImport->refresh()->language)->toBeNull();
 });

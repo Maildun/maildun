@@ -1,4 +1,6 @@
 import {
+    Add01Icon,
+    Cancel01Icon,
     Clock01Icon,
     Delete02Icon,
     FilterIcon,
@@ -34,6 +36,7 @@ import type {
     AutomationAudienceOption,
     AutomationCatalog,
     AutomationEmailOption,
+    AutomationLanguageEmail,
     AutomationNode,
     AutomationNodeData,
     AutomationTagOption,
@@ -115,6 +118,45 @@ export default function AutomationStepPanel({
     const meta = PANEL_META[node.type];
     const patch = (changes: Record<string, unknown>) =>
         onChange(node.id, { ...data, ...changes } as AutomationNodeData);
+
+    const languageEmails = (data.language_emails ??
+        []) as AutomationLanguageEmail[];
+    const usedLanguages = languageEmails.map((variant) => variant.language);
+    const patchLanguageEmail = (
+        index: number,
+        changes: Partial<AutomationLanguageEmail>,
+    ) =>
+        patch({
+            language_emails: languageEmails.map((variant, variantIndex) =>
+                variantIndex === index ? { ...variant, ...changes } : variant,
+            ),
+        });
+
+    const emailSelect = (
+        id: string,
+        value: string | null | undefined,
+        onValueChange: (value: string) => void,
+        testId: string,
+    ) => (
+        <Select
+            value={value ?? ''}
+            onValueChange={(next) => onValueChange(next as string)}
+            disabled={readOnly}
+        >
+            <SelectTrigger id={id} className="w-full" data-test={testId}>
+                <SelectValue placeholder="Choose an email" />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectGroup>
+                    {emails.map((email) => (
+                        <SelectItem key={email.uuid} value={email.uuid}>
+                            {email.name}
+                        </SelectItem>
+                    ))}
+                </SelectGroup>
+            </SelectContent>
+        </Select>
+    );
 
     const tagField = (label: string, key: string) => (
         <Field>
@@ -308,46 +350,223 @@ export default function AutomationStepPanel({
                                         >
                                             Transactional email
                                         </FieldLabel>
-                                        <Select
-                                            value={
-                                                (data.transactional_email_uuid as string) ??
-                                                ''
-                                            }
-                                            onValueChange={(value) =>
+                                        {emailSelect(
+                                            `${node.id}-email`,
+                                            data.transactional_email_uuid as
+                                                string | null,
+                                            (value) =>
                                                 patch({
                                                     transactional_email_uuid:
                                                         value,
-                                                })
-                                            }
-                                            disabled={readOnly}
-                                        >
-                                            <SelectTrigger
-                                                id={`${node.id}-email`}
-                                                className="w-full"
-                                                data-test="automation-email-select"
-                                            >
-                                                <SelectValue placeholder="Choose an email" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectGroup>
-                                                    {emails.map((email) => (
-                                                        <SelectItem
-                                                            key={email.uuid}
-                                                            value={email.uuid}
-                                                        >
-                                                            {email.name}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectGroup>
-                                            </SelectContent>
-                                        </Select>
+                                                }),
+                                            'automation-email-select',
+                                        )}
                                         <FieldDescription>
                                             {emails.length === 0
                                                 ? 'Only published transactional emails can be sent from an automation.'
-                                                : 'Merge tags resolve against the subscriber when the step runs.'}
+                                                : languageEmails.length > 0
+                                                  ? 'Sent to everyone without a matching language version. Merge tags resolve when the step runs.'
+                                                  : 'Merge tags resolve against the subscriber when the step runs.'}
                                         </FieldDescription>
                                     </Field>
+
+                                    <Field>
+                                        <FieldLabel>
+                                            Language versions
+                                        </FieldLabel>
+                                        <FieldDescription>
+                                            Send a different email to
+                                            subscribers in a language.
+                                        </FieldDescription>
+                                        {languageEmails.map(
+                                            (variant, index) => (
+                                                <div
+                                                    key={index}
+                                                    className="flex flex-col gap-2 rounded-md border p-2"
+                                                    data-test="automation-language-email"
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <Select
+                                                            value={
+                                                                variant.language ??
+                                                                ''
+                                                            }
+                                                            onValueChange={(
+                                                                language,
+                                                            ) =>
+                                                                patchLanguageEmail(
+                                                                    index,
+                                                                    {
+                                                                        language:
+                                                                            language as string,
+                                                                    },
+                                                                )
+                                                            }
+                                                            disabled={readOnly}
+                                                        >
+                                                            <SelectTrigger
+                                                                className="w-full"
+                                                                aria-label="Language"
+                                                                data-test="automation-language-email-language"
+                                                            >
+                                                                <SelectValue placeholder="Choose a language" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectGroup>
+                                                                    {catalog.languages
+                                                                        .filter(
+                                                                            (
+                                                                                option,
+                                                                            ) =>
+                                                                                option.value ===
+                                                                                    variant.language ||
+                                                                                !usedLanguages.includes(
+                                                                                    option.value,
+                                                                                ),
+                                                                        )
+                                                                        .map(
+                                                                            (
+                                                                                option,
+                                                                            ) => (
+                                                                                <SelectItem
+                                                                                    key={
+                                                                                        option.value
+                                                                                    }
+                                                                                    value={
+                                                                                        option.value
+                                                                                    }
+                                                                                >
+                                                                                    {
+                                                                                        option.label
+                                                                                    }
+                                                                                </SelectItem>
+                                                                            ),
+                                                                        )}
+                                                                </SelectGroup>
+                                                            </SelectContent>
+                                                        </Select>
+                                                        {!readOnly && (
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                aria-label="Remove language version"
+                                                                onClick={() =>
+                                                                    patch({
+                                                                        language_emails:
+                                                                            languageEmails.filter(
+                                                                                (
+                                                                                    _,
+                                                                                    variantIndex,
+                                                                                ) =>
+                                                                                    variantIndex !==
+                                                                                    index,
+                                                                            ),
+                                                                    })
+                                                                }
+                                                            >
+                                                                <HugeiconsIcon
+                                                                    icon={
+                                                                        Cancel01Icon
+                                                                    }
+                                                                />
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                    {emailSelect(
+                                                        `${node.id}-language-email-${index}`,
+                                                        variant.transactional_email_uuid,
+                                                        (value) =>
+                                                            patchLanguageEmail(
+                                                                index,
+                                                                {
+                                                                    transactional_email_uuid:
+                                                                        value,
+                                                                },
+                                                            ),
+                                                        'automation-language-email-select',
+                                                    )}
+                                                </div>
+                                            ),
+                                        )}
+                                        {!readOnly && (
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="self-start"
+                                                data-test="automation-add-language-email"
+                                                disabled={
+                                                    languageEmails.length >=
+                                                    catalog.languages.length
+                                                }
+                                                onClick={() =>
+                                                    patch({
+                                                        language_emails: [
+                                                            ...languageEmails,
+                                                            {
+                                                                language: null,
+                                                                transactional_email_uuid:
+                                                                    null,
+                                                            },
+                                                        ],
+                                                    })
+                                                }
+                                            >
+                                                <HugeiconsIcon
+                                                    icon={Add01Icon}
+                                                    data-icon="inline-start"
+                                                />
+                                                Add language version
+                                            </Button>
+                                        )}
+                                    </Field>
                                 </>
+                            )}
+
+                            {data.kind === 'set_language' && (
+                                <Field>
+                                    <FieldLabel
+                                        htmlFor={`${node.id}-set-language`}
+                                    >
+                                        Language
+                                    </FieldLabel>
+                                    <Select
+                                        value={(data.language as string) ?? ''}
+                                        onValueChange={(language) =>
+                                            patch({ language })
+                                        }
+                                        disabled={readOnly}
+                                    >
+                                        <SelectTrigger
+                                            id={`${node.id}-set-language`}
+                                            className="w-full"
+                                            data-test="automation-set-language-select"
+                                        >
+                                            <SelectValue placeholder="Choose a language" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectGroup>
+                                                {catalog.languages.map(
+                                                    (option) => (
+                                                        <SelectItem
+                                                            key={option.value}
+                                                            value={option.value}
+                                                        >
+                                                            {option.label}
+                                                        </SelectItem>
+                                                    ),
+                                                )}
+                                            </SelectGroup>
+                                        </SelectContent>
+                                    </Select>
+                                    <FieldDescription>
+                                        Replaces the subscriber&apos;s language
+                                        in this audience. Later Language
+                                        conditions and language versions use the
+                                        new value.
+                                    </FieldDescription>
+                                </Field>
                             )}
 
                             {(data.kind === 'add_tag' ||

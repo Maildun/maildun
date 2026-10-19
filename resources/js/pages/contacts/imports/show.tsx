@@ -337,6 +337,7 @@ function MappingForm({
         column_map: mapping.columnMap,
         merge_strategy: 'skip' as ContactImport['merge_strategy'],
         tags: [] as string[],
+        language: null as ContactImport['language'],
         resubscribe_unsubscribed: false,
         consent_confirmed: false,
         review_options: contactImport.review_options,
@@ -351,6 +352,7 @@ function MappingForm({
                 column.field !== null,
         );
     const hasEmail = form.data.column_map.includes('email');
+    const hasLanguageColumn = form.data.column_map.includes('language');
 
     const setColumnField = (columnIndex: number, field: string | null) => {
         form.setData(
@@ -574,6 +576,65 @@ function MappingForm({
 
                     {isAudienceImport ? (
                         <>
+                            <Field data-invalid={Boolean(form.errors.language)}>
+                                <FieldLabel htmlFor="import-language">
+                                    Language
+                                </FieldLabel>
+                                <Select
+                                    items={[
+                                        {
+                                            value: IGNORE,
+                                            label: 'Audience default',
+                                        },
+                                        ...mapping.languages,
+                                    ]}
+                                    value={form.data.language ?? IGNORE}
+                                    onValueChange={(value) =>
+                                        form.setData(
+                                            'language',
+                                            typeof value === 'string' &&
+                                                value !== IGNORE
+                                                ? (value as ContactImport['language'])
+                                                : null,
+                                        )
+                                    }
+                                >
+                                    <SelectTrigger
+                                        id="import-language"
+                                        className="w-full sm:w-64"
+                                        data-test="import-language"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectGroup>
+                                            <SelectItem value={IGNORE}>
+                                                Audience default
+                                            </SelectItem>
+                                        </SelectGroup>
+                                        <SelectSeparator />
+                                        <SelectGroup>
+                                            {mapping.languages.map(
+                                                (language) => (
+                                                    <SelectItem
+                                                        key={language.value}
+                                                        value={language.value}
+                                                    >
+                                                        {language.label}
+                                                    </SelectItem>
+                                                ),
+                                            )}
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                                <FieldDescription>
+                                    {hasLanguageColumn
+                                        ? 'Used for rows with an empty Language column. Filled cells keep their own language.'
+                                        : 'Assigned to every imported subscriber. To set it per row, map a column to Language (codes like en or names like English).'}
+                                </FieldDescription>
+                                <FieldError>{form.errors.language}</FieldError>
+                            </Field>
+
                             <Field orientation="horizontal">
                                 <FieldContent>
                                     <FieldLabel htmlFor="import-resubscribe">

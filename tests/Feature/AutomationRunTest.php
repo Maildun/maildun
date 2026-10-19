@@ -172,6 +172,67 @@ test('a language condition matches only subscribers with that language', functio
     'no language' => [null, false],
 ]);
 
+test('a send email step picks the version matching the subscriber language', function (?SubscriberLanguage $subscriberLanguage, string $expectedEmail) {
+    Mail::fake();
+
+    $automation = Automation::factory()->active()->create();
+    TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
+    $emails = [
+        'default' => TransactionalEmail::factory()->for($automation->team)->published()->create(),
+        'indonesian' => TransactionalEmail::factory()->for($automation->team)->published()->create(),
+    ];
+    $subscriber = Subscriber::factory()
+        ->for(Audience::factory()->for($automation->team))
+        ->create(['language' => $subscriberLanguage]);
+
+    $run = automationRun(
+        nodes: [['id' => 'send', 'type' => 'action', 'data' => [
+            'kind' => AutomationAction::SendEmail->value,
+            'transactional_email_uuid' => $emails['default']->uuid,
+            'language_emails' => [
+                ['language' => SubscriberLanguage::Indonesian->value, 'transactional_email_uuid' => $emails['indonesian']->uuid],
+            ],
+        ]]],
+        edges: [['source' => 'trigger', 'target' => 'send']],
+        subscriber: $subscriber,
+        automation: $automation,
+    );
+
+    app(AdvanceAutomationRun::class)->handle($run);
+    runQueuedAutomationSends();
+
+    Mail::assertSentCount(1);
+    expect($run->refresh()->steps()->where('node_id', 'send')->value('result'))
+        ->toBe(['transactional_email_uuid' => $emails[$expectedEmail]->uuid]);
+})->with([
+    'matching language' => [SubscriberLanguage::Indonesian, 'indonesian'],
+    'other language' => [SubscriberLanguage::English, 'default'],
+    'no language' => [null, 'default'],
+]);
+
+test('a set language step changes the subscriber language', function () {
+    $automation = Automation::factory()->active()->create();
+    $subscriber = Subscriber::factory()
+        ->for(Audience::factory()->for($automation->team))
+        ->create(['language' => SubscriberLanguage::English]);
+
+    $run = automationRun(
+        nodes: [['id' => 'language', 'type' => 'action', 'data' => [
+            'kind' => AutomationAction::SetLanguage->value,
+            'language' => SubscriberLanguage::Indonesian->value,
+        ]]],
+        edges: [['source' => 'trigger', 'target' => 'language']],
+        subscriber: $subscriber,
+        automation: $automation,
+    );
+
+    app(AdvanceAutomationRun::class)->handle($run);
+
+    expect($subscriber->refresh()->language)->toBe(SubscriberLanguage::Indonesian)
+        ->and($run->refresh()->steps()->where('node_id', 'language')->value('result'))
+        ->toBe(['language' => 'id']);
+});
+
 test('a retried send does not deliver the email twice', function () {
     Mail::fake();
 

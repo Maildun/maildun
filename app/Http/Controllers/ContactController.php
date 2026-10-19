@@ -4,9 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Actions\Audiences\AddContactToAudiences;
 use App\Actions\Automations\DispatchTaggedTriggers;
+use App\Enums\AutomationTrigger;
 use App\Enums\ContactCompanyAssignmentMode;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
+use App\Events\SubscriberLifecycleOccurred;
+use App\Http\Requests\BulkContactRequest;
 use App\Http\Requests\DeleteContactRequest;
 use App\Http\Requests\LookupContactRequest;
 use App\Http\Requests\SaveContactRequest;
@@ -57,6 +61,10 @@ class ContactController extends Controller
             ->when($filters['audience'] !== '', fn ($query) => $query->whereHas(
                 'subscribers.audience',
                 fn ($audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
+            ))
+            ->when($filters['language'] !== '', fn ($query) => $query->whereHas(
+                'subscribers',
+                fn ($subscriberQuery) => $subscriberQuery->where('language', $filters['language']),
             ));
 
         $contacts = match ($filters['sort']) {
@@ -72,6 +80,7 @@ class ContactController extends Controller
             'addableAudiences' => $this->addableAudiences($currentTeam),
             'canAddToAudiences' => Gate::allows('create', [Audience::class, $currentTeam]),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
+            'languages' => SubscriberLanguage::options(),
             'filters' => $filters,
             'canManage' => Gate::allows('create', [Contact::class, $currentTeam]),
         ]);
@@ -346,6 +355,43 @@ class ContactController extends Controller
         return to_route('contacts.index', $currentTeam);
     }
 
+    public function bulkUnsubscribe(BulkContactRequest $request, Team $currentTeam): RedirectResponse
+    {
+        $subscribers = Subscriber::query()
+            ->whereIn('contact_id', $currentTeam->contacts()->whereIn('uuid', $request->validated('ids'))->select('id'))
+            ->where('status', SubscriberStatus::Subscribed)
+            ->get();
+
+        Subscriber::query()
+            ->whereIn('id', $subscribers->modelKeys())
+            ->update([
+                'status' => SubscriberStatus::Unsubscribed,
+                'unsubscribed_at' => now(),
+            ]);
+
+        foreach ($subscribers as $subscriber) {
+            $subscriber->status = SubscriberStatus::Unsubscribed;
+            $subscriber->setAttribute('unsubscribed_at', now());
+            event(new SubscriberLifecycleOccurred(AutomationTrigger::Unsubscribed, $subscriber));
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Selected contacts unsubscribed from every audience.')]);
+
+        return back();
+    }
+
+    public function bulkDestroy(BulkContactRequest $request, Team $currentTeam): RedirectResponse
+    {
+        $currentTeam->contacts()
+            ->whereIn('uuid', $request->validated('ids'))
+            ->get()
+            ->each(fn (Contact $contact): ?bool => $contact->delete());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Selected contacts deleted.')]);
+
+        return back();
+    }
+
     /** @return array{uuid: string, email: string, first_name: string|null, last_name: string|null, avatar: string, company: array{uuid: string, name: string}|null, tags: list<array{uuid: string, name: string, color: string|null}>, audiences_count: int, created_at: string|null} */
     private function summary(Contact $contact): array
     {
@@ -391,7 +437,7 @@ class ContactController extends Controller
             ->all());
     }
 
-    /** @return array{search: string, company: string, audience: string, sort: string} */
+    /** @return array{search: string, company: string, audience: string, language: string, sort: string} */
     private function indexFilters(Request $request): array
     {
         $company = $request->string('company')->toString();
@@ -403,6 +449,7 @@ class ContactController extends Controller
             'audience' => Str::isUuid($request->string('audience')->toString())
                 ? $request->string('audience')->toString()
                 : '',
+            'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())?->value ?? '',
             'sort' => in_array($sort, ['oldest', 'name'], true) ? $sort : 'newest',
         ];
     }

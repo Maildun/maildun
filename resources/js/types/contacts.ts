@@ -1,4 +1,9 @@
-import type { Paginated, SubscriberLanguage, Tag } from './audiences';
+import type {
+    Paginated,
+    SubscriberLanguage,
+    SubscriberLanguageOption,
+    Tag,
+} from './audiences';
 
 export type CompanyOption = {
     uuid: string;
@@ -57,6 +62,7 @@ export type ContactImport = {
     failure_message: string | null;
     merge_strategy: 'skip' | 'fill_blanks';
     tag_names: string[];
+    language: SubscriberLanguage | null;
     resubscribe_unsubscribed: boolean;
     created_at: string | null;
     started_at: string | null;
@@ -76,6 +82,7 @@ export type ContactImportMapping = {
     columnMap: (string | null)[];
     fields: { value: string; label: string }[];
     tags: Tag[];
+    languages: SubscriberLanguageOption[];
 };
 
 export type ContactSummary = {
@@ -177,6 +184,7 @@ export type ContactIndexFilters = {
     search: string;
     company: string;
     audience: string;
+    language: SubscriberLanguage | '';
     sort: 'newest' | 'oldest' | 'name';
 };
 
@@ -187,6 +195,7 @@ export type ContactIndexProps = {
     addableAudiences: CompanyOption[];
     canAddToAudiences: boolean;
     tags: Tag[];
+    languages: SubscriberLanguageOption[];
     filters: ContactIndexFilters;
     canManage: boolean;
 };

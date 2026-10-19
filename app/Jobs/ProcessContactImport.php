@@ -208,6 +208,10 @@ class ProcessContactImport implements ShouldQueue
             $error = $this->unavailableLanguageError($languageValue);
         }
 
+        if ($languageValue === null && $contactImport->audience !== null) {
+            $language = $contactImport->language;
+        }
+
         if ($error === null && $contactImport->audience !== null) {
             [$attributes, $error] = $this->attributeValues($contactImport, $row, $fields);
         }

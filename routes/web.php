@@ -212,6 +212,10 @@ Route::prefix('{current_team}')
                 ->name('contacts.exports.show');
             Route::get('contacts/lookup', [ContactController::class, 'lookup'])
                 ->name('contacts.lookup');
+            Route::patch('contacts/bulk-unsubscribe', [ContactController::class, 'bulkUnsubscribe'])
+                ->name('contacts.bulk-unsubscribe');
+            Route::delete('contacts/bulk-destroy', [ContactController::class, 'bulkDestroy'])
+                ->name('contacts.bulk-destroy');
             Route::resource('contacts', ContactController::class)
                 ->only(['index', 'store', 'show', 'update', 'destroy']);
             Route::post('contacts/{contact}/audiences', [ContactAudienceController::class, 'store'])

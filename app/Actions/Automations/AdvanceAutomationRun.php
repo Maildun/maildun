@@ -300,6 +300,7 @@ class AdvanceAutomationRun
             AutomationAction::SendEmail => $this->queueEmail($run, $step, $data),
             AutomationAction::AddTag => $this->syncTag($run, $data, add: true),
             AutomationAction::RemoveTag => $this->syncTag($run, $data, add: false),
+            AutomationAction::SetLanguage => $this->setLanguage($run, $data),
             default => throw new \RuntimeException(__('Unknown action.')),
         };
     }
@@ -316,7 +317,7 @@ class AdvanceAutomationRun
         $subscriber = $run->subscriber()->firstOrFail();
         $email = TransactionalEmail::query()
             ->where('team_id', $run->automation->team_id)
-            ->where('uuid', (string) ($data['transactional_email_uuid'] ?? ''))
+            ->where('uuid', $this->emailUuidFor($subscriber->language, $data))
             ->first();
 
         $sendable = $this->sendableEmail($run, $subscriber, $email);
@@ -345,6 +346,54 @@ class AdvanceAutomationRun
             'result' => [],
             'handle' => null,
             'deliveryId' => $delivery->id,
+        ];
+    }
+
+    /**
+     * The language version matching the subscriber, or the step's default email
+     * for everyone else.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    protected function emailUuidFor(?SubscriberLanguage $language, array $data): string
+    {
+        $variants = is_array($data['language_emails'] ?? null) ? $data['language_emails'] : [];
+
+        foreach ($variants as $variant) {
+            if ($language !== null
+                && is_array($variant)
+                && ($variant['language'] ?? null) === $language->value
+                && is_string($variant['transactional_email_uuid'] ?? null)
+            ) {
+                return $variant['transactional_email_uuid'];
+            }
+        }
+
+        return (string) ($data['transactional_email_uuid'] ?? '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{status: string, result: array<string, mixed>, handle: string|null}
+     */
+    protected function setLanguage(AutomationRun $run, array $data): array
+    {
+        $language = SubscriberLanguage::tryFrom((string) ($data['language'] ?? ''));
+
+        if ($language === null) {
+            throw new \RuntimeException(__('Choose a language to set.'));
+        }
+
+        $subscriber = $run->subscriber()->firstOrFail();
+
+        if ($subscriber->language !== $language) {
+            $subscriber->update(['language' => $language]);
+        }
+
+        return [
+            'status' => 'completed',
+            'result' => ['language' => $language->value],
+            'handle' => null,
         ];
     }
 

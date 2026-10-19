@@ -1,11 +1,13 @@
 import {
     ArrowDown01Icon,
     Building06Icon,
+    Delete02Icon,
+    TranslateIcon,
     UserGroupIcon,
     UserIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Head, usePage } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
 import { ContactDialog } from '@/components/contact-dialog';
@@ -14,8 +16,20 @@ import { ContactImportMenu } from '@/components/contact-import-menu';
 import { FilterMenu } from '@/components/filter-menu';
 import { ListSearch } from '@/components/list-search';
 import { Paginator } from '@/components/paginator';
+import { SelectionActionBar } from '@/components/selection-action-bar';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -42,7 +56,7 @@ import {
 import { useListFilters } from '@/hooks/use-list-filters';
 import { formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
-import { index, show } from '@/routes/contacts';
+import { bulkDestroy, bulkUnsubscribe, index, show } from '@/routes/contacts';
 import { show as showContactExport } from '@/routes/contacts/exports';
 import type { ContactIndexProps, ContactSummary } from '@/types/contacts';
 
@@ -59,21 +73,36 @@ export default function ContactsIndex({
     addableAudiences,
     canAddToAudiences,
     tags,
+    languages,
     filters,
     canManage,
 }: ContactIndexProps) {
     const { currentTeam } = usePage().props;
     const [createOpen, setCreateOpen] = useState(false);
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
     const { visit, clear, clearAll, searchKey } = useListFilters({
         url: currentTeam ? index.url(currentTeam.slug) : '',
         filters,
-        empty: { search: '', company: '', audience: '' },
+        empty: { search: '', company: '', audience: '', language: '' },
         searchField: 'search',
     });
 
     if (!currentTeam) {
         return null;
     }
+
+    const pageIds = contacts.data.map((contact) => contact.uuid);
+    const allSelected =
+        pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+    const someSelected = pageIds.some((id) => selected.has(id));
+
+    const toggleSelected = (ids: string[], checked: boolean): void => {
+        const next = new Set(selected);
+
+        ids.forEach((id) => (checked ? next.add(id) : next.delete(id)));
+        setSelected(next);
+    };
 
     const companyOptions = [
         { value: 'assigned', label: 'Assigned to a company' },
@@ -148,6 +177,19 @@ export default function ContactsIndex({
                                 })),
                                 onValueChange: (audience) =>
                                     visit({ audience }),
+                            },
+                            {
+                                key: 'language',
+                                icon: TranslateIcon,
+                                label: 'Language',
+                                value: filters.language,
+                                allLabel: 'All languages',
+                                options: languages,
+                                onValueChange: (language) =>
+                                    visit({
+                                        language:
+                                            language as ContactIndexProps['filters']['language'],
+                                    }),
                             },
                         ]}
                     />
@@ -239,6 +281,21 @@ export default function ContactsIndex({
                                   },
                               ]
                             : []),
+                        ...(filters.language
+                            ? [
+                                  {
+                                      key: 'language',
+                                      field: 'Language',
+                                      value:
+                                          languages.find(
+                                              (language) =>
+                                                  language.value ===
+                                                  filters.language,
+                                          )?.label ?? filters.language,
+                                      onClear: () => clear({ language: '' }),
+                                  },
+                              ]
+                            : []),
                     ]}
                     onClearAll={clearAll}
                 />
@@ -278,6 +335,24 @@ export default function ContactsIndex({
                         >
                             <TableHeader>
                                 <TableRow>
+                                    {canManage && (
+                                        <TableHead className="w-10">
+                                            <Checkbox
+                                                aria-label="Select all"
+                                                data-test="contact-select-all"
+                                                checked={allSelected}
+                                                indeterminate={
+                                                    someSelected && !allSelected
+                                                }
+                                                onCheckedChange={(checked) =>
+                                                    toggleSelected(
+                                                        pageIds,
+                                                        checked === true,
+                                                    )
+                                                }
+                                            />
+                                        </TableHead>
+                                    )}
                                     <TableHead className="w-80">
                                         Contact
                                     </TableHead>
@@ -300,10 +375,104 @@ export default function ContactsIndex({
                                         companies={companies}
                                         tags={tags}
                                         canManage={canManage}
+                                        isSelected={selected.has(contact.uuid)}
+                                        onSelectedChange={(checked) =>
+                                            toggleSelected(
+                                                [contact.uuid],
+                                                checked,
+                                            )
+                                        }
                                     />
                                 ))}
                             </TableBody>
                         </Table>
+                    </>
+                )}
+                {canManage && (
+                    <>
+                        <SelectionActionBar
+                            count={selected.size}
+                            noun={['contact', 'contacts']}
+                            onClear={() => setSelected(new Set())}
+                        >
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                    router.patch(
+                                        bulkUnsubscribe.url(currentTeam.slug),
+                                        { ids: [...selected] },
+                                        {
+                                            preserveScroll: true,
+                                            onSuccess: () =>
+                                                setSelected(new Set()),
+                                        },
+                                    );
+                                }}
+                            >
+                                Unsubscribe
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => setConfirmDeleteOpen(true)}
+                            >
+                                <HugeiconsIcon
+                                    icon={Delete02Icon}
+                                    data-icon="inline-start"
+                                />
+                                Delete
+                            </Button>
+                        </SelectionActionBar>
+                        <AlertDialog
+                            open={confirmDeleteOpen}
+                            onOpenChange={setConfirmDeleteOpen}
+                        >
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>
+                                        Delete {selected.size}{' '}
+                                        {selected.size === 1
+                                            ? 'contact'
+                                            : 'contacts'}
+                                        ?
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        They are removed from every audience
+                                        they belong to. This cannot be undone.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>
+                                        Cancel
+                                    </AlertDialogCancel>
+                                    <AlertDialogAction
+                                        variant="destructive"
+                                        onClick={() => {
+                                            router.delete(
+                                                bulkDestroy.url(
+                                                    currentTeam.slug,
+                                                ),
+                                                {
+                                                    data: {
+                                                        ids: [...selected],
+                                                    },
+                                                    preserveScroll: true,
+                                                    onSuccess: () =>
+                                                        setSelected(new Set()),
+                                                    onFinish: () =>
+                                                        setConfirmDeleteOpen(
+                                                            false,
+                                                        ),
+                                                },
+                                            );
+                                        }}
+                                    >
+                                        Delete
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
                     </>
                 )}
             </div>
@@ -317,12 +486,16 @@ function ContactRow({
     companies,
     tags,
     canManage,
+    isSelected,
+    onSelectedChange,
 }: {
     contact: ContactSummary;
     teamSlug: string;
     companies: ContactIndexProps['companies'];
     tags: ContactIndexProps['tags'];
     canManage: boolean;
+    isSelected: boolean;
+    onSelectedChange: (checked: boolean) => void;
 }) {
     const [hoverOpen, setHoverOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
@@ -339,6 +512,18 @@ function ContactRow({
 
     return (
         <TableRow data-test="contact-row">
+            {canManage && (
+                <TableCell>
+                    <Checkbox
+                        aria-label={`Select ${contact.email}`}
+                        data-test="contact-row-select"
+                        checked={isSelected}
+                        onCheckedChange={(checked) =>
+                            onSelectedChange(checked === true)
+                        }
+                    />
+                </TableCell>
+            )}
             <TableCell className="max-w-80">
                 <ContactHoverCard
                     contact={contact}
