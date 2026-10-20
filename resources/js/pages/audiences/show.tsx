@@ -19,6 +19,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { Form, Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
+import { BulkSubscriberTagsDialog } from '@/components/bulk-subscriber-tags-dialog';
 import { ContactDialog } from '@/components/contact-dialog';
 import { ContactImportMenu } from '@/components/contact-import-menu';
 import { FilterMenu } from '@/components/filter-menu';
@@ -106,6 +107,7 @@ import {
 } from '@/routes/audiences/subscribe_forms';
 import {
     bulkDestroy,
+    bulkLanguage,
     bulkUnsubscribe,
     destroy as destroySubscriber,
     resubscribe,
@@ -180,6 +182,7 @@ export default function AudienceShow(props: Props) {
     );
     const [formOpen, setFormOpen] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [bulkTagsOpen, setBulkTagsOpen] = useState(false);
     const [copiedText, copy] = useClipboard();
     const {
         visit: visitSubscribers,
@@ -490,6 +493,62 @@ export default function AudienceShow(props: Props) {
                                 >
                                     Unsubscribe
                                 </Button>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger
+                                        render={
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                data-test="bulk-language"
+                                            />
+                                        }
+                                    >
+                                        Language
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent
+                                        side="top"
+                                        className="max-h-72 w-44"
+                                    >
+                                        <DropdownMenuGroup>
+                                            {languages.map((language) => (
+                                                <DropdownMenuItem
+                                                    key={language.value}
+                                                    onClick={() =>
+                                                        router.patch(
+                                                            bulkLanguage.url(
+                                                                routeArgs,
+                                                            ),
+                                                            {
+                                                                ids: [
+                                                                    ...selected,
+                                                                ],
+                                                                language:
+                                                                    language.value,
+                                                            },
+                                                            {
+                                                                preserveScroll: true,
+                                                                onSuccess: () =>
+                                                                    setSelected(
+                                                                        new Set(),
+                                                                    ),
+                                                            },
+                                                        )
+                                                    }
+                                                >
+                                                    {language.label}
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </DropdownMenuGroup>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setBulkTagsOpen(true)}
+                                    data-test="bulk-tags"
+                                >
+                                    Tags
+                                </Button>
                                 <Button
                                     variant="destructive"
                                     size="sm"
@@ -514,6 +573,16 @@ export default function AudienceShow(props: Props) {
                                     Delete
                                 </Button>
                             </SelectionActionBar>
+                        )}
+                        {canManage && (
+                            <BulkSubscriberTagsDialog
+                                routeArgs={routeArgs}
+                                ids={[...selected]}
+                                tags={tags}
+                                open={bulkTagsOpen}
+                                onOpenChange={setBulkTagsOpen}
+                                onSuccess={() => setSelected(new Set())}
+                            />
                         )}
                     </TabsContent>
 

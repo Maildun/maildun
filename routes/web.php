@@ -252,6 +252,10 @@ Route::prefix('{current_team}')
 
             Route::patch('audiences/{audience}/subscribers/bulk-unsubscribe', [SubscriberController::class, 'bulkUnsubscribe'])
                 ->name('audiences.subscribers.bulk-unsubscribe');
+            Route::patch('audiences/{audience}/subscribers/bulk-language', [SubscriberController::class, 'bulkLanguage'])
+                ->name('audiences.subscribers.bulk-language');
+            Route::patch('audiences/{audience}/subscribers/bulk-tags', [SubscriberController::class, 'bulkTags'])
+                ->name('audiences.subscribers.bulk-tags');
             Route::delete('audiences/{audience}/subscribers/bulk-destroy', [SubscriberController::class, 'bulkDestroy'])
                 ->name('audiences.subscribers.bulk-destroy');
             Route::resource('audiences.subscribers', SubscriberController::class)

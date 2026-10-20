@@ -8,7 +8,9 @@ use App\Enums\AutomationTrigger;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
+use App\Http\Requests\BulkSubscriberLanguageRequest;
 use App\Http\Requests\BulkSubscriberRequest;
+use App\Http\Requests\BulkSubscriberTagsRequest;
 use App\Http\Requests\ResubscribeSubscriberRequest;
 use App\Http\Requests\SaveSubscriberRequest;
 use App\Models\Audience;
@@ -18,6 +20,7 @@ use App\Services\ManageContact;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 
 class SubscriberController extends Controller
@@ -158,6 +161,62 @@ class SubscriberController extends Controller
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Selected subscribers unsubscribed.')]);
+
+        return back();
+    }
+
+    public function bulkLanguage(BulkSubscriberLanguageRequest $request, Team $currentTeam, Audience $audience): RedirectResponse
+    {
+        Gate::authorize('create', [Subscriber::class, $audience]);
+
+        $audience->subscribers()
+            ->whereIn('uuid', $request->validated('ids'))
+            ->update(['language' => $request->validated('language')]);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Language updated for selected subscribers.')]);
+
+        return back();
+    }
+
+    /**
+     * Tags belong to the contact, so adding or removing one here applies in
+     * every audience the contact is subscribed to.
+     */
+    public function bulkTags(BulkSubscriberTagsRequest $request, Team $currentTeam, Audience $audience, ManageContact $manageContact, DispatchTaggedTriggers $dispatchTaggedTriggers): RedirectResponse
+    {
+        Gate::authorize('create', [Subscriber::class, $audience]);
+
+        /** @var list<string> $names */
+        $names = $request->validated('tags');
+        $contacts = $audience->subscribers()
+            ->whereIn('uuid', $request->validated('ids'))
+            ->whereNotNull('contact_id')
+            ->with('contact')
+            ->get()
+            ->pluck('contact')
+            ->filter();
+
+        if ($request->validated('action') === 'add') {
+            foreach ($contacts as $contact) {
+                $dispatchTaggedTriggers->handle($contact, $manageContact->addTags($currentTeam, $contact, $names));
+            }
+
+            Inertia::flash('toast', ['type' => 'success', 'message' => __('Tags added to selected subscribers.')]);
+
+            return back();
+        }
+
+        $lowerNames = array_map(fn (string $name): string => Str::lower(trim($name)), $names);
+        $tagIds = $currentTeam->tags()
+            ->get(['id', 'name'])
+            ->filter(fn ($tag): bool => in_array(Str::lower($tag->name), $lowerNames, true))
+            ->modelKeys();
+
+        foreach ($contacts as $contact) {
+            $contact->tags()->detach($tagIds);
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Tags removed from selected subscribers.')]);
 
         return back();
     }

@@ -1,10 +1,12 @@
 <?php
 
+use App\Enums\AutomationTrigger;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
+use App\Events\SubscriberLifecycleOccurred;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Automation;
@@ -19,6 +21,7 @@ use App\Models\Team;
 use App\Models\User;
 use App\Models\WorkspaceRole;
 use App\Services\DiceBearAvatarGenerator;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\URL;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -234,6 +237,67 @@ test('owners can bulk unsubscribe and delete selected subscribers', function () 
     $this->assertModelExists($unsubscribe);
 });
 
+test('owners can bulk change the language of selected subscribers', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $selected = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+    $keep = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-language', [$team, $audience]), [
+            'ids' => [$selected->uuid],
+            'language' => SubscriberLanguage::Indonesian->value,
+        ])
+        ->assertRedirect();
+
+    expect($selected->fresh()->language)->toBe(SubscriberLanguage::Indonesian)
+        ->and($keep->fresh()->language)->toBe(SubscriberLanguage::English);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-language', [$team, $audience]), [
+            'ids' => [$selected->uuid],
+            'language' => 'klingon',
+        ])
+        ->assertInvalid('language');
+});
+
+test('owners can bulk add and remove tags on selected subscribers', function () {
+    Event::fake([SubscriberLifecycleOccurred::class]);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $selected = Subscriber::factory()->for($audience)->create();
+    $keep = Subscriber::factory()->for($audience)->create();
+    $vip = Tag::factory()->for($team)->create(['name' => 'VIP']);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-tags', [$team, $audience]), [
+            'ids' => [$selected->uuid],
+            'action' => 'add',
+            'tags' => ['VIP', 'Donor'],
+        ])
+        ->assertRedirect();
+
+    expect($selected->contact->tags()->pluck('name')->sort()->values()->all())->toBe(['Donor', 'VIP'])
+        ->and($keep->contact->tags()->count())->toBe(0);
+
+    Event::assertDispatched(SubscriberLifecycleOccurred::class, fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Tagged
+        && $event->subscriber->is($selected)
+        && $event->context === ['tag_uuid' => $vip->uuid]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-tags', [$team, $audience]), [
+            'ids' => [$selected->uuid],
+            'action' => 'remove',
+            'tags' => ['vip'],
+        ])
+        ->assertRedirect();
+
+    expect($selected->contact->tags()->pluck('name')->all())->toBe(['Donor'])
+        ->and($team->tags()->where('name', 'VIP')->exists())->toBeTrue();
+});
+
 test('bulk subscriber actions stay scoped to the audience and managers', function () {
     $owner = User::factory()->create();
     $member = User::factory()->create();
@@ -261,9 +325,24 @@ test('bulk subscriber actions stay scoped to the audience and managers', functio
         ])
         ->assertForbidden();
 
+    $this->actingAs($member)
+        ->patch(route('audiences.subscribers.bulk-tags', [$team, $audience]), [
+            'ids' => [$subscriber->uuid],
+            'action' => 'add',
+            'tags' => ['VIP'],
+        ])
+        ->assertForbidden();
+
     $this->actingAs($owner)
         ->delete(route('audiences.subscribers.bulk-destroy', [$team, $audience]), [
             'ids' => [$foreign->uuid],
+        ])
+        ->assertInvalid('ids.0');
+
+    $this->actingAs($owner)
+        ->patch(route('audiences.subscribers.bulk-language', [$team, $audience]), [
+            'ids' => [$foreign->uuid],
+            'language' => SubscriberLanguage::French->value,
         ])
         ->assertInvalid('ids.0');
 
