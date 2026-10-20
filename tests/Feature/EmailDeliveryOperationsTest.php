@@ -157,6 +157,19 @@ test('a delivery whose queued job was lost goes back on the queue', function () 
     expect($stalled->fresh()->status)->toBe(EmailDeliveryStatus::Queued);
 });
 
+test('a stalled delivery is not queued again while a job could still run it', function () {
+    Queue::fake();
+    $email = Email::factory()->create(['status' => EmailStatus::Sending, 'send_started_at' => now()->subHour()]);
+    $waiting = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+    $waiting->forceFill(['updated_at' => now()->subHour()])->saveQuietly();
+    SendEmailDelivery::dispatch($waiting->id);
+
+    $this->artisan('emails:resume')->assertSuccessful();
+
+    Queue::assertPushed(SendEmailDelivery::class, 1);
+    expect($waiting->fresh()->status)->toBe(EmailDeliveryStatus::Queued);
+});
+
 test('a delivery that has only just been queued is left alone', function () {
     Queue::fake();
     $email = Email::factory()->create(['status' => EmailStatus::Sending, 'send_started_at' => now()]);
@@ -306,6 +319,23 @@ test('a stalled transactional delivery goes back on the queue', function () {
         SendTransactionalEmailDelivery::class,
         fn ($job): bool => $job->deliveryId === $delivery->id,
     );
+});
+
+test('a stalled transactional delivery is not queued again while a job could still run it', function () {
+    Queue::fake();
+    $transactionalEmail = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()
+        ->for($transactionalEmail, 'transactionalEmail')
+        ->create([
+            'team_id' => $transactionalEmail->team_id,
+            'status' => EmailDeliveryStatus::Queued,
+        ]);
+    $delivery->forceFill(['updated_at' => now()->subHour()])->saveQuietly();
+    SendTransactionalEmailDelivery::dispatch($delivery->id);
+
+    $this->artisan('emails:resume')->assertSuccessful();
+
+    Queue::assertPushed(SendTransactionalEmailDelivery::class, 1);
 });
 
 test('a transactional delivery stuck mid-handoff is failed rather than sent a second time', function (

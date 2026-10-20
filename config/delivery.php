@@ -53,7 +53,9 @@ return [
     | Queued sends lean on the queue to keep them moving. Redis is not durable,
     | so a flush, eviction, or queue reset on deploy can strand a delivery with
     | no job left to run it. "emails:resume" sweeps those back onto the queue
-    | once they have sat still for this many minutes.
+    | once they have sat still for this many minutes and nothing is left on
+    | their queue that could still run them. With a queue shared with other
+    | work (for example "default"), recovery waits until that queue drains.
     |
     | A delivery already claimed for sending is never re-queued, because the
     | transport may have accepted it. Those are failed instead, so an operator
