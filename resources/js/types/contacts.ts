@@ -185,6 +185,7 @@ export type ContactIndexProps = {
     companies: CompanyOption[];
     audiences: CompanyOption[];
     addableAudiences: CompanyOption[];
+    canAddToAudiences: boolean;
     tags: Tag[];
     filters: ContactIndexFilters;
     canManage: boolean;

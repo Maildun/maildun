@@ -31,11 +31,17 @@ class ContactPolicy
     }
 
     /**
-     * Deleting a contact also deletes its audience memberships, so the user must be allowed to remove each one.
+     * Deleting a contact also deletes its audience memberships, so the user must be allowed to remove them.
+     * Removing memberships is granted per workspace, so one membership's answer holds for all of them.
      */
     public function delete(User $user, Contact $contact): bool
     {
-        return $this->update($user, $contact)
-            && $contact->subscribers->every(fn (Subscriber $subscriber): bool => $user->can('delete', $subscriber));
+        if (! $this->update($user, $contact)) {
+            return false;
+        }
+
+        $membership = $contact->subscribers->first();
+
+        return ! $membership instanceof Subscriber || $user->can('delete', $membership);
     }
 }

@@ -70,6 +70,7 @@ class ContactController extends Controller
             'companies' => $currentTeam->companies()->orderBy('name')->get(['uuid', 'name']),
             'audiences' => $currentTeam->audiences()->orderBy('name')->get(['uuid', 'name']),
             'addableAudiences' => $this->addableAudiences($currentTeam),
+            'canAddToAudiences' => Gate::allows('create', [Audience::class, $currentTeam]),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'filters' => $filters,
             'canManage' => Gate::allows('create', [Contact::class, $currentTeam]),

@@ -458,7 +458,8 @@ test('the add contact dialog offers every audience to members with audience acce
             ->where('addableAudiences', [
                 ['uuid' => $customers->uuid, 'name' => 'Customers'],
                 ['uuid' => $newsletter->uuid, 'name' => 'Newsletter'],
-            ]));
+            ])
+            ->where('canAddToAudiences', true));
 });
 
 test('the add contact dialog offers no audiences without audience access but the audience filter keeps them', function () {
@@ -471,7 +472,19 @@ test('the add contact dialog offers no audiences without audience access but the
         ->assertInertia(fn (Assert $page) => $page
             ->component('contacts/index')
             ->where('addableAudiences', [])
+            ->where('canAddToAudiences', false)
             ->where('audiences.0.uuid', $audience->uuid));
+});
+
+test('the add contact dialog explains missing audience access before any audience exists', function () {
+    $team = User::factory()->create()->currentTeam;
+    $member = contactOnlyMember($team);
+
+    $this->actingAs($member)
+        ->get(route('contacts.index', $team))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('contacts/index')
+            ->where('canAddToAudiences', false));
 });
 
 test('a contact in an audience cannot be deleted without audience access', function () {
@@ -504,7 +517,7 @@ test('a contact in no audience can be deleted with contact access alone', functi
     $this->assertModelMissing($contact);
 });
 
-test('the contact profile offers delete only when every membership may be removed', function (int $memberships, bool $canDelete) {
+test('the contact profile offers delete without audience access only for a contact in no audience', function (int $memberships, bool $canDelete) {
     $team = User::factory()->create()->currentTeam;
     $member = contactOnlyMember($team);
     $contact = Contact::factory()->for($team)->create();
@@ -522,3 +535,16 @@ test('the contact profile offers delete only when every membership may be remove
     'contact in an audience' => [1, false],
     'contact in no audience' => [0, true],
 ]);
+
+test('the contact profile offers delete to members with audience access for a contact in an audience', function () {
+    $team = User::factory()->create()->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->create();
+
+    $this->actingAs($member)
+        ->get(route('contacts.show', [$team, $subscriber->contact]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('contacts/show')
+            ->where('canDelete', true));
+});

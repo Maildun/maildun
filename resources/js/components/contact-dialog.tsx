@@ -499,9 +499,9 @@ export function ContactDialog({
                                         <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                                             {lacksAudienceAccess
                                                 ? "You don't have permission to add contacts to audiences."
-                                                : isExistingContact
-                                                  ? 'This contact is already subscribed to every audience.'
-                                                  : 'Create an audience first if you want to subscribe this contact.'}
+                                                : audiences.length === 0
+                                                  ? 'Create an audience first if you want to subscribe this contact.'
+                                                  : 'This contact is already subscribed to every audience.'}
                                         </div>
                                     )}
                                     <FieldError>

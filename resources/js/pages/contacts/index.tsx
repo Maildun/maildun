@@ -57,6 +57,7 @@ export default function ContactsIndex({
     companies,
     audiences,
     addableAudiences,
+    canAddToAudiences,
     tags,
     filters,
     canManage,
@@ -115,10 +116,7 @@ export default function ContactsIndex({
                                 companies={companies}
                                 tags={tags}
                                 audiences={addableAudiences}
-                                lacksAudienceAccess={
-                                    audiences.length > 0 &&
-                                    addableAudiences.length === 0
-                                }
+                                lacksAudienceAccess={!canAddToAudiences}
                                 open={createOpen}
                                 onOpenChange={setCreateOpen}
                             />
