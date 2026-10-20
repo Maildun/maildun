@@ -65,6 +65,24 @@ test('email builder stays contained in the compose card', function () {
         ->toContain('flex: 1 1 0%');
 });
 
+test('editor image uploads stop polling once the editor page unmounts', function (string $page) {
+    $root = dirname(__DIR__, 2).'/resources/js';
+    $upload = file_get_contents($root.'/lib/editor-media-upload.ts');
+    $source = file_get_contents($root."/pages/{$page}.tsx");
+
+    expect($upload)->toBeString()
+        ->toContain('signal: AbortSignal,')
+        ->toContain('await pause(signal);')
+        ->toContain('{ signal },')
+        ->toContain('signal.throwIfAborted();')
+        ->and($source)->toContain('const unmountSignal = useUnmountSignal();')
+        ->toContain('uploadEditorImage(currentTeam.slug, file, unmountSignal())');
+})->with([
+    'campaign' => 'emails/edit',
+    'template' => 'email-templates/edit',
+    'transactional' => 'transactional/edit',
+]);
+
 test('saved section requests run beside the draft save and always settle', function () {
     $group = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/saved-sections-group.tsx');
 

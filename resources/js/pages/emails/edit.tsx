@@ -89,6 +89,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useUnmountSignal } from '@/hooks/use-unmount-signal';
 import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 import {
     firstUploadErrorMessage,
@@ -251,6 +252,7 @@ export default function EmailEdit({
         useState<LinkCheckResponse | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const builderRef = useRef<EmailEditorHandle>(null);
+    const unmountSignal = useUnmountSignal();
     const savedSectionsGroup = useSavedSectionsGroup({
         teamSlug: currentTeam.slug,
         sections: savedSections,
@@ -262,7 +264,8 @@ export default function EmailEdit({
     );
     const uploadBuilderImage =
         canManage && mediaLibrary?.canUpload
-            ? (file: File) => uploadEditorImage(currentTeam.slug, file)
+            ? (file: File) =>
+                  uploadEditorImage(currentTeam.slug, file, unmountSignal())
             : undefined;
     const imagePickerResolve = useRef<
         ((image: ImageResult | null) => void) | null

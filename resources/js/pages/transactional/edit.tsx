@@ -66,6 +66,7 @@ import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from '@/components/ui/toast';
 import { useClipboard } from '@/hooks/use-clipboard';
+import { useUnmountSignal } from '@/hooks/use-unmount-signal';
 import { uploadEditorImage } from '@/lib/editor-media-upload';
 import {
     EMPTY_BUILDER_DOCUMENT,
@@ -199,6 +200,7 @@ export default function TransactionalEdit({
     const [view, setView] = useState<'hub' | 'design'>('hub');
     const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
     const builderRef = useRef<EmailEditorHandle>(null);
+    const unmountSignal = useUnmountSignal();
     const savedSectionsGroup = useSavedSectionsGroup({
         teamSlug: currentTeam.slug,
         sections: savedSections,
@@ -213,7 +215,8 @@ export default function TransactionalEdit({
     >(null);
     const uploadBuilderImage =
         canManage && mediaLibrary?.canUpload
-            ? (file: File) => uploadEditorImage(currentTeam.slug, file)
+            ? (file: File) =>
+                  uploadEditorImage(currentTeam.slug, file, unmountSignal())
             : undefined;
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
     const [testOpen, setTestOpen] = useState(false);

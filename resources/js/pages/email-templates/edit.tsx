@@ -53,6 +53,7 @@ import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from '@/components/ui/toast';
+import { useUnmountSignal } from '@/hooks/use-unmount-signal';
 import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 import { uploadEditorImage } from '@/lib/editor-media-upload';
 import {
@@ -154,6 +155,7 @@ export default function EmailTemplatesEdit({
     const { currentTeam } = usePage().props;
     const [view, setView] = useState<'hub' | 'design'>('hub');
     const builderRef = useRef<EmailEditorHandle>(null);
+    const unmountSignal = useUnmountSignal();
     const savedSectionsGroup = useSavedSectionsGroup({
         teamSlug: currentTeam?.slug ?? '',
         sections: savedSections,
@@ -211,7 +213,8 @@ export default function EmailTemplatesEdit({
 
     const uploadBuilderImage =
         canManage && mediaLibrary?.canUpload
-            ? (file: File) => uploadEditorImage(currentTeam.slug, file)
+            ? (file: File) =>
+                  uploadEditorImage(currentTeam.slug, file, unmountSignal())
             : undefined;
 
     const changeMediaDialogOpen = (open: boolean) => {
