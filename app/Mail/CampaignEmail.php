@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Enums\EmailProvider;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
 use Illuminate\Bus\Queueable;
@@ -91,9 +92,9 @@ class CampaignEmail extends Mailable
      */
     private function sesMessageTags(): array
     {
-        $provider = $this->attempt?->provider->value ?? $this->delivery->provider;
+        $provider = $this->attempt->provider ?? EmailProvider::tryFrom($this->delivery->provider);
 
-        if ($provider !== 'ses') {
+        if ($provider?->publishesSesFeedback() !== true) {
             return [];
         }
 

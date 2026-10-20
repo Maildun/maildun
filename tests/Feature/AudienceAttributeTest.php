@@ -4,8 +4,10 @@ use App\Enums\AudienceAttributeType;
 use App\Enums\SubscribeFormFieldMode;
 use App\Enums\SubscriberLanguage;
 use App\Enums\TeamRole;
+use App\Jobs\MoveAudienceAttributeValues;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
+use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
@@ -52,6 +54,57 @@ test('team owners can create rename and delete audience attributes', function ()
         ->assertRedirect();
 
     $this->assertModelMissing($attribute);
+});
+
+test('renaming an attribute key moves the stored subscriber values to it', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $other = Audience::factory()->for($team)->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    $moved = Subscriber::factory()->for($audience)->create(['attribute_values' => ['company' => 'Acme', 'plan' => 'pro']]);
+    $newer = Subscriber::factory()->for($audience)->create(['attribute_values' => ['company' => 'Old', 'company_name' => 'New']]);
+    $elsewhere = Subscriber::factory()->for($other)->create(['attribute_values' => ['company' => 'Untouched']]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.attributes.update', [$team, $audience, $attribute]), [
+            'name' => 'Company name',
+            'key' => 'company_name',
+            'type' => AudienceAttributeType::Text->value,
+            'required' => false,
+        ])
+        ->assertRedirect();
+
+    expect($moved->fresh()->attribute_values)->toBe(['plan' => 'pro', 'company_name' => 'Acme'])
+        ->and($newer->fresh()->attribute_values)->toBe(['company_name' => 'New'])
+        ->and($elsewhere->fresh()->attribute_values)->toBe(['company' => 'Untouched']);
+});
+
+test('a rename that runs after a later one still lands on the final key', function () {
+    $audience = Audience::factory()->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create(['key' => 'company']);
+    $subscriber = Subscriber::factory()->for($audience)->create(['attribute_values' => ['company' => 'Acme']]);
+
+    // company -> organisation -> employer, with the second move running first.
+    $attribute->update(['key' => 'employer']);
+    (new MoveAudienceAttributeValues($audience->id, 'organisation', $attribute->id))->handle();
+    (new MoveAudienceAttributeValues($audience->id, 'company', $attribute->id))->handle();
+
+    expect($subscriber->fresh()->attribute_values)->toBe(['employer' => 'Acme']);
+});
+
+test('deleting an attribute removes its stored subscriber values', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create(['key' => 'company']);
+    $subscriber = Subscriber::factory()->for($audience)->create(['attribute_values' => ['company' => 'Acme', 'plan' => 'pro']]);
+
+    $this->actingAs($user)
+        ->delete(route('audiences.attributes.destroy', [$team, $audience, $attribute]))
+        ->assertRedirect();
+
+    expect($subscriber->fresh()->attribute_values)->toBe(['plan' => 'pro']);
 });
 
 test('team owners can configure the main subscriber fields in attribute settings', function () {

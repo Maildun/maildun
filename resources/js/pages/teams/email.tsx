@@ -79,7 +79,7 @@ export default function TeamEmailSettingsPage({
                                 <SettingsPanel
                                     variant="inset"
                                     title="Email editor"
-                                    description="All email composition in this workspace uses this editor."
+                                    description="New campaigns, transactional emails, and templates start in this editor. Existing ones keep the editor they were written in."
                                 >
                                     <FieldGroup className="p-6 sm:p-7">
                                         <input

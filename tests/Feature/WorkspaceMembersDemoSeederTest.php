@@ -20,3 +20,11 @@ test('the workspace members demo seed is complete and idempotent', function () {
         ->and($team->invitations()->where('email', 'grace@invitation-demo.test')->sole()->role)
         ->toBe(TeamRole::Admin->value);
 });
+
+test('the seeded demo members are verified so they can reach the workspace', function () {
+    $this->seed(WorkspaceMembersDemoSeeder::class);
+
+    $team = Team::query()->where('slug', 'maildun-studio')->sole();
+
+    expect($team->members()->whereNull('users.email_verified_at')->exists())->toBeFalse();
+});

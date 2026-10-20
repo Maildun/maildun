@@ -3,6 +3,7 @@
 use App\Actions\Automations\AdvanceAutomationRun;
 use App\Enums\AutomationAction;
 use App\Enums\AutomationRunStatus;
+use App\Enums\AutomationStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Jobs\ProcessAutomationRun;
 use App\Models\Audience;
@@ -65,6 +66,15 @@ test('a run whose delay is due is put back on the queue', function () {
     );
 });
 
+test('a due branch of a paused automation stays parked', function () {
+    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
+    $run->automation->update(['status' => AutomationStatus::Paused]);
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertNothingPushed();
+});
+
 test('a run whose delay has not arrived is left parked', function () {
     parkedRun(AutomationRunStatus::Waiting, now()->addHour()->toDateTimeString());
 
@@ -99,6 +109,20 @@ test('branches that are not ready to resume are left alone', function () {
 
     // A waiting run with no scheduled time was never parked on a delay.
     parkedRun(AutomationRunStatus::Waiting, null);
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertNothingPushed();
+});
+
+test('branches of a paused automation are left parked', function () {
+    // Re-queuing these would only hand the engine work it skips, every sweep.
+    foreach ([
+        parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString()),
+        parkedRun(AutomationRunStatus::Pending, null),
+    ] as $run) {
+        $run->automation->update(['status' => AutomationStatus::Paused]);
+    }
 
     $this->artisan('automations:resume')->assertSuccessful();
 

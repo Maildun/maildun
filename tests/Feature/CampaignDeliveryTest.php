@@ -33,6 +33,7 @@ use Illuminate\Bus\Batch;
 use Illuminate\Bus\PendingBatch;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\URL;
 use Inertia\Testing\AssertableInertia as Assert;
 use Symfony\Component\Mailer\Header\MetadataHeader;
 
@@ -418,6 +419,50 @@ test('a delivery job sends one tracked message through the configured mailer', f
     expect($delivery->fresh()->status->value)->toBe('sent');
 });
 
+test('a delivery gives its text part a working unsubscribe link', function () {
+    Mail::fake();
+    $email = Email::factory()->create([
+        'html' => '<p>Hello there</p>',
+        'plain_text' => null,
+        'status' => EmailStatus::Sending,
+    ]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $delivery = $email->deliveries()->create([
+        'email_address' => 'reader@example.com',
+        'status' => 'queued',
+        'provider' => 'smtp',
+    ]);
+
+    app()->call([new SendEmailDelivery($delivery->id), 'handle']);
+
+    $unsubscribeUrl = URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]);
+
+    Mail::assertSent(CampaignEmail::class, fn (CampaignEmail $mail): bool => $mail->plainText === "Hello there\n\nUnsubscribe: {$unsubscribeUrl}");
+});
+
+test('an author placed text unsubscribe tag is filled instead of getting a second link', function () {
+    Mail::fake();
+    $email = Email::factory()->create([
+        'html' => '<p>Hello there</p>',
+        'plain_text' => "Hello there\nLeave the list: {{ unsubscribe_url }}\nRead online: {{ web_view_url }}",
+        'status' => EmailStatus::Sending,
+    ]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $delivery = $email->deliveries()->create([
+        'email_address' => 'reader@example.com',
+        'status' => 'queued',
+        'provider' => 'smtp',
+        'merge_data' => ['unsubscribe_url' => 'https://attacker.example'],
+    ]);
+
+    app()->call([new SendEmailDelivery($delivery->id), 'handle']);
+
+    $unsubscribeUrl = URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]);
+    $webViewUrl = BuildTrackedEmailHtml::webViewUrl($delivery);
+
+    Mail::assertSent(CampaignEmail::class, fn (CampaignEmail $mail): bool => $mail->plainText === "Hello there\nLeave the list: {$unsubscribeUrl}\nRead online: {$webViewUrl}");
+});
+
 test('ses messages carry the configuration set and delivery correlation tags', function () {
     $email = Email::factory()->create();
     $delivery = $email->deliveries()->create([
@@ -552,15 +597,8 @@ test('a queued campaign delivery uses and reports the current workspace provider
 test('a claimed delivery resolves one transport and does not regress feedback received during acceptance', function () {
     $email = Email::factory()->create(['html' => '<p>Hello</p>', 'status' => EmailStatus::Queued]);
     $delivery = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
-    $transport = new ResolvedEmailTransport(
-        provider: EmailProvider::Smtp,
-        integrationId: null,
-        integrationUuid: null,
-        integrationName: null,
-        configuration: null,
-        sesConfigurationSet: null,
-        sesSnsTopicArnHash: null,
-    );
+    TeamEmailIntegration::factory()->for($email->team)->smtp()->create();
+    $transport = app(TeamMailer::class)->resolve($email->team);
     $teamMailer = Mockery::mock(TeamMailer::class);
     $teamMailer->shouldReceive('resolve')->once()->andReturn($transport);
     $teamMailer->shouldReceive('sendResolved')
@@ -881,7 +919,7 @@ test('each recipient row says whether it can be retried and why not', function (
     'a failed send' => [EmailStatus::PartiallyFailed, EmailDeliveryStatus::Failed, SubscriberStatus::Subscribed, false, true, null],
     'a campaign still sending' => [EmailStatus::Sending, EmailDeliveryStatus::Failed, SubscriberStatus::Subscribed, false, false, 'Wait until this campaign finishes sending.'],
     'an unsubscribed recipient' => [EmailStatus::PartiallyFailed, EmailDeliveryStatus::Failed, SubscriberStatus::Unsubscribed, false, false, 'This recipient has unsubscribed.'],
-    'a suppressed address' => [EmailStatus::PartiallyFailed, EmailDeliveryStatus::Failed, SubscriberStatus::Subscribed, true, false, 'This address is suppressed after a permanent bounce or spam complaint.'],
+    'a suppressed address' => [EmailStatus::PartiallyFailed, EmailDeliveryStatus::Failed, SubscriberStatus::Subscribed, true, false, 'This address is suppressed after it bounced or reported a spam complaint.'],
     'a permanent bounce' => [EmailStatus::Sent, EmailDeliveryStatus::Bounced, SubscriberStatus::Subscribed, false, false, 'Permanent bounces are never retried.'],
     'a spam complaint' => [EmailStatus::Sent, EmailDeliveryStatus::Complained, SubscriberStatus::Subscribed, false, false, 'Spam complaints are never retried.'],
     'a delivered message' => [EmailStatus::Sent, EmailDeliveryStatus::Delivered, SubscriberStatus::Subscribed, false, false, null],

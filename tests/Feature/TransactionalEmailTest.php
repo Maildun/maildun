@@ -5,6 +5,7 @@ use App\Enums\TeamRole;
 use App\Enums\TransactionalEmailStatus;
 use App\Jobs\SendTransactionalEmailTest;
 use App\Models\Audience;
+use App\Models\Automation;
 use App\Models\EmailTemplate;
 use App\Models\Media;
 use App\Models\Team;
@@ -144,8 +145,11 @@ test('the edit page exposes the email and sender defaults', function () {
         'email_from_name' => 'Maildun HQ',
         'email_from_address' => 'hq@example.com',
     ]);
-    $email = TransactionalEmail::factory()->for($team)->create([
+    $audience = Audience::factory()->for($team)->create(['name' => 'Customers']);
+    Audience::factory()->create();
+    $email = TransactionalEmail::factory()->for($team)->builder()->create([
         'slug' => 'welcome-email',
+        'audience_id' => $audience->id,
         'variables' => [['key' => 'first_name', 'example' => 'Ada']],
     ]);
     Media::factory()->for($team)->create(['name' => 'receipt.png']);
@@ -158,6 +162,8 @@ test('the edit page exposes the email and sender defaults', function () {
             ->component('transactional/edit')
             ->where('email.uuid', $email->uuid)
             ->where('email.slug', 'welcome-email')
+            ->where('email.audience', $audience->uuid)
+            ->where('audiences', [['uuid' => $audience->uuid, 'name' => 'Customers']])
             ->where('email.editor', EmailEditor::Builder->value)
             ->where('email.slug_frozen', false)
             ->where('canManage', true)
@@ -169,6 +175,36 @@ test('the edit page exposes the email and sender defaults', function () {
             ->has('mediaLibrary.items', 1)
             ->where('mediaLibrary.items.0.name', 'receipt.png')
             ->has('savedSections', 0));
+});
+
+test('the builder edit page exposes the team media library', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $team->update(['email_editor' => EmailEditor::Builder]);
+    $email = TransactionalEmail::factory()->for($team)->builder()->create();
+    Media::factory()->for($team)->create(['name' => 'receipt-logo.png']);
+    Media::factory()->for(Team::factory()->create())->create(['name' => 'private.png']);
+
+    $this->actingAs($user)
+        ->get(route('transactional_emails.edit', [$team, $email]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('mediaLibrary.canUpload', true)
+            ->has('mediaLibrary.items', 1)
+            ->where('mediaLibrary.items.0.name', 'receipt-logo.png'));
+});
+
+test('the html edit page does not load the media library', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $team->update(['email_editor' => EmailEditor::Html]);
+    $email = TransactionalEmail::factory()->for($team)->create();
+    Media::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->get(route('transactional_emails.edit', [$team, $email]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('mediaLibrary', null));
 });
 
 test('saving merges detected variables and keeps examples', function () {
@@ -268,28 +304,59 @@ test('a block transactional email can be saved with every block removed', functi
     expect($email->fresh()->design)->toHaveKey('root', []);
 });
 
-test('saving uses the team editor and drops an incompatible block document', function () {
+test('a block transactional email keeps its editor and design after the team switches editors', function (EmailEditor $teamEditor) {
     $user = User::factory()->create();
-    $email = TransactionalEmail::factory()->for($user->currentTeam)->builder()->create();
+    $team = $user->currentTeam;
+    $team->update(['email_editor' => EmailEditor::Builder]);
+    $email = TransactionalEmail::factory()->for($team)->builder()->create();
+    $team->update(['email_editor' => $teamEditor]);
+    $design = EmailTemplate::builderDesign([
+        'block-1' => ['type' => 'text', 'props' => ['markdown' => 'Edited after the switch']],
+    ]);
+    $payload = [
+        'name' => $email->name,
+        'slug' => $email->slug,
+        'subject' => $email->subject,
+    ];
 
     $this->actingAs($user)
-        ->patch(route('transactional_emails.update', [$user->currentTeam, $email]), [
-            'name' => $email->name,
-            'slug' => $email->slug,
-            'subject' => $email->subject,
-            'html' => '<p>Hand written</p>',
+        ->get(route('transactional_emails.edit', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('email.editor', EmailEditor::Builder->value)
+            ->where('email.design', $email->design)
+            ->whereNot('mediaLibrary', null));
+
+    $this->actingAs($user)
+        ->patch(route('transactional_emails.update', [$team, $email]), [
+            ...$payload,
+            'html' => '<p>Edited after the switch</p>',
+            'design' => $design,
         ])
+        ->assertValid()
         ->assertRedirect();
 
-    expect($email->fresh()->editor)->toBe(EmailEditor::Html)
-        ->and($email->fresh()->design)->toBeNull();
-});
+    $email->refresh();
+
+    expect($email->editor)->toBe(EmailEditor::Builder)
+        ->and($email->design)->toBe($design)
+        ->and($email->html)->toBe('<p>Edited after the switch</p>');
+
+    $this->actingAs($user)
+        ->patch(route('transactional_emails.update', [$team, $email]), [...$payload, 'html' => '<p>Hand written</p>'])
+        ->assertInvalid('design');
+
+    expect($email->refresh()->design)->toBe($design);
+})->with([
+    'html' => EmailEditor::Html,
+    'markdown' => EmailEditor::Markdown,
+    'plain text' => EmailEditor::PlainText,
+]);
 
 test('a plain text transactional email keeps its source and rendered html', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $team->update(['email_editor' => EmailEditor::PlainText]);
-    $email = TransactionalEmail::factory()->for($team)->create();
+    $email = TransactionalEmail::factory()->for($team)->create(['editor' => EmailEditor::PlainText]);
 
     $this->actingAs($user)
         ->patch(route('transactional_emails.update', [$team, $email]), [
@@ -357,6 +424,31 @@ test('an email an audience confirms signups with cannot be unpublished or delete
     'delete' => ['delete', 'transactional_emails.destroy'],
 ]);
 
+test('an email an automation sends cannot be unpublished or deleted', function (string $method, string $routeName) {
+    $user = User::factory()->create();
+    $email = TransactionalEmail::factory()->for($user->currentTeam)->published()->create();
+    Automation::factory()->for($user->currentTeam)->create([
+        'name' => 'Welcome series',
+        'graph' => [
+            'nodes' => [
+                ['id' => 'trigger', 'type' => 'trigger', 'data' => ['kind' => 'subscriber.subscribed']],
+                ['id' => 'send', 'type' => 'action', 'data' => ['kind' => 'send_email', 'transactional_email_uuid' => $email->uuid]],
+            ],
+            'edges' => [['source' => 'trigger', 'target' => 'send']],
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->{$method}(route($routeName, [$user->currentTeam, $email]))
+        ->assertInvalid(['email' => 'The Welcome series automation uses this email. Remove it from that automation first.']);
+
+    expect($email->fresh()->status)->toBe(TransactionalEmailStatus::Published);
+    $this->assertNotSoftDeleted($email);
+})->with([
+    'unpublish' => ['post', 'transactional_emails.unpublish'],
+    'delete' => ['delete', 'transactional_emails.destroy'],
+]);
+
 test('an email stays unpublishable when its audience turned double opt-in off', function () {
     $user = User::factory()->create();
     $email = TransactionalEmail::factory()->for($user->currentTeam)->published()->create();
@@ -414,6 +506,7 @@ test('a test send queues rendered merge tags', function () {
         'from_name' => null,
         'from_address' => null,
         'subject' => 'Hi {{ first_name }}',
+        'preheader' => null,
         'html' => '<p>Hello {{ first_name }}</p>',
     ]);
 
@@ -432,12 +525,35 @@ test('a test send queues rendered merge tags', function () {
     expect($email->fresh()->last_tested_at)->toBeNull();
 });
 
+test('a test send carries the rendered preheader as hidden preview text', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = TransactionalEmail::factory()->for($team)->create([
+        'preheader' => 'Your receipt, {{ first_name }}',
+        'html' => '<p>Hello</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('transactional_emails.test', [$team, $email]), [
+            'to' => 'reviewer@example.com',
+            'data' => ['first_name' => 'Ada'],
+        ])
+        ->assertRedirect();
+
+    Queue::assertPushed(SendTransactionalEmailTest::class, fn (SendTransactionalEmailTest $job): bool => str_starts_with($job->html, '<div style="display:none')
+        && str_contains($job->html, 'Your receipt, Ada')
+        && str_ends_with($job->html, '<p>Hello</p>'));
+});
+
 test('a test send links the unsubscribe tag to a page that opts nobody out', function () {
     Queue::fake();
 
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $email = TransactionalEmail::factory()->for($team)->create([
+        'preheader' => null,
         'html' => '<a href="{{ unsubscribe_url }}">Unsubscribe</a>',
     ]);
 
@@ -481,7 +597,9 @@ test('a transactional test send queues before the delivery worker resolves its p
 test('a transactional email can be duplicated', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
-    $email = TransactionalEmail::factory()->for($team)->published()->create([
+    $audience = Audience::factory()->for($team)->create();
+    $email = TransactionalEmail::factory()->for($team)->builder()->published()->create([
+        'audience_id' => $audience->id,
         'name' => 'Welcome email',
         'slug' => 'welcome-email',
         'html' => '<p>Hello {{ first_name }}</p>',
@@ -501,6 +619,9 @@ test('a transactional email can be duplicated', function () {
         ->and($copy->status)->toBe(TransactionalEmailStatus::Draft)
         ->and($copy->published_at)->toBeNull()
         ->and($copy->html)->toBe($email->html)
+        ->and($copy->editor)->toBe(EmailEditor::Builder)
+        ->and($copy->design)->toBe($email->design)
+        ->and($copy->audience_id)->toBe($audience->id)
         ->and($copy->variables)->toBe($email->variables);
 });
 
@@ -515,6 +636,16 @@ test('a transactional email can be deleted', function () {
     $response->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Transactional email deleted.']);
 
     $this->assertSoftDeleted($email);
+});
+
+test('deleting its audience unlinks a transactional email without deleting it', function () {
+    $audience = Audience::factory()->create();
+    $email = TransactionalEmail::factory()->for($audience->team)->create(['audience_id' => $audience->id]);
+
+    $audience->delete();
+
+    $this->assertNotSoftDeleted($email);
+    expect($email->fresh()->audience_id)->toBeNull();
 });
 
 test('members can read transactional emails but cannot change them', function () {

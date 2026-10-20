@@ -52,6 +52,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
+import { toast } from '@/components/ui/toast';
 import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 import { uploadEditorImage } from '@/lib/editor-media-upload';
 import {
@@ -59,10 +60,10 @@ import {
     EMPTY_BUILDER_DOCUMENT,
     getChildrenIds,
     htmlToBuilderDocument,
+    insertBuilderMedia,
     isSourceEditor,
     renderBuilderHtml,
     renderSourceHtml,
-    insertBuilderMedia,
     toBuilderDocument,
 } from '@/lib/email-builder';
 import type { SavedSection } from '@/lib/email-builder';
@@ -162,10 +163,6 @@ export default function EmailTemplatesEdit({
         () => [savedSectionsGroup],
         [savedSectionsGroup],
     );
-    const uploadBuilderImage =
-        canManage && mediaLibrary?.canUpload
-            ? (file: File) => uploadEditorImage(currentTeam?.slug ?? '', file)
-            : undefined;
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [useOpen, setUseOpen] = useState(false);
@@ -211,6 +208,11 @@ export default function EmailTemplatesEdit({
     if (!currentTeam) {
         return null;
     }
+
+    const uploadBuilderImage =
+        canManage && mediaLibrary?.canUpload
+            ? (file: File) => uploadEditorImage(currentTeam.slug, file)
+            : undefined;
 
     const changeMediaDialogOpen = (open: boolean) => {
         if (!open) {
@@ -258,7 +260,16 @@ export default function EmailTemplatesEdit({
             return false;
         }
 
-        return insertBuilderMedia(builderRef.current.store, image);
+        const inserted = insertBuilderMedia(builderRef.current.store, image);
+
+        if (!inserted) {
+            toast.add({
+                type: 'error',
+                title: 'Could not insert this image. Try again.',
+            });
+        }
+
+        return inserted;
     };
 
     const errorFor = (value: SectionValue) =>

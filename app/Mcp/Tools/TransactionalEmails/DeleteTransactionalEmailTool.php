@@ -4,6 +4,7 @@ namespace App\Mcp\Tools\TransactionalEmails;
 
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
+use App\Models\Automation;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Validation\Rule;
@@ -41,7 +42,8 @@ class DeleteTransactionalEmailTool extends Tool
             'confirm_name.in' => 'The confirmation name must exactly match the transactional email name.',
         ]);
 
-        $blockReason = $email->doubleOptInBlockReason();
+        $blockReason = $email->doubleOptInBlockReason()
+            ?? Automation::referenceBlockReason(Automation::namesUsing($team, [$email->uuid])[$email->uuid] ?? [], __('email'));
 
         if ($blockReason !== null) {
             throw ValidationException::withMessages(['uuid' => $blockReason]);

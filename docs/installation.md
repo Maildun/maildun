@@ -110,6 +110,13 @@ Horizon and the scheduler are separate services on purpose. Stopping either one
 leaves the web interface working while campaigns silently stop sending, so treat
 them as required rather than optional.
 
+The image also ships Node.js 22 and the few packages the
+[MCP email builder tools](mcp.md) run at request time
+(`@maildun/email-builder`, `zod` and `marked`), so those tools work without
+installing anything in the container. It does not ship the rest of
+`node_modules`; the frontend is built into `public/build` during the image
+build.
+
 ## Manual setup
 
 Use this sequence when you want to control each step:

@@ -134,9 +134,9 @@ function hasNullAlt(
 /**
  * PHP decodes an empty JSON object as an empty array, so a saved design can
  * come back with `props: []` (e.g. a container) or `blocks: []`. The package
- * validates strictly and would reject every edit on such a document, so
- * restore those objects. Repaired documents are cached per input so the
- * editor keeps receiving the same reference between renders.
+ * validates strictly and would reject every edit or proposal on such a
+ * document, so restore those objects. Repaired documents are cached per input
+ * so the editor keeps receiving the same reference between renders.
  */
 function withEmptyObjects(
     document: EmailBuilderDocument,

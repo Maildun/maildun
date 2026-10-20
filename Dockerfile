@@ -105,6 +105,24 @@ RUN --mount=type=cache,target=/pnpm-store \
     pnpm config set store-dir /pnpm-store \
     && pnpm install --frozen-lockfile
 
+# The MCP email builder tools run resources/js/lib/email-builder-agent.mjs
+# with Node on every request (App\Services\EmailBuilderAgent), so the runtime
+# image needs the packages that script loads. It imports only the core, agent
+# and compat entry points of @maildun/email-builder, and those import only zod
+# and marked; the editor half and its React dependencies never load. Shipping
+# those three packages instead of the production node_modules (about 350 MB)
+# keeps the image small. They are copied, symlinks resolved, from the
+# builder's own pnpm dependency directory, so they are exactly the versions
+# the lockfile resolved for it. The docker job in .github/workflows/tests.yml
+# runs the agent inside the built image, so a new import fails CI, not a
+# deployment.
+RUN builder="$(realpath node_modules/@maildun/email-builder)" \
+    && mkdir -p /email-builder-runtime/node_modules/@maildun \
+    && cp -RL "$builder" /email-builder-runtime/node_modules/@maildun/email-builder \
+    && for dependency in marked zod; do \
+        cp -RL "$builder/../../$dependency" "/email-builder-runtime/node_modules/$dependency"; \
+    done
+
 COPY --from=vendor /app/vendor ./vendor
 COPY . .
 
@@ -146,6 +164,11 @@ COPY . .
 COPY --from=vendor /app/vendor ./vendor
 COPY --from=assets /app/public/build ./public/build
 
+# The email builder agent's runtime (see the assets stage): the Node binary
+# alone, without npm, corepack or headers, and the three packages it loads.
+COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=assets /email-builder-runtime/node_modules ./node_modules
+
 # Directories Laravel writes to at runtime. docker-compose.yml mounts a volume
 # over storage/, so these are the fallback for a plain `docker run`. The
 # storage:link symlink is made here too, because public/ is read-only at
@@ -160,8 +183,11 @@ RUN mkdir -p \
     && ln -s /app/storage/app/public public/storage \
     && chown -R www-data:www-data storage bootstrap/cache
 
-# The entrypoint locks with flock and the healthcheck requests with curl.
-RUN command -v flock curl
+# The entrypoint locks with flock, the healthcheck requests with curl, and the
+# MCP email builder runs on node. Running node also proves the copied binary
+# finds its shared libraries on this base.
+RUN command -v flock curl \
+    && node --version
 
 COPY <<'PHPINI' /usr/local/etc/php/conf.d/maildun.ini
 ; Campaign HTML and contact imports both exceed the stock 2M ceiling.

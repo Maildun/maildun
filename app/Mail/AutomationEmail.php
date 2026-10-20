@@ -2,7 +2,6 @@
 
 namespace App\Mail;
 
-use App\Enums\EmailProvider;
 use App\Models\AutomationEmailDelivery;
 use App\Models\Subscriber;
 use App\Models\TransactionalEmail;
@@ -24,6 +23,7 @@ class AutomationEmail extends Mailable
         public string $subjectLine,
         public string $htmlBody,
         public ?AutomationEmailDelivery $delivery = null,
+        public ?string $textBody = null,
     ) {}
 
     public function envelope(): Envelope
@@ -40,8 +40,14 @@ class AutomationEmail extends Mailable
 
     public function content(): Content
     {
+        if ($this->textBody === null) {
+            return new Content(htmlString: $this->htmlBody);
+        }
+
         return new Content(
             htmlString: $this->htmlBody,
+            text: 'mail.campaign-text',
+            with: ['plainText' => $this->textBody],
         );
     }
 
@@ -59,7 +65,7 @@ class AutomationEmail extends Mailable
     /** @return array<string, string> */
     private function sesMessageTags(): array
     {
-        if ($this->delivery === null || $this->delivery->provider !== EmailProvider::AmazonSes) {
+        if ($this->delivery === null || ! $this->delivery->provider->publishesSesFeedback()) {
             return [];
         }
 

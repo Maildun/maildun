@@ -43,6 +43,7 @@ class SubscribeSubscriberRequest extends FormRequest
                 Rule::in($this->audience()->allowed_languages ?? []),
             ],
             'consent_text' => ['nullable', 'string', 'max:1000'],
+            'consent_ip' => ['nullable', 'ip'],
         ];
 
         if ($attributes->isEmpty()) {

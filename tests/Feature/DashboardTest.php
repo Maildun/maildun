@@ -7,12 +7,14 @@ use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Models\Audience;
 use App\Models\Email;
+use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamInvitation;
 use App\Models\User;
+use Illuminate\Auth\Middleware\EnsureEmailIsVerified;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('guests are redirected to the login page', function () {
@@ -123,6 +125,23 @@ test('dashboard includes team scoped activity metrics', function () {
     );
 });
 
+test('dashboard counts each mailable person once', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $news = Audience::factory()->for($team)->create();
+    $offers = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($news)->create(['email' => 'both@example.com']);
+    Subscriber::factory()->for($offers)->create(['email' => 'both@example.com']);
+    Subscriber::factory()->for($news)->create(['email' => 'pending@example.com', 'subscribed_at' => null]);
+    Subscriber::factory()->for($news)->create(['email' => 'bounced@example.com']);
+    Subscriber::factory()->for($news)->create(['email' => 'left@example.com', 'status' => SubscriberStatus::Unsubscribed]);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => 'bounced@example.com']);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page->where('dashboard.overview.subscribers', 1));
+});
+
 test('dashboard does not report a delivery rate for SMTP-only sends', function () {
     $user = User::factory()->create();
     $campaign = Email::factory()->create([
@@ -216,6 +235,31 @@ test('dashboard includes pending invitations for the authenticated user', functi
         ->where('pendingInvitations.0.team.name', 'Laravel Team')
         ->where('pendingInvitations.0.team.slug', $team->slug)
         ->missing('pendingInvitations.0.teamName'),
+    );
+});
+
+test('dashboard withholds invitations from an unverified address even without the verified middleware', function () {
+    $owner = User::factory()->create();
+    $unverifiedUser = User::factory()->unverified()->create(['email' => 'invited@example.com']);
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+
+    TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'email' => 'invited@example.com',
+        'invited_by' => $owner->id,
+    ]);
+
+    $response = $this
+        ->withoutMiddleware(EnsureEmailIsVerified::class)
+        ->actingAs($unverifiedUser)
+        ->get(route('dashboard', ['current_team' => $unverifiedUser->currentTeam]));
+
+    $response->assertOk();
+    $response->assertInertia(fn (Assert $page) => $page
+        ->component('dashboard')
+        ->has('pendingInvitations', 0),
     );
 });
 

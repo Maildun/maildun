@@ -17,6 +17,7 @@ use App\Services\TeamMailer;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Mail\Markdown;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
@@ -57,6 +58,10 @@ class AppServiceProvider extends ServiceProvider
         DB::prohibitDestructiveCommands(
             app()->isProduction(),
         );
+
+        // System mail quotes names that strangers type into public forms and
+        // invitations, so they must render as text, never as markdown links.
+        Markdown::withSecuredEncoding();
 
         Password::defaults(fn (): ?Password => app()->isProduction()
             ? Password::min(12)

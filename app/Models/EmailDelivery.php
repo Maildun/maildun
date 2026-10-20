@@ -143,7 +143,7 @@ class EmailDelivery extends Model
     /**
      * Deliveries a deliberate retry may queue again: a retryable outcome, a
      * subscriber who is still subscribed and confirmed (or was deleted), and an address the
-     * workspace has not suppressed after a permanent bounce or complaint.
+     * workspace has not suppressed after bounces or a complaint.
      *
      * @param  Builder<$this>  $query
      */

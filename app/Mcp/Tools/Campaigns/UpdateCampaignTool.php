@@ -73,6 +73,7 @@ class UpdateCampaignTool extends Tool
             'audience_uuid' => ['sometimes', 'nullable', 'uuid', Rule::exists(Audience::class, 'uuid')->where('team_id', $team->id)],
             'segment_uuid' => ['sometimes', 'nullable', 'uuid'],
         ]);
+        $validated = $this->context->withFullDesign($request, $validated);
 
         $changes = $this->context->changes($validated, self::FIELDS);
         $changes = $this->context->blankStringsToNull($changes, [
@@ -82,22 +83,26 @@ class UpdateCampaignTool extends Tool
 
         unset($changes['audience_uuid'], $changes['segment_uuid']);
 
-        if (array_key_exists('design', $changes) && $team->email_editor !== EmailEditor::Builder) {
-            $changes['design'] = null;
+        // A draft keeps the editor it was composed in; the workspace setting only picks it for new drafts.
+        $editor = $campaign->editor;
+
+        // Only the builder edits the block document, and a null one leaves the
+        // document the draft already has in place.
+        if ($editor !== EmailEditor::Builder || ($changes['design'] ?? null) === null) {
+            unset($changes['design']);
         }
 
         // A draft body may be cleared, so only an omitted source keeps the current one.
-        $changes['source'] = $team->email_editor->usesSource()
+        $changes['source'] = $editor->usesSource()
             ? (array_key_exists('source', $changes) ? $changes['source'] : $campaign->source)
             : null;
 
-        if ($team->email_editor === EmailEditor::PlainText) {
+        if ($editor === EmailEditor::PlainText) {
             $changes['plain_text'] = $changes['source'];
         }
 
         $campaign->update([
             ...$changes,
-            'editor' => $team->email_editor,
             'audience_id' => $audienceId,
             'segment_id' => $segmentId,
         ]);
@@ -126,7 +131,7 @@ class UpdateCampaignTool extends Tool
             'from_address' => $schema->string()->description('Authorized sender email.')->format('email')->max(255)->nullable(),
             'reply_to' => $schema->string()->description('Reply-to email.')->format('email')->max(255)->nullable(),
             'html' => $schema->string()->description('Rendered HTML content.')->max(2000000),
-            'source' => $schema->string()->description('Editable Markdown or plain-text source for source-based workspace editors; null clears the draft body.')->max(2000000)->nullable(),
+            'source' => $schema->string()->description('Editable Markdown or plain-text source for a campaign that uses a source-based editor; null clears the draft body.')->max(2000000)->nullable(),
             'plain_text' => $schema->string()->description('Plain-text content.')->max(2000000)->nullable(),
             'query_string' => $schema->string()->description('Tracking query string without a leading question mark.')->max(2048)->nullable(),
             'track_clicks' => $schema->boolean()->description('Whether click tracking is enabled.'),

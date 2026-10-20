@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/react';
 import type { ImageResult } from '@maildun/email-builder/editor';
 import { MEDIA_MAX_BYTES } from '@/hooks/use-media-upload';
+import { xsrfToken } from '@/lib/xsrf-token';
 import { show, store } from '@/routes/media/editor_uploads';
 import type { MediaItem } from '@/types/media';
 
@@ -8,12 +9,6 @@ const UPLOADABLE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const POLL_INTERVAL = 1000;
 /** How long the editor waits for a queued WebP conversion before giving up. */
 const POLL_LIMIT = 45;
-
-function xsrfToken(): string | null {
-    const match = document.cookie.match(/(?:^|; )XSRF-TOKEN=([^;]*)/);
-
-    return match ? decodeURIComponent(match[1]) : null;
-}
 
 /** "summer-sale_hero.png" → "Summer sale hero". */
 function altFromName(name: string): string {

@@ -148,11 +148,11 @@ class UpdateEmailRequest extends FormRequest
      */
     protected function validateDesignPresentForBuilder(Validator $validator): void
     {
-        $team = $this->route('current_team');
+        $email = $this->route('email');
 
-        abort_unless($team instanceof Team, 404);
+        abort_unless($email instanceof Email, 404);
 
-        if ($team->email_editor !== EmailEditor::Builder) {
+        if ($email->editor !== EmailEditor::Builder) {
             return;
         }
 

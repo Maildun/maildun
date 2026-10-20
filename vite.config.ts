@@ -37,9 +37,10 @@ const hugeiconsImport =
 /**
  * Rewrites `import { FooIcon } from '@hugeicons/…'` into one import per icon
  * file. The packages' index re-exports ~6,000 icons, and every barrel import
- * made the build parse all of them before tree shaking dropped the unused
- * ones. Covers the app and @maildun/email-builder's dist, which bundles its
- * own copy of the free set. Build only: the dev server keeps the barrel.
+ * made the build parse all of them (22k modules, ~1.9 GB peak) before tree
+ * shaking dropped the unused ones — more than a 2 GB deploy container has.
+ * Covers the app and @maildun/email-builder's dist, which bundles its own
+ * copy of the free set. Build only: the dev server keeps the barrel.
  */
 function hugeiconsPerIconImports(freeIconPackage: string): Plugin {
     const iconFilesByPackage = new Map<string, Map<string, string>>();
@@ -127,6 +128,7 @@ function hugeiconsPerIconImports(freeIconPackage: string): Plugin {
                             return `import ${localName} from '${iconPackage}/${iconFile(iconPackage, iconName, id)}';`;
                         });
 
+                    // Keep the line count so later source maps still line up.
                     return (
                         imports.join(' ') +
                         '\n'.repeat(statement.split('\n').length - 1)

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audiences\ResubscribeSubscriber;
+use App\Actions\Automations\DispatchTaggedTriggers;
 use App\Enums\AutomationTrigger;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
@@ -11,7 +12,6 @@ use App\Http\Requests\BulkSubscriberRequest;
 use App\Http\Requests\ResubscribeSubscriberRequest;
 use App\Http\Requests\SaveSubscriberRequest;
 use App\Models\Audience;
-use App\Models\Contact;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Services\ManageContact;
@@ -37,7 +37,7 @@ class SubscriberController extends Controller
         ]);
     }
 
-    public function store(SaveSubscriberRequest $request, Team $currentTeam, Audience $audience, ManageContact $manageContact): RedirectResponse
+    public function store(SaveSubscriberRequest $request, Team $currentTeam, Audience $audience, ManageContact $manageContact, DispatchTaggedTriggers $dispatchTaggedTriggers): RedirectResponse
     {
         Gate::authorize('create', [Subscriber::class, $audience]);
 
@@ -60,14 +60,14 @@ class SubscriberController extends Controller
         $addedTags = $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []));
 
         event(new SubscriberLifecycleOccurred(AutomationTrigger::Subscribed, $subscriber));
-        $this->dispatchTagged($contact, $addedTags);
+        $dispatchTaggedTriggers->handle($contact, $addedTags);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber added.')]);
 
         return back();
     }
 
-    public function update(SaveSubscriberRequest $request, Team $currentTeam, Audience $audience, Subscriber $subscriber, ManageContact $manageContact): RedirectResponse
+    public function update(SaveSubscriberRequest $request, Team $currentTeam, Audience $audience, Subscriber $subscriber, ManageContact $manageContact, DispatchTaggedTriggers $dispatchTaggedTriggers): RedirectResponse
     {
         Gate::authorize('update', $subscriber);
         $contact = $subscriber->contact ?? $manageContact->findOrCreate($currentTeam, $this->contactProfile($request));
@@ -77,7 +77,7 @@ class SubscriberController extends Controller
             ...($request->has('language') ? ['language' => $request->validated('language')] : []),
         ]);
         $addedTags = $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []));
-        $this->dispatchTagged($contact, $addedTags);
+        $dispatchTaggedTriggers->handle($contact, $addedTags);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber updated.')]);
 
@@ -117,20 +117,6 @@ class SubscriberController extends Controller
             'first_name' => $request->has('first_name') ? $request->string('first_name')->toString() : null,
             'last_name' => $request->has('last_name') ? $request->string('last_name')->toString() : null,
         ];
-    }
-
-    /** @param list<string> $tagUuids */
-    private function dispatchTagged(Contact $contact, array $tagUuids): void
-    {
-        foreach ($contact->subscribers()->get() as $subscriber) {
-            foreach ($tagUuids as $tagUuid) {
-                event(new SubscriberLifecycleOccurred(
-                    AutomationTrigger::Tagged,
-                    $subscriber,
-                    ['tag_uuid' => $tagUuid],
-                ));
-            }
-        }
     }
 
     public function destroy(Team $currentTeam, Audience $audience, Subscriber $subscriber): RedirectResponse

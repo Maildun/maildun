@@ -7,6 +7,7 @@ use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
 use App\Enums\StorageBackend;
 use App\Models\User;
+use App\Notifications\InstallationSetupLink;
 use App\Services\EnvironmentFile;
 use App\Services\InstallationState;
 use Database\Seeders\DatabaseSeeder;
@@ -16,6 +17,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Console\ConfirmableTrait;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Throwable;
@@ -24,6 +26,7 @@ use Throwable;
     {--admin-name= : Display name for the first administrator}
     {--admin-email= : Email address for the first administrator}
     {--admin-password= : Password for the first administrator}
+    {--setup-email= : Email the browser setup link here when no administrator is created}
     {--registration= : Whether strangers may sign up themselves: "open" or "closed"}
     {--storage= : Hand "local" or "s3" straight to storage:configure}
     {--skip-storage : Leave the storage backend as it is}
@@ -67,6 +70,15 @@ class InstallCommand extends Command
             return self::FAILURE;
         }
 
+        $setupEmail = $this->option('setup-email');
+        $setupEmail = is_string($setupEmail) ? $setupEmail : null;
+
+        if ($setupEmail !== null && Validator::make(['email' => $setupEmail], ['email' => ['email']])->fails()) {
+            $this->components->error('--setup-email must be a valid email address.');
+
+            return self::FAILURE;
+        }
+
         $this->components->info('Installing '.config('app.name').'.');
 
         $this->prepareEnvironmentFile($environment);
@@ -88,6 +100,7 @@ class InstallCommand extends Command
             $installation->markComplete();
         } elseif ($browserUrl = $installation->browserUrl()) {
             $this->outstanding[] = 'Create the first administrator in your browser (valid for 24 hours): '.$browserUrl;
+            $this->emailSetupLink($setupEmail, $browserUrl);
         } else {
             $this->outstanding[] = 'Set APP_KEY in the hosting dashboard, then re-run app:install to generate the secure browser setup link.';
         }
@@ -338,6 +351,28 @@ class InstallCommand extends Command
         $this->components->twoColumnDetail('Administrator', $input['email'].' <fg=green>created</>');
 
         return true;
+    }
+
+    /**
+     * The link is always printed too, so a mailer that is not configured yet
+     * costs the operator nothing beyond a warning.
+     */
+    private function emailSetupLink(?string $email, string $url): void
+    {
+        if ($email === null) {
+            return;
+        }
+
+        try {
+            Notification::route('mail', $email)->notifyNow(new InstallationSetupLink($url));
+        } catch (Throwable $exception) {
+            $this->components->twoColumnDetail('Setup link email', '<fg=red>failed</>');
+            $this->outstanding[] = 'The setup link could not be emailed to '.$email.': '.$exception->getMessage();
+
+            return;
+        }
+
+        $this->components->twoColumnDetail('Setup link email', $email.' <fg=green>sent</>');
     }
 
     private function configureStorage(): void

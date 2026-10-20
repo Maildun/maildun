@@ -103,6 +103,7 @@ test('a transactional send stores the signed web view link in its body', functio
     Queue::fake();
     $email = TransactionalEmail::factory()->published()->create([
         'subject' => 'Receipt for {{ first_name }}',
+        'preheader' => null,
         'html' => '<p>Hi {{ first_name }}</p><a href="{{ web_view_url }}">Open in browser</a>',
     ]);
     TeamEmailIntegration::factory()->for($email->team)->ses()->create();
@@ -160,7 +161,7 @@ test('automation mail carries a web view link that re-renders the body', functio
 
     $automation = Automation::factory()->active()->create();
     TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
-    $email = TransactionalEmail::factory()->for($automation->team)->create([
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create([
         'html' => '<p>Welcome {{ first_name }}</p><a href="{{ web_view_url }}">Open in browser</a><a href="{{ unsubscribe_url }}">Bye</a>',
     ]);
     $subscriber = Subscriber::factory()

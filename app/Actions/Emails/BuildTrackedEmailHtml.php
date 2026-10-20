@@ -34,7 +34,10 @@ class BuildTrackedEmailHtml
      */
     private const array LINK_KEYS = ['unsubscribe_url', 'web_view_url', 'subscribe_url'];
 
-    public function __construct(private readonly RenderCampaignContent $renderer) {}
+    public function __construct(
+        private readonly RenderCampaignContent $renderer,
+        private readonly InsertPreheader $insertPreheader,
+    ) {}
 
     /** @return list<string> */
     public function extractLinks(string $html, ?string $queryString = null): array
@@ -56,7 +59,10 @@ class BuildTrackedEmailHtml
         $email = $delivery->email;
         $links = $email->links->keyBy('url_hash');
         $mergeData = Arr::except($delivery->merge_data ?? [], self::LINK_KEYS);
-        $html = $this->renderer->html($email->html ?? '', $mergeData);
+        $html = $this->insertPreheader->handle(
+            $this->renderer->html($email->html ?? '', $mergeData),
+            $this->renderer->text($email->preheader ?? '', $mergeData),
+        );
         $html = $this->appendQueryString($html, $email->query_string);
 
         if ($email->track_clicks) {
@@ -82,13 +88,10 @@ class BuildTrackedEmailHtml
         }
 
         $unsubscribeUrl = URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]);
-        $placed = 0;
         $html = preg_replace(
             self::UNSUBSCRIBE_TAG,
             htmlspecialchars($unsubscribeUrl, ENT_QUOTES | ENT_HTML5),
             $html,
-            -1,
-            $placed,
         ) ?? $html;
 
         $html = preg_replace(
@@ -115,8 +118,9 @@ class BuildTrackedEmailHtml
         }
 
         // Every campaign needs a visible opt-out, but an author who placed the
-        // merge tag themselves has already chosen where it goes.
-        if ($placed === 0) {
+        // merge tag in the body has already chosen where it goes. The hidden
+        // preheader does not count as a place.
+        if (! $this->authorPlacedUnsubscribe($email->html ?? '')) {
             $appended = $this->unsubscribeFooter($unsubscribeUrl).$appended;
         }
 
@@ -125,6 +129,38 @@ class BuildTrackedEmailHtml
         }
 
         return $html.$appended;
+    }
+
+    /**
+     * What the link tags resolve to in this delivery's text part. The HTML
+     * replaces the same tags inside build().
+     *
+     * @return array<string, string>
+     */
+    public function linkData(EmailDelivery $delivery): array
+    {
+        $delivery->loadMissing('email');
+
+        return array_filter([
+            'unsubscribe_url' => URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]),
+            'web_view_url' => self::webViewUrl($delivery),
+            'subscribe_url' => $this->subscribeFormUrl($delivery->email),
+        ], fn (?string $url): bool => $url !== null);
+    }
+
+    /**
+     * Test copies go to a real inbox, so the link tags point at https pages
+     * that explain the link without opting anyone out.
+     *
+     * @return array{unsubscribe_url: string, web_view_url: string, subscribe_url: string}
+     */
+    public function testLinkData(Email $email): array
+    {
+        return [
+            'unsubscribe_url' => route('public.unsubscribe.test'),
+            'web_view_url' => route('public.web_view.test'),
+            'subscribe_url' => $this->subscribeFormUrl($email) ?? route('public.web_view.test'),
+        ];
     }
 
     /**
@@ -180,12 +216,14 @@ class BuildTrackedEmailHtml
      */
     public function prepareTestHtml(Email $email, string $html): string
     {
+        $links = $this->testLinkData($email);
+
         return $this->preparePreviewHtml(
             $html,
-            route('public.unsubscribe.test'),
-            route('public.web_view.test'),
+            $links['unsubscribe_url'],
+            $links['web_view_url'],
             $email->query_string,
-            $this->subscribeFormUrl($email) ?? route('public.web_view.test'),
+            $links['subscribe_url'],
         );
     }
 
@@ -224,21 +262,29 @@ class BuildTrackedEmailHtml
         ) ?? $html;
 
         if ($placed === 0) {
-            $footer = $this->unsubscribeFooter($unsubscribeUrl);
-
-            if (preg_match('/<\/body>/i', $html) === 1) {
-                return preg_replace_callback(
-                    '/<\/body>/i',
-                    fn (): string => $footer.'</body>',
-                    $html,
-                    1,
-                ) ?? ($html.$footer);
-            }
-
-            return $html.$footer;
+            return $this->withUnsubscribeFooter($html, $unsubscribeUrl);
         }
 
         return $html;
+    }
+
+    /**
+     * Add the visible opt-out link before </body>, or at the end of a fragment.
+     */
+    public function withUnsubscribeFooter(string $html, string $unsubscribeUrl): string
+    {
+        $footer = $this->unsubscribeFooter($unsubscribeUrl);
+
+        if (preg_match('/<\/body>/i', $html) === 1) {
+            return preg_replace_callback(
+                '/<\/body>/i',
+                fn (): string => $footer.'</body>',
+                $html,
+                1,
+            ) ?? ($html.$footer);
+        }
+
+        return $html.$footer;
     }
 
     public function appendQueryString(string $html, ?string $queryString): string
@@ -254,14 +300,26 @@ class BuildTrackedEmailHtml
                 return $matches[0];
             }
 
-            $fragmentPosition = strpos($url, '#');
-            $fragment = $fragmentPosition === false ? '' : substr($url, $fragmentPosition);
-            $baseUrl = $fragmentPosition === false ? $url : substr($url, 0, $fragmentPosition);
-            $separator = str_contains($baseUrl, '?') ? '&' : '?';
-            $taggedUrl = $baseUrl.$separator.$queryString.$fragment;
-
-            return 'href='.$matches[1].htmlspecialchars($taggedUrl, ENT_QUOTES | ENT_HTML5).$matches[1];
+            return 'href='.$matches[1].htmlspecialchars(self::tagUrl($url, $queryString), ENT_QUOTES | ENT_HTML5).$matches[1];
         }, $html) ?? $html;
+    }
+
+    /**
+     * The URL a link is stored and tracked under once the campaign query
+     * string is applied, keeping any #fragment last.
+     */
+    public static function tagUrl(string $url, ?string $queryString): string
+    {
+        if (blank($queryString)) {
+            return $url;
+        }
+
+        $fragmentPosition = strpos($url, '#');
+        $fragment = $fragmentPosition === false ? '' : substr($url, $fragmentPosition);
+        $baseUrl = $fragmentPosition === false ? $url : substr($url, 0, $fragmentPosition);
+        $separator = str_contains($baseUrl, '?') ? '&' : '?';
+
+        return $baseUrl.$separator.$queryString.$fragment;
     }
 
     private function unsubscribeFooter(string $url): string

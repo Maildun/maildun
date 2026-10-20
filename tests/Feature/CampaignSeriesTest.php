@@ -255,6 +255,38 @@ test('the series report deduplicates people and compares campaign aggregates', f
             ->where('report.campaigns.1.open_rate', 100));
 });
 
+test('the series report counts primary CTA clicks on links tagged with a campaign query string', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $campaignSeries = CampaignSeries::factory()->for($team)->create([
+        'primary_cta_url' => 'https://example.com/book-demo#form',
+    ]);
+    $tagged = Email::factory()->for($team)->for($campaignSeries, 'campaignSeries')->create([
+        'status' => EmailStatus::Sent,
+        'sent_at' => now(),
+        'query_string' => 'utm_source=maildun&utm_campaign=pitch',
+    ]);
+    $ctaLink = $tagged->links()->create([
+        'url' => 'https://example.com/book-demo?utm_source=maildun&utm_campaign=pitch#form',
+        'url_hash' => hash('sha256', 'https://example.com/book-demo?utm_source=maildun&utm_campaign=pitch#form'),
+        'position' => 0,
+    ]);
+    $ctaLink->trackingAggregate()->create(['total_clicks_count' => 4, 'unique_clicks_count' => 2]);
+    $otherLink = $tagged->links()->create([
+        'url' => 'https://example.com/pricing?utm_source=maildun&utm_campaign=pitch',
+        'url_hash' => hash('sha256', 'https://example.com/pricing?utm_source=maildun&utm_campaign=pitch'),
+        'position' => 1,
+    ]);
+    $otherLink->trackingAggregate()->create(['total_clicks_count' => 9, 'unique_clicks_count' => 9]);
+
+    $this->actingAs($user)
+        ->get(route('campaign_series.show', [$team, $campaignSeries]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('report.summary.cta_clicks', 4)
+            ->where('report.campaigns.0.cta_clicks', 4));
+});
+
 test('the series report counts Amazon SES deliveries toward delivery feedback', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

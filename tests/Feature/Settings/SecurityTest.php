@@ -86,6 +86,60 @@ test('password can be updated', function () {
     expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
 });
 
+test('a session is signed out once the password changes elsewhere', function () {
+    $user = User::factory()->create();
+    $dashboard = route('dashboard', $user->personalTeam());
+
+    $this->actingAs($user)->get($dashboard)->assertOk();
+
+    // Another device changes the password, or an admin generates a new one.
+    $user->forceFill(['password' => 'changed-elsewhere'])->save();
+
+    $this->get($dashboard)->assertRedirect(route('login'));
+    $this->assertGuest();
+});
+
+test('updating the password keeps the current session signed in', function () {
+    $user = User::factory()->create();
+    $dashboard = route('dashboard', $user->personalTeam());
+
+    $this->actingAs($user)->get($dashboard)->assertOk();
+
+    $this->from(route('security.edit'))
+        ->put(route('user-password.update'), [
+            'current_password' => 'password',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ])
+        ->assertSessionHasNoErrors();
+
+    $this->get($dashboard)->assertOk();
+    $this->assertAuthenticatedAs($user);
+});
+
+test('updating the password keeps the current session and signs out the others', function () {
+    $user = User::factory()->create();
+    $dashboard = route('dashboard', ['current_team' => $user->currentTeam]);
+    $credentials = ['email' => $user->email, 'password' => 'password'];
+
+    $this->post(route('login.store'), $credentials);
+    $otherSession = session()->all();
+    switchSession();
+    $this->post(route('login.store'), $credentials);
+
+    $this->put(route('user-password.update'), [
+        'current_password' => 'password',
+        'password' => 'new-password',
+        'password_confirmation' => 'new-password',
+    ])->assertSessionHasNoErrors();
+
+    switchSession(session()->all());
+    $this->get($dashboard)->assertOk();
+
+    switchSession($otherSession);
+    $this->get($dashboard)->assertRedirect(route('login'));
+});
+
 test('correct password must be provided to update password', function () {
     $user = User::factory()->create();
 

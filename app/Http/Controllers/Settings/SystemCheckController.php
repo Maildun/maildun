@@ -14,6 +14,8 @@ use Inertia\Response;
 
 class SystemCheckController extends Controller
 {
+    private const string STORAGE_PROBE_KEY = 'system-check.storage-probe';
+
     /**
      * Display the current deployment diagnostics.
      */
@@ -21,11 +23,18 @@ class SystemCheckController extends Controller
     {
         $this->authorizeOwner($request);
 
+        // Only the storage round-trip is remembered from the last system
+        // test; queue, Horizon, scheduler and send health stay live.
+        $storageProbe = $request->session()->get(self::STORAGE_PROBE_KEY);
+        $checks = array_map(
+            fn (array $check): array => $check['key'] === 'storage-round-trip' && is_array($storageProbe)
+                ? $storageProbe
+                : $check,
+            $installation->systemChecks(),
+        );
+
         return Inertia::render('settings/system-check', [
-            'checks' => $request->session()->get(
-                'system-check.checks',
-                $installation->systemChecks(),
-            ),
+            'checks' => $checks,
             'appUpdate' => $updates->status(),
         ]);
     }
@@ -37,10 +46,10 @@ class SystemCheckController extends Controller
     {
         $this->authorizeOwner($request);
 
-        $request->session()->put(
-            'system-check.checks',
-            $installation->systemChecks(probeStorage: true),
-        );
+        $storageProbe = collect($installation->systemChecks(probeStorage: true))
+            ->firstWhere('key', 'storage-round-trip');
+
+        $request->session()->put(self::STORAGE_PROBE_KEY, $storageProbe);
 
         return to_route('system-check.show');
     }

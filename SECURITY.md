@@ -16,6 +16,16 @@ The maintainer will acknowledge a complete report as soon as practical, investig
 
 Security fixes are applied to the current `main` branch and, when tagged releases exist, the latest release line. Older commits and forks are not maintained by this project.
 
+## Known issues
+
+### braces (GHSA-vfj7-8cjw-p6xm), stack-exhaustion denial of service
+
+`braces` 3.0.3 enters the development dependency tree through the shadcn CLI (`shadcn > fast-glob > micromatch > braces`, and the same chain under `ts-morph`). No fixed release exists: the advisory names 3.0.4, but npm has nothing past 3.0.3.
+
+The shadcn CLI only runs on a developer's machine to add or update UI components. It is not imported by the application, not part of the Vite bundle, and not shipped in the Docker image, so a pathological brace pattern can only stall a CLI command its own developer typed.
+
+`pnpm-workspace.yaml` lists the advisory under `audit.ignore`, so `pnpm audit --audit-level=high` passes locally and in CI. Remove the entry once braces publishes a patched release and the lockfile resolves it.
+
 ## Operator responsibilities
 
 Self-hosting transfers important security responsibilities to the operator:

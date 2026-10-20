@@ -129,7 +129,7 @@ const hygieneCopy: Record<
     undeliverable: {
         label: 'Undeliverable',
         description:
-            'Email addresses suppressed after a permanent bounce or spam complaint.',
+            'Email addresses suppressed after a permanent bounce, repeated temporary bounces, or a spam complaint.',
         emptyTitle: 'No undeliverable subscribers',
         emptyDescription:
             'Maildun has not learned of any permanently undeliverable addresses in this workspace.',
@@ -424,7 +424,10 @@ export default function ListHygieneIndex({
                                             subscriber.health_reason ===
                                             'complaint'
                                                 ? 'Spam complaint'
-                                                : 'Permanent bounce';
+                                                : subscriber.health_reason ===
+                                                    'repeated_transient_bounce'
+                                                  ? 'Repeated temporary bounces'
+                                                  : 'Permanent bounce';
 
                                         return (
                                             <TableRow

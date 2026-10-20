@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Support;
 
+use App\Actions\Emails\ResolveBuilderMergeTags;
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\EmailEditor;
 use App\Enums\EmailStatus;
@@ -26,6 +27,7 @@ class EmailBuilderContext
         private WorkspaceContext $context,
         private EmailBuilderAgent $agent,
         private RenderTransactionalContent $renderer,
+        private ResolveBuilderMergeTags $mergeTags,
     ) {}
 
     public function record(Request $request): Email|TransactionalEmail
@@ -54,14 +56,7 @@ class EmailBuilderContext
         $record = $this->record($request);
         $validated = $request->validate(['block_id' => ['nullable', 'string', 'max:255']]);
         $input = isset($validated['block_id']) && $tool === 'get_document' ? ['id' => $validated['block_id']] : [];
-        $mergeTags = $record instanceof Email
-            ? [
-                'first_name', 'last_name', 'name', 'email', 'language', 'language_name', 'web_view_url', 'unsubscribe_url', 'subscribe_url',
-                'day', 'day_name', 'month', 'month_name', 'year',
-                ...($record->audience?->audienceAttributes()->pluck('key')->all() ?? []),
-            ]
-            : ['web_view_url', ...array_column($record->variables, 'key')];
-        $mergeTags = array_values(array_filter($mergeTags, is_string(...)));
+        $mergeTags = $this->mergeTags->handle($record);
         $result = $this->agent->run($record->design, $record->html, $input === [] ? $tool : 'get_block', $input, $mergeTags);
 
         if (isset($result['instructions'])) {

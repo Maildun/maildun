@@ -96,16 +96,9 @@ class TeamMailer
 
     public function resolve(Team $team): ResolvedEmailTransport
     {
-        if (! $team->exists) {
-            throw EmailTransportException::providerUnavailable();
-        }
+        $integration = $this->integration($team);
 
-        $integration = TeamEmailIntegration::query()
-            ->where('team_id', $team->getKey())
-            ->whereNotNull('connected_at')
-            ->first();
-
-        if (! $integration instanceof TeamEmailIntegration || ! $integration->isVerified()) {
+        if (! $integration instanceof TeamEmailIntegration) {
             throw EmailTransportException::providerUnavailable();
         }
 
@@ -131,10 +124,6 @@ class TeamMailer
         }
 
         try {
-            if (! $transport->usesTeamEmailIntegration()) {
-                return Mail::to($recipient)->send($mailable);
-            }
-
             return $this->sendUsingResolvedTransport($transport, $recipient, $mailable);
         } catch (TransportExceptionInterface $exception) {
             throw EmailTransportException::fromTransport($exception);
@@ -292,14 +281,16 @@ class TeamMailer
         $configurationSet = $this->filledString($settings['configuration_set'] ?? null);
         $topicArnHash = $this->filledString($integration->ses_sns_topic_arn_hash);
 
+        $publishesSesFeedback = $integration->provider->publishesSesFeedback();
+
         return new ResolvedEmailTransport(
             provider: $integration->provider,
             integrationId: $integration->id,
             integrationUuid: $integration->uuid,
             integrationName: $integration->name,
             configuration: $this->configurationFor($integration),
-            sesConfigurationSet: $integration->provider === EmailProvider::AmazonSes ? $configurationSet : null,
-            sesSnsTopicArnHash: $integration->provider === EmailProvider::AmazonSes ? $topicArnHash : null,
+            sesConfigurationSet: $publishesSesFeedback ? $configurationSet : null,
+            sesSnsTopicArnHash: $publishesSesFeedback ? $topicArnHash : null,
             authorizedFromAddresses: $integration->verifiedSenderAddresses(),
         );
     }

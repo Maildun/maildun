@@ -14,6 +14,7 @@ use App\Enums\SubscriberSource;
 use App\Enums\TransactionalEmailStatus;
 use App\Http\Requests\StoreAutomationRequest;
 use App\Http\Requests\UpdateAutomationRequest;
+use App\Jobs\ProcessAutomationRun;
 use App\Models\Automation;
 use App\Models\AutomationRun;
 use App\Models\AutomationRunStep;
@@ -176,6 +177,11 @@ class AutomationController extends Controller
         return back();
     }
 
+    /**
+     * Reactivating a paused automation re-queues the runs it held. Pending
+     * steps and waits that ran out during the pause continue right away; waits
+     * still running keep their original end time.
+     */
     public function activate(
         Team $currentTeam,
         Automation $automation,
@@ -189,11 +195,30 @@ class AutomationController extends Controller
             throw ValidationException::withMessages(['graph' => $errors]);
         }
 
+        $wasPaused = $automation->isPaused();
+
         $automation->syncTriggerFromGraph();
         $automation->status = AutomationStatus::Active;
         $automation->save();
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Automation activated.')]);
+        // Branches held while the automation was paused carry on from where
+        // they stopped; delays that are not due yet keep their own wake-up job.
+        AutomationRunStep::query()
+            ->dueForDispatch()
+            ->whereHas('run', fn ($query) => $query->where('automation_id', $automation->id))
+            ->chunkById(100, function ($steps): void {
+                foreach ($steps as $step) {
+                    ProcessAutomationRun::dispatch($step->automation_run_id, $step->node_id);
+                }
+            });
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Automation activated.'),
+            'description' => $wasPaused
+                ? __('People already in the flow continue from the step they were held at.')
+                : null,
+        ]);
 
         return back();
     }
@@ -210,7 +235,11 @@ class AutomationController extends Controller
 
         $automation->update(['status' => AutomationStatus::Paused]);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Automation paused.')]);
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Automation paused.'),
+            'description' => __('No one new enters. People already in the flow wait at their current step until you activate it again.'),
+        ]);
 
         return back();
     }

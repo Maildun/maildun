@@ -201,8 +201,7 @@ class ProcessContactImport implements ShouldQueue
         $language = $languageValue === null ? null : $csv->language($languageValue);
 
         if ($error === null && $languageValue !== null && $language === null) {
-            $message = __('Language ":value" is not supported.', ['value' => $languageValue]);
-            $error = is_string($message) ? $message : 'Language is not supported.';
+            $error = $this->unsupportedLanguageError($languageValue);
         }
 
         if ($error === null && $contactImport->audience !== null) {
@@ -358,6 +357,11 @@ class ProcessContactImport implements ShouldQueue
         }
     }
 
+    private function unsupportedLanguageError(string $value): string
+    {
+        return __('Language ":value" is not supported.', ['value' => $value]);
+    }
+
     /** @param list<string> $tags */
     private function profileError(string $email, ?string $firstName, ?string $lastName, array $tags): ?string
     {
@@ -407,8 +411,8 @@ class ProcessContactImport implements ShouldQueue
         $changes = $merged === $current ? [] : ['attribute_values' => $merged];
 
         // A new membership takes the CSV language over the audience default; an
-        // existing one only gains a language it was missing.
-        if ($language !== null && ($createdMembership > 0 || $existing?->language === null) && $subscriber->language !== $language) {
+        // existing one, even when resubscribed, only gains a language it was missing.
+        if ($language !== null && ($existing === null || $existing->language === null) && $subscriber->language !== $language) {
             $changes['language'] = $language;
         }
 

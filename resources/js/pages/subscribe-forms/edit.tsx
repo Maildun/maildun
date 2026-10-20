@@ -1312,6 +1312,10 @@ export default function SubscribeFormEdit({
                                                 label="Last name"
                                                 mode={audience.last_name_mode}
                                             />
+                                            <AudienceFieldRow
+                                                label="Language"
+                                                mode={audience.language_mode}
+                                            />
                                             {attributes.map((attribute) => (
                                                 <AudienceFieldRow
                                                     key={attribute.uuid}

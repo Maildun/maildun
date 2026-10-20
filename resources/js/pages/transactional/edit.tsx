@@ -1,7 +1,6 @@
 import {
     Add01Icon,
     ArrowLeft01Icon,
-    Clock01Icon,
     Copy01Icon,
     Delete02Icon,
     Edit03Icon,
@@ -9,6 +8,7 @@ import {
     MailSend01Icon,
     MoreHorizontalIcon,
     Upload01Icon,
+    Clock01Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, router, setLayoutProps, useForm } from '@inertiajs/react';
@@ -70,8 +70,8 @@ import { uploadEditorImage } from '@/lib/editor-media-upload';
 import {
     EMPTY_BUILDER_DOCUMENT,
     getChildrenIds,
-    insertBuilderMedia,
     htmlToBuilderDocument,
+    insertBuilderMedia,
     isSourceEditor,
     renderBuilderHtml,
     renderSourceHtml,
@@ -103,9 +103,9 @@ type Props = {
     audiences: { uuid: string; name: string }[];
     canManage: boolean;
     currentTeam: Team;
+    auth: { user: { email: string } };
     mediaLibrary: MediaLibraryData | null;
     savedSections: SavedSection[];
-    auth: { user: { email: string } };
 };
 
 type SectionValue = 'details' | 'sender' | 'design' | 'variables';
@@ -192,11 +192,12 @@ export default function TransactionalEdit({
     audiences,
     canManage,
     currentTeam,
+    auth,
     mediaLibrary,
     savedSections,
-    auth,
 }: Props) {
     const [view, setView] = useState<'hub' | 'design'>('hub');
+    const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
     const builderRef = useRef<EmailEditorHandle>(null);
     const savedSectionsGroup = useSavedSectionsGroup({
         teamSlug: currentTeam.slug,
@@ -207,20 +208,14 @@ export default function TransactionalEdit({
         () => [savedSectionsGroup],
         [savedSectionsGroup],
     );
+    const imagePickerResolve = useRef<
+        ((image: ImageResult | null) => void) | null
+    >(null);
     const uploadBuilderImage =
         canManage && mediaLibrary?.canUpload
             ? (file: File) => uploadEditorImage(currentTeam.slug, file)
             : undefined;
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
-    const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
-    const imagePickerResolve = useRef<
-        ((image: ImageResult | null) => void) | null
-    >(null);
-
-    useEffect(() => {
-        return () => imagePickerResolve.current?.(null);
-    }, []);
-
     const [testOpen, setTestOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [publishing, setPublishing] = useState(false);
@@ -268,55 +263,6 @@ export default function TransactionalEdit({
                 : null,
         variables: email.variables,
     });
-
-    const changeMediaDialogOpen = (open: boolean) => {
-        if (!open) {
-            imagePickerResolve.current?.(null);
-            imagePickerResolve.current = null;
-        }
-
-        setMediaDialogOpen(open);
-    };
-
-    const pickBuilderImage = (): Promise<ImageResult | null> => {
-        if (!canManage || form.processing || !mediaLibrary) {
-            return Promise.resolve(null);
-        }
-
-        imagePickerResolve.current?.(null);
-
-        return new Promise((resolve) => {
-            imagePickerResolve.current = resolve;
-            setMediaDialogOpen(true);
-        });
-    };
-
-    const insertMedia = (image: MediaItem): boolean => {
-        if (
-            !canManage ||
-            form.processing ||
-            image.status !== 'ready' ||
-            !image.absolute_url
-        ) {
-            return false;
-        }
-
-        if (imagePickerResolve.current) {
-            imagePickerResolve.current({
-                url: image.absolute_url,
-                alt: image.alt ?? image.name,
-            });
-            imagePickerResolve.current = null;
-
-            return true;
-        }
-
-        if (!builderRef.current) {
-            return false;
-        }
-
-        return insertBuilderMedia(builderRef.current.store, image);
-    };
 
     const errorFor = (value: SectionValue) =>
         SECTIONS.find((entry) => entry.value === value)?.fields.some((field) =>
@@ -420,6 +366,68 @@ export default function TransactionalEdit({
     const published = email.status === 'published';
     const designing = view === 'design';
 
+    useEffect(() => {
+        return () => imagePickerResolve.current?.(null);
+    }, []);
+
+    const changeMediaDialogOpen = (open: boolean) => {
+        if (!open) {
+            imagePickerResolve.current?.(null);
+            imagePickerResolve.current = null;
+        }
+
+        setMediaDialogOpen(open);
+    };
+
+    const pickBuilderImage = (): Promise<ImageResult | null> => {
+        if (!canManage || form.processing || !mediaLibrary) {
+            return Promise.resolve(null);
+        }
+
+        imagePickerResolve.current?.(null);
+
+        return new Promise((resolve) => {
+            imagePickerResolve.current = resolve;
+            setMediaDialogOpen(true);
+        });
+    };
+
+    const insertMedia = (image: MediaItem): boolean => {
+        if (
+            !canManage ||
+            form.processing ||
+            image.status !== 'ready' ||
+            !image.absolute_url
+        ) {
+            return false;
+        }
+
+        if (imagePickerResolve.current) {
+            imagePickerResolve.current({
+                url: image.absolute_url,
+                alt: image.alt ?? image.name,
+            });
+            imagePickerResolve.current = null;
+
+            return true;
+        }
+
+        if (!builderRef.current) {
+            return false;
+        }
+
+        const inserted = insertBuilderMedia(builderRef.current.store, image);
+
+        if (!inserted) {
+            toast.add({
+                type: 'error',
+                title: 'Could not insert this image. Try again.',
+            });
+        }
+
+        return inserted;
+    };
+
     const addVariable = () => {
         const key = newVariableKey.trim();
 
@@ -502,7 +510,7 @@ export default function TransactionalEdit({
                                     className="hidden truncate md:block"
                                 />
                             </div>
-                            <div className="flex shrink-0 items-center gap-2">
+                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                                 {email.editor === 'builder' ? (
                                     <EmailBuilderActions
                                         editor={builderRef}

@@ -1,7 +1,7 @@
 ---
 paths:
   - '{composer.json,composer.lock,README.md,docs/installation.md,.github/workflows/*.yml}'
-  - '{package.json,pnpm-lock.yaml,.github/workflows/*.yml,README.md}'
+  - '{package.json,pnpm-lock.yaml,pnpm-workspace.yaml,.github/workflows/*.yml,README.md}'
 ---
 
 # Workflows
@@ -19,3 +19,5 @@ If you ever edit `require.php`, refresh the lock with `composer update --lock --
 ## pnpm audit runs at --audit-level=high
 CI runs `pnpm audit --audit-level=high`. The one known moderate advisory, GHSA-w455-mfq9-hf74 (ReDoS in `insane`, reached through the former vendored Waypoint editor), no longer applies since the editor moved to `@maildun/email-builder`.
 
+## braces stays ignored in pnpm audit until it ships a fix
+The only ignored advisory is GHSA-vfj7-8cjw-p6xm (braces <=3.0.3, no patched release on npm), listed under `audit.ignore` in `pnpm-workspace.yaml` so local `pnpm audit` and CI agree. braces is reached only through the shadcn CLI (fast-glob > micromatch), which is development tooling and never bundled. Remove the entry once braces 3.0.4 ships; do not ignore other advisories without the same justification here and in SECURITY.md "Known issues".

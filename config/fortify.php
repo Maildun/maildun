@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureEmailIsVerifiedForCredentials;
 use App\Http\Middleware\EnsureRegistrationIsOpen;
 use Laravel\Fortify\Features;
 
@@ -102,7 +103,7 @@ return [
     |
     */
 
-    'middleware' => ['web', EnsureRegistrationIsOpen::class, 'throttle:registration'],
+    'middleware' => ['web', EnsureRegistrationIsOpen::class, EnsureEmailIsVerifiedForCredentials::class, 'throttle:registration'],
 
     /*
     |--------------------------------------------------------------------------

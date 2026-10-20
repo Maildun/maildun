@@ -76,7 +76,8 @@ class SendEmailDelivery implements ShouldQueue
         $html = $trackedHtml->build($delivery);
         $mergeData = $delivery->merge_data ?? [];
         $subject = $renderer->text($delivery->email->subject, $mergeData);
-        $plainText = $renderer->plainText($delivery->email, $mergeData);
+        // Links last so no snapshotted custom field can shadow the opt-out.
+        $plainText = $renderer->plainText($delivery->email, [...$mergeData, ...$trackedHtml->linkData($delivery)]);
 
         /** @var array{ResolvedEmailTransport, EmailDeliveryAttempt}|null $claimedAttempt */
         $claimedAttempt = DB::transaction(function () use ($delivery, $teamMailer): ?array {
@@ -98,7 +99,7 @@ class SendEmailDelivery implements ShouldQueue
 
             $delivery->forceFill([
                 'provider' => $transport->provider->value,
-                'uses_team_email_integration' => $transport->usesTeamEmailIntegration(),
+                'uses_team_email_integration' => true,
             ])->save();
 
             return [$transport, $attempt];

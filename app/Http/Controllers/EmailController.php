@@ -6,6 +6,7 @@ use App\Actions\Emails\BuildCampaignInsights;
 use App\Actions\Emails\BuildSendReadiness;
 use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Actions\Emails\LintCampaignContent;
+use App\Actions\Emails\QueueCampaignTestEmail;
 use App\Actions\Emails\QueueRemainingRecipients;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\RetryEmailDeliveries;
@@ -22,12 +23,10 @@ use App\Enums\EmailProvider;
 use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
-use App\Enums\TestSendStatus;
 use App\Http\Requests\ScheduleEmailRequest;
 use App\Http\Requests\SendTestEmailRequest;
 use App\Http\Requests\StoreEmailRequest;
 use App\Http\Requests\UpdateEmailRequest;
-use App\Jobs\SendCampaignTestEmail;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\CampaignSeries;
@@ -271,9 +270,9 @@ class EmailController extends Controller
                 'from_name' => $email->from_name,
                 'from_address' => $email->from_address,
                 'reply_to' => $email->reply_to,
-                'editor' => $currentTeam->email_editor->value,
+                'editor' => $email->editor->value,
                 'html' => $email->html ?? '',
-                'source' => $email->source ?? ($currentTeam->email_editor->usesSource() ? ($email->html ?? '') : ''),
+                'source' => $email->source ?? ($email->editor->usesSource() ? ($email->html ?? '') : ''),
                 'plain_text' => $email->plain_text ?? '',
                 'query_string' => $email->query_string ?? '',
                 'track_clicks' => $email->track_clicks,
@@ -345,10 +344,10 @@ class EmailController extends Controller
                 'reply_to' => $currentTeam->email_reply_to,
             ],
             'canManage' => Gate::allows('update', $email),
-            'mediaLibrary' => fn (): ?array => $currentTeam->email_editor === EmailEditor::Builder
+            'mediaLibrary' => fn (): ?array => $email->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)
                 : null,
-            'savedSections' => fn (): array => $currentTeam->email_editor === EmailEditor::Builder
+            'savedSections' => fn (): array => $email->editor === EmailEditor::Builder
                 ? SavedSection::forEditor($currentTeam)
                 : [],
         ]);
@@ -358,7 +357,8 @@ class EmailController extends Controller
     {
         abort_unless($email->status === EmailStatus::Draft, 409, __('A queued campaign can no longer be edited.'));
 
-        $editor = $currentTeam->email_editor;
+        // A draft keeps the editor it was composed in; the team setting only picks it for new drafts.
+        $editor = $email->editor;
         $senderAttributes = [];
 
         if ($request->has('sender_uuid')) {
@@ -398,13 +398,14 @@ class EmailController extends Controller
                 'track_opens',
             ]),
             ...$senderAttributes,
-            'editor' => $editor,
             'source' => $editor->usesSource() ? $request->input('source') : null,
             'plain_text' => $editor === EmailEditor::PlainText
                 ? $request->input('source')
                 : $request->input('plain_text'),
-            // HTML emails keep the rendered markup but do not store a block document.
-            'design' => $editor === EmailEditor::Builder ? $request->input('design') : null,
+            // Other editors only edit the rendered markup. A block document the
+            // draft already has is kept, so switching the workspace editor back
+            // to the builder finds it again instead of an empty canvas.
+            'design' => $editor === EmailEditor::Builder ? $request->input('design') : $email->design,
             'audience_id' => $this->resolveAudienceId($currentTeam, $request->input('audience')),
             'segment_id' => $this->resolveSegmentId($currentTeam, $request->input('segment')),
         ]);
@@ -533,28 +534,11 @@ class EmailController extends Controller
         SendTestEmailRequest $request,
         Team $currentTeam,
         Email $email,
-        BuildTrackedEmailHtml $trackedHtml,
-        RenderCampaignContent $renderer,
+        QueueCampaignTestEmail $queueTestEmail,
     ): RedirectResponse {
         abort_unless($email->status === EmailStatus::Draft, 409, __('A queued campaign can no longer send test copies.'));
 
-        $mergeData = $renderer->testData($request->string('to')->value(), now());
-        $email->forceFill([
-            'last_test_status' => TestSendStatus::Queued,
-            'last_test_recipient' => $request->string('to')->value(),
-            'last_test_error' => null,
-        ])->save();
-
-        SendCampaignTestEmail::dispatch(
-            $email->id,
-            $request->string('to')->value(),
-            $renderer->text($email->subject, $mergeData),
-            $trackedHtml->prepareTestHtml(
-                $email,
-                $renderer->html($email->html ?? '', $mergeData),
-            ),
-            $renderer->plainText($email, $mergeData),
-        )->afterCommit();
+        $queueTestEmail->handle($email, $request->string('to')->value());
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -771,10 +755,10 @@ class EmailController extends Controller
             ? $trackingAggregate->unique_clicks_count
             : 0;
         $sesRecipientCount = (clone $deliveries)
-            ->where('provider', EmailProvider::AmazonSes)
+            ->whereIn('provider', EmailProvider::withSesFeedback())
             ->count();
         $deliveredCount = (clone $deliveries)
-            ->where('provider', EmailProvider::AmazonSes)
+            ->whereIn('provider', EmailProvider::withSesFeedback())
             ->whereNotNull('delivered_at')
             ->count();
         $deliveryFeedback = match (true) {
@@ -1041,7 +1025,7 @@ class EmailController extends Controller
             $delivery->subscriber !== null
                 && $delivery->subscriber->status !== SubscriberStatus::Subscribed => __('This recipient has unsubscribed.'),
             $delivery->subscriber?->isPendingConfirmation() === true => __('This recipient has not confirmed their subscription yet.'),
-            in_array($delivery->email_address, $suppressedAddresses, true) => __('This address is suppressed after a permanent bounce or spam complaint.'),
+            in_array($delivery->email_address, $suppressedAddresses, true) => __('This address is suppressed after it bounced or reported a spam complaint.'),
             default => __('This delivery cannot be retried.'),
         };
     }

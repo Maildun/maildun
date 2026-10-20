@@ -154,11 +154,13 @@ test('unsubscribing twice is not an error', function () {
 test('a configured landing page takes over after unsubscribing', function () {
     $delivery = unsubscribeDelivery(['unsubscribed_url' => 'https://example.com/bye']);
 
+    // An Inertia visit cannot follow a cross-origin 302, so the browser is
+    // told to load the landing page itself.
     $this->post(
         URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]),
         [],
         ['X-Inertia' => 'true'],
-    )->assertRedirect('https://example.com/bye');
+    )->assertStatus(409)->assertHeader('X-Inertia-Location', 'https://example.com/bye');
 });
 
 test('a campaign carries the one click unsubscribe headers', function () {
@@ -275,7 +277,7 @@ test('a configured landing page takes over for automation mail', function () {
         URL::signedRoute('public.unsubscribe.subscriber.store', ['subscriber' => $subscriber]),
         [],
         ['X-Inertia' => 'true'],
-    )->assertRedirect('https://example.com/bye');
+    )->assertStatus(409)->assertHeader('X-Inertia-Location', 'https://example.com/bye');
 });
 
 test('automation mail offers a visible unsubscribe url as a merge tag', function () {
@@ -283,7 +285,7 @@ test('automation mail offers a visible unsubscribe url as a merge tag', function
 
     $automation = Automation::factory()->active()->create();
     TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
-    $email = TransactionalEmail::factory()->for($automation->team)->create([
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create([
         'html' => '<p>Hello</p><a href="{{ unsubscribe_url }}">Unsubscribe</a>',
     ]);
     $subscriber = Subscriber::factory()
@@ -344,7 +346,9 @@ test('deleted campaigns retain their signed unsubscribe confirmation and landing
 
     $this->get($show)->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('unsubscribe/show')->where('audience', 'Weekly digest')->where('unsubscribed', false));
-    $this->post($store, [], ['X-Inertia' => 'true'])->assertRedirect('https://example.com/unsubscribed');
+    $this->post($store, [], ['X-Inertia' => 'true'])
+        ->assertStatus(409)
+        ->assertHeader('X-Inertia-Location', 'https://example.com/unsubscribed');
 
     expect($delivery->subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
 });

@@ -63,6 +63,9 @@ jobs:
       - name: Audit PHP Dependencies
         run: composer audit --locked --no-interaction
 
+      # The one accepted advisory (braces, reached only through the shadcn
+      # CLI) is listed under audit.ignore in pnpm-workspace.yaml, so a local
+      # pnpm audit and this step agree. See SECURITY.md "Known issues".
       - name: Audit JavaScript Dependencies
         run: pnpm audit --audit-level=high
 
@@ -104,6 +107,32 @@ jobs:
                   exit(1);
               }
               echo "extensions ok" . PHP_EOL;
+            '
+
+      # The MCP email builder tools shell out to Node through
+      # App\Services\EmailBuilderAgent. Run one real check of a small design
+      # through that class, so a missing node binary or a package the agent
+      # imports but the image does not ship fails here.
+      - name: Verify the email builder runtime
+        run: |
+          KEY="base64:$(head -c 32 /dev/urandom | base64)"
+          docker run --rm -e APP_KEY="$KEY" maildun:ci \
+            php -r '
+              require "vendor/autoload.php";
+              $app = require "bootstrap/app.php";
+              $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+              try {
+                  $result = $app->make(App\Services\EmailBuilderAgent::class)
+                      ->run(null, "<p>Hello from CI</p>", "check_email");
+              } catch (Illuminate\Validation\ValidationException $exception) {
+                  fwrite(STDERR, implode(PHP_EOL, Illuminate\Support\Arr::flatten($exception->errors())) . PHP_EOL);
+                  exit(1);
+              }
+              if (($result["ok"] ?? false) !== true || ! str_contains($result["html"], "Hello from CI")) {
+                  fwrite(STDERR, "unexpected email builder result: " . json_encode($result) . PHP_EOL);
+                  exit(1);
+              }
+              echo "email builder ok" . PHP_EOL;
             '
 
       - name: Verify the image boots and serves the health endpoint

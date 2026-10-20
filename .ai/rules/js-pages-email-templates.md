@@ -6,4 +6,4 @@ paths:
 # Js Pages Email Templates
 
 ## New templates take the team editor with no switcher
-Create uses the team's email_editor; updates keep the template's stored editor. Do not accept editor from the client or put a per-template editor switch on the compose page. HTML templates stay editable after the team switches to the block editor, but Use is hidden when the editors do not match.
+A blank create uses the team's email_editor. Save as template sends the source email's email_type and email_uuid, and SaveEmailTemplateRequest takes that team-scoped email's stored editor (another team's uuid 404s). Updates keep the template's stored editor. Do not accept editor from the client or put a per-template editor switch on the compose page. HTML templates stay editable after the team switches to the block editor, but Use is hidden when the editors do not match.

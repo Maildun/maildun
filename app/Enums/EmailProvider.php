@@ -50,6 +50,22 @@ enum EmailProvider: string
     }
 
     /**
+     * The providers that send through Amazon SES and therefore report
+     * delivery, bounce, and complaint feedback over SNS.
+     *
+     * @return list<self>
+     */
+    public static function withSesFeedback(): array
+    {
+        return [self::AmazonSes];
+    }
+
+    public function publishesSesFeedback(): bool
+    {
+        return in_array($this, self::withSesFeedback(), true);
+    }
+
+    /**
      * @return list<array{value: string, label: string, description: string}>
      */
     public static function options(): array
