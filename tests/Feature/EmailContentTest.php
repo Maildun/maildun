@@ -4,6 +4,7 @@ use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\StartEmailSend;
 use App\Contracts\DnsResolver;
+use App\Enums\SubscriberLanguage;
 use App\Jobs\PrepareEmailSendChunk;
 use App\Mail\ComposedEmailTest;
 use App\Models\Audience;
@@ -149,6 +150,7 @@ test('campaign personalization is snapshotted and query strings are applied befo
         'email' => 'reader@example.com',
         'first_name' => 'Ada',
         'last_name' => 'Lovelace',
+        'language' => SubscriberLanguage::Indonesian,
         'attribute_values' => ['company' => 'Analytical Engines'],
     ]);
     $email = Email::factory()->for($user->currentTeam)->create([
@@ -168,6 +170,8 @@ test('campaign personalization is snapshotted and query strings are applied befo
     expect($delivery->merge_data)->toMatchArray([
         'name' => 'Ada Lovelace',
         'email' => 'reader@example.com',
+        'language' => 'id',
+        'language_name' => 'Indonesian',
         'day' => '02',
         'day_name' => 'Friday',
         'month' => '05',

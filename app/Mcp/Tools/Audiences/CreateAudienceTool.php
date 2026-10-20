@@ -3,12 +3,15 @@
 namespace App\Mcp\Tools\Audiences;
 
 use App\Enums\SubscribeFormFieldMode;
+use App\Enums\SubscriberLanguage;
+use App\Mcp\Support\AudienceLanguageSettings;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
 use App\Models\Audience;
 use App\Rules\AuthorizedSenderAddress;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
+use Illuminate\Support\Arr;
 use Illuminate\Validation\Rule;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -30,6 +33,7 @@ class CreateAudienceTool extends Tool
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
+        private AudienceLanguageSettings $languageSettings,
     ) {}
 
     public function handle(Request $request): ResponseFactory
@@ -41,6 +45,7 @@ class CreateAudienceTool extends Tool
             'description' => ['nullable', 'string', 'max:2000'],
             'first_name_mode' => ['nullable', Rule::enum(SubscribeFormFieldMode::class)],
             'last_name_mode' => ['nullable', Rule::enum(SubscribeFormFieldMode::class)],
+            ...$this->languageSettings->rules(),
             'from_name' => ['nullable', 'string', 'max:255'],
             'from_address' => ['nullable', 'email:rfc', 'max:255', new AuthorizedSenderAddress($team)],
             'reply_to' => ['nullable', 'email:rfc', 'max:255'],
@@ -57,7 +62,10 @@ class CreateAudienceTool extends Tool
             'unsubscribed_url',
         ]);
 
-        $audience = $team->audiences()->create($attributes);
+        $audience = $team->audiences()->create([
+            ...Arr::except($attributes, AudienceLanguageSettings::FIELDS),
+            ...$this->languageSettings->resolve($validated),
+        ]);
         $audience->loadCount(['subscribers', 'segments']);
         $audience->setAttribute('subscribed_count', 0);
 
@@ -80,6 +88,9 @@ class CreateAudienceTool extends Tool
             'description' => $schema->string()->description('Optional internal description.')->max(2000),
             'first_name_mode' => $schema->string()->description('First-name field behavior on subscribe forms.')->enum(SubscribeFormFieldMode::class),
             'last_name_mode' => $schema->string()->description('Last-name field behavior on subscribe forms.')->enum(SubscribeFormFieldMode::class),
+            'language_mode' => $schema->string()->description('Language field behavior on subscribe forms. optional or required needs allowed_languages and default_language.')->enum(SubscribeFormFieldMode::class),
+            'allowed_languages' => $schema->array()->description('ISO 639-1 language codes subscribers may choose; also limits languages accepted by the API and add-subscriber.')->items($schema->string()->enum(SubscriberLanguage::class)),
+            'default_language' => $schema->string()->description('Language for new subscriptions that give none. Must be in allowed_languages.')->enum(SubscriberLanguage::class),
             'from_name' => $schema->string()->description('Default sender name.')->max(255),
             'from_address' => $schema->string()->description('Default authorized sender email address.')->format('email')->max(255),
             'reply_to' => $schema->string()->description('Default reply-to email address.')->format('email')->max(255),

@@ -2,19 +2,29 @@ import {
     ArrowLeft01Icon,
     Delete02Icon,
     Edit03Icon,
+    FolderLibraryIcon,
     Mail01Icon,
     MoreHorizontalIcon,
+    TagsIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, setLayoutProps, useForm, usePage } from '@inertiajs/react';
+import type {
+    EmailEditorHandle,
+    ImageResult,
+} from '@maildun/email-builder/editor';
 import type { FormEvent } from 'react';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteEmailTemplateModal from '@/components/delete-email-template-modal';
+import { EmailBuilderActions } from '@/components/email-builder-actions';
 import { EmailBuilderEditor } from '@/components/email-builder-editor';
 import { EmailHtmlEditor } from '@/components/email-html-editor';
 import { EmailSourceEditor } from '@/components/email-source-editor';
 import EmailTemplatePicker from '@/components/email-template-picker';
+import MediaLibraryDialog from '@/components/media-library-dialog';
+import PersonalizationTagsDialog from '@/components/personalization-tags-dialog';
+import { useSavedSectionsGroup } from '@/components/saved-sections-group';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -43,15 +53,19 @@ import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
+import { uploadEditorImage } from '@/lib/editor-media-upload';
 import {
+    BUILDER_MERGE_TAGS,
     EMPTY_BUILDER_DOCUMENT,
     getChildrenIds,
     htmlToBuilderDocument,
     isSourceEditor,
     renderBuilderHtml,
     renderSourceHtml,
+    insertBuilderMedia,
     toBuilderDocument,
 } from '@/lib/email-builder';
+import type { SavedSection } from '@/lib/email-builder';
 import { cn } from '@/lib/utils';
 import { index, update } from '@/routes/email_templates';
 import type {
@@ -59,6 +73,8 @@ import type {
     EmailEditorMode,
     EmailTemplateDetail,
     EmailTemplateSummary,
+    MediaItem,
+    MediaLibraryData,
 } from '@/types';
 
 type Props = {
@@ -66,6 +82,8 @@ type Props = {
     templates: EmailTemplateSummary[];
     defaultEditor: EmailEditorMode;
     canManage: boolean;
+    mediaLibrary: MediaLibraryData | null;
+    savedSections: SavedSection[];
 };
 
 type SectionValue = 'details' | 'subject' | 'design';
@@ -129,12 +147,33 @@ export default function EmailTemplatesEdit({
     templates,
     defaultEditor,
     canManage,
+    mediaLibrary,
+    savedSections,
 }: Props) {
     const { currentTeam } = usePage().props;
     const [view, setView] = useState<'hub' | 'design'>('hub');
+    const builderRef = useRef<EmailEditorHandle>(null);
+    const savedSectionsGroup = useSavedSectionsGroup({
+        teamSlug: currentTeam?.slug ?? '',
+        sections: savedSections,
+        canManage,
+    });
+    const paletteGroups = useMemo(
+        () => [savedSectionsGroup],
+        [savedSectionsGroup],
+    );
+    const uploadBuilderImage =
+        canManage && mediaLibrary?.canUpload
+            ? (file: File) => uploadEditorImage(currentTeam?.slug ?? '', file)
+            : undefined;
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [useOpen, setUseOpen] = useState(false);
+    const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
+    const [tagsDialogOpen, setTagsDialogOpen] = useState(false);
+    const imagePickerResolve = useRef<
+        ((image: ImageResult | null) => void) | null
+    >(null);
 
     const form = useForm<{
         name: string;
@@ -161,6 +200,10 @@ export default function EmailTemplatesEdit({
 
     useUnsavedChanges(form.isDirty);
 
+    useEffect(() => {
+        return () => imagePickerResolve.current?.(null);
+    }, []);
+
     const designing = view === 'design';
 
     setLayoutProps({ fullscreen: designing });
@@ -168,6 +211,55 @@ export default function EmailTemplatesEdit({
     if (!currentTeam) {
         return null;
     }
+
+    const changeMediaDialogOpen = (open: boolean) => {
+        if (!open) {
+            imagePickerResolve.current?.(null);
+            imagePickerResolve.current = null;
+        }
+
+        setMediaDialogOpen(open);
+    };
+
+    const pickBuilderImage = (): Promise<ImageResult | null> => {
+        if (!canManage || form.processing || !mediaLibrary) {
+            return Promise.resolve(null);
+        }
+
+        imagePickerResolve.current?.(null);
+
+        return new Promise((resolve) => {
+            imagePickerResolve.current = resolve;
+            setMediaDialogOpen(true);
+        });
+    };
+
+    const insertMedia = (image: MediaItem): boolean => {
+        if (
+            !canManage ||
+            form.processing ||
+            image.status !== 'ready' ||
+            !image.absolute_url
+        ) {
+            return false;
+        }
+
+        if (imagePickerResolve.current) {
+            imagePickerResolve.current({
+                url: image.absolute_url,
+                alt: image.alt ?? image.name,
+            });
+            imagePickerResolve.current = null;
+
+            return true;
+        }
+
+        if (!builderRef.current) {
+            return false;
+        }
+
+        return insertBuilderMedia(builderRef.current.store, image);
+    };
 
     const errorFor = (value: SectionValue) =>
         SECTIONS.find((entry) => entry.value === value)?.fields.some(
@@ -327,30 +419,82 @@ export default function EmailTemplatesEdit({
                                     {EDITOR_LABELS[template.editor]}
                                 </Badge>
                             </div>
-                            {canManage ? (
+                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                                {template.editor === 'builder' ? (
+                                    <EmailBuilderActions
+                                        editor={builderRef}
+                                        name={templateName}
+                                        brandTheme={currentTeam.brandTheme}
+                                        canManage={canManage}
+                                    />
+                                ) : null}
+                                {template.editor === 'builder' &&
+                                mediaLibrary ? (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        aria-label="Open media library"
+                                        data-test="open-media-library"
+                                        onClick={() => setMediaDialogOpen(true)}
+                                    >
+                                        <HugeiconsIcon
+                                            icon={FolderLibraryIcon}
+                                            data-icon="inline-start"
+                                        />
+                                        <span className="hidden lg:inline">
+                                            Open media
+                                        </span>
+                                    </Button>
+                                ) : null}
                                 <Button
-                                    type="submit"
+                                    type="button"
+                                    variant="outline"
                                     size="sm"
-                                    data-test="save-template-button"
-                                    disabled={form.processing}
+                                    disabled={!canManage}
+                                    data-test="personalization-tags"
+                                    onClick={() => setTagsDialogOpen(true)}
                                 >
-                                    {form.processing && (
-                                        <Spinner data-icon="inline-start" />
-                                    )}
-                                    Save
+                                    <HugeiconsIcon
+                                        icon={TagsIcon}
+                                        data-icon="inline-start"
+                                    />
+                                    Personalization tags
                                 </Button>
-                            ) : null}
+                                {canManage ? (
+                                    <Button
+                                        type="submit"
+                                        size="sm"
+                                        data-test="save-template-button"
+                                        disabled={form.processing}
+                                    >
+                                        {form.processing && (
+                                            <Spinner data-icon="inline-start" />
+                                        )}
+                                        Save
+                                    </Button>
+                                ) : null}
+                            </div>
                         </header>
                         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                             {template.editor === 'builder' ? (
                                 <>
                                     <EmailBuilderEditor
+                                        ref={builderRef}
+                                        onPickImage={
+                                            mediaLibrary
+                                                ? pickBuilderImage
+                                                : undefined
+                                        }
+                                        onUploadImage={uploadBuilderImage}
+                                        paletteGroups={paletteGroups}
                                         document={
                                             form.data.design ??
                                             EMPTY_BUILDER_DOCUMENT
                                         }
                                         disabled={!canManage}
                                         fill
+                                        mergeTags={BUILDER_MERGE_TAGS}
                                         onChange={(design) =>
                                             form.setData('design', design)
                                         }
@@ -552,6 +696,24 @@ export default function EmailTemplatesEdit({
                     </div>
                 )}
             </form>
+
+            {mediaLibrary ? (
+                <MediaLibraryDialog
+                    teamSlug={currentTeam.slug}
+                    library={mediaLibrary}
+                    open={mediaDialogOpen}
+                    onOpenChange={changeMediaDialogOpen}
+                    onInsert={canManage && designing ? insertMedia : undefined}
+                    insertDisabled={form.processing}
+                />
+            ) : null}
+
+            <PersonalizationTagsDialog
+                attributes={[]}
+                audienceName={null}
+                open={tagsDialogOpen}
+                onOpenChange={setTagsDialogOpen}
+            />
 
             <Dialog
                 open={openSection === 'details'}

@@ -3,6 +3,7 @@
 use App\Enums\EmailEditor;
 use App\Enums\TeamRole;
 use App\Models\EmailTemplate;
+use App\Models\Media;
 use App\Models\Team;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -133,6 +134,37 @@ test('the compose page exposes the template details and body', function () {
             ->where('template.subject', 'What we shipped')
             ->where('template.preheader', 'A short look back')
             ->where('template.html', '<p>Body</p>'));
+});
+
+test('the builder compose page exposes the team media library', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $template = EmailTemplate::factory()->builder()->for($team)->create();
+    Media::factory()->for($team)->create(['name' => 'template-hero.png']);
+    Media::factory()->for(Team::factory()->create())->create(['name' => 'private.png']);
+
+    $this->actingAs($user)
+        ->get(route('email_templates.edit', [$team, $template]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('email-templates/edit')
+            ->where('mediaLibrary.canManage', true)
+            ->where('mediaLibrary.canUpload', true)
+            ->where('mediaLibrary.atLimit', false)
+            ->has('mediaLibrary.items', 1)
+            ->where('mediaLibrary.items.0.name', 'template-hero.png'));
+});
+
+test('html templates do not load the media library', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $template = EmailTemplate::factory()->for($team)->create();
+    Media::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->get(route('email_templates.edit', [$team, $template]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('mediaLibrary', null));
 });
 
 test('a team template can be renamed and deleted', function () {

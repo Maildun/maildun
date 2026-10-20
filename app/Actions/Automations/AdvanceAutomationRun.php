@@ -9,6 +9,7 @@ use App\Enums\AutomationCondition;
 use App\Enums\AutomationDelayUnit;
 use App\Enums\AutomationRunStatus;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Exceptions\EmailTransportException;
@@ -301,6 +302,8 @@ class AdvanceAutomationRun
             AutomationCondition::Source => $subscriber->source === SubscriberSource::tryFrom(
                 (string) ($data['source'] ?? ''),
             ),
+            AutomationCondition::Language => $subscriber->language !== null
+                && $subscriber->language === SubscriberLanguage::tryFrom((string) ($data['language'] ?? '')),
             default => throw new \RuntimeException(__('Unknown condition.')),
         };
 

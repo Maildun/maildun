@@ -128,6 +128,12 @@ export function SubscriberHoverCard({
                             {source}
                         </dd>
                     </div>
+                    {subscriber.language_name && (
+                        <div className="flex items-center justify-between gap-3">
+                            <dt className="text-muted-foreground">Language</dt>
+                            <dd>{subscriber.language_name}</dd>
+                        </div>
+                    )}
                     <div className="flex items-center justify-between gap-3">
                         <dt className="text-muted-foreground">Subscribed</dt>
                         <dd

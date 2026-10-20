@@ -56,7 +56,7 @@ class EmailBuilderContext
         $input = isset($validated['block_id']) && $tool === 'get_document' ? ['id' => $validated['block_id']] : [];
         $mergeTags = $record instanceof Email
             ? [
-                'first_name', 'last_name', 'name', 'email', 'web_view_url', 'unsubscribe_url', 'subscribe_url',
+                'first_name', 'last_name', 'name', 'email', 'language', 'language_name', 'web_view_url', 'unsubscribe_url', 'subscribe_url',
                 'day', 'day_name', 'month', 'month_name', 'year',
                 ...($record->audience?->audienceAttributes()->pluck('key')->all() ?? []),
             ]

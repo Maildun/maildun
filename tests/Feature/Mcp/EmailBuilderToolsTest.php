@@ -59,7 +59,7 @@ test('exposes native tool input schemas with empty objects instead of arrays', f
 
     MaildunServer::tool(GetEmailBuilderTool::class, emailBuilderArguments($email))
         ->assertOk()
-        ->assertSee('"name":"get_document","description":')
+        ->assertSee('"name":"get_document","title":"Get document outline","description":')
         ->assertSee('"properties":{}')
         ->assertSee('"additionalProperties":{}')
         ->assertDontSee('"properties":[]')

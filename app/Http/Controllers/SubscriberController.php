@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Audiences\ResubscribeSubscriber;
 use App\Enums\AutomationTrigger;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
@@ -47,6 +48,7 @@ class SubscriberController extends Controller
             'email' => $contact->email,
             'first_name' => $contact->first_name,
             'last_name' => $contact->last_name,
+            'language' => $request->validated('language') ?? $audience->default_language,
             'status' => SubscriberStatus::Subscribed,
             'source' => SubscriberSource::Manual,
             'consent_text' => 'Marketing consent confirmed by a team member.',
@@ -70,7 +72,10 @@ class SubscriberController extends Controller
         Gate::authorize('update', $subscriber);
         $contact = $subscriber->contact ?? $manageContact->findOrCreate($currentTeam, $this->contactProfile($request));
         $contact = $manageContact->update($contact, Arr::only($request->validated(), ['email', 'first_name', 'last_name']));
-        $subscriber->update(['contact_id' => $contact->id]);
+        $subscriber->update([
+            'contact_id' => $contact->id,
+            ...($request->has('language') ? ['language' => $request->validated('language')] : []),
+        ]);
         $addedTags = $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []));
         $this->dispatchTagged($contact, $addedTags);
 
@@ -94,19 +99,10 @@ class SubscriberController extends Controller
         return back();
     }
 
-    public function resubscribe(ResubscribeSubscriberRequest $request, Team $currentTeam, Audience $audience, Subscriber $subscriber): RedirectResponse
+    public function resubscribe(ResubscribeSubscriberRequest $request, Team $currentTeam, Audience $audience, Subscriber $subscriber, ResubscribeSubscriber $resubscribeSubscriber): RedirectResponse
     {
         Gate::authorize('update', $subscriber);
-        $subscriber->update([
-            'status' => SubscriberStatus::Subscribed,
-            'consent_text' => 'Marketing consent confirmed by a team member.',
-            'consented_at' => now(),
-            'consent_ip' => $request->ip(),
-            'subscribed_at' => now(),
-            'unsubscribed_at' => null,
-        ]);
-
-        event(new SubscriberLifecycleOccurred(AutomationTrigger::Resubscribed, $subscriber->fresh() ?? $subscriber));
+        $resubscribeSubscriber->handle($subscriber, $request->ip());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber resubscribed.')]);
 

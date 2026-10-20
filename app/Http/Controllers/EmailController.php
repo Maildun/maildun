@@ -12,6 +12,7 @@ use App\Actions\Emails\RetryEmailDeliveries;
 use App\Actions\Emails\ScheduleEmailSend;
 use App\Actions\Emails\StartEmailSend;
 use App\Actions\Emails\StopEmailSend;
+use App\Actions\Media\BuildMediaLibrary;
 use App\Concerns\FiltersCampaignRecipients;
 use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailDeliveryStatus;
@@ -38,7 +39,7 @@ use App\Models\EmailLinkTrackingAggregate;
 use App\Models\EmailSendRun;
 use App\Models\EmailTemplate;
 use App\Models\EmailTrackingAggregate;
-use App\Models\Media;
+use App\Models\SavedSection;
 use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Team;
@@ -227,7 +228,7 @@ class EmailController extends Controller
         return to_route('emails.edit', ['current_team' => $currentTeam, 'email' => $email]);
     }
 
-    public function edit(Team $currentTeam, Email $email, BuildSendReadiness $sendReadiness): Response|RedirectResponse
+    public function edit(Team $currentTeam, Email $email, BuildSendReadiness $sendReadiness, BuildMediaLibrary $mediaLibrary): Response|RedirectResponse
     {
         Gate::authorize('view', $email);
 
@@ -345,43 +346,12 @@ class EmailController extends Controller
             ],
             'canManage' => Gate::allows('update', $email),
             'mediaLibrary' => fn (): ?array => $currentTeam->email_editor === EmailEditor::Builder
-                ? $this->mediaLibraryFor($currentTeam)
+                ? $mediaLibrary->handle($currentTeam)
                 : null,
+            'savedSections' => fn (): array => $currentTeam->email_editor === EmailEditor::Builder
+                ? SavedSection::forEditor($currentTeam)
+                : [],
         ]);
-    }
-
-    /**
-     * @return array{
-     *     items: list<array<string, mixed>>,
-     *     canManage: bool,
-     *     canUpload: bool,
-     *     atLimit: bool,
-     *     convertUploadsToWebp: bool,
-     *     hasMore: bool
-     * }
-     */
-    private function mediaLibraryFor(Team $team): array
-    {
-        Gate::authorize('viewAny', [Media::class, $team]);
-
-        $media = $team->media()
-            ->with(['category', 'tags'])
-            ->latest()
-            ->limit(61)
-            ->get();
-        $canManage = Gate::allows('create', [Media::class, $team]);
-
-        return [
-            'items' => array_values($media
-                ->take(60)
-                ->map(fn (Media $item): array => $item->toInertia())
-                ->all()),
-            'canManage' => $canManage,
-            'canUpload' => $canManage,
-            'atLimit' => false,
-            'convertUploadsToWebp' => $team->convert_uploads_to_webp,
-            'hasMore' => $media->count() > 60,
-        ];
     }
 
     public function update(UpdateEmailRequest $request, Team $currentTeam, Email $email): RedirectResponse

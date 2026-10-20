@@ -6,6 +6,7 @@ use App\Enums\TransactionalEmailStatus;
 use App\Jobs\SendTransactionalEmailTest;
 use App\Models\Audience;
 use App\Models\EmailTemplate;
+use App\Models\Media;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use App\Models\User;
@@ -147,6 +148,8 @@ test('the edit page exposes the email and sender defaults', function () {
         'slug' => 'welcome-email',
         'variables' => [['key' => 'first_name', 'example' => 'Ada']],
     ]);
+    Media::factory()->for($team)->create(['name' => 'receipt.png']);
+    Media::factory()->for(Team::factory()->create())->create(['name' => 'other.png']);
 
     $this->actingAs($user)
         ->get(route('transactional_emails.edit', [$team, $email]))
@@ -160,7 +163,12 @@ test('the edit page exposes the email and sender defaults', function () {
             ->where('canManage', true)
             ->where('defaults.from_name', 'Maildun HQ')
             ->where('defaults.from_address', 'hq@example.com')
-            ->where('email.variables.0.key', 'first_name'));
+            ->where('email.variables.0.key', 'first_name')
+            ->where('mediaLibrary.canUpload', true)
+            ->where('mediaLibrary.atLimit', false)
+            ->has('mediaLibrary.items', 1)
+            ->where('mediaLibrary.items.0.name', 'receipt.png')
+            ->has('savedSections', 0));
 });
 
 test('saving merges detected variables and keeps examples', function () {
@@ -191,6 +199,39 @@ test('saving merges detected variables and keeps examples', function () {
             ['key' => 'first_name', 'example' => 'Ada'],
             ['key' => 'reset_url', 'example' => ''],
         ]);
+});
+
+test('saving links an audience for the unsubscribe link', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $email = TransactionalEmail::factory()->for($team)->create();
+    $payload = [
+        'name' => $email->name,
+        'slug' => $email->slug,
+        'subject' => $email->subject,
+        'html' => '<a href="{{ unsubscribe_url }}">Unsubscribe</a>',
+    ];
+
+    $this->actingAs($user)
+        ->patch(route('transactional_emails.update', [$team, $email]), [...$payload, 'audience' => $audience->uuid])
+        ->assertRedirect();
+
+    expect($email->fresh()->audience_id)->toBe($audience->id)
+        ->and($email->fresh()->variables)->toBe([]);
+
+    $this->actingAs($user)
+        ->patch(route('transactional_emails.update', [$team, $email]), [
+            ...$payload,
+            'audience' => Audience::factory()->create()->uuid,
+        ])
+        ->assertInvalid('audience');
+
+    $this->actingAs($user)
+        ->patch(route('transactional_emails.update', [$team, $email]), [...$payload, 'audience' => null])
+        ->assertRedirect();
+
+    expect($email->fresh()->audience_id)->toBeNull();
 });
 
 test('the block editor requires a document', function () {
@@ -389,6 +430,22 @@ test('a test send queues rendered merge tags', function () {
         && $job->html === '<p>Hello Ada</p>');
 
     expect($email->fresh()->last_tested_at)->toBeNull();
+});
+
+test('a test send links the unsubscribe tag to a page that opts nobody out', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = TransactionalEmail::factory()->for($team)->create([
+        'html' => '<a href="{{ unsubscribe_url }}">Unsubscribe</a>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('transactional_emails.test', [$team, $email]), ['to' => 'reviewer@example.com'])
+        ->assertRedirect();
+
+    Queue::assertPushed(SendTransactionalEmailTest::class, fn (SendTransactionalEmailTest $job): bool => $job->html === '<a href="'.route('public.unsubscribe.test').'">Unsubscribe</a>');
 });
 
 test('a test send requires a valid address', function () {

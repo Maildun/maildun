@@ -19,5 +19,18 @@ publicHoistPattern:
 # GHSA-6j4f-fj2g-mc7p, GHSA-qhr7-859c-m2p7 and GHSA-q2hr-2g5m-vwhr. The floor
 # below is the first patched release; drop it once the lockfile no longer
 # resolves anything older.
+#
+# shadcn's Express pulls proxy-addr 2.0.7 (GHSA-jqcg-44mw-7w3h). Vite and
+# Tailwind pull source-map-js 1.2.1 (GHSA-68fv-2mgg-jv7q). These floors are
+# the first patched releases.
 overrides:
   brace-expansion@>=4.0.0 <5.0.12: ^5.0.12
+  proxy-addr@<2.0.8: 2.0.8
+  source-map-js@<1.2.2: 1.2.2
+
+# braces <=3.0.3 (GHSA-vfj7-8cjw-p6xm) has no patched release. It is only
+# reached through the shadcn CLI's fast-glob, not the running application.
+# Drop this ignore once braces publishes a fix.
+audit:
+  ignore:
+    - GHSA-vfj7-8cjw-p6xm

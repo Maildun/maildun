@@ -15,6 +15,7 @@ use App\Http\Controllers\ContactController;
 use App\Http\Controllers\ContactExportController;
 use App\Http\Controllers\ContactImportController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EditorMediaController;
 use App\Http\Controllers\EmailAttachmentController;
 use App\Http\Controllers\EmailController;
 use App\Http\Controllers\EmailDeliveryDetailController;
@@ -28,6 +29,7 @@ use App\Http\Controllers\ListHygieneController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MediaSettingsController;
 use App\Http\Controllers\PublicSubscribeFormController;
+use App\Http\Controllers\SavedSectionController;
 use App\Http\Controllers\SegmentController;
 use App\Http\Controllers\SubscribeFormController;
 use App\Http\Controllers\SubscriberController;
@@ -330,9 +332,19 @@ Route::prefix('{current_team}')
                 ->name('media.settings.edit');
             Route::patch('media/settings', [MediaSettingsController::class, 'update'])
                 ->name('media.settings.update');
+            Route::post('media/editor-uploads', [EditorMediaController::class, 'store'])
+                ->middleware('throttle:30,1')
+                ->name('media.editor_uploads.store');
+            Route::get('media/editor-uploads/{media}', [EditorMediaController::class, 'show'])
+                ->name('media.editor_uploads.show');
             Route::resource('media', MediaController::class)
                 ->parameters(['media' => 'media'])
                 ->only(['index', 'store', 'update', 'destroy']);
+
+            Route::resource('saved-sections', SavedSectionController::class)
+                ->parameters(['saved-sections' => 'savedSection'])
+                ->names('saved_sections')
+                ->only(['store', 'update', 'destroy']);
 
             Route::get('email-templates', [EmailTemplateController::class, 'index'])
                 ->name('email_templates.index');

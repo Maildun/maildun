@@ -5,7 +5,7 @@ import {
     hasChildren,
     renderEmail,
 } from '@maildun/email-builder';
-import type { EmailDocument } from '@maildun/email-builder';
+import type { BlockInput, EmailDocument, Op } from '@maildun/email-builder';
 import {
     fromEmailBuilderJs,
     isEmailBuilderJsDocument,
@@ -17,6 +17,65 @@ import type {
     EmailSourceMode,
 } from '@/types/emails';
 import type { MediaItem } from '@/types/media';
+import type {
+    TeamBrandColor,
+    TeamBrandFont,
+    TeamBrandTheme,
+} from '@/types/teams';
+
+/** A block the author saved to reuse in any block email in the workspace. */
+export type SavedSection = {
+    id: string;
+    name: string;
+    /** Stored without ids, so every insert gets fresh ones. */
+    blocks: BlockInput[];
+};
+
+/** Email-safe hex for each workspace brand color (the app theme uses OKLCH). */
+const BRAND_EMAIL_COLORS: Record<TeamBrandColor, string> = {
+    blue: '#2b7fff',
+    indigo: '#4f39f6',
+    violet: '#7f22fe',
+    purple: '#9810fa',
+    fuchsia: '#c800de',
+    pink: '#e60076',
+    rose: '#ec003f',
+    red: '#e7000b',
+    orange: '#f54900',
+    amber: '#e17100',
+    lime: '#5ea500',
+    emerald: '#009966',
+    teal: '#009689',
+    cyan: '#0092b8',
+    neutral: '#262626',
+};
+
+/** The closest email-safe font stack in the builder for each workspace font. */
+const BRAND_EMAIL_FONTS: Record<TeamBrandFont, string> = {
+    inter: 'MODERN_SANS',
+    'instrument-sans': 'GEOMETRIC_SANS',
+    'system-sans': 'MODERN_SANS',
+    'rounded-sans': 'ROUNDED_SANS',
+    'humanist-sans': 'BOOK_SANS',
+    serif: 'MODERN_SERIF',
+    georgia: 'BOOK_SERIF',
+    mono: 'MONOSPACE',
+};
+
+/**
+ * One undoable editor step that switches a design to the workspace brand
+ * (Settings → Theme): its color for buttons and links, and its font.
+ */
+export function brandThemeOp(theme: TeamBrandTheme): Op {
+    const color = BRAND_EMAIL_COLORS[theme.color] ?? BRAND_EMAIL_COLORS.blue;
+    const font = BRAND_EMAIL_FONTS[theme.font] ?? BRAND_EMAIL_FONTS.inter;
+
+    return {
+        op: 'updateTheme',
+        colors: { primary: color, link: color },
+        fonts: { body: font, heading: font },
+    };
+}
 
 export function isSourceEditor(
     editor: EmailEditorMode,
@@ -43,7 +102,95 @@ export const BUILDER_MERGE_TAGS: MergeTag[] = [
  * handed over as-is at the point where it crosses into the package.
  */
 export function toEmailDocument(document: EmailBuilderDocument): EmailDocument {
-    return document as EmailDocument;
+    return withEmptyObjects(document) as EmailDocument;
+}
+
+const repairedDocuments = new WeakMap<object, EmailBuilderDocument>();
+
+function isEmptyArray(value: unknown): boolean {
+    return Array.isArray(value) && value.length === 0;
+}
+
+const ALT_BLOCK_TYPES = new Set(['image', 'video', 'avatar']);
+
+/** Those blocks require alt to be a string. A missing description is blank. */
+function hasNullAlt(
+    block: Record<string, unknown> | null | undefined,
+): boolean {
+    if (!block || !ALT_BLOCK_TYPES.has(String(block.type))) {
+        return false;
+    }
+
+    const props = block.props;
+
+    return (
+        typeof props === 'object' &&
+        props !== null &&
+        !Array.isArray(props) &&
+        (props as { alt?: unknown }).alt === null
+    );
+}
+
+/**
+ * PHP decodes an empty JSON object as an empty array, so a saved design can
+ * come back with `props: []` (e.g. a container) or `blocks: []`. The package
+ * validates strictly and would reject every edit on such a document, so
+ * restore those objects. Repaired documents are cached per input so the
+ * editor keeps receiving the same reference between renders.
+ */
+function withEmptyObjects(
+    document: EmailBuilderDocument,
+): EmailBuilderDocument {
+    const cached = repairedDocuments.get(document);
+
+    if (cached) {
+        return cached;
+    }
+
+    const blocks = document.blocks as unknown;
+    const entries = isEmptyArray(blocks)
+        ? []
+        : Object.entries(
+              (blocks ?? {}) as Record<string, Record<string, unknown>>,
+          );
+    const needsRepair =
+        isEmptyArray(blocks) ||
+        entries.some(
+            ([, block]) =>
+                isEmptyArray(block?.props) ||
+                isEmptyArray(block?.style) ||
+                hasNullAlt(block),
+        );
+
+    if (!needsRepair) {
+        return document;
+    }
+
+    const repaired = {
+        ...document,
+        blocks: Object.fromEntries(
+            entries.map(([id, block]) => [
+                id,
+                {
+                    ...block,
+                    ...(isEmptyArray(block.props) ? { props: {} } : {}),
+                    ...(hasNullAlt(block)
+                        ? {
+                              props: {
+                                  ...(block.props as Record<string, unknown>),
+                                  alt: '',
+                              },
+                          }
+                        : {}),
+                    ...(isEmptyArray(block.style) ? { style: {} } : {}),
+                },
+            ]),
+        ),
+    } as EmailBuilderDocument;
+
+    repairedDocuments.set(document, repaired);
+
+    return repaired;
 }
 
 /**
@@ -79,14 +226,29 @@ export function emptyBuilderDocument(): EmailBuilderDocument {
 /**
  * Stored designs may still be EmailBuilder.js documents (written before the
  * switch, or by an MCP client). Convert them on open; the next save stores
- * the new format.
+ * the new format. Designs saved without version, settings or theme (an MCP
+ * client sending only root and blocks) get the blank defaults, because the
+ * renderer reads the theme before anything else.
  */
 export function toBuilderDocument(stored: unknown): EmailBuilderDocument {
     if (isEmailBuilderJsDocument(stored)) {
         return fromEmailBuilderJs(stored).document;
     }
 
-    return stored as EmailBuilderDocument;
+    const document = stored as Partial<EmailBuilderDocument>;
+    const defaults = emptyBuilderDocument();
+
+    return {
+        ...defaults,
+        ...document,
+        settings: { ...defaults.settings, ...document.settings },
+        theme: {
+            colors: { ...defaults.theme.colors, ...document.theme?.colors },
+            fonts: { ...defaults.theme.fonts, ...document.theme?.fonts },
+        },
+        root: document.root ?? defaults.root,
+        blocks: document.blocks ?? defaults.blocks,
+    };
 }
 
 /**

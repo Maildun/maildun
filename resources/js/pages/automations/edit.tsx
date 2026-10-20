@@ -278,6 +278,10 @@ export default function AutomationEdit({
         () => toLabelMap(catalog.conditions),
         [catalog.conditions],
     );
+    const languageLabels = useMemo(
+        () => toLabelMap(catalog.languages),
+        [catalog.languages],
+    );
     const sourceLabels = useMemo(
         () => toLabelMap(catalog.sources),
         [catalog.sources],
@@ -1077,6 +1081,7 @@ export default function AutomationEdit({
                             actionLabels={actionLabels}
                             conditionLabels={conditionLabels}
                             sourceLabels={sourceLabels}
+                            languageLabels={languageLabels}
                             delayUnitLabels={delayUnitLabels}
                             tags={tags}
                             emails={transactionalEmails}

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Media\BuildMediaLibrary;
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\EmailEditor;
 use App\Enums\TestSendStatus;
@@ -10,7 +11,9 @@ use App\Http\Requests\SendTestTransactionalEmailRequest;
 use App\Http\Requests\StoreTransactionalEmailRequest;
 use App\Http\Requests\UpdateTransactionalEmailRequest;
 use App\Jobs\SendTransactionalEmailTest;
+use App\Models\Audience;
 use App\Models\EmailTemplate;
+use App\Models\SavedSection;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use Illuminate\Http\RedirectResponse;
@@ -102,7 +105,7 @@ class TransactionalEmailController extends Controller
         return to_route('transactional_emails.edit', ['current_team' => $currentTeam, 'transactionalEmail' => $email]);
     }
 
-    public function edit(Team $currentTeam, TransactionalEmail $transactionalEmail): Response
+    public function edit(Team $currentTeam, TransactionalEmail $transactionalEmail, BuildMediaLibrary $mediaLibrary): Response
     {
         Gate::authorize('view', $transactionalEmail);
 
@@ -117,6 +120,7 @@ class TransactionalEmailController extends Controller
                 'from_name' => $transactionalEmail->from_name,
                 'from_address' => $transactionalEmail->from_address,
                 'reply_to' => $transactionalEmail->reply_to,
+                'audience' => $transactionalEmail->audience?->uuid,
                 'editor' => $currentTeam->email_editor->value,
                 'status' => $transactionalEmail->status->value,
                 'html' => $transactionalEmail->html ?? '',
@@ -138,7 +142,21 @@ class TransactionalEmailController extends Controller
                 'from_address' => $currentTeam->email_from_address ?? config('mail.from.address'),
                 'reply_to' => $currentTeam->email_reply_to,
             ],
+            'audiences' => $currentTeam->audiences()
+                ->orderBy('name')
+                ->get(['uuid', 'name'])
+                ->map(fn (Audience $audience): array => [
+                    'uuid' => $audience->uuid,
+                    'name' => $audience->name,
+                ])
+                ->all(),
             'canManage' => Gate::allows('update', $transactionalEmail),
+            'mediaLibrary' => fn (): ?array => $currentTeam->email_editor === EmailEditor::Builder
+                ? $mediaLibrary->handle($currentTeam)
+                : null,
+            'savedSections' => fn (): array => $currentTeam->email_editor === EmailEditor::Builder
+                ? SavedSection::forEditor($currentTeam)
+                : [],
         ]);
     }
 
@@ -171,6 +189,7 @@ class TransactionalEmailController extends Controller
                 'html',
                 'source',
             ]),
+            'audience_id' => $this->resolveAudienceId($currentTeam, $request->input('audience')),
             'editor' => $editor,
             'source' => $editor->usesSource() ? $request->input('source') : null,
             'design' => $editor === EmailEditor::Builder ? $request->input('design') : null,
@@ -189,7 +208,11 @@ class TransactionalEmailController extends Controller
         RenderTransactionalContent $renderer,
     ): RedirectResponse {
         /** @var array<string, mixed> $data */
-        $data = $request->input('data', []);
+        $data = [
+            ...$request->input('data', []),
+            // A test copy has no subscriber to opt out, so it links the page that explains that.
+            'unsubscribe_url' => route('public.unsubscribe.test'),
+        ];
         $transactionalEmail->forceFill([
             'last_test_status' => TestSendStatus::Queued,
             'last_test_recipient' => $request->string('to')->value(),
@@ -260,6 +283,7 @@ class TransactionalEmailController extends Controller
             'from_name' => $transactionalEmail->from_name,
             'from_address' => $transactionalEmail->from_address,
             'reply_to' => $transactionalEmail->reply_to,
+            'audience_id' => $transactionalEmail->audience_id,
             'editor' => $currentTeam->email_editor,
             'html' => $transactionalEmail->html,
             'source' => $transactionalEmail->source,
@@ -281,6 +305,15 @@ class TransactionalEmailController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Transactional email deleted.')]);
 
         return to_route('transactional_emails.index', ['current_team' => $currentTeam]);
+    }
+
+    private function resolveAudienceId(Team $team, ?string $uuid): ?int
+    {
+        if (blank($uuid)) {
+            return null;
+        }
+
+        return $team->audiences()->where('uuid', $uuid)->value('id');
     }
 
     private function ensureNotDoubleOptInEmail(TransactionalEmail $transactionalEmail): void

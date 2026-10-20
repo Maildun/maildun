@@ -11,6 +11,7 @@ enum SegmentRuleField: string
     case Source = 'source';
     case SubscribeForm = 'subscribe_form';
     case SubscribedAt = 'subscribed_at';
+    case Language = 'language';
 
     /**
      * @return array<SegmentRuleOperator>
@@ -24,7 +25,7 @@ enum SegmentRuleField: string
                 SegmentRuleOperator::Contains,
                 SegmentRuleOperator::DoesNotContain,
             ],
-            self::Status, self::Source, self::SubscribeForm => [
+            self::Status, self::Source, self::SubscribeForm, self::Language => [
                 SegmentRuleOperator::Equals,
                 SegmentRuleOperator::NotEquals,
             ],

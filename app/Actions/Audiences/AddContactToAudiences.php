@@ -40,6 +40,7 @@ class AddContactToAudiences
                 'email' => $contact->email,
                 'first_name' => $contact->first_name,
                 'last_name' => $contact->last_name,
+                'language' => $subscriber->language ?? $audience->default_language,
                 'status' => SubscriberStatus::Subscribed,
                 'source' => SubscriberSource::Manual,
                 'consent_text' => 'Marketing consent confirmed by a team member.',

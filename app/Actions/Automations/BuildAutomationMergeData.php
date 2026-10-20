@@ -2,6 +2,7 @@
 
 namespace App\Actions\Automations;
 
+use App\Enums\SubscriberLanguage;
 use App\Mail\AutomationEmail;
 use App\Models\AutomationEmailDelivery;
 use App\Models\Subscriber;
@@ -22,12 +23,15 @@ class BuildAutomationMergeData
     public function handle(Subscriber $subscriber, array $context, AutomationEmailDelivery $delivery): array
     {
         $payload = is_array($context['data'] ?? null) ? $context['data'] : [];
+        $language = $subscriber->language;
 
         return [
             'email' => $subscriber->email,
             'first_name' => $subscriber->first_name ?? '',
             'last_name' => $subscriber->last_name ?? '',
             ...($subscriber->attribute_values ?? []),
+            'language' => $language instanceof SubscriberLanguage ? $language->value : '',
+            'language_name' => $language instanceof SubscriberLanguage ? $language->label() : '',
             ...$payload,
             // Last so neither a custom attribute nor trigger context can shadow
             // the opt-out or browser copy links with a value of its own.

@@ -56,5 +56,6 @@ test('template compose is a setup hub with a fullscreen design canvas', function
         ->not->toContain('<Tabs')
         ->not->toContain('breadcrumbs')
         ->not->toContain('Send campaign')
-        ->not->toContain('audience');
+        ->toContain('audienceName={null}')
+        ->not->toContain('data-test="email-audience"');
 });

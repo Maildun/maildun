@@ -63,6 +63,14 @@ class ApplySegmentRules
             return;
         }
 
+        if ($field === SegmentRuleField::Language && $operator === SegmentRuleOperator::NotEquals) {
+            $query->where(fn (Builder $languageQuery) => $languageQuery
+                ->where($column, '!=', $value)
+                ->orWhereNull($column));
+
+            return;
+        }
+
         match ($operator) {
             SegmentRuleOperator::Equals => $query->where($column, $value),
             SegmentRuleOperator::NotEquals => $query->where($column, '!=', $value),

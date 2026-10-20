@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\SubscriberLanguage;
 use App\Models\Audience;
 use App\Models\Contact;
 use App\Models\Subscriber;
@@ -57,6 +58,7 @@ class SaveSubscriberRequest extends FormRequest
             ],
             'first_name' => ['nullable', 'string', 'max:255'],
             'last_name' => ['nullable', 'string', 'max:255'],
+            'language' => ['sometimes', 'nullable', Rule::enum(SubscriberLanguage::class)],
             'tags' => ['sometimes', 'array', 'max:20'],
             'tags.*' => ['string', 'max:50'],
         ];

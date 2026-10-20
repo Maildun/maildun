@@ -15,7 +15,7 @@ class RenderTransactionalContent
      *
      * @var list<string>
      */
-    public const array SYSTEM_KEYS = ['web_view_url'];
+    public const array SYSTEM_KEYS = ['web_view_url', 'unsubscribe_url'];
 
     /**
      * Replace merge tags in HTML, escaping values so caller-supplied data cannot
@@ -108,6 +108,10 @@ class RenderTransactionalContent
      */
     protected function replace(string $content, array $data, bool $escape): string
     {
+        if ($escape) {
+            $content = $this->hydrateMarkdownMergeLinks($this->decodeEncodedTags($content));
+        }
+
         return (string) preg_replace_callback(self::PATTERN, function (array $matches) use ($data, $escape): string {
             $key = $matches[1];
 
@@ -120,5 +124,32 @@ class RenderTransactionalContent
 
             return $escape ? e($string) : $string;
         }, $content);
+    }
+
+    /**
+     * Markdown can leave `[Unsubscribe]({{ unsubscribe_url }})` as text when
+     * the merge tag does not parse as a URL. Turn those into anchors before
+     * replacement so inboxes see a real link.
+     */
+    private function hydrateMarkdownMergeLinks(string $content): string
+    {
+        return (string) preg_replace_callback(
+            '/\[([^\]]+)\]\((\{\{\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\}\})\)/',
+            fn (array $matches): string => '<a href="'.$matches[2].'">'.e($matches[1]).'</a>',
+            $content,
+        );
+    }
+
+    /**
+     * Markdown URL encoding can turn {{ unsubscribe_url }} in an href into
+     * %7B%7B%20unsubscribe_url%20%7D%7D. Restore those before replacement.
+     */
+    private function decodeEncodedTags(string $content): string
+    {
+        return (string) preg_replace(
+            '/%7B%7B(?:\s|%20)*([a-zA-Z_][a-zA-Z0-9_]*)(?:\s|%20)*%7D%7D/i',
+            '{{ $1 }}',
+            $content,
+        );
     }
 }

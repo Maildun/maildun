@@ -30,6 +30,7 @@ import type {
     SegmentRule,
     SegmentRuleField,
     SegmentRuleOperator,
+    SubscriberLanguageOption,
 } from '@/types/audiences';
 
 const RULE_DATE_FORMAT = 'yyyy-MM-dd';
@@ -48,6 +49,7 @@ export function SegmentRuleFields({
     setData,
     errors,
     forms,
+    languages,
     disabled = false,
 }: {
     idPrefix?: string;
@@ -58,6 +60,7 @@ export function SegmentRuleFields({
     ) => void;
     errors?: { name?: string };
     forms: { uuid: string; name: string }[];
+    languages: SubscriberLanguageOption[];
     disabled?: boolean;
 }) {
     return (
@@ -120,6 +123,7 @@ export function SegmentRuleFields({
                         key={index}
                         rule={rule}
                         forms={forms}
+                        languages={languages}
                         disabled={disabled}
                         canRemove={data.rules.length > 1}
                         onChange={(nextRule) =>
@@ -166,6 +170,7 @@ export function SegmentRuleFields({
 function SegmentRuleRow({
     rule,
     forms,
+    languages,
     disabled,
     canRemove,
     onChange,
@@ -173,6 +178,7 @@ function SegmentRuleRow({
 }: {
     rule: SegmentRule;
     forms: { uuid: string; name: string }[];
+    languages: SubscriberLanguageOption[];
     disabled: boolean;
     canRemove: boolean;
     onChange: (rule: SegmentRule) => void;
@@ -193,7 +199,7 @@ function SegmentRuleRow({
                     onChange({
                         field: value,
                         operator: operatorsFor(value)[0].value,
-                        value: defaultRuleValue(value, forms),
+                        value: defaultRuleValue(value, forms, languages),
                     });
                 }}
             >
@@ -216,6 +222,7 @@ function SegmentRuleRow({
                         <SelectItem value="subscribed_at">
                             Subscribed date
                         </SelectItem>
+                        <SelectItem value="language">Language</SelectItem>
                     </SelectGroup>
                 </SelectContent>
             </Select>
@@ -250,6 +257,7 @@ function SegmentRuleRow({
             <RuleValue
                 rule={rule}
                 forms={forms}
+                languages={languages}
                 disabled={disabled}
                 onChange={(value) => onChange({ ...rule, value })}
             />
@@ -272,11 +280,13 @@ function SegmentRuleRow({
 function RuleValue({
     rule,
     forms,
+    languages,
     disabled,
     onChange,
 }: {
     rule: SegmentRule;
     forms: { uuid: string; name: string }[];
+    languages: SubscriberLanguageOption[];
     disabled: boolean;
     onChange: (value: string) => void;
 }) {
@@ -315,6 +325,20 @@ function RuleValue({
                 disabled={disabled}
                 onChange={onChange}
                 options={forms.map((form) => [form.uuid, form.name])}
+            />
+        );
+    }
+
+    if (rule.field === 'language') {
+        return (
+            <RuleSelect
+                value={rule.value}
+                disabled={disabled}
+                onChange={onChange}
+                options={languages.map((language) => [
+                    language.value,
+                    language.label,
+                ])}
             />
         );
     }
@@ -437,7 +461,7 @@ function operatorsFor(
         ];
     }
 
-    if (['status', 'source', 'subscribe_form'].includes(field)) {
+    if (['status', 'source', 'subscribe_form', 'language'].includes(field)) {
         return [
             { value: 'equals', label: 'Is' },
             { value: 'not_equals', label: 'Is not' },
@@ -455,6 +479,7 @@ function operatorsFor(
 function defaultRuleValue(
     field: SegmentRuleField,
     forms: { uuid: string; name: string }[],
+    languages: SubscriberLanguageOption[],
 ): string {
     if (field === 'status') {
         return 'subscribed';
@@ -466,6 +491,10 @@ function defaultRuleValue(
 
     if (field === 'subscribe_form') {
         return forms[0]?.uuid || '';
+    }
+
+    if (field === 'language') {
+        return languages[0]?.value || '';
     }
 
     return '';

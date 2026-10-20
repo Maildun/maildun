@@ -12,7 +12,9 @@ test('Vite defaults to free Hugeicons while supporting licensed Pro styles', fun
         ->toContain("'pro-stroke-standard': '@hugeicons-pro/core-stroke-standard'")
         ->toContain('HUGEICONS_ICON_STYLE')
         ->toContain('find: /^@hugeicons\\/core-free-icons$/')
-        ->toContain("noExternal: ['@hugeicons/core-free-icons', iconPackage]");
+        ->toContain("noExternal: ['@hugeicons/core-free-icons', iconPackage]")
+        ->toContain('function hugeiconsPerIconImports')
+        ->toContain("apply: 'build'");
 
     expect($environmentExample)
         ->toBeString()

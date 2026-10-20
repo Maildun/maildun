@@ -3,12 +3,15 @@
 namespace App\Mcp\Tools\Audiences;
 
 use App\Enums\SubscribeFormFieldMode;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
+use App\Mcp\Support\AudienceLanguageSettings;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
 use App\Rules\AuthorizedSenderAddress;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
+use Illuminate\Support\Arr;
 use Illuminate\Validation\Rule;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -44,6 +47,7 @@ class UpdateAudienceTool extends Tool
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
+        private AudienceLanguageSettings $languageSettings,
     ) {}
 
     public function handle(Request $request): ResponseFactory
@@ -56,6 +60,7 @@ class UpdateAudienceTool extends Tool
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'first_name_mode' => ['sometimes', Rule::enum(SubscribeFormFieldMode::class)],
             'last_name_mode' => ['sometimes', Rule::enum(SubscribeFormFieldMode::class)],
+            ...$this->languageSettings->rules(),
             'from_name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'from_address' => ['sometimes', 'nullable', 'email:rfc', 'max:255', new AuthorizedSenderAddress($team)],
             'reply_to' => ['sometimes', 'nullable', 'email:rfc', 'max:255'],
@@ -63,7 +68,7 @@ class UpdateAudienceTool extends Tool
             'unsubscribed_url' => ['sometimes', 'nullable', 'url:http,https', 'max:2048'],
         ]);
 
-        $changes = $this->context->changes($validated, self::FIELDS);
+        $changes = $this->context->changes($validated, [...self::FIELDS, ...AudienceLanguageSettings::FIELDS]);
         $changes = $this->context->blankStringsToNull($changes, [
             'description',
             'from_name',
@@ -73,7 +78,10 @@ class UpdateAudienceTool extends Tool
             'unsubscribed_url',
         ]);
 
-        $audience->update($changes);
+        $audience->update([
+            ...Arr::except($changes, AudienceLanguageSettings::FIELDS),
+            ...$this->languageSettings->resolve($validated, $audience),
+        ]);
         $audience->refresh();
         $audience->loadCount([
             'subscribers',
@@ -101,6 +109,9 @@ class UpdateAudienceTool extends Tool
             'description' => $schema->string()->description('Internal description.')->max(2000)->nullable(),
             'first_name_mode' => $schema->string()->description('First-name field behavior.')->enum(SubscribeFormFieldMode::class),
             'last_name_mode' => $schema->string()->description('Last-name field behavior.')->enum(SubscribeFormFieldMode::class),
+            'language_mode' => $schema->string()->description('Language field behavior on subscribe forms. optional or required needs allowed_languages and default_language.')->enum(SubscribeFormFieldMode::class),
+            'allowed_languages' => $schema->array()->description('ISO 639-1 language codes subscribers may choose; also limits languages accepted by the API and add-subscriber.')->items($schema->string()->enum(SubscriberLanguage::class)),
+            'default_language' => $schema->string()->description('Language for new subscriptions that give none. Must be in allowed_languages.')->enum(SubscriberLanguage::class)->nullable(),
             'from_name' => $schema->string()->description('Default sender name.')->max(255)->nullable(),
             'from_address' => $schema->string()->description('Default authorized sender email.')->format('email')->max(255)->nullable(),
             'reply_to' => $schema->string()->description('Default reply-to email.')->format('email')->max(255)->nullable(),

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Concerns\FiltersCampaignRecipients;
 use App\Enums\EmailStatus;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
@@ -92,12 +93,13 @@ class ContactExportController extends Controller
                     ->orWhereRaw('LOWER(last_name) LIKE ?', [$search]));
             })
             ->when($filters['status'] !== 'all', fn (Builder $query) => $query->where('status', $filters['status']))
-            ->when($filters['source'] !== 'all', fn (Builder $query) => $query->where('source', $filters['source']));
+            ->when($filters['source'] !== 'all', fn (Builder $query) => $query->where('source', $filters['source']))
+            ->when($filters['language'] !== 'all', fn (Builder $query) => $query->where('language', $filters['language']));
 
         return $this->download(
             $format,
             (Str::slug($audience->name) ?: 'audience').'-contacts-'.now()->format('Y-m-d'),
-            ['Email', 'First name', 'Last name', 'Status', 'Source', 'Tags', 'Subscribed at'],
+            ['Email', 'First name', 'Last name', 'Status', 'Source', 'Language', 'Tags', 'Subscribed at'],
             $query,
             fn (Subscriber $subscriber): array => [
                 $subscriber->email,
@@ -105,6 +107,7 @@ class ContactExportController extends Controller
                 $subscriber->last_name,
                 $subscriber->status->value,
                 $subscriber->source->value,
+                $subscriber->language?->value,
                 $subscriber->tags->pluck('name')->implode(', '),
                 $subscriber->subscribed_at?->toIso8601String(),
             ],
@@ -244,7 +247,7 @@ class ContactExportController extends Controller
         ];
     }
 
-    /** @return array{search: string, status: string, source: string} */
+    /** @return array{search: string, status: string, source: string, language: string} */
     private function subscriberFilters(Request $request): array
     {
         $status = $request->string('status')->toString();
@@ -254,6 +257,7 @@ class ContactExportController extends Controller
             'search' => $request->string('search')->trim()->toString(),
             'status' => SubscriberStatus::tryFrom($status)->value ?? 'all',
             'source' => SubscriberSource::tryFrom($source)->value ?? 'all',
+            'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())->value ?? 'all',
         ];
     }
 }
