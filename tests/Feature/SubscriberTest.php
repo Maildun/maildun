@@ -489,7 +489,7 @@ test('the subscriber list can be filtered by language', function () {
 test('owners can set, keep, and clear a subscriber language', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
-    $audience = Audience::factory()->for($team)->create();
+    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en', 'id']]);
     $subscriber = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
     $update = fn (array $data) => $this->actingAs($user)->put(
         route('audiences.subscribers.update', [$team, $audience, $subscriber]),
@@ -506,4 +506,35 @@ test('owners can set, keep, and clear a subscriber language', function () {
 
     $update(['language' => null])->assertValid();
     expect($subscriber->refresh()->language)->toBeNull();
+});
+
+test('a subscriber language must be one the audience offers unless the subscriber already has it', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en']]);
+    $subscriber = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::Japanese]);
+    $update = fn (array $data) => $this->actingAs($user)->put(
+        route('audiences.subscribers.update', [$team, $audience, $subscriber]),
+        ['email' => $subscriber->email, 'tags' => [], ...$data],
+    );
+
+    $update(['language' => 'fr'])->assertInvalid(['language']);
+    expect($subscriber->refresh()->language)->toBe(SubscriberLanguage::Japanese);
+
+    $update(['language' => 'ja', 'first_name' => 'Renamed'])->assertValid();
+    expect($subscriber->refresh()->first_name)->toBe('Renamed');
+});
+
+test('the audience page offers only its available languages to the subscriber dialog', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en', 'id']]);
+
+    $this->actingAs($user)
+        ->get(route('audiences.show', [$team, $audience]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('subscriberLanguages', [
+                ['value' => 'en', 'label' => 'English'],
+                ['value' => 'id', 'label' => 'Indonesian'],
+            ]));
 });

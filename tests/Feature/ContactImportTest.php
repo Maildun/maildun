@@ -193,7 +193,7 @@ test('audience imports read subscriber languages by code or name', function () {
     Storage::fake('local');
 
     $team = Team::factory()->create();
-    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en'], 'default_language' => 'en']);
+    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en', 'id', 'pt', 'ja'], 'default_language' => 'en']);
     $existing = Subscriber::factory()->for($audience)->for(Contact::factory()->for($team)->state(['email' => 'existing@example.com']))->create([
         'email' => 'existing@example.com',
         'language' => SubscriberLanguage::English,
@@ -231,6 +231,28 @@ test('audience imports read subscriber languages by code or name', function () {
         ->and($languages)->not->toHaveKey('invalid@example.com')
         ->and($contactImport->refresh()->failed_rows)->toBe(1)
         ->and($existing->refresh()->language)->toBe(SubscriberLanguage::English);
+});
+
+test('audience imports reject a language the audience does not offer to members who would take it', function () {
+    Storage::fake('local');
+
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en'], 'default_language' => 'en']);
+    $contactImport = ContactImport::factory()->for($team)->for($audience)->create([
+        'column_map' => ['email', 'language'],
+    ]);
+    Storage::disk('local')->put($contactImport->path, "email,language\nnew@example.com,fr\n");
+
+    (new ProcessContactImport($contactImport->id))->handle(
+        app(ManageContact::class),
+        app(AddContactToAudiences::class),
+        app(ContactImportCsv::class),
+        app(ImportEmailReview::class),
+    );
+
+    expect($audience->subscribers()->exists())->toBeFalse()
+        ->and($contactImport->refresh()->failed_rows)->toBe(1)
+        ->and($contactImport->rowErrors()[0]['message'])->toBe('Language "fr" is not available in this audience.');
 });
 
 test('resubscribing audience imports keep the language an existing member already has', function () {
