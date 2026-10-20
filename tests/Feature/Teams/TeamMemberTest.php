@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\TeamRole;
+use App\Models\Audience;
 use App\Models\Team;
 use App\Models\TeamInvitation;
 use App\Models\User;
@@ -411,6 +412,7 @@ test('admins cannot manage the password of a member who owns another workspace',
     $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
     $team->members()->attach($member, ['role' => TeamRole::Member->value]);
     $otherTeam->members()->attach($member, ['role' => TeamRole::Owner->value]);
+    $otherTeam->members()->attach($admin, ['role' => TeamRole::Admin->value]);
 
     $previousPassword = $member->password;
 
@@ -440,8 +442,22 @@ test('the members page offers a password reset only for members the user can man
     $sharedPersonalWorkspace = User::factory()->create(['name' => 'Shared personal workspace']);
     $memberOutsideReach = User::factory()->create(['name' => 'Member outside reach']);
     $memberAlsoManaged = User::factory()->create(['name' => 'Member also managed']);
+    $adminWhereUserIsMember = User::factory()->create(['name' => 'Admin where the user is only a member']);
+    $usedPersonalWorkspace = User::factory()->create(['name' => 'Personal workspace in use']);
+    $invitedElsewhere = User::factory()->create(['name' => 'Invited elsewhere']);
+    $invitationExpired = User::factory()->create(['name' => 'Invitation expired']);
 
-    foreach ([$plainMember, $ownerElsewhere, $sharedPersonalWorkspace, $memberOutsideReach, $memberAlsoManaged] as $member) {
+    foreach ([
+        $plainMember,
+        $ownerElsewhere,
+        $sharedPersonalWorkspace,
+        $memberOutsideReach,
+        $memberAlsoManaged,
+        $adminWhereUserIsMember,
+        $usedPersonalWorkspace,
+        $invitedElsewhere,
+        $invitationExpired,
+    ] as $member) {
         $team->members()->attach($member, ['role' => TeamRole::Member->value]);
     }
 
@@ -451,6 +467,12 @@ test('the members page offers a password reset only for members the user can man
     $sharedTeam = Team::factory()->create();
     $sharedTeam->members()->attach($admin, ['role' => TeamRole::Admin->value]);
     $sharedTeam->members()->attach($memberAlsoManaged, ['role' => TeamRole::Member->value]);
+    $limitedTeam = Team::factory()->create();
+    $limitedTeam->members()->attach($admin, ['role' => TeamRole::Member->value]);
+    $limitedTeam->members()->attach($adminWhereUserIsMember, ['role' => TeamRole::Admin->value]);
+    Audience::factory()->for($usedPersonalWorkspace->personalTeam())->create();
+    TeamInvitation::factory()->for(Team::factory())->create(['email' => strtoupper($invitedElsewhere->email)]);
+    TeamInvitation::factory()->for(Team::factory())->expired()->create(['email' => $invitationExpired->email]);
 
     $response = $this
         ->actingAs($admin)
@@ -466,5 +488,9 @@ test('the members page offers a password reset only for members the user can man
         'Shared personal workspace' => false,
         'Member outside reach' => false,
         'Member also managed' => true,
+        'Admin where the user is only a member' => false,
+        'Personal workspace in use' => false,
+        'Invited elsewhere' => false,
+        'Invitation expired' => true,
     ]);
 });
