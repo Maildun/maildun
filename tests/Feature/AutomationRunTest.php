@@ -11,6 +11,7 @@ use App\Enums\EmailAddressHealthReason;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Jobs\ProcessAutomationRun;
+use App\Jobs\SendAutomationEmailDelivery;
 use App\Mail\AutomationEmail;
 use App\Models\Audience;
 use App\Models\Automation;
@@ -53,6 +54,14 @@ function automationRun(array $nodes, array $edges, ?Subscriber $subscriber = nul
         'graph' => $graph,
         'current_node_id' => $nodes[0]['id'],
     ]);
+}
+
+/**
+ * Run the send jobs a send step left on the faked queue, as a worker would.
+ */
+function runQueuedAutomationSends(): void
+{
+    Queue::pushed(SendAutomationEmailDelivery::class)->each(fn (SendAutomationEmailDelivery $job) => app()->call([$job, 'handle']));
 }
 
 test('a condition only follows the branch it took', function () {
@@ -182,10 +191,13 @@ test('a retried send does not deliver the email twice', function () {
     );
 
     app(AdvanceAutomationRun::class)->handle($run);
+    runQueuedAutomationSends();
 
-    // A retry lands on the same node after the transport already accepted it.
+    // A retry lands on the same node after the transport already accepted it,
+    // and the same send job runs again.
     $run->refresh()->update(['status' => AutomationRunStatus::Pending, 'current_node_id' => 'send']);
     app(AdvanceAutomationRun::class)->handle($run);
+    runQueuedAutomationSends();
 
     Mail::assertSentCount(1);
     Mail::assertSent(AutomationEmail::class, fn (AutomationEmail $mail): bool => $mail->hasTo($subscriber->email));
@@ -216,6 +228,7 @@ test('an automation email carries the transactional preheader', function () {
     );
 
     app(AdvanceAutomationRun::class)->handle($run);
+    runQueuedAutomationSends();
 
     Mail::assertSent(AutomationEmail::class, fn (AutomationEmail $mail): bool => str_starts_with($mail->htmlBody, '<div style="display:none')
         && str_contains($mail->htmlBody, 'Welcome aboard, Ada'));
@@ -243,6 +256,7 @@ test('an automation email gets the visible opt-out and a text part', function ()
     );
 
     app(AdvanceAutomationRun::class)->handle($run);
+    runQueuedAutomationSends();
 
     $unsubscribeUrl = AutomationEmail::unsubscribeUrl($subscriber);
 
@@ -272,6 +286,7 @@ test('an automation email whose author placed the opt-out gets no second footer'
     );
 
     app(AdvanceAutomationRun::class)->handle($run);
+    runQueuedAutomationSends();
 
     $href = 'href="'.htmlspecialchars(AutomationEmail::unsubscribeUrl($subscriber), ENT_QUOTES | ENT_HTML5).'"';
 
@@ -301,6 +316,7 @@ test('only one worker can advance a run', function () {
 
     app(AdvanceAutomationRun::class)->handle($first);
     app(AdvanceAutomationRun::class)->handle($second);
+    runQueuedAutomationSends();
 
     Mail::assertSentCount(1);
 
@@ -515,6 +531,7 @@ test('reactivating a paused automation continues a run whose wait ran out during
 
     app(AdvanceAutomationRun::class)->handle($run, 'wait');
     app(AdvanceAutomationRun::class)->handle($run, 'send');
+    runQueuedAutomationSends();
 
     Mail::assertSent(AutomationEmail::class, fn (AutomationEmail $mail): bool => $mail->hasTo($subscriber->email));
     expect($run->refresh()->status)->toBe(AutomationRunStatus::Completed);

@@ -6,6 +6,7 @@ use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Jobs\ProcessAutomationRun;
+use App\Jobs\SendAutomationEmailDelivery;
 use App\Models\Audience;
 use App\Models\Automation;
 use App\Models\AutomationEmailDelivery;
@@ -191,4 +192,87 @@ test('a currently running branch is not failed by the stale worker sweep', funct
 
     expect($run->refresh()->status)->toBe(AutomationRunStatus::Running);
     Queue::assertNothingPushed();
+});
+
+test('a branch whose email job still holds it is not failed as a stale worker', function (EmailDeliveryStatus $status, ?int $attemptedMinutesAgo, int $updatedMinutesAgo) {
+    $this->freezeTime();
+    $run = parkedRun(AutomationRunStatus::Running, null);
+    $step = $run->steps()->where('node_id', 'wait')->sole();
+    $step->forceFill(['updated_at' => now()->subHour()])->saveQuietly();
+    $delivery = AutomationEmailDelivery::factory()->create([
+        'automation_run_id' => $run->id,
+        'automation_run_step_id' => $step->id,
+        'team_id' => $run->automation->team_id,
+        'status' => $status,
+        'send_attempted_at' => $attemptedMinutesAgo === null ? null : now()->subMinutes($attemptedMinutesAgo),
+        'sent_at' => null,
+        'updated_at' => now()->subMinutes($updatedMinutesAgo),
+    ]);
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Running)
+        ->and($step->refresh()->status)->toBe('running')
+        ->and($delivery->refresh()->status)->toBe($status);
+    Queue::assertNothingPushed();
+})->with([
+    'waiting for its send job' => [EmailDeliveryStatus::Queued, null, 5],
+    'inside its send job' => [EmailDeliveryStatus::Sending, 1, 1],
+]);
+
+test('a branch whose email job stopped holding it is failed as a stale worker', function (EmailDeliveryStatus $status, EmailDeliveryStatus $expected) {
+    $this->freezeTime();
+    $run = parkedRun(AutomationRunStatus::Running, null);
+    $step = $run->steps()->where('node_id', 'wait')->sole();
+    $step->forceFill(['updated_at' => now()->subHour()])->saveQuietly();
+    $delivery = AutomationEmailDelivery::factory()->create([
+        'automation_run_id' => $run->id,
+        'automation_run_step_id' => $step->id,
+        'team_id' => $run->automation->team_id,
+        'status' => $status,
+        'send_attempted_at' => now()->subHour(),
+        'updated_at' => now()->subHour(),
+    ]);
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Failed)
+        ->and($run->failure_reason)->toContain('will not be retried automatically')
+        ->and($step->refresh()->status)->toBe('failed')
+        ->and($delivery->refresh()->status)->toBe($expected);
+    Queue::assertNothingPushed();
+})->with([
+    'its send job died inside the transport' => [EmailDeliveryStatus::Sending, EmailDeliveryStatus::Failed],
+    'its send job died after sending' => [EmailDeliveryStatus::Sent, EmailDeliveryStatus::Sent],
+]);
+
+test('a queued email whose job was lost is queued again once per window', function () {
+    $this->freezeTime();
+    $run = parkedRun(AutomationRunStatus::Running, null);
+    $step = $run->steps()->where('node_id', 'wait')->sole();
+    $step->forceFill(['updated_at' => now()->subHour()])->saveQuietly();
+    $delivery = AutomationEmailDelivery::factory()->create([
+        'automation_run_id' => $run->id,
+        'automation_run_step_id' => $step->id,
+        'team_id' => $run->automation->team_id,
+        'status' => EmailDeliveryStatus::Queued,
+        'sent_at' => null,
+        'updated_at' => now()->subHour(),
+    ]);
+
+    $this->artisan('automations:resume')->assertSuccessful();
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertPushed(SendAutomationEmailDelivery::class, 1);
+
+    // The re-queued job can be lost too, so the next window tries again.
+    $this->travel(16)->minutes();
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertPushed(SendAutomationEmailDelivery::class, 2);
+    Queue::assertPushed(
+        SendAutomationEmailDelivery::class,
+        fn (SendAutomationEmailDelivery $job): bool => $job->deliveryId === $delivery->id,
+    );
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Running);
 });

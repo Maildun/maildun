@@ -209,7 +209,8 @@ return [
     */
 
     'defaults' => [
-        // Everything that is not a send: automations, media, segment syncing.
+        // Everything but campaign and transactional sends: automations
+        // (including their email sends), media, segment syncing.
         'supervisor-1' => [
             'connection' => 'redis',
             'queue' => ['default'],

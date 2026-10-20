@@ -4,6 +4,7 @@ use App\Console\Commands\ResumeEmailDeliveriesCommand;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailStatus;
 use App\Jobs\PrepareEmailSendChunk;
+use App\Jobs\SendAutomationEmailDelivery;
 use App\Jobs\SendCampaignTestEmail;
 use App\Jobs\SendEmailDelivery;
 use App\Jobs\SendTransactionalEmailDelivery;
@@ -47,6 +48,7 @@ test('email jobs time out before horizon and redis can retry them', function () 
     expect((new PrepareEmailSendChunk(1))->timeout)->toBeLessThan(config('horizon.defaults.supervisor-campaigns.timeout'))
         ->and((new SendEmailDelivery(1))->timeout)->toBeLessThan(config('horizon.defaults.supervisor-campaigns.timeout'))
         ->and((new SendTransactionalEmailDelivery(1))->timeout)->toBeLessThan(config('horizon.defaults.supervisor-transactional.timeout'))
+        ->and((new SendAutomationEmailDelivery(1))->timeout)->toBeLessThan(config('horizon.defaults.supervisor-1.timeout'))
         ->and(config('horizon.defaults.supervisor-campaigns.timeout'))->toBeLessThan(config('queue.connections.redis.retry_after'));
 });
 
