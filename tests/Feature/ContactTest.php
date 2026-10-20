@@ -3,6 +3,9 @@
 use App\Enums\AutomationTrigger;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberLanguage;
+use App\Enums\SubscriberStatus;
+use App\Enums\TeamPermission;
+use App\Enums\TeamRole;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Models\Audience;
 use App\Models\Company;
@@ -11,9 +14,33 @@ use App\Models\Email;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use App\Models\Tag;
+use App\Models\Team;
 use App\Models\User;
+use App\Models\WorkspaceRole;
 use Illuminate\Support\Facades\Event;
 use Inertia\Testing\AssertableInertia as Assert;
+
+/**
+ * Add a member whose custom role manages contacts but not audiences.
+ */
+function contactOnlyMember(Team $team): User
+{
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $role = WorkspaceRole::create([
+        'team_id' => $team->id,
+        'name' => 'contact-manager',
+        'label' => 'Contact manager',
+        'guard_name' => 'web',
+    ]);
+    $role->syncPermissions([TeamPermission::ManageContact->value]);
+    $team->memberships()
+        ->where('user_id', $member->id)
+        ->sole()
+        ->update(['role' => $role->name]);
+
+    return $member;
+}
 
 test('the contact index includes the fields required to edit from its hover card', function () {
     $user = User::factory()->create();
@@ -339,4 +366,110 @@ test('manually added memberships take the audience default language', function (
         ->assertValid();
 
     expect($audience->subscribers()->sole()->language)->toBe(SubscriberLanguage::Indonesian);
+});
+
+test('a contact cannot be added to an audience without audience access', function () {
+    Event::fake([SubscriberLifecycleOccurred::class]);
+    $team = User::factory()->create()->currentTeam;
+    $member = contactOnlyMember($team);
+    $audience = Audience::factory()->for($team)->create();
+    $contact = Contact::factory()->for($team)->create();
+
+    $this->actingAs($member)
+        ->post(route('contacts.audiences.store', [$team, $contact]), [
+            'audience_uuid' => $audience->uuid,
+            'consent_confirmed' => true,
+        ])
+        ->assertForbidden();
+
+    expect($audience->subscribers()->exists())->toBeFalse();
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('a contact cannot be removed from an audience without audience access', function () {
+    $team = User::factory()->create()->currentTeam;
+    $member = contactOnlyMember($team);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->unsubscribed()->create();
+
+    $this->actingAs($member)
+        ->delete(route('contacts.audiences.destroy', [$team, $subscriber->contact, $subscriber]))
+        ->assertForbidden();
+
+    $this->assertModelExists($subscriber);
+    expect($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+});
+
+test('a new contact cannot be subscribed to audiences without audience access', function () {
+    $team = User::factory()->create()->currentTeam;
+    $member = contactOnlyMember($team);
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($member)
+        ->post(route('contacts.store', $team), [
+            'email' => 'new@example.com',
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'audience_uuids' => [$audience->uuid],
+            'consent_confirmed' => true,
+        ])
+        ->assertForbidden();
+
+    expect($team->contacts()->exists())->toBeFalse()
+        ->and($audience->subscribers()->exists())->toBeFalse();
+});
+
+test('members with audience access can remove a contact from an audience', function () {
+    $team = User::factory()->create()->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->create();
+
+    $this->actingAs($member)
+        ->delete(route('contacts.audiences.destroy', [$team, $subscriber->contact, $subscriber]))
+        ->assertRedirect();
+
+    $this->assertModelMissing($subscriber);
+});
+
+test('the contact profile offers no audiences to join without audience access', function () {
+    $team = User::factory()->create()->currentTeam;
+    $member = contactOnlyMember($team);
+    Audience::factory()->for($team)->create();
+    $contact = Contact::factory()->for($team)->create();
+
+    $this->actingAs($member)
+        ->get(route('contacts.show', [$team, $contact]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('contacts/show')
+            ->where('audiences', []));
+});
+
+test('the add contact dialog offers every audience to members with audience access', function () {
+    $team = User::factory()->create()->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $customers = Audience::factory()->for($team)->create(['name' => 'Customers']);
+    $newsletter = Audience::factory()->for($team)->create(['name' => 'Newsletter']);
+
+    $this->actingAs($member)
+        ->get(route('contacts.index', $team))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('contacts/index')
+            ->where('addableAudiences', [
+                ['uuid' => $customers->uuid, 'name' => 'Customers'],
+                ['uuid' => $newsletter->uuid, 'name' => 'Newsletter'],
+            ]));
+});
+
+test('the add contact dialog offers no audiences without audience access but the audience filter keeps them', function () {
+    $team = User::factory()->create()->currentTeam;
+    $member = contactOnlyMember($team);
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($member)
+        ->get(route('contacts.index', $team))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('contacts/index')
+            ->where('addableAudiences', [])
+            ->where('audiences.0.uuid', $audience->uuid));
 });

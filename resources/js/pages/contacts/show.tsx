@@ -1061,7 +1061,7 @@ function MembershipPanel({
                                             : 'Resubscribe'}
                                     </DropdownMenuItem>
                                 ) : null}
-                                {canManage ? (
+                                {canManage && membership.can_manage ? (
                                     <DropdownMenuItem
                                         variant="destructive"
                                         onClick={onRemove}

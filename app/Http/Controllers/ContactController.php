@@ -10,6 +10,7 @@ use App\Enums\SubscriberStatus;
 use App\Http\Requests\DeleteContactRequest;
 use App\Http\Requests\LookupContactRequest;
 use App\Http\Requests\SaveContactRequest;
+use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\AutomationRun;
 use App\Models\Company;
@@ -68,6 +69,7 @@ class ContactController extends Controller
             'contacts' => $contacts->paginate(20)->withQueryString()->through(fn (Contact $contact): array => $this->summary($contact)),
             'companies' => $currentTeam->companies()->orderBy('name')->get(['uuid', 'name']),
             'audiences' => $currentTeam->audiences()->orderBy('name')->get(['uuid', 'name']),
+            'addableAudiences' => $this->addableAudiences($currentTeam),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'filters' => $filters,
             'canManage' => Gate::allows('create', [Contact::class, $currentTeam]),
@@ -128,6 +130,13 @@ class ContactController extends Controller
     ): RedirectResponse {
         Gate::authorize('create', [Contact::class, $currentTeam]);
         $audienceUuids = $request->validated('audience_uuids', []);
+        $audiences = $currentTeam->audiences()
+            ->whereIn('uuid', $audienceUuids)
+            ->get();
+
+        foreach ($audiences as $audience) {
+            Gate::authorize('create', [Subscriber::class, $audience]);
+        }
 
         [$contact, $changedMemberships] = DB::transaction(function () use (
             $request,
@@ -136,6 +145,7 @@ class ContactController extends Controller
             $addContactToAudiences,
             $dispatchTaggedTriggers,
             $audienceUuids,
+            $audiences,
         ): array {
             [$contact, $addedTags] = $this->saveContact($request, $currentTeam, $manageContact);
 
@@ -145,9 +155,6 @@ class ContactController extends Controller
                 ]);
             }
 
-            $audiences = $currentTeam->audiences()
-                ->whereIn('uuid', $audienceUuids)
-                ->get();
             $changedMemberships = $addContactToAudiences->handle($contact, $audiences, $request->ip());
             $dispatchTaggedTriggers->handle($contact, $addedTags);
 
@@ -289,7 +296,7 @@ class ContactController extends Controller
                 ])->all(),
             'selectedAudienceUuid' => $selectedAudienceUuid,
             'companies' => $currentTeam->companies()->orderBy('name')->get(['uuid', 'name']),
-            'audiences' => $currentTeam->audiences()->orderBy('name')->get(['uuid', 'name']),
+            'audiences' => $this->addableAudiences($currentTeam),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'canManage' => Gate::allows('update', $contact),
         ]);
@@ -356,6 +363,30 @@ class ContactController extends Controller
             'audiences_count' => $contact->subscribers_count ?? $contact->subscribers()->count(),
             'created_at' => $contact->created_at?->toISOString(),
         ];
+    }
+
+    /**
+     * Get the audiences the current user may add contacts to.
+     *
+     * Adding subscribers is granted per workspace, so one audience's answer
+     * holds for all of them and the busy contact pages check it only once.
+     *
+     * @return list<array{uuid: string, name: string}>
+     */
+    private function addableAudiences(Team $team): array
+    {
+        $audiences = $team->audiences()
+            ->orderBy('name')
+            ->get(['id', 'uuid', 'name', 'team_id']);
+        $firstAudience = $audiences->first()?->setRelation('team', $team);
+
+        if ($firstAudience === null || Gate::denies('create', [Subscriber::class, $firstAudience])) {
+            return [];
+        }
+
+        return array_values($audiences
+            ->map(fn (Audience $audience): array => ['uuid' => $audience->uuid, 'name' => $audience->name])
+            ->all());
     }
 
     /** @return array{search: string, company: string, audience: string, sort: string} */
