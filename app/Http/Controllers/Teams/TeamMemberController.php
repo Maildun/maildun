@@ -49,7 +49,11 @@ class TeamMemberController extends Controller
                 ->orderByPivot('created_at')
                 ->paginate($this->perPage($request, 'members_per_page'))
                 ->withQueryString()
-                ->through(fn (User $member): array => $this->memberProps($member, $roleLabels->get($member->pivot->role))),
+                ->through(fn (User $member): array => $this->memberProps(
+                    $member,
+                    $roleLabels->get($member->pivot->role),
+                    $user->can('manageMemberPassword', [$team, $member]),
+                )),
             'invitations' => $team->invitations()
                 ->whereNull('accepted_at')
                 ->latest()
@@ -84,9 +88,9 @@ class TeamMemberController extends Controller
     /**
      * Serialize a team member for the settings page.
      *
-     * @return array{id: int, uuid: string, name: string, email: string, avatar: string|null, role: string, role_label: string}
+     * @return array{id: int, uuid: string, name: string, email: string, avatar: string|null, role: string, role_label: string, can_manage_password: bool}
      */
-    private function memberProps(User $member, ?string $roleLabel): array
+    private function memberProps(User $member, ?string $roleLabel, bool $canManagePassword): array
     {
         /** @var Membership $membership */
         $membership = $member->getRelation('pivot');
@@ -99,6 +103,7 @@ class TeamMemberController extends Controller
             'avatar' => $member->avatar ?? null,
             'role' => $membership->role,
             'role_label' => $roleLabel ?? str($membership->role)->headline()->toString(),
+            'can_manage_password' => $canManagePassword,
         ];
     }
 
@@ -206,15 +211,15 @@ class TeamMemberController extends Controller
     }
 
     /**
-     * Ensure the user is a non-owner member of the selected team.
+     * Ensure the user is a member of the selected team whose password the signed-in user may manage.
      */
     private function ensureMemberPasswordCanBeManaged(Team $team, User $user): void
     {
-        $membership = $team->memberships()
+        $team->memberships()
             ->where('user_id', $user->id)
             ->firstOrFail();
 
-        abort_if($membership->role === 'owner', 403, __('The team owner password cannot be managed.'));
+        Gate::authorize('manageMemberPassword', [$team, $user]);
     }
 
     /**

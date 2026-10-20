@@ -53,6 +53,7 @@ export type TeamMember = {
     avatar?: string | null;
     role: TeamRole;
     role_label: string;
+    can_manage_password: boolean;
 };
 
 export type TeamInvitation = {

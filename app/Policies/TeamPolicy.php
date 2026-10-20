@@ -3,8 +3,11 @@
 namespace App\Policies;
 
 use App\Enums\TeamPermission;
+use App\Enums\TeamRole;
+use App\Models\Membership;
 use App\Models\Team;
 use App\Models\User;
+use Illuminate\Auth\Access\Response;
 
 class TeamPolicy
 {
@@ -64,6 +67,48 @@ class TeamPolicy
     public function updateMember(User $user, Team $team): bool
     {
         return $user->hasTeamPermission($team, TeamPermission::UpdateMember);
+    }
+
+    /**
+     * Determine whether the user can set or reset a member's password from the team.
+     *
+     * A password unlocks every workspace the member belongs to, so the user must be able to
+     * manage the member in each of them. Every account has a personal workspace, so one the
+     * member uses alone does not block the reset.
+     */
+    public function manageMemberPassword(User $user, Team $team, User $member): Response
+    {
+        if (! $this->updateMember($user, $team)) {
+            return Response::deny();
+        }
+
+        $memberships = Membership::query()
+            ->where('user_id', $member->id)
+            ->with('team')
+            ->get();
+
+        foreach ($memberships as $membership) {
+            $memberTeam = $membership->team;
+            $ownsMemberTeam = $membership->role === TeamRole::Owner->value;
+
+            if ($memberTeam->is($team)) {
+                if ($ownsMemberTeam) {
+                    return Response::deny(__('The team owner password cannot be managed.'));
+                }
+
+                continue;
+            }
+
+            if ($member->is($user) || ($memberTeam->is_personal && $memberTeam->members()->count() === 1)) {
+                continue;
+            }
+
+            if ($ownsMemberTeam || ! $user->hasTeamPermission($memberTeam, TeamPermission::UpdateMember)) {
+                return Response::deny(__('This member also belongs to a workspace you cannot manage, so only they can change their password.'));
+            }
+        }
+
+        return Response::allow();
     }
 
     /**
