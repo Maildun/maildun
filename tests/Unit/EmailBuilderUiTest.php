@@ -64,3 +64,11 @@ test('email builder stays contained in the compose card', function () {
         ->toContain('.email-builder[data-fill]')
         ->toContain('flex: 1 1 0%');
 });
+
+test('saved section requests run beside the draft save and always settle', function () {
+    $group = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/saved-sections-group.tsx');
+
+    expect($group)->toBeString()
+        ->toContain('async: true,')
+        ->toContain("onFinish: () => fail('The request was interrupted. Try again.'),");
+});
