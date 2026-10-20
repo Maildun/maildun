@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Concerns\FiltersCampaignRecipients;
+use App\Concerns\SanitizesCsvCells;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
@@ -22,6 +23,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class ContactExportController extends Controller
 {
     use FiltersCampaignRecipients;
+    use SanitizesCsvCells;
 
     public function contacts(Request $request, Team $currentTeam, string $format): StreamedResponse
     {
@@ -215,21 +217,6 @@ class ContactExportController extends Controller
         }
 
         echo '</Row>';
-    }
-
-    /**
-     * @param  list<string|null>  $cells
-     * @return list<string>
-     */
-    private function sanitizeCsvRow(array $cells): array
-    {
-        return array_map(function (?string $cell): string {
-            $value = (string) $cell;
-
-            return preg_match('/^[=+\-@\t\r]/u', $value) === 1
-                ? "'".$value
-                : $value;
-        }, $cells);
     }
 
     /** @return array{search: string, company: string, audience: string} */
