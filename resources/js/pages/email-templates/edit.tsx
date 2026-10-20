@@ -9,12 +9,9 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, setLayoutProps, useForm, usePage } from '@inertiajs/react';
-import type {
-    EmailEditorHandle,
-    ImageResult,
-} from '@maildun/email-builder/editor';
+import type { EmailEditorHandle } from '@maildun/email-builder/editor';
 import type { FormEvent } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteEmailTemplateModal from '@/components/delete-email-template-modal';
 import { EmailBuilderActions } from '@/components/email-builder-actions';
@@ -52,16 +49,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
-import { toast } from '@/components/ui/toast';
-import { useUnmountSignal } from '@/hooks/use-unmount-signal';
+import { useBuilderMediaPicker } from '@/hooks/use-builder-media-picker';
 import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
-import { uploadEditorImage } from '@/lib/editor-media-upload';
 import {
     BUILDER_MERGE_TAGS,
     EMPTY_BUILDER_DOCUMENT,
     getChildrenIds,
     htmlToBuilderDocument,
-    insertBuilderMedia,
     isSourceEditor,
     renderBuilderHtml,
     renderSourceHtml,
@@ -75,7 +69,6 @@ import type {
     EmailEditorMode,
     EmailTemplateDetail,
     EmailTemplateSummary,
-    MediaItem,
     MediaLibraryData,
 } from '@/types';
 
@@ -155,7 +148,6 @@ export default function EmailTemplatesEdit({
     const { currentTeam } = usePage().props;
     const [view, setView] = useState<'hub' | 'design'>('hub');
     const builderRef = useRef<EmailEditorHandle>(null);
-    const unmountSignal = useUnmountSignal();
     const savedSectionsGroup = useSavedSectionsGroup({
         teamSlug: currentTeam?.slug ?? '',
         sections: savedSections,
@@ -168,11 +160,7 @@ export default function EmailTemplatesEdit({
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [useOpen, setUseOpen] = useState(false);
-    const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
     const [tagsDialogOpen, setTagsDialogOpen] = useState(false);
-    const imagePickerResolve = useRef<
-        ((image: ImageResult | null) => void) | null
-    >(null);
 
     const form = useForm<{
         name: string;
@@ -199,9 +187,22 @@ export default function EmailTemplatesEdit({
 
     useUnsavedChanges(form.isDirty);
 
-    useEffect(() => {
-        return () => imagePickerResolve.current?.(null);
-    }, []);
+    const {
+        mediaDialogOpen,
+        setMediaDialogOpen,
+        changeMediaDialogOpen,
+        pickBuilderImage,
+        insertMedia,
+        uploadBuilderImage,
+    } = useBuilderMediaPicker({
+        builderRef,
+        canEdit: canManage && !form.processing,
+        hasMediaLibrary: Boolean(mediaLibrary),
+        uploadTeamSlug:
+            canManage && mediaLibrary?.canUpload && currentTeam
+                ? currentTeam.slug
+                : null,
+    });
 
     const designing = view === 'design';
 
@@ -210,70 +211,6 @@ export default function EmailTemplatesEdit({
     if (!currentTeam) {
         return null;
     }
-
-    const uploadBuilderImage =
-        canManage && mediaLibrary?.canUpload
-            ? (file: File) =>
-                  uploadEditorImage(currentTeam.slug, file, unmountSignal())
-            : undefined;
-
-    const changeMediaDialogOpen = (open: boolean) => {
-        if (!open) {
-            imagePickerResolve.current?.(null);
-            imagePickerResolve.current = null;
-        }
-
-        setMediaDialogOpen(open);
-    };
-
-    const pickBuilderImage = (): Promise<ImageResult | null> => {
-        if (!canManage || form.processing || !mediaLibrary) {
-            return Promise.resolve(null);
-        }
-
-        imagePickerResolve.current?.(null);
-
-        return new Promise((resolve) => {
-            imagePickerResolve.current = resolve;
-            setMediaDialogOpen(true);
-        });
-    };
-
-    const insertMedia = (image: MediaItem): boolean => {
-        if (
-            !canManage ||
-            form.processing ||
-            image.status !== 'ready' ||
-            !image.absolute_url
-        ) {
-            return false;
-        }
-
-        if (imagePickerResolve.current) {
-            imagePickerResolve.current({
-                url: image.absolute_url,
-                alt: image.alt ?? image.name,
-            });
-            imagePickerResolve.current = null;
-
-            return true;
-        }
-
-        if (!builderRef.current) {
-            return false;
-        }
-
-        const inserted = insertBuilderMedia(builderRef.current.store, image);
-
-        if (!inserted) {
-            toast.add({
-                type: 'error',
-                title: 'Could not insert this image. Try again.',
-            });
-        }
-
-        return inserted;
-    };
 
     const errorFor = (value: SectionValue) =>
         SECTIONS.find((entry) => entry.value === value)?.fields.some(

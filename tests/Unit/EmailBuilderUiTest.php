@@ -65,9 +65,10 @@ test('email builder stays contained in the compose card', function () {
         ->toContain('flex: 1 1 0%');
 });
 
-test('editor image uploads stop polling once the editor page unmounts', function (string $page) {
+test('editor pages share one media picker whose uploads stop once the page unmounts', function (string $page) {
     $root = dirname(__DIR__, 2).'/resources/js';
     $upload = file_get_contents($root.'/lib/editor-media-upload.ts');
+    $picker = file_get_contents($root.'/hooks/use-builder-media-picker.ts');
     $source = file_get_contents($root."/pages/{$page}.tsx");
 
     expect($upload)->toBeString()
@@ -75,8 +76,11 @@ test('editor image uploads stop polling once the editor page unmounts', function
         ->toContain('await pause(signal);')
         ->toContain('{ signal },')
         ->toContain('signal.throwIfAborted();')
-        ->and($source)->toContain('const unmountSignal = useUnmountSignal();')
-        ->toContain('uploadEditorImage(currentTeam.slug, file, unmountSignal())');
+        ->and($picker)->toContain('const unmountSignal = useUnmountSignal();')
+        ->toContain('uploadEditorImage(uploadTeamSlug, file, unmountSignal())')
+        ->and($source)->toContain('} = useBuilderMediaPicker({')
+        ->not->toContain('imagePickerResolve')
+        ->not->toContain('uploadEditorImage(');
 })->with([
     'campaign' => 'emails/edit',
     'template' => 'email-templates/edit',
