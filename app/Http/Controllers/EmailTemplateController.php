@@ -6,6 +6,7 @@ use App\Actions\Media\BuildMediaLibrary;
 use App\Enums\EmailEditor;
 use App\Http\Requests\SaveEmailTemplateRequest;
 use App\Models\EmailTemplate;
+use App\Models\SavedSection;
 use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -91,6 +92,9 @@ class EmailTemplateController extends Controller
             'mediaLibrary' => fn (): ?array => $emailTemplate->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)
                 : null,
+            'savedSections' => fn (): array => $emailTemplate->editor === EmailEditor::Builder
+                ? SavedSection::forEditor($currentTeam)
+                : [],
         ]);
     }
 

@@ -15,6 +15,7 @@ use App\Jobs\SendTransactionalEmailTest;
 use App\Models\Audience;
 use App\Models\Automation;
 use App\Models\EmailTemplate;
+use App\Models\SavedSection;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use Illuminate\Http\RedirectResponse;
@@ -155,6 +156,9 @@ class TransactionalEmailController extends Controller
             'mediaLibrary' => fn (): ?array => $transactionalEmail->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)
                 : null,
+            'savedSections' => fn (): array => $transactionalEmail->editor === EmailEditor::Builder
+                ? SavedSection::forEditor($currentTeam)
+                : [],
         ]);
     }
 

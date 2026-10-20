@@ -14,15 +14,17 @@ import type {
     ImageResult,
 } from '@maildun/email-builder/editor';
 import type { FormEvent } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteEmailTemplateModal from '@/components/delete-email-template-modal';
+import { EmailBuilderActions } from '@/components/email-builder-actions';
 import { EmailBuilderEditor } from '@/components/email-builder-editor';
 import { EmailHtmlEditor } from '@/components/email-html-editor';
 import { EmailSourceEditor } from '@/components/email-source-editor';
 import EmailTemplatePicker from '@/components/email-template-picker';
 import MediaLibraryDialog from '@/components/media-library-dialog';
 import PersonalizationTagsDialog from '@/components/personalization-tags-dialog';
+import { useSavedSectionsGroup } from '@/components/saved-sections-group';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -64,6 +66,7 @@ import {
     renderSourceHtml,
     toBuilderDocument,
 } from '@/lib/email-builder';
+import type { SavedSection } from '@/lib/email-builder';
 import { cn } from '@/lib/utils';
 import { index, update } from '@/routes/email_templates';
 import type {
@@ -81,6 +84,7 @@ type Props = {
     defaultEditor: EmailEditorMode;
     canManage: boolean;
     mediaLibrary: MediaLibraryData | null;
+    savedSections: SavedSection[];
 };
 
 type SectionValue = 'details' | 'subject' | 'design';
@@ -145,15 +149,25 @@ export default function EmailTemplatesEdit({
     defaultEditor,
     canManage,
     mediaLibrary,
+    savedSections,
 }: Props) {
     const { currentTeam } = usePage().props;
     const [view, setView] = useState<'hub' | 'design'>('hub');
+    const builderRef = useRef<EmailEditorHandle>(null);
+    const savedSectionsGroup = useSavedSectionsGroup({
+        teamSlug: currentTeam?.slug ?? '',
+        sections: savedSections,
+        canManage,
+    });
+    const paletteGroups = useMemo(
+        () => [savedSectionsGroup],
+        [savedSectionsGroup],
+    );
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [useOpen, setUseOpen] = useState(false);
     const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
     const [tagsDialogOpen, setTagsDialogOpen] = useState(false);
-    const builderRef = useRef<EmailEditorHandle>(null);
     const imagePickerResolve = useRef<
         ((image: ImageResult | null) => void) | null
     >(null);
@@ -417,6 +431,14 @@ export default function EmailTemplatesEdit({
                                 </Badge>
                             </div>
                             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                                {template.editor === 'builder' ? (
+                                    <EmailBuilderActions
+                                        editor={builderRef}
+                                        name={templateName}
+                                        brandTheme={currentTeam.brandTheme}
+                                        canManage={canManage}
+                                    />
+                                ) : null}
                                 {template.editor === 'builder' &&
                                 mediaLibrary ? (
                                     <Button
@@ -476,6 +498,7 @@ export default function EmailTemplatesEdit({
                                                 : undefined
                                         }
                                         onUploadImage={uploadBuilderImage}
+                                        paletteGroups={paletteGroups}
                                         document={
                                             form.data.design ??
                                             EMPTY_BUILDER_DOCUMENT

@@ -152,6 +152,8 @@ test('the edit page exposes the email and sender defaults', function () {
         'audience_id' => $audience->id,
         'variables' => [['key' => 'first_name', 'example' => 'Ada']],
     ]);
+    Media::factory()->for($team)->create(['name' => 'receipt.png']);
+    Media::factory()->for(Team::factory()->create())->create(['name' => 'other.png']);
 
     $this->actingAs($user)
         ->get(route('transactional_emails.edit', [$team, $email]))
@@ -167,7 +169,12 @@ test('the edit page exposes the email and sender defaults', function () {
             ->where('canManage', true)
             ->where('defaults.from_name', 'Maildun HQ')
             ->where('defaults.from_address', 'hq@example.com')
-            ->where('email.variables.0.key', 'first_name'));
+            ->where('email.variables.0.key', 'first_name')
+            ->where('mediaLibrary.canUpload', true)
+            ->where('mediaLibrary.atLimit', false)
+            ->has('mediaLibrary.items', 1)
+            ->where('mediaLibrary.items.0.name', 'receipt.png')
+            ->has('savedSections', 0));
 });
 
 test('the builder edit page exposes the team media library', function () {

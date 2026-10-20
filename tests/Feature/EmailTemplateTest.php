@@ -152,6 +152,7 @@ test('the builder compose page exposes the team media library', function () {
             ->component('email-templates/edit')
             ->where('mediaLibrary.canManage', true)
             ->where('mediaLibrary.canUpload', true)
+            ->where('mediaLibrary.atLimit', false)
             ->has('mediaLibrary.items', 1)
             ->where('mediaLibrary.items.0.name', 'template-hero.png'));
 });

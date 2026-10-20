@@ -46,8 +46,8 @@ importers:
         specifier: ^0.4.0
         version: 0.4.0(react@19.3.0)
       '@maildun/email-builder':
-        specifier: ^0.1.0
-        version: 0.1.0(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: ^0.3.0
+        version: 0.3.0(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.0(@types/node@26.5.1)(jiti@2.7.0))
@@ -623,8 +623,8 @@ packages:
   '@lezer/lr@1.4.10':
     resolution: {integrity: sha512-rnCpTIBafOx4mRp43xOxDJbFipJm/c0cia/V5TiGlhmMa+wsSdoGmUN3w5Bqrks/09Q/D4tNAmWaT8p6NRi77A==}
 
-  '@maildun/email-builder@0.1.0':
-    resolution: {integrity: sha512-iGpnFyEQ27zoXxMmlQRceui7SIsEBkLDDKqfOlKY3NrSU6H3dr7Dq39mIJTgfleXqnpmzijRnJiyT+9JdxDkXg==}
+  '@maildun/email-builder@0.3.0':
+    resolution: {integrity: sha512-aSwH33ultDZ642vPrXkkVCVszfh5KpzpkBUAX5sK5qr09SHiBSdP7x3sv6cIdE2b4T2Gs3fqhYNSI1tzmlt+mg==}
     engines: {node: '>=20'}
     hasBin: true
     peerDependencies:
@@ -4884,7 +4884,7 @@ snapshots:
     dependencies:
       '@lezer/common': 1.5.2
 
-  '@maildun/email-builder@0.1.0(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@maildun/email-builder@0.3.0(@date-fns/tz@1.5.0)(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.4(@tiptap/pm@3.31.4))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@base-ui/react': 1.8.0(@date-fns/tz@1.5.0)(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@dnd-kit/core': 6.3.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)

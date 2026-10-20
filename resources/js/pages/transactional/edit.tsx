@@ -17,14 +17,16 @@ import type {
     ImageResult,
 } from '@maildun/email-builder/editor';
 import type { FormEvent } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteTransactionalEmailModal from '@/components/delete-transactional-email-modal';
+import { EmailBuilderActions } from '@/components/email-builder-actions';
 import { EmailBuilderEditor } from '@/components/email-builder-editor';
 import { EmailHtmlEditor } from '@/components/email-html-editor';
 import { EmailSourceEditor } from '@/components/email-source-editor';
 import { LastTestStatus } from '@/components/last-test-status';
 import MediaLibraryDialog from '@/components/media-library-dialog';
+import { useSavedSectionsGroup } from '@/components/saved-sections-group';
 import SendTestTransactionalEmailDialog from '@/components/send-test-transactional-email-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -75,6 +77,7 @@ import {
     renderSourceHtml,
     toBuilderDocument,
 } from '@/lib/email-builder';
+import type { SavedSection } from '@/lib/email-builder';
 import { cn } from '@/lib/utils';
 import {
     index,
@@ -89,6 +92,7 @@ import type {
     EmailSenderDefaults,
     MediaItem,
     MediaLibraryData,
+    Team,
     TransactionalEmailDetail,
     TransactionalVariable,
 } from '@/types';
@@ -98,9 +102,10 @@ type Props = {
     defaults: EmailSenderDefaults;
     audiences: { uuid: string; name: string }[];
     canManage: boolean;
-    currentTeam: { slug: string };
+    currentTeam: Team;
     auth: { user: { email: string } };
     mediaLibrary: MediaLibraryData | null;
+    savedSections: SavedSection[];
 };
 
 type SectionValue = 'details' | 'sender' | 'design' | 'variables';
@@ -189,10 +194,20 @@ export default function TransactionalEdit({
     currentTeam,
     auth,
     mediaLibrary,
+    savedSections,
 }: Props) {
     const [view, setView] = useState<'hub' | 'design'>('hub');
     const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
     const builderRef = useRef<EmailEditorHandle>(null);
+    const savedSectionsGroup = useSavedSectionsGroup({
+        teamSlug: currentTeam.slug,
+        sections: savedSections,
+        canManage,
+    });
+    const paletteGroups = useMemo(
+        () => [savedSectionsGroup],
+        [savedSectionsGroup],
+    );
     const imagePickerResolve = useRef<
         ((image: ImageResult | null) => void) | null
     >(null);
@@ -496,6 +511,14 @@ export default function TransactionalEdit({
                                 />
                             </div>
                             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                                {email.editor === 'builder' ? (
+                                    <EmailBuilderActions
+                                        editor={builderRef}
+                                        name={form.data.name || email.name}
+                                        brandTheme={currentTeam.brandTheme}
+                                        canManage={canManage}
+                                    />
+                                ) : null}
                                 {email.editor === 'builder' && mediaLibrary ? (
                                     <Button
                                         type="button"
@@ -540,6 +563,7 @@ export default function TransactionalEdit({
                                                 : undefined
                                         }
                                         onUploadImage={uploadBuilderImage}
+                                        paletteGroups={paletteGroups}
                                         document={
                                             form.data.design ??
                                             EMPTY_BUILDER_DOCUMENT

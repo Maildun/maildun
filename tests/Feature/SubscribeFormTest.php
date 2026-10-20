@@ -128,7 +128,7 @@ test('owners can create edit publish unpublish and soft delete subscribe forms',
             ->where('attributes.0.uuid', $attribute->uuid)
             ->where('attributes.0.key', 'company')
             ->has('styles', 4)
-            ->has('artworkPresets', 4)
+            ->has('artworkPresets', 11)
             ->has('brandColors', 15)
             ->has('brandFonts', 8)
             ->has('brandInputStyles', 3));
@@ -395,15 +395,15 @@ test('owners can choose artwork presets without deleting an uploaded image', fun
     $this->actingAs($user)
         ->patch(route('audiences.subscribe_forms.update', [$team, $audience, $subscribeForm]), subscribeFormPayload([
             'style' => 'cover',
-            'artwork_type' => SubscribeFormArtworkType::BackgroundPreset->value,
-            'artwork_preset' => SubscribeFormArtworkPreset::BackgroundGlow->value,
+            'artwork_type' => SubscribeFormArtworkType::ImagePreset->value,
+            'artwork_preset' => SubscribeFormArtworkPreset::ImageShore->value,
         ]))
         ->assertRedirect()
         ->assertSessionHasNoErrors();
 
     expect($subscribeForm->fresh())
-        ->artwork_type->toBe(SubscribeFormArtworkType::BackgroundPreset)
-        ->artwork_preset->toBe(SubscribeFormArtworkPreset::BackgroundGlow)
+        ->artwork_type->toBe(SubscribeFormArtworkType::ImagePreset)
+        ->artwork_preset->toBe(SubscribeFormArtworkPreset::ImageShore)
         ->image_path->toBe('subscribe-form-images/hero.webp');
     Storage::disk('public')->assertExists('subscribe-form-images/hero.webp');
 
@@ -411,18 +411,23 @@ test('owners can choose artwork presets without deleting an uploaded image', fun
         ->get(route('audiences.subscribe_forms.edit', [$team, $audience, $subscribeForm]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('subscribeForm.artwork_type', 'background-preset')
-            ->where('subscribeForm.artwork_preset', 'background-glow')
-            ->has('artworkPresets', 4)
+            ->where('subscribeForm.artwork_type', 'image-preset')
+            ->where('subscribeForm.artwork_preset', 'image-shore')
+            ->has('artworkPresets', 11)
             ->where('artworkPresets.0', [
-                'value' => 'background-matrix',
-                'label' => 'Matrix',
-                'artwork_type' => 'background-preset',
+                'value' => 'image-pastel',
+                'label' => 'Pastel',
+                'artwork_type' => 'image-preset',
             ])
-            ->where('artworkPresets.3', [
-                'value' => 'background-glow',
-                'label' => 'Glow',
-                'artwork_type' => 'background-preset',
+            ->where('artworkPresets.4', [
+                'value' => 'image-dunes',
+                'label' => 'Dunes',
+                'artwork_type' => 'image-preset',
+            ])
+            ->where('artworkPresets.6', [
+                'value' => 'image-shore',
+                'label' => 'Shore',
+                'artwork_type' => 'image-preset',
             ]));
 });
 

@@ -18,6 +18,7 @@ use App\Mcp\Tools\Campaigns\UpdateCampaignTool;
 use App\Mcp\Tools\EmailBuilder\CheckEmailBuilderTool;
 use App\Mcp\Tools\EmailBuilder\EditEmailBuilderTool;
 use App\Mcp\Tools\EmailBuilder\GetEmailBuilderTool;
+use App\Mcp\Tools\SavedSections\ListSavedSectionsTool;
 use App\Mcp\Tools\TransactionalEmails\CreateTransactionalEmailTool;
 use App\Mcp\Tools\TransactionalEmails\DeleteTransactionalEmailTool;
 use App\Mcp\Tools\TransactionalEmails\GetTransactionalEmailTool;
@@ -33,7 +34,7 @@ use Laravel\Mcp\Server\Tool;
 
 #[Name('Maildun MCP Server')]
 #[Version('1.0.0')]
-#[Instructions('Provides access to Maildun workspaces, audiences, campaigns, transactional emails, and automations. Remote connections can only use workspaces available to the authenticated user. Start with application-status, then list-workspaces. Every domain tool requires a workspace slug; record identifiers are always scoped to that workspace. For block email design, start with get-email-builder to discover native agent tools and the revision. Apply edits through edit-email-builder, use dry_run to preview and apply_ops for atomic batches, then check-email-builder to validate and preview. Re-read after a revision conflict.')]
+#[Instructions('Provides access to Maildun workspaces, audiences, campaigns, transactional emails, and automations. Remote connections can only use workspaces available to the authenticated user. Start with application-status, then list-workspaces. Every domain tool requires a workspace slug; record identifiers are always scoped to that workspace. For block email design, start with get-email-builder to discover native agent tools and the revision. Apply edits through edit-email-builder, use dry_run to preview and apply_ops for atomic batches, then check-email-builder to validate and preview. Re-read after a revision conflict. list-saved-sections returns the workspace saved sections; insert one with edit-email-builder using its blocks.')]
 class MaildunServer extends Server
 {
     /**
@@ -62,6 +63,7 @@ class MaildunServer extends Server
         GetEmailBuilderTool::class,
         EditEmailBuilderTool::class,
         CheckEmailBuilderTool::class,
+        ListSavedSectionsTool::class,
     ];
 
     /**

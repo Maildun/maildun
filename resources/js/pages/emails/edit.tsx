@@ -27,15 +27,17 @@ import type {
     ImageResult,
 } from '@maildun/email-builder/editor';
 import type { FormEvent } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteEmailModal from '@/components/delete-email-modal';
+import { EmailBuilderActions } from '@/components/email-builder-actions';
 import { EmailBuilderEditor } from '@/components/email-builder-editor';
 import { EmailHtmlEditor } from '@/components/email-html-editor';
 import { EmailSourceEditor } from '@/components/email-source-editor';
 import MediaLibraryDialog from '@/components/media-library-dialog';
 import PersonalizationTagsDialog from '@/components/personalization-tags-dialog';
 import SaveEmailAsTemplateDialog from '@/components/save-email-as-template-dialog';
+import { useSavedSectionsGroup } from '@/components/saved-sections-group';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -104,6 +106,7 @@ import {
     renderSourceHtml,
     toBuilderDocument,
 } from '@/lib/email-builder';
+import type { SavedSection } from '@/lib/email-builder';
 import { cn } from '@/lib/utils';
 import {
     checkLinks,
@@ -127,6 +130,7 @@ import type {
     MediaLibraryData,
     MediaItem,
     SendReadiness,
+    Team,
 } from '@/types';
 
 type Props = {
@@ -136,8 +140,9 @@ type Props = {
     senders: EmailSenderOption[];
     selectedSenderUuid: string | null;
     canManage: boolean;
-    currentTeam: { slug: string };
+    currentTeam: Team;
     mediaLibrary: MediaLibraryData | null;
+    savedSections: SavedSection[];
     sendReadiness: SendReadiness;
 };
 
@@ -232,6 +237,7 @@ export default function EmailEdit({
     canManage,
     currentTeam,
     mediaLibrary,
+    savedSections,
     sendReadiness,
 }: Props) {
     const [view, setView] = useState<'hub' | 'design'>('hub');
@@ -245,6 +251,15 @@ export default function EmailEdit({
         useState<LinkCheckResponse | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const builderRef = useRef<EmailEditorHandle>(null);
+    const savedSectionsGroup = useSavedSectionsGroup({
+        teamSlug: currentTeam.slug,
+        sections: savedSections,
+        canManage,
+    });
+    const paletteGroups = useMemo(
+        () => [savedSectionsGroup],
+        [savedSectionsGroup],
+    );
     const uploadBuilderImage =
         canManage && mediaLibrary?.canUpload
             ? (file: File) => uploadEditorImage(currentTeam.slug, file)
@@ -763,6 +778,14 @@ export default function EmailEdit({
                             </div>
                             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                                 {email.editor === 'builder' ? (
+                                    <EmailBuilderActions
+                                        editor={builderRef}
+                                        name={form.data.name || email.name}
+                                        brandTheme={currentTeam.brandTheme}
+                                        canManage={canManage}
+                                    />
+                                ) : null}
+                                {email.editor === 'builder' ? (
                                     <Button
                                         type="button"
                                         variant="outline"
@@ -820,6 +843,7 @@ export default function EmailEdit({
                                                 : undefined
                                         }
                                         onUploadImage={uploadBuilderImage}
+                                        paletteGroups={paletteGroups}
                                         document={
                                             form.data.design ??
                                             EMPTY_BUILDER_DOCUMENT

@@ -29,6 +29,7 @@ use App\Http\Controllers\ListHygieneController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MediaSettingsController;
 use App\Http\Controllers\PublicSubscribeFormController;
+use App\Http\Controllers\SavedSectionController;
 use App\Http\Controllers\SegmentController;
 use App\Http\Controllers\SubscribeFormController;
 use App\Http\Controllers\SubscriberController;
@@ -344,6 +345,11 @@ Route::prefix('{current_team}')
             Route::resource('media', MediaController::class)
                 ->parameters(['media' => 'media'])
                 ->only(['index', 'store', 'update', 'destroy']);
+
+            Route::resource('saved-sections', SavedSectionController::class)
+                ->parameters(['saved-sections' => 'savedSection'])
+                ->names('saved_sections')
+                ->only(['store', 'update', 'destroy']);
 
             Route::get('email-templates', [EmailTemplateController::class, 'index'])
                 ->name('email_templates.index');

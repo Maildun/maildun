@@ -65,6 +65,7 @@ use Illuminate\Support\Str;
  * @property-read Collection<int, EmailAddressHealth> $emailAddressHealths
  * @property-read Collection<int, Media> $media
  * @property-read Collection<int, MediaCategory> $mediaCategories
+ * @property-read Collection<int, SavedSection> $savedSections
  * @property-read Collection<int, MediaTag> $mediaTags
  * @property-read Collection<int, Automation> $automations
  * @property-read Collection<int, Membership> $memberships
@@ -380,6 +381,12 @@ class Team extends Model
     public function mediaCategories(): HasMany
     {
         return $this->hasMany(MediaCategory::class);
+    }
+
+    /** @return HasMany<SavedSection, $this> */
+    public function savedSections(): HasMany
+    {
+        return $this->hasMany(SavedSection::class);
     }
 
     /** @return HasMany<MediaTag, $this> */

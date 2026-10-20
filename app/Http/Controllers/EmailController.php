@@ -38,6 +38,7 @@ use App\Models\EmailLinkTrackingAggregate;
 use App\Models\EmailSendRun;
 use App\Models\EmailTemplate;
 use App\Models\EmailTrackingAggregate;
+use App\Models\SavedSection;
 use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Team;
@@ -346,6 +347,9 @@ class EmailController extends Controller
             'mediaLibrary' => fn (): ?array => $email->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)
                 : null,
+            'savedSections' => fn (): array => $email->editor === EmailEditor::Builder
+                ? SavedSection::forEditor($currentTeam)
+                : [],
         ]);
     }
 

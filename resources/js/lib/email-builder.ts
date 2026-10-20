@@ -5,7 +5,7 @@ import {
     hasChildren,
     renderEmail,
 } from '@maildun/email-builder';
-import type { EmailDocument } from '@maildun/email-builder';
+import type { BlockInput, EmailDocument, Op } from '@maildun/email-builder';
 import {
     fromEmailBuilderJs,
     isEmailBuilderJsDocument,
@@ -17,6 +17,65 @@ import type {
     EmailSourceMode,
 } from '@/types/emails';
 import type { MediaItem } from '@/types/media';
+import type {
+    TeamBrandColor,
+    TeamBrandFont,
+    TeamBrandTheme,
+} from '@/types/teams';
+
+/** A block the author saved to reuse in any block email in the workspace. */
+export type SavedSection = {
+    id: string;
+    name: string;
+    /** Stored without ids, so every insert gets fresh ones. */
+    blocks: BlockInput[];
+};
+
+/** Email-safe hex for each workspace brand color (the app theme uses OKLCH). */
+const BRAND_EMAIL_COLORS: Record<TeamBrandColor, string> = {
+    blue: '#2b7fff',
+    indigo: '#4f39f6',
+    violet: '#7f22fe',
+    purple: '#9810fa',
+    fuchsia: '#c800de',
+    pink: '#e60076',
+    rose: '#ec003f',
+    red: '#e7000b',
+    orange: '#f54900',
+    amber: '#e17100',
+    lime: '#5ea500',
+    emerald: '#009966',
+    teal: '#009689',
+    cyan: '#0092b8',
+    neutral: '#262626',
+};
+
+/** The closest email-safe font stack in the builder for each workspace font. */
+const BRAND_EMAIL_FONTS: Record<TeamBrandFont, string> = {
+    inter: 'MODERN_SANS',
+    'instrument-sans': 'GEOMETRIC_SANS',
+    'system-sans': 'MODERN_SANS',
+    'rounded-sans': 'ROUNDED_SANS',
+    'humanist-sans': 'BOOK_SANS',
+    serif: 'MODERN_SERIF',
+    georgia: 'BOOK_SERIF',
+    mono: 'MONOSPACE',
+};
+
+/**
+ * One undoable editor step that switches a design to the workspace brand
+ * (Settings → Theme): its color for buttons and links, and its font.
+ */
+export function brandThemeOp(theme: TeamBrandTheme): Op {
+    const color = BRAND_EMAIL_COLORS[theme.color] ?? BRAND_EMAIL_COLORS.blue;
+    const font = BRAND_EMAIL_FONTS[theme.font] ?? BRAND_EMAIL_FONTS.inter;
+
+    return {
+        op: 'updateTheme',
+        colors: { primary: color, link: color },
+        fonts: { body: font, heading: font },
+    };
+}
 
 export function isSourceEditor(
     editor: EmailEditorMode,

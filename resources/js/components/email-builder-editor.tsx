@@ -3,6 +3,7 @@ import type {
     EmailEditorHandle,
     ImageResult,
     MergeTag,
+    PaletteGroup,
 } from '@maildun/email-builder/editor';
 import type { Ref } from 'react';
 import { useMounted } from '@/hooks/use-mounted';
@@ -19,6 +20,7 @@ type Props = {
     ref?: Ref<EmailEditorHandle>;
     onPickImage?: () => Promise<ImageResult | null>;
     onUploadImage?: (file: File) => Promise<ImageResult>;
+    paletteGroups?: PaletteGroup[];
 };
 
 export function EmailBuilderEditor({
@@ -30,6 +32,7 @@ export function EmailBuilderEditor({
     ref,
     onPickImage,
     onUploadImage,
+    paletteGroups,
 }: Props) {
     const mounted = useMounted();
 
@@ -48,6 +51,7 @@ export function EmailBuilderEditor({
                     mergeTags={mergeTags}
                     onPickImage={onPickImage}
                     onUploadImage={onUploadImage}
+                    paletteGroups={paletteGroups}
                 />
             ) : (
                 <div className="size-full bg-muted" aria-hidden="true" />
