@@ -299,6 +299,7 @@ class ContactController extends Controller
             'audiences' => $this->addableAudiences($currentTeam),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'canManage' => Gate::allows('update', $contact),
+            'canDelete' => Gate::allows('delete', $contact),
         ]);
     }
 

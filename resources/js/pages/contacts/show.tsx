@@ -99,6 +99,7 @@ type Props = {
     audiences: CompanyOption[];
     tags: Tag[];
     canManage: boolean;
+    canDelete: boolean;
 };
 
 export default function ContactShow({
@@ -110,6 +111,7 @@ export default function ContactShow({
     audiences,
     tags,
     canManage,
+    canDelete,
 }: Props) {
     const { currentTeam } = usePage().props;
     const [editOpen, setEditOpen] = useState(false);
@@ -269,17 +271,19 @@ export default function ContactShow({
                                 />
                                 Edit
                             </Button>
-                            <Button
-                                type="button"
-                                variant="destructive"
-                                onClick={() => setDeleteOpen(true)}
-                            >
-                                <HugeiconsIcon
-                                    icon={Delete02Icon}
-                                    data-icon="inline-start"
-                                />
-                                Delete
-                            </Button>
+                            {canDelete ? (
+                                <Button
+                                    type="button"
+                                    variant="destructive"
+                                    onClick={() => setDeleteOpen(true)}
+                                >
+                                    <HugeiconsIcon
+                                        icon={Delete02Icon}
+                                        data-icon="inline-start"
+                                    />
+                                    Delete
+                                </Button>
+                            ) : null}
                         </div>
                     ) : null}
                 </div>

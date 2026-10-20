@@ -473,3 +473,52 @@ test('the add contact dialog offers no audiences without audience access but the
             ->where('addableAudiences', [])
             ->where('audiences.0.uuid', $audience->uuid));
 });
+
+test('a contact in an audience cannot be deleted without audience access', function () {
+    $team = User::factory()->create()->currentTeam;
+    $member = contactOnlyMember($team);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->unsubscribed()->create();
+    $contact = $subscriber->contact;
+
+    $this->actingAs($member)
+        ->delete(route('contacts.destroy', [$team, $contact]), [
+            'confirmation' => $contact->email,
+        ])
+        ->assertForbidden();
+
+    $this->assertModelExists($contact);
+    $this->assertModelExists($subscriber);
+});
+
+test('a contact in no audience can be deleted with contact access alone', function () {
+    $team = User::factory()->create()->currentTeam;
+    $member = contactOnlyMember($team);
+    $contact = Contact::factory()->for($team)->create();
+
+    $this->actingAs($member)
+        ->delete(route('contacts.destroy', [$team, $contact]), [
+            'confirmation' => $contact->email,
+        ])
+        ->assertRedirect(route('contacts.index', $team));
+
+    $this->assertModelMissing($contact);
+});
+
+test('the contact profile offers delete only when every membership may be removed', function (int $memberships, bool $canDelete) {
+    $team = User::factory()->create()->currentTeam;
+    $member = contactOnlyMember($team);
+    $contact = Contact::factory()->for($team)->create();
+    Subscriber::factory()
+        ->count($memberships)
+        ->for(Audience::factory()->for($team))
+        ->create(['email' => $contact->email]);
+
+    $this->actingAs($member)
+        ->get(route('contacts.show', [$team, $contact]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('contacts/show')
+            ->where('canDelete', $canDelete));
+})->with([
+    'contact in an audience' => [1, false],
+    'contact in no audience' => [0, true],
+]);

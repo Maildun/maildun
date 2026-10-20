@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Enums\TeamPermission;
 use App\Models\Contact;
+use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\User;
 
@@ -29,8 +30,12 @@ class ContactPolicy
         return $user->hasTeamPermission($contact->team, TeamPermission::ManageContact);
     }
 
+    /**
+     * Deleting a contact also deletes its audience memberships, so the user must be allowed to remove each one.
+     */
     public function delete(User $user, Contact $contact): bool
     {
-        return $this->update($user, $contact);
+        return $this->update($user, $contact)
+            && $contact->subscribers->every(fn (Subscriber $subscriber): bool => $user->can('delete', $subscriber));
     }
 }
