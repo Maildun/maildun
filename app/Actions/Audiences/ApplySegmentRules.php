@@ -51,15 +51,16 @@ class ApplySegmentRules
 
         if (in_array($field, [SegmentRuleField::Email, SegmentRuleField::FirstName, SegmentRuleField::LastName], true)) {
             $normalizedValue = Str::lower((string) $value);
+            $containsPattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $normalizedValue).'%';
 
             match ($operator) {
                 SegmentRuleOperator::Equals => $query->whereRaw("LOWER({$column}) = ?", [$normalizedValue]),
                 SegmentRuleOperator::NotEquals => $query->where(fn (Builder $textQuery) => $textQuery
                     ->whereRaw("LOWER({$column}) != ?", [$normalizedValue])
                     ->orWhereNull($column)),
-                SegmentRuleOperator::Contains => $query->whereRaw("LOWER({$column}) LIKE ?", ['%'.$normalizedValue.'%']),
+                SegmentRuleOperator::Contains => $query->whereRaw("LOWER({$column}) LIKE ? ESCAPE '!'", [$containsPattern]),
                 SegmentRuleOperator::DoesNotContain => $query->where(fn (Builder $textQuery) => $textQuery
-                    ->whereRaw("LOWER({$column}) NOT LIKE ?", ['%'.$normalizedValue.'%'])
+                    ->whereRaw("LOWER({$column}) NOT LIKE ? ESCAPE '!'", [$containsPattern])
                     ->orWhereNull($column)),
                 default => null,
             };

@@ -345,6 +345,28 @@ test('negative rules also match subscribers whose field is empty', function (str
     'subscribe form not equals' => ['subscribe_form', 'not_equals', ':form'],
 ]);
 
+test('text rules match wildcard characters literally', function (string $operator, string $value, string $expectedEmail) {
+    $audience = Audience::factory()->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'snake_case!50%@example.com']);
+    Subscriber::factory()->for($audience)->create(['email' => 'plain@example.com']);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [[
+            'field' => 'email',
+            'operator' => $operator,
+            'value' => $value,
+        ]], SegmentMatchType::All)
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe([$expectedEmail]);
+})->with([
+    'contains an underscore' => ['contains', '_', 'snake_case!50%@example.com'],
+    'contains a percent sign' => ['contains', '%', 'snake_case!50%@example.com'],
+    'contains the escape character' => ['contains', '!', 'snake_case!50%@example.com'],
+    'does not contain an underscore' => ['does_not_contain', '_', 'plain@example.com'],
+]);
+
 test('segment validation rejects unknown languages and text operators on language', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
