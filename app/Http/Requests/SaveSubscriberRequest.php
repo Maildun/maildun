@@ -58,7 +58,15 @@ class SaveSubscriberRequest extends FormRequest
             ],
             'first_name' => ['nullable', 'string', 'max:255'],
             'last_name' => ['nullable', 'string', 'max:255'],
-            'language' => ['sometimes', 'nullable', Rule::enum(SubscriberLanguage::class)],
+            'language' => [
+                'sometimes',
+                'nullable',
+                Rule::enum(SubscriberLanguage::class),
+                Rule::in([
+                    ...$audience->allowed_languages ?? [],
+                    ...($subscriber instanceof Subscriber && $subscriber->language !== null ? [$subscriber->language->value] : []),
+                ]),
+            ],
             'tags' => ['sometimes', 'array', 'max:20'],
             'tags.*' => ['string', 'max:50'],
         ];

@@ -109,7 +109,7 @@ class RenderTransactionalContent
     protected function replace(string $content, array $data, bool $escape): string
     {
         if ($escape) {
-            $content = $this->hydrateMarkdownMergeLinks($this->decodeEncodedTags($content));
+            $content = $this->restoreMarkdownMergeTags($content);
         }
 
         return (string) preg_replace_callback(self::PATTERN, function (array $matches) use ($data, $escape): string {
@@ -127,29 +127,59 @@ class RenderTransactionalContent
     }
 
     /**
-     * Markdown can leave `[Unsubscribe]({{ unsubscribe_url }})` as text when
-     * the merge tag does not parse as a URL. Turn those into anchors before
-     * replacement so inboxes see a real link.
+     * Markdown output can hide merge tags from replacement: URL encoding turns
+     * {{ unsubscribe_url }} in an href into %7B%7B%20unsubscribe_url%20%7D%7D,
+     * and a link whose target is a merge tag can stay as the text
+     * `[Unsubscribe]({{ unsubscribe_url }})`. Restore both, but only in href
+     * values and in text outside tags, <code> and <pre>, so other attributes
+     * and code samples keep exactly what the author wrote.
      */
-    private function hydrateMarkdownMergeLinks(string $content): string
+    private function restoreMarkdownMergeTags(string $content): string
+    {
+        $parts = preg_split('/(<pre\b.*?<\/pre>|<code\b.*?<\/code>|<[^>]*>)/is', $content, flags: PREG_SPLIT_DELIM_CAPTURE);
+
+        if ($parts === false) {
+            return $content;
+        }
+
+        foreach ($parts as $index => $part) {
+            if ($index % 2 === 0) {
+                $parts[$index] = $this->hydrateMarkdownMergeLinks($part);
+            } elseif (preg_match('/^<(pre|code)\b/i', $part) !== 1) {
+                $parts[$index] = $this->decodeEncodedTagsInHref($part);
+            }
+        }
+
+        return implode('', $parts);
+    }
+
+    /**
+     * Turn `[Unsubscribe]({{ unsubscribe_url }})` text, with the tag plain or
+     * URL-encoded, into an anchor so inboxes see a real link.
+     */
+    private function hydrateMarkdownMergeLinks(string $text): string
     {
         return (string) preg_replace_callback(
-            '/\[([^\]]+)\]\((\{\{\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\}\})\)/',
-            fn (array $matches): string => '<a href="'.$matches[2].'">'.e($matches[1]).'</a>',
-            $content,
+            '/\[(?<text>[^\]]+)\]\((?:\{\{\s*(?<plain>[a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}|%7B%7B(?:%20)*(?<encoded>[a-zA-Z_][a-zA-Z0-9_]*)(?:%20)*%7D%7D)\)/i',
+            fn (array $matches): string => '<a href="{{ '.($matches['plain'] ?? $matches['encoded']).' }}">'.e($matches['text']).'</a>',
+            $text,
+            flags: PREG_UNMATCHED_AS_NULL,
         );
     }
 
     /**
-     * Markdown URL encoding can turn {{ unsubscribe_url }} in an href into
-     * %7B%7B%20unsubscribe_url%20%7D%7D. Restore those before replacement.
+     * Restore URL-encoded merge tags in a tag's href value.
      */
-    private function decodeEncodedTags(string $content): string
+    private function decodeEncodedTagsInHref(string $tag): string
     {
-        return (string) preg_replace(
-            '/%7B%7B(?:\s|%20)*([a-zA-Z_][a-zA-Z0-9_]*)(?:\s|%20)*%7D%7D/i',
-            '{{ $1 }}',
-            $content,
+        return (string) preg_replace_callback(
+            '/(\bhref\s*=\s*)(["\'])(.*?)\2/is',
+            fn (array $matches): string => $matches[1].$matches[2].preg_replace(
+                '/%7B%7B(?:\s|%20)*([a-zA-Z_][a-zA-Z0-9_]*)(?:\s|%20)*%7D%7D/i',
+                '{{ $1 }}',
+                $matches[3],
+            ).$matches[2],
+            $tag,
         );
     }
 }

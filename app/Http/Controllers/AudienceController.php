@@ -168,6 +168,7 @@ class AudienceController extends Controller
             'segments' => $segments,
             'forms' => $forms,
             'languages' => SubscriberLanguage::options(),
+            'subscriberLanguages' => $audience->languageOptions(),
             'filters' => $filters,
             'canManage' => Gate::allows('update', $audience),
         ]);

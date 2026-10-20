@@ -135,6 +135,7 @@ type Props = {
     segments: Segment[];
     forms: SubscribeFormSummary[];
     languages: SubscriberLanguageOption[];
+    subscriberLanguages: SubscriberLanguageOption[];
     companies: CompanyOption[];
     tags: Tag[];
     filters: SubscriberIndexFilters;
@@ -164,6 +165,7 @@ export default function AudienceShow(props: Props) {
         segments,
         forms,
         languages,
+        subscriberLanguages,
         companies,
         tags,
         filters,
@@ -455,7 +457,7 @@ export default function AudienceShow(props: Props) {
                                 routeArgs={routeArgs}
                                 canManage={canManage}
                                 tags={tags}
-                                languages={languages}
+                                languages={subscriberLanguages}
                                 selected={selected}
                                 onSelectedChange={setSelected}
                             />

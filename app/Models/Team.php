@@ -91,6 +91,32 @@ class Team extends Model
     use GeneratesUniqueTeamSlugs, HasFactory, SoftDeletes;
 
     /**
+     * Relations that hold workspace content, as opposed to the owner and roles a new team starts with.
+     *
+     * @var list<string>
+     */
+    public const CONTENT_RELATIONS = [
+        'audiences',
+        'contacts',
+        'contactImports',
+        'companies',
+        'tags',
+        'emails',
+        'campaignSeries',
+        'emailTemplates',
+        'transactionalEmails',
+        'automations',
+        'media',
+        'mediaCategories',
+        'mediaTags',
+        'savedSections',
+        'apiKeys',
+        'emailIntegration',
+        'senders',
+        'senderDomains',
+    ];
+
+    /**
      * Append the public logo URL to serialized team data.
      *
      * @var list<string>
@@ -158,6 +184,27 @@ class Team extends Model
         return $this->members()
             ->wherePivot('role', TeamRole::Owner->value)
             ->first();
+    }
+
+    /**
+     * Determine whether the team holds anything beyond the owner and roles it starts with.
+     *
+     * Reads the flags loaded by withExists(Team::CONTENT_RELATIONS) when they are present.
+     */
+    public function hasContent(): bool
+    {
+        foreach (self::CONTENT_RELATIONS as $relation) {
+            $flag = Str::snake($relation).'_exists';
+            $exists = array_key_exists($flag, $this->getAttributes())
+                ? (bool) $this->getAttribute($flag)
+                : $this->{$relation}()->exists();
+
+            if ($exists) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -43,7 +43,7 @@ The application-wide `MAIL_*` values are used for system notifications, never as
 
 See [Amazon SES](email-delivery/amazon-ses.md) and [SMTP](email-delivery/smtp.md).
 
-Set `MAIL_RATE_LIMIT_PER_SECOND` to a value within the provider's accepted send rate. A value of `0` disables application-side limiting. `MAIL_RATE_LIMIT_RELEASE_AFTER` controls how many seconds a send job waits before asking for a slot again.
+Set `MAIL_RATE_LIMIT_PER_SECOND` to a value within the provider's accepted send rate. The limit is shared by campaign, transactional and automation email. A value of `0` disables application-side limiting. `MAIL_RATE_LIMIT_RELEASE_AFTER` controls how many seconds a send job waits before asking for a slot again.
 
 ## Storage
 

@@ -42,7 +42,10 @@ class ResumeEmailDeliveriesCommand extends Command
      *
      * A delivery still Queued with no send_attempted_at was never handed to a
      * transport, so re-dispatching it is safe: claim() takes it with a
-     * conditional update and a racing duplicate loses and returns.
+     * conditional update and a racing duplicate loses and returns. Safe is not
+     * free, though: the rate limiter spends a slot on every job before it
+     * runs, so these are re-dispatched only once the queue that would hold
+     * their job is empty. Until then they may simply be waiting their turn.
      *
      * A delivery already claimed for Sending is never re-queued. The transport
      * may have accepted it, and nothing here can tell. Those are failed the
@@ -78,17 +81,28 @@ class ResumeEmailDeliveriesCommand extends Command
     }
 
     /**
-     * Deliveries that never reached a transport go straight back on the queue.
+     * Deliveries that never reached a transport go back on the queue once no
+     * job is left that could still run them. A delivery waiting its turn behind
+     * a throttled or backlogged campaign looks exactly like one whose job was
+     * lost, because a rate-limit release never writes the row, and a duplicate
+     * spends a send slot before it loses the claim. Only an empty campaign
+     * queue proves the job is gone, the same evidence closeFinishedCampaigns
+     * relies on.
      */
     private function requeueCampaignDeliveries(CarbonInterface $stalledBefore): int
     {
         $requeued = 0;
-
-        EmailDelivery::query()
+        $stalled = EmailDelivery::query()
             ->where('status', EmailDeliveryStatus::Queued)
             ->whereNull('send_attempted_at')
             ->where('updated_at', '<=', $stalledBefore)
-            ->whereHas('email', fn (Builder $emails) => $emails->whereIn('status', EmailStatus::active()))
+            ->whereHas('email', fn (Builder $emails) => $emails->whereIn('status', EmailStatus::active()));
+
+        if (! (clone $stalled)->exists() || ! $this->queueIsEmpty((string) config('delivery.queues.campaigns'))) {
+            return 0;
+        }
+
+        $stalled
             ->orderBy('id')
             ->chunkById(200, function ($deliveries) use (&$requeued): void {
                 foreach ($deliveries as $delivery) {
@@ -163,7 +177,7 @@ class ResumeEmailDeliveriesCommand extends Command
                     $batch = $email->batch_id === null ? null : Bus::findBatch($email->batch_id);
 
                     if ($batch !== null && ! $batch->finished()) {
-                        $campaignQueueIsEmpty ??= Queue::size(config('delivery.queues.campaigns')) === 0;
+                        $campaignQueueIsEmpty ??= $this->queueIsEmpty((string) config('delivery.queues.campaigns'));
 
                         if (! $campaignQueueIsEmpty || ! $this->batchWasAbandoned($email, $batch, $stalledBefore)) {
                             continue;
@@ -200,14 +214,24 @@ class ResumeEmailDeliveriesCommand extends Command
             ->exists();
     }
 
+    /**
+     * Transactional sends share the instance-wide send rate with campaigns,
+     * so they too can wait past the stall window. Re-queue them only once
+     * their queue is empty, for the same reason as campaign deliveries.
+     */
     private function requeueTransactionalDeliveries(CarbonInterface $stalledBefore): int
     {
         $requeued = 0;
-
-        TransactionalEmailDelivery::query()
+        $stalled = TransactionalEmailDelivery::query()
             ->where('status', EmailDeliveryStatus::Queued)
             ->whereNull('send_attempted_at')
-            ->where('updated_at', '<=', $stalledBefore)
+            ->where('updated_at', '<=', $stalledBefore);
+
+        if (! (clone $stalled)->exists() || ! $this->queueIsEmpty((string) config('delivery.queues.transactional'))) {
+            return 0;
+        }
+
+        $stalled
             ->orderBy('id')
             ->chunkById(200, function ($deliveries) use (&$requeued): void {
                 foreach ($deliveries as $delivery) {
@@ -217,6 +241,15 @@ class ResumeEmailDeliveriesCommand extends Command
             });
 
         return $requeued;
+    }
+
+    /**
+     * Whether no job is left on the queue. Ready, delayed (rate-limit releases,
+     * retry backoff) and reserved jobs all count toward its size.
+     */
+    private function queueIsEmpty(string $queue): bool
+    {
+        return Queue::size($queue) === 0;
     }
 
     /**

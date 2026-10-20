@@ -24,6 +24,7 @@ class ContactAudienceController extends Controller
         $audience = $currentTeam->audiences()
             ->where('uuid', $request->validated('audience_uuid'))
             ->firstOrFail();
+        Gate::authorize('create', [Subscriber::class, $audience]);
 
         $addContactToAudiences->handle($contact, $audience->newCollection([$audience]), $request->ip());
 
@@ -36,6 +37,7 @@ class ContactAudienceController extends Controller
     {
         Gate::authorize('update', $contact);
         abort_unless($subscriber->contact_id === $contact->id, 404);
+        Gate::authorize('delete', $subscriber);
 
         $subscriber->delete();
 

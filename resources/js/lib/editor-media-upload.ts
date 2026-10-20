@@ -51,15 +51,35 @@ async function request(
     return body.media;
 }
 
+/** Waits between polls, ending early with the signal's reason once it aborts. */
+function pause(signal: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+        signal.throwIfAborted();
+
+        const abort = () => {
+            window.clearTimeout(timer);
+            reject(signal.reason);
+        };
+        const timer = window.setTimeout(() => {
+            signal.removeEventListener('abort', abort);
+            resolve();
+        }, POLL_INTERVAL);
+
+        signal.addEventListener('abort', abort, { once: true });
+    });
+}
+
 /**
  * "Upload" in an image block (and images dropped on one): stores the file in
  * the workspace media library and resolves with its URL once it is ready,
  * waiting out a queued WebP conversion. The page's media library dialog
- * reloads so the new image is there too.
+ * reloads so the new image is there too. Aborting the signal, as the editor
+ * page does when it unmounts, stops the polling and skips that reload.
  */
 export async function uploadEditorImage(
     teamSlug: string,
     file: File,
+    signal: AbortSignal,
 ): Promise<ImageResult> {
     if (!UPLOADABLE_TYPES.includes(file.type)) {
         throw new Error('Upload a JPEG, PNG, GIF, or WebP image.');
@@ -75,6 +95,7 @@ export async function uploadEditorImage(
     let media = await request(store.url(teamSlug), {
         method: 'POST',
         body: form,
+        signal,
     });
 
     for (let attempt = 0; media.status === 'processing'; attempt++) {
@@ -84,13 +105,14 @@ export async function uploadEditorImage(
             );
         }
 
-        await new Promise((resolve) =>
-            window.setTimeout(resolve, POLL_INTERVAL),
-        );
+        await pause(signal);
         media = await request(
             show.url({ current_team: teamSlug, media: media.uuid }),
+            { signal },
         );
     }
+
+    signal.throwIfAborted();
 
     if (media.status === 'failed' || !media.absolute_url) {
         throw new Error(

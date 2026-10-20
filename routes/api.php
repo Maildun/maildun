@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('automations/{automation}/trigger', [AutomationTriggerController::class, 'store'])
     ->middleware(['throttle:automation-trigger', AuthenticateAutomationTrigger::class])
+    ->whereUuid('automation')
     ->name('automations.trigger');
 
 Route::prefix('v1')
@@ -21,7 +22,9 @@ Route::prefix('v1')
             ->name('transactional-deliveries.show');
 
         Route::post('audiences/{audience}/subscribers', [SubscriberController::class, 'store'])
+            ->whereUuid('audience')
             ->name('audiences.subscribers.store');
         Route::delete('audiences/{audience}/subscribers', [SubscriberController::class, 'destroy'])
+            ->whereUuid('audience')
             ->name('audiences.subscribers.destroy');
     });

@@ -9,6 +9,14 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
 
+/**
+ * Advances one branch of an automation run.
+ *
+ * It never waits for a send slot: retryUntil is stamped when a job is
+ * dispatched, so a delayed wake-up would expire before it ran, and the limiter
+ * would spend slots on delays, conditions and tags. Emails are throttled in
+ * SendAutomationEmailDelivery instead.
+ */
 class ProcessAutomationRun implements ShouldQueue
 {
     use Queueable;

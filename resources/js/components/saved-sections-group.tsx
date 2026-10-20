@@ -49,7 +49,9 @@ type Method = 'post' | 'patch' | 'delete';
 
 /**
  * Saves a change and reloads only the page's `savedSections` prop, so an
- * open draft keeps its unsaved edits.
+ * open draft keeps its unsaved edits. The visit is async so it neither
+ * cancels nor is cancelled by the page's own draft save, and it settles on
+ * finish so a visit that ends any other way never leaves a dialog busy.
  */
 function send(
     method: Method,
@@ -68,6 +70,7 @@ function send(
             // Blocks are plain JSON, which Inertia sends as a JSON body.
             data: data as RequestPayload,
             only: ['savedSections'],
+            async: true,
             preserveScroll: true,
             preserveState: true,
             onSuccess: () => resolve(),
@@ -76,6 +79,7 @@ function send(
             onHttpException: () => fail('Something went wrong. Try again.'),
             onNetworkError: () =>
                 fail('Could not reach the server. Check your connection.'),
+            onFinish: () => fail('The request was interrupted. Try again.'),
         });
     });
 }

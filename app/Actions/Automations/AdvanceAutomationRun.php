@@ -16,12 +16,13 @@ use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
-use App\Exceptions\EmailTransportException;
 use App\Jobs\ProcessAutomationRun;
+use App\Jobs\SendAutomationEmailDelivery;
 use App\Mail\AutomationEmail;
 use App\Models\AutomationEmailDelivery;
 use App\Models\AutomationRun;
 use App\Models\AutomationRunStep;
+use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\TransactionalEmail;
 use App\Services\TeamMailer;
@@ -112,22 +113,55 @@ class AdvanceAutomationRun
         }
 
         try {
-            $outcome = $this->execute($run, $nodeId, $node);
+            $outcome = $this->execute($run, $step, $node);
         } catch (Throwable $exception) {
             $this->fail($run, $step, $exception->getMessage());
 
             return;
         }
 
-        $queuedNodeIds = DB::transaction(function () use ($run, $step, $nodeId, $outcome): array {
-            $step->update([
+        // A send step stays running until SendAutomationEmailDelivery reports
+        // back, so automations:resume never dispatches it twice. Dispatch last:
+        // on the sync queue the job runs inline and completes the step itself.
+        if (isset($outcome['deliveryId'])) {
+            SendAutomationEmailDelivery::dispatch($outcome['deliveryId']);
+
+            return;
+        }
+
+        $this->completeStep($run, $step, $outcome);
+    }
+
+    /**
+     * Record a claimed step's outcome and hand its targets to the queue.
+     *
+     * Only a step that is still running is written: a sibling failure, the
+     * stale-worker sweep or deleting the automation may have closed it while
+     * its work was in flight, and that outcome must stand.
+     *
+     * @param  array{status: string, result: array<string, mixed>, handle: string|null}  $outcome
+     */
+    public function completeStep(AutomationRun $run, AutomationRunStep $step, array $outcome): void
+    {
+        $queuedNodeIds = DB::transaction(function () use ($run, $step, $outcome): array {
+            $openStep = AutomationRunStep::query()
+                ->whereKey($step->id)
+                ->where('status', 'running')
+                ->lockForUpdate()
+                ->first();
+
+            if ($openStep === null) {
+                return [];
+            }
+
+            $openStep->update([
                 'status' => $outcome['status'],
                 'result' => $outcome['result'],
                 'scheduled_at' => null,
                 'processed_at' => now(),
             ]);
 
-            return $this->enqueueTargets($run, $nodeId, $outcome['handle']);
+            return $this->enqueueTargets($run, $openStep->node_id, $outcome['handle']);
         });
 
         $this->synchronizeRun($run);
@@ -138,46 +172,44 @@ class AdvanceAutomationRun
     }
 
     /**
-     * @param  array<string, mixed>  $node
-     * @return array{status: string, result: array<string, mixed>, handle: string|null}
+     * Hand a claimed step back to pending without running it, as pausing the
+     * automation does with an email still waiting for its send job. Activating
+     * the automation dispatches it again.
      */
-    protected function execute(AutomationRun $run, string $nodeId, array $node): array
+    public function releaseStep(AutomationRun $run, AutomationRunStep $step): void
     {
-        $type = $node['type'] ?? null;
-        $data = is_array($node['data'] ?? null) ? $node['data'] : [];
+        $released = AutomationRunStep::query()
+            ->whereKey($step->id)
+            ->where('status', 'running')
+            ->update([
+                'status' => 'pending',
+                'scheduled_at' => null,
+            ]) === 1;
 
-        return match ($type) {
-            'delay' => ['status' => 'completed', 'result' => ['waited' => true], 'handle' => null],
-            'action' => $this->executeAction($run, $data),
-            'condition' => $this->executeCondition($run, $data),
-            default => throw new \RuntimeException(__('Unknown automation step.')),
-        };
+        if (! $released) {
+            return;
+        }
+
+        $step->forceFill([
+            'status' => 'pending',
+            'scheduled_at' => null,
+        ])->syncOriginal();
+
+        $this->synchronizeRun($run);
     }
 
     /**
-     * @param  array<string, mixed>  $data
-     * @return array{status: string, result: array<string, mixed>, handle: string|null}
+     * The email a send step may still deliver, or the outcome that skips it.
+     *
+     * Checked when the step queues its delivery and again right before the
+     * hand-off to the transport, because the send job can wait in between.
+     * An opt-out skips the step; an email that is gone or unpublished throws
+     * and fails the run.
+     *
+     * @return TransactionalEmail|array{status: string, result: array<string, mixed>, handle: null}
      */
-    protected function executeAction(AutomationRun $run, array $data): array
+    public function sendableEmail(AutomationRun $run, Subscriber $subscriber, ?TransactionalEmail $email): TransactionalEmail|array
     {
-        $kind = AutomationAction::tryFrom((string) ($data['kind'] ?? ''));
-
-        return match ($kind) {
-            AutomationAction::SendEmail => $this->sendEmail($run, $data),
-            AutomationAction::AddTag => $this->syncTag($run, $data, add: true),
-            AutomationAction::RemoveTag => $this->syncTag($run, $data, add: false),
-            default => throw new \RuntimeException(__('Unknown action.')),
-        };
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     * @return array{status: string, result: array<string, mixed>, handle: string|null}
-     */
-    protected function sendEmail(AutomationRun $run, array $data): array
-    {
-        $subscriber = $run->subscriber()->firstOrFail();
-
         if ($subscriber->status !== SubscriberStatus::Subscribed) {
             return [
                 'status' => 'skipped',
@@ -185,12 +217,6 @@ class AdvanceAutomationRun
                 'handle' => null,
             ];
         }
-
-        $uuid = (string) ($data['transactional_email_uuid'] ?? '');
-        $email = TransactionalEmail::query()
-            ->where('team_id', $run->automation->team_id)
-            ->where('uuid', $uuid)
-            ->first();
 
         if ($email === null) {
             throw new \RuntimeException(__('The transactional email is no longer available.'));
@@ -210,21 +236,19 @@ class AdvanceAutomationRun
             ];
         }
 
-        $transport = $this->teamMailer->resolve($run->automation->team);
-        $delivery = AutomationEmailDelivery::query()->create([
-            'team_id' => $run->automation->team_id,
-            'automation_run_id' => $run->id,
-            'transactional_email_id' => $email->id,
-            'subscriber_id' => $subscriber->id,
-            'to_address' => $subscriber->email,
-            'status' => EmailDeliveryStatus::Sending,
-            'provider' => $transport->provider,
-            'ses_configuration_set' => $transport->sesConfigurationSet,
-            'ses_sns_topic_arn_hash' => $transport->sesSnsTopicArnHash,
-            'send_attempted_at' => now(),
-        ]);
+        return $email;
+    }
 
-        // After the delivery exists: the browser copy link is keyed to it.
+    /**
+     * Render the message for a queued delivery. The delivery must already
+     * exist, because the browser copy link is keyed to it.
+     */
+    public function buildMessage(
+        AutomationRun $run,
+        AutomationEmailDelivery $delivery,
+        TransactionalEmail $email,
+        Subscriber $subscriber,
+    ): AutomationEmail {
         $merge = $this->mergeData->handle($subscriber, $run->context, $delivery);
         $html = $this->insertPreheader->handle(
             $this->renderer->html($email->html ?? '', $merge),
@@ -237,51 +261,90 @@ class AdvanceAutomationRun
             $html = $this->trackedHtml->withUnsubscribeFooter($html, (string) $merge['unsubscribe_url']);
         }
 
-        try {
-            $sentMessage = $this->teamMailer->sendResolved(
-                $transport,
-                $subscriber->email,
-                new AutomationEmail(
-                    $email,
-                    $subscriber,
-                    $this->renderer->text($email->subject, $merge),
-                    $html,
-                    $delivery,
-                    $this->htmlToText->handle($html),
-                ),
-                $email->resolvedFromAddress(),
-            );
-        } catch (Throwable $exception) {
-            $failureReason = $exception instanceof EmailTransportException
-                ? $exception->getMessage()
-                : __('Delivery failed.');
+        return new AutomationEmail(
+            $email,
+            $subscriber,
+            $this->renderer->text($email->subject, $merge),
+            $html,
+            $delivery,
+            $this->htmlToText->handle($html),
+        );
+    }
 
-            $delivery->update([
-                'status' => EmailDeliveryStatus::Failed,
-                'failure_reason' => $failureReason,
-            ]);
-            $this->emailHealth->recordFailure(
-                $run->automation->team,
-                $subscriber->email,
-                $transport->provider,
-                $failureReason,
-            );
+    /**
+     * @param  array<string, mixed>  $node
+     * @return array{status: string, result: array<string, mixed>, handle: string|null, deliveryId?: int}
+     */
+    protected function execute(AutomationRun $run, AutomationRunStep $step, array $node): array
+    {
+        $type = $node['type'] ?? null;
+        $data = is_array($node['data'] ?? null) ? $node['data'] : [];
 
-            throw $exception instanceof EmailTransportException
-                ? $exception
-                : new EmailTransportException($failureReason);
+        return match ($type) {
+            'delay' => ['status' => 'completed', 'result' => ['waited' => true], 'handle' => null],
+            'action' => $this->executeAction($run, $step, $data),
+            'condition' => $this->executeCondition($run, $data),
+            default => throw new \RuntimeException(__('Unknown automation step.')),
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{status: string, result: array<string, mixed>, handle: string|null, deliveryId?: int}
+     */
+    protected function executeAction(AutomationRun $run, AutomationRunStep $step, array $data): array
+    {
+        $kind = AutomationAction::tryFrom((string) ($data['kind'] ?? ''));
+
+        return match ($kind) {
+            AutomationAction::SendEmail => $this->queueEmail($run, $step, $data),
+            AutomationAction::AddTag => $this->syncTag($run, $data, add: true),
+            AutomationAction::RemoveTag => $this->syncTag($run, $data, add: false),
+            default => throw new \RuntimeException(__('Unknown action.')),
+        };
+    }
+
+    /**
+     * Write the step's delivery as Queued for SendAutomationEmailDelivery,
+     * which owns the hand-off to the transport and its retries.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{status: string, result: array<string, mixed>, handle: string|null, deliveryId?: int}
+     */
+    protected function queueEmail(AutomationRun $run, AutomationRunStep $step, array $data): array
+    {
+        $subscriber = $run->subscriber()->firstOrFail();
+        $email = TransactionalEmail::query()
+            ->where('team_id', $run->automation->team_id)
+            ->where('uuid', (string) ($data['transactional_email_uuid'] ?? ''))
+            ->first();
+
+        $sendable = $this->sendableEmail($run, $subscriber, $email);
+
+        if (is_array($sendable)) {
+            return $sendable;
         }
 
-        $delivery->update([
-            'status' => EmailDeliveryStatus::Sent,
-            'provider_message_id' => $sentMessage?->getMessageId(),
-            'sent_at' => now(),
+        // A workspace with no usable connection fails the run here, as before.
+        $transport = $this->teamMailer->resolve($run->automation->team);
+        $delivery = AutomationEmailDelivery::query()->create([
+            'team_id' => $run->automation->team_id,
+            'automation_run_id' => $run->id,
+            'automation_run_step_id' => $step->id,
+            'transactional_email_id' => $sendable->id,
+            'subscriber_id' => $subscriber->id,
+            'to_address' => $subscriber->email,
+            'status' => EmailDeliveryStatus::Queued,
+            'provider' => $transport->provider,
+            'ses_configuration_set' => $transport->sesConfigurationSet,
+            'ses_sns_topic_arn_hash' => $transport->sesSnsTopicArnHash,
         ]);
 
         return [
-            'status' => 'completed',
-            'result' => ['transactional_email_uuid' => $email->uuid],
+            'status' => 'running',
+            'result' => [],
             'handle' => null,
+            'deliveryId' => $delivery->id,
         ];
     }
 

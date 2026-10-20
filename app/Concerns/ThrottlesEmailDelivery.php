@@ -16,6 +16,11 @@ use Illuminate\Queue\Middleware\RateLimitedWithRedis;
 trait ThrottlesEmailDelivery
 {
     /**
+     * How long a throttled job may keep waiting for a send slot.
+     */
+    public const int RETRY_WINDOW_HOURS = 6;
+
+    /**
      * Three genuine transport failures still fail the delivery. This is counted
      * separately from attempts, so waiting for a rate-limit slot never does.
      */
@@ -44,7 +49,7 @@ trait ThrottlesEmailDelivery
      */
     public function retryUntil(): ?DateTimeInterface
     {
-        return $this->emailRateLimitIsEnabled() ? now()->addHours(6) : null;
+        return $this->emailRateLimitIsEnabled() ? now()->addHours(self::RETRY_WINDOW_HOURS) : null;
     }
 
     private function emailRateLimitIsEnabled(): bool

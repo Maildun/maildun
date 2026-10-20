@@ -7,6 +7,7 @@ use App\Models\Audience;
 use App\Models\Automation;
 use App\Models\Subscriber;
 use App\Models\Team;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -104,6 +105,18 @@ test('a missing or wrong token is rejected', function () {
     )->assertUnauthorized();
 
     expect($automation->runs()->count())->toBe(0);
+});
+
+test('a malformed automation id is a 404 before any query uses it', function () {
+    $bindings = [];
+    DB::listen(function (QueryExecuted $query) use (&$bindings): void {
+        array_push($bindings, ...$query->bindings);
+    });
+
+    $this->postJson(route('automations.trigger', 'not-a-uuid'), ['email' => 'ada@example.com'])
+        ->assertNotFound();
+
+    expect($bindings)->not->toContain('not-a-uuid');
 });
 
 test('authentication runs before payload validation', function () {

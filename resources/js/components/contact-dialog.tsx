@@ -58,6 +58,7 @@ type ContactDialogProps = {
     companies: CompanyOption[];
     tags: Tag[];
     audiences?: CompanyOption[];
+    lacksAudienceAccess?: boolean;
     defaultAudience?: CompanyOption;
     contact?: ContactSummary;
     open: boolean;
@@ -69,6 +70,7 @@ export function ContactDialog({
     companies,
     tags,
     audiences = [],
+    lacksAudienceAccess = false,
     defaultAudience,
     contact,
     open,
@@ -495,9 +497,11 @@ export function ContactDialog({
                                         </div>
                                     ) : (
                                         <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                                            {isExistingContact
-                                                ? 'This contact is already subscribed to every audience.'
-                                                : 'Create an audience first if you want to subscribe this contact.'}
+                                            {lacksAudienceAccess
+                                                ? "You don't have permission to add contacts to audiences."
+                                                : audiences.length === 0
+                                                  ? 'Create an audience first if you want to subscribe this contact.'
+                                                  : 'This contact is already subscribed to every audience.'}
                                         </div>
                                     )}
                                     <FieldError>

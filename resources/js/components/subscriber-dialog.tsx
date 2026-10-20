@@ -64,11 +64,23 @@ export function SubscriberDialog({
         tags: subscriber?.tags.map((tag) => tag.name) ?? [],
         consent_confirmed: false,
     });
+    const languageOptions =
+        languages.length > 0 &&
+        subscriber?.language &&
+        !languages.some((option) => option.value === subscriber.language)
+            ? [
+                  ...languages,
+                  {
+                      value: subscriber.language,
+                      label: subscriber.language_name ?? subscriber.language,
+                  },
+              ]
+            : languages;
 
     const submit = (event: React.FormEvent) => {
         event.preventDefault();
         form.transform(({ language, ...data }) =>
-            languages.length > 0 ? { ...data, language } : data,
+            languageOptions.length > 0 ? { ...data, language } : data,
         );
 
         const onSuccess = () => {
@@ -184,7 +196,7 @@ export function SubscriberDialog({
                                 <FieldError>{form.errors.last_name}</FieldError>
                             </Field>
                         </div>
-                        {languages.length > 0 && (
+                        {languageOptions.length > 0 && (
                             <Field data-invalid={Boolean(form.errors.language)}>
                                 <FieldLabel
                                     htmlFor={`language-${subscriber?.uuid || 'new'}`}
@@ -214,7 +226,7 @@ export function SubscriberDialog({
                                             <SelectItem value={null}>
                                                 No language
                                             </SelectItem>
-                                            {languages.map((language) => (
+                                            {languageOptions.map((language) => (
                                                 <SelectItem
                                                     key={language.value}
                                                     value={language.value}

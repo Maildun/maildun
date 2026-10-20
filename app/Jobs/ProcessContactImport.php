@@ -204,6 +204,10 @@ class ProcessContactImport implements ShouldQueue
             $error = $this->unsupportedLanguageError($languageValue);
         }
 
+        if ($error === null && $languageValue !== null && $language !== null && $this->wouldApplyUnavailableLanguage($contactImport, $email, $language)) {
+            $error = $this->unavailableLanguageError($languageValue);
+        }
+
         if ($error === null && $contactImport->audience !== null) {
             [$attributes, $error] = $this->attributeValues($contactImport, $row, $fields);
         }
@@ -360,6 +364,31 @@ class ProcessContactImport implements ShouldQueue
     private function unsupportedLanguageError(string $value): string
     {
         return __('Language ":value" is not supported.', ['value' => $value]);
+    }
+
+    private function unavailableLanguageError(string $value): string
+    {
+        return __('Language ":value" is not available in this audience.', ['value' => $value]);
+    }
+
+    /**
+     * Determine whether the row would set a language its audience does not offer.
+     *
+     * An existing member keeps the language they already have, so only new members
+     * and members without a language would take it.
+     */
+    private function wouldApplyUnavailableLanguage(ContactImport $contactImport, string $email, SubscriberLanguage $language): bool
+    {
+        $audience = $contactImport->audience;
+
+        if ($audience === null || in_array($language->value, $audience->allowed_languages ?? [], true)) {
+            return false;
+        }
+
+        return ! $audience->subscribers()
+            ->where('email', $email)
+            ->whereNotNull('language')
+            ->exists();
     }
 
     /** @param list<string> $tags */

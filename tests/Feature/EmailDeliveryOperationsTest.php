@@ -1,9 +1,12 @@
 <?php
 
+use App\Concerns\ThrottlesEmailDelivery;
 use App\Console\Commands\ResumeEmailDeliveriesCommand;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailStatus;
 use App\Jobs\PrepareEmailSendChunk;
+use App\Jobs\ProcessAutomationRun;
+use App\Jobs\SendAutomationEmailDelivery;
 use App\Jobs\SendCampaignTestEmail;
 use App\Jobs\SendEmailDelivery;
 use App\Jobs\SendTransactionalEmailDelivery;
@@ -47,6 +50,7 @@ test('email jobs time out before horizon and redis can retry them', function () 
     expect((new PrepareEmailSendChunk(1))->timeout)->toBeLessThan(config('horizon.defaults.supervisor-campaigns.timeout'))
         ->and((new SendEmailDelivery(1))->timeout)->toBeLessThan(config('horizon.defaults.supervisor-campaigns.timeout'))
         ->and((new SendTransactionalEmailDelivery(1))->timeout)->toBeLessThan(config('horizon.defaults.supervisor-transactional.timeout'))
+        ->and((new SendAutomationEmailDelivery(1))->timeout)->toBeLessThan(config('horizon.defaults.supervisor-1.timeout'))
         ->and(config('horizon.defaults.supervisor-campaigns.timeout'))->toBeLessThan(config('queue.connections.redis.retry_after'));
 });
 
@@ -105,7 +109,7 @@ test('no rate limit is applied when the operator has not configured one', functi
         ->and($job->tries)->toBe(3);
 });
 
-test('a configured send rate throttles both campaign and transactional sends', function (string $jobClass) {
+test('a configured send rate throttles every send job', function (string $jobClass) {
     config()->set('delivery.rate_limit.per_second', 14);
     config()->set('delivery.rate_limit.release_after', 7);
 
@@ -114,7 +118,14 @@ test('a configured send rate throttles both campaign and transactional sends', f
     expect($middleware)->toHaveCount(1)
         ->and($middleware[0])->toBeInstanceOf(RateLimited::class)
         ->and($middleware[0]->releaseAfter)->toBe(7);
-})->with([SendEmailDelivery::class, SendTransactionalEmailDelivery::class]);
+})->with([SendEmailDelivery::class, SendTransactionalEmailDelivery::class, SendAutomationEmailDelivery::class]);
+
+test('the automation engine never waits for a send slot', function () {
+    config()->set('delivery.rate_limit.per_second', 14);
+
+    // retryUntil is stamped at dispatch, so a delayed branch would expire before it ran.
+    expect(class_uses_recursive(ProcessAutomationRun::class))->not->toContain(ThrottlesEmailDelivery::class);
+});
 
 test('a throttled job is bounded by time so waiting for a slot never fails a recipient', function () {
     config()->set('delivery.rate_limit.per_second', 14);
@@ -155,6 +166,19 @@ test('a delivery whose queued job was lost goes back on the queue', function () 
 
     Queue::assertPushed(SendEmailDelivery::class, fn ($job): bool => $job->deliveryId === $stalled->id);
     expect($stalled->fresh()->status)->toBe(EmailDeliveryStatus::Queued);
+});
+
+test('a stalled delivery is not queued again while a job could still run it', function () {
+    Queue::fake();
+    $email = Email::factory()->create(['status' => EmailStatus::Sending, 'send_started_at' => now()->subHour()]);
+    $waiting = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+    $waiting->forceFill(['updated_at' => now()->subHour()])->saveQuietly();
+    SendEmailDelivery::dispatch($waiting->id);
+
+    $this->artisan('emails:resume')->assertSuccessful();
+
+    Queue::assertPushed(SendEmailDelivery::class, 1);
+    expect($waiting->fresh()->status)->toBe(EmailDeliveryStatus::Queued);
 });
 
 test('a delivery that has only just been queued is left alone', function () {
@@ -306,6 +330,23 @@ test('a stalled transactional delivery goes back on the queue', function () {
         SendTransactionalEmailDelivery::class,
         fn ($job): bool => $job->deliveryId === $delivery->id,
     );
+});
+
+test('a stalled transactional delivery is not queued again while a job could still run it', function () {
+    Queue::fake();
+    $transactionalEmail = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()
+        ->for($transactionalEmail, 'transactionalEmail')
+        ->create([
+            'team_id' => $transactionalEmail->team_id,
+            'status' => EmailDeliveryStatus::Queued,
+        ]);
+    $delivery->forceFill(['updated_at' => now()->subHour()])->saveQuietly();
+    SendTransactionalEmailDelivery::dispatch($delivery->id);
+
+    $this->artisan('emails:resume')->assertSuccessful();
+
+    Queue::assertPushed(SendTransactionalEmailDelivery::class, 1);
 });
 
 test('a transactional delivery stuck mid-handoff is failed rather than sent a second time', function (

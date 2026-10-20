@@ -313,6 +313,60 @@ test('language not equals also matches subscribers without a language', function
     expect($matches)->toBe(['unknown@example.com']);
 });
 
+test('negative rules also match subscribers whose field is empty', function (string $field, string $operator, string $value) {
+    $audience = Audience::factory()->create();
+    $form = SubscribeForm::factory()->for($audience)->create();
+    Subscriber::factory()->for($audience)->create([
+        'email' => 'filled@example.com',
+        'first_name' => 'Test',
+        'last_name' => 'Tester',
+        'subscribe_form_id' => $form->id,
+    ]);
+    Subscriber::factory()->for($audience)->create([
+        'email' => 'empty@example.com',
+        'first_name' => null,
+        'last_name' => null,
+        'subscribe_form_id' => null,
+    ]);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [[
+            'field' => $field,
+            'operator' => $operator,
+            'value' => $value === ':form' ? $form->uuid : $value,
+        ]], SegmentMatchType::All)
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe(['empty@example.com']);
+})->with([
+    'first name not equals' => ['first_name', 'not_equals', 'Test'],
+    'last name does not contain' => ['last_name', 'does_not_contain', 'test'],
+    'subscribe form not equals' => ['subscribe_form', 'not_equals', ':form'],
+]);
+
+test('text rules match wildcard characters literally', function (string $operator, string $value, string $expectedEmail) {
+    $audience = Audience::factory()->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'snake_case!50%@example.com']);
+    Subscriber::factory()->for($audience)->create(['email' => 'plain@example.com']);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [[
+            'field' => 'email',
+            'operator' => $operator,
+            'value' => $value,
+        ]], SegmentMatchType::All)
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe([$expectedEmail]);
+})->with([
+    'contains an underscore' => ['contains', '_', 'snake_case!50%@example.com'],
+    'contains a percent sign' => ['contains', '%', 'snake_case!50%@example.com'],
+    'contains the escape character' => ['contains', '!', 'snake_case!50%@example.com'],
+    'does not contain an underscore' => ['does_not_contain', '_', 'plain@example.com'],
+]);
+
 test('segment validation rejects unknown languages and text operators on language', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

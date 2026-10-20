@@ -648,13 +648,15 @@ function MemberActions({
                             <HugeiconsIcon icon={Edit03Icon} />
                             Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                            data-test="member-reset-password-button"
-                            onClick={() => onResetPassword(member)}
-                        >
-                            <HugeiconsIcon icon={Mail01Icon} />
-                            Reset password
-                        </DropdownMenuItem>
+                        {member.can_manage_password ? (
+                            <DropdownMenuItem
+                                data-test="member-reset-password-button"
+                                onClick={() => onResetPassword(member)}
+                            >
+                                <HugeiconsIcon icon={Mail01Icon} />
+                                Reset password
+                            </DropdownMenuItem>
+                        ) : null}
                     </DropdownMenuGroup>
                 ) : null}
                 {canEdit && canDelete ? <DropdownMenuSeparator /> : null}

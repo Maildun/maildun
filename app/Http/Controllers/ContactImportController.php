@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Concerns\SanitizesCsvCells;
 use App\Enums\ContactImportIssue;
 use App\Enums\ContactImportStatus;
 use App\Enums\StorageBackend;
@@ -30,6 +31,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ContactImportController extends Controller
 {
+    use SanitizesCsvCells;
+
     public function index(Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [ContactImport::class, $currentTeam]);
@@ -227,17 +230,17 @@ class ContactImportController extends Controller
             fputcsv($stream, ['row', 'email', 'outcome', 'detail'], escape: '');
 
             foreach ($contactImport->rowErrors() as $error) {
-                fputcsv($stream, [$error['row'], $error['email'], 'failed', $error['message']], escape: '');
+                fputcsv($stream, $this->sanitizeCsvRow([$error['row'], $error['email'], 'failed', $error['message']]), escape: '');
             }
 
             foreach ($contactImport->review_flags ?? [] as $flag) {
                 $issue = ContactImportIssue::tryFrom($flag['issue']);
-                fputcsv($stream, [
+                fputcsv($stream, $this->sanitizeCsvRow([
                     $flag['row'],
                     $flag['email'],
                     $flag['action'],
                     trim(($issue?->label() ?? $flag['issue']).' '.($flag['detail'] ?? '')),
-                ], escape: '');
+                ]), escape: '');
             }
 
             fclose($stream);

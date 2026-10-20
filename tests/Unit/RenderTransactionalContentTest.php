@@ -53,3 +53,25 @@ test('it merges declared examples with newly detected keys', function () {
         ['key' => 'reset_url', 'example' => ''],
     ]);
 });
+
+test('it restores markdown merge tags in links and text', function () {
+    $renderer = new RenderTransactionalContent;
+    $data = ['unsubscribe_url' => 'https://maildun.test/u'];
+
+    expect($renderer->html('<a href="%7B%7B%20unsubscribe_url%20%7D%7D">Leave</a>', $data))
+        ->toBe('<a href="https://maildun.test/u">Leave</a>')
+        ->and($renderer->html('<p>[Leave]({{ unsubscribe_url }}) or [Go](%7B%7Bunsubscribe_url%7D%7D)</p>', $data))
+        ->toBe('<p><a href="https://maildun.test/u">Leave</a> or <a href="https://maildun.test/u">Go</a></p>');
+});
+
+test('it leaves markdown merge syntax alone in other attributes and code', function () {
+    $renderer = new RenderTransactionalContent;
+    $data = ['unsubscribe_url' => 'https://maildun.test/u'];
+
+    expect($renderer->html('<p>Tags look like %7B%7Bunsubscribe_url%7D%7D when encoded.</p>', $data))
+        ->toBe('<p>Tags look like %7B%7Bunsubscribe_url%7D%7D when encoded.</p>')
+        ->and($renderer->html('<img alt="[Leave]({{ unsubscribe_url }})" title="%7B%7Bunsubscribe_url%7D%7D">', $data))
+        ->toBe('<img alt="[Leave](https://maildun.test/u)" title="%7B%7Bunsubscribe_url%7D%7D">')
+        ->and($renderer->html('<pre><code>[Leave](%7B%7Bunsubscribe_url%7D%7D)</code></pre>', $data))
+        ->toBe('<pre><code>[Leave](%7B%7Bunsubscribe_url%7D%7D)</code></pre>');
+});

@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\TeamRole;
+use App\Models\Audience;
 use App\Models\Team;
 use App\Models\TeamInvitation;
 use App\Models\User;
@@ -9,6 +10,7 @@ use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Notifications\SendQueuedNotifications;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -397,3 +399,98 @@ test('team owners cannot manage their own passwords from member actions', functi
     'generate password' => 'teams.members.generate-password',
     'send reset link' => 'teams.members.send-password-reset-link',
 ]);
+
+test('admins cannot manage the password of a member who owns another workspace', function (string $routeName) {
+    Notification::fake();
+    $owner = User::factory()->create();
+    $admin = User::factory()->create();
+    $member = User::factory()->create();
+    $team = Team::factory()->create();
+    $otherTeam = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $otherTeam->members()->attach($member, ['role' => TeamRole::Owner->value]);
+    $otherTeam->members()->attach($admin, ['role' => TeamRole::Admin->value]);
+
+    $previousPassword = $member->password;
+
+    $this
+        ->actingAs($admin)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->post(route($routeName, [$team, $member]))
+        ->assertForbidden();
+
+    expect($member->fresh()->password)->toBe($previousPassword);
+    Notification::assertNothingSent();
+})->with([
+    'generate password' => 'teams.members.generate-password',
+    'send reset link' => 'teams.members.send-password-reset-link',
+]);
+
+test('the members page offers a password reset only for members the user can manage in every workspace', function () {
+    $owner = User::factory()->create(['name' => 'Owner']);
+    $admin = User::factory()->create(['name' => 'Admin']);
+    $team = Team::factory()->create();
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
+    Team::factory()->create()->members()->attach($admin, ['role' => TeamRole::Owner->value]);
+
+    $plainMember = User::factory()->create(['name' => 'Plain member']);
+    $ownerElsewhere = User::factory()->create(['name' => 'Owner elsewhere']);
+    $sharedPersonalWorkspace = User::factory()->create(['name' => 'Shared personal workspace']);
+    $memberOutsideReach = User::factory()->create(['name' => 'Member outside reach']);
+    $memberAlsoManaged = User::factory()->create(['name' => 'Member also managed']);
+    $adminWhereUserIsMember = User::factory()->create(['name' => 'Admin where the user is only a member']);
+    $usedPersonalWorkspace = User::factory()->create(['name' => 'Personal workspace in use']);
+    $invitedElsewhere = User::factory()->create(['name' => 'Invited elsewhere']);
+    $invitationExpired = User::factory()->create(['name' => 'Invitation expired']);
+
+    foreach ([
+        $plainMember,
+        $ownerElsewhere,
+        $sharedPersonalWorkspace,
+        $memberOutsideReach,
+        $memberAlsoManaged,
+        $adminWhereUserIsMember,
+        $usedPersonalWorkspace,
+        $invitedElsewhere,
+        $invitationExpired,
+    ] as $member) {
+        $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    }
+
+    Team::factory()->create()->members()->attach($ownerElsewhere, ['role' => TeamRole::Owner->value]);
+    $sharedPersonalWorkspace->personalTeam()->members()->attach(User::factory()->create(), ['role' => TeamRole::Member->value]);
+    Team::factory()->create()->members()->attach($memberOutsideReach, ['role' => TeamRole::Member->value]);
+    $sharedTeam = Team::factory()->create();
+    $sharedTeam->members()->attach($admin, ['role' => TeamRole::Admin->value]);
+    $sharedTeam->members()->attach($memberAlsoManaged, ['role' => TeamRole::Member->value]);
+    $limitedTeam = Team::factory()->create();
+    $limitedTeam->members()->attach($admin, ['role' => TeamRole::Member->value]);
+    $limitedTeam->members()->attach($adminWhereUserIsMember, ['role' => TeamRole::Admin->value]);
+    Audience::factory()->for($usedPersonalWorkspace->personalTeam())->create();
+    TeamInvitation::factory()->for(Team::factory())->create(['email' => strtoupper($invitedElsewhere->email)]);
+    TeamInvitation::factory()->for(Team::factory())->expired()->create(['email' => $invitationExpired->email]);
+
+    $response = $this
+        ->actingAs($admin)
+        ->get(route('teams.members.index', $team));
+
+    $flags = collect($response->viewData('page')['props']['members']['data'])->pluck('can_manage_password', 'name');
+
+    expect($flags->all())->toEqual([
+        'Owner' => false,
+        'Admin' => true,
+        'Plain member' => true,
+        'Owner elsewhere' => false,
+        'Shared personal workspace' => false,
+        'Member outside reach' => false,
+        'Member also managed' => true,
+        'Admin where the user is only a member' => false,
+        'Personal workspace in use' => false,
+        'Invited elsewhere' => false,
+        'Invitation expired' => true,
+    ]);
+});

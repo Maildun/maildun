@@ -6,6 +6,7 @@ use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Jobs\ProcessAutomationRun;
+use App\Jobs\SendAutomationEmailDelivery;
 use App\Models\AutomationEmailDelivery;
 use App\Models\AutomationRun;
 use App\Models\AutomationRunStep;
@@ -16,33 +17,44 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 #[Signature('automations:resume')]
-#[Description('Re-dispatch pending automation branches and branches whose delay is due')]
+#[Description('Re-dispatch pending automation branches, branches whose delay is due, and automation emails whose send job was lost')]
 class ResumeAutomationRunsCommand extends Command
 {
     /**
      * Redis is not durable storage, so a flush, eviction, or queue reset can
      * strand immediate and delayed branches. Their step rows are the durable
-     * work queue this command sweeps back onto Redis.
+     * work queue this command sweeps back onto Redis. A send step's Queued
+     * delivery row plays the same part for its SendAutomationEmailDelivery job.
      *
-     * Re-dispatching is safe because AdvanceAutomationRun claims each step with
-     * a conditional update before executing it. Steps of a paused automation
-     * are left parked until it is activated again.
+     * Re-dispatching is safe because AdvanceAutomationRun claims each step, and
+     * the send job each delivery, with a conditional update before doing the
+     * work. Steps of a paused automation are left parked until it is activated
+     * again.
      */
     public function handle(): int
     {
         $resumed = 0;
 
         $staleBefore = now()->subMinutes(max(5, (int) config('delivery.recovery.stalled_after_minutes', 15)));
+
+        // A send step stays running while its email waits for, or is inside,
+        // its send job. That is not a dead worker.
+        $heldBySendJob = fn ($deliveries) => $deliveries->where(fn ($held) => $held
+            ->where(fn ($query) => $query->where('status', EmailDeliveryStatus::Queued)->whereNull('send_attempted_at'))
+            ->orWhere(fn ($query) => $query->where('status', EmailDeliveryStatus::Sending)->where('send_attempted_at', '>', $staleBefore)));
+
         AutomationRunStep::query()
             ->where('status', 'running')
             ->where('updated_at', '<=', $staleBefore)
             ->whereHas('run', fn ($query) => $query->whereIn('status', AutomationRunStatus::open()))
-            ->chunkById(100, function ($steps) use ($staleBefore): void {
+            ->whereDoesntHave('emailDeliveries', $heldBySendJob)
+            ->chunkById(100, function ($steps) use ($staleBefore, $heldBySendJob): void {
                 foreach ($steps as $step) {
-                    DB::transaction(function () use ($step, $staleBefore): void {
+                    DB::transaction(function () use ($step, $staleBefore, $heldBySendJob): void {
                         $run = AutomationRun::query()->lockForUpdate()->find($step->automation_run_id);
                         $staleStep = AutomationRunStep::query()->whereKey($step->id)
                             ->where('status', 'running')->where('updated_at', '<=', $staleBefore)
+                            ->whereDoesntHave('emailDeliveries', $heldBySendJob)
                             ->lockForUpdate()->first();
 
                         if ($run === null || ! $run->status->isOpen() || $staleStep === null) {
@@ -56,6 +68,28 @@ class ResumeAutomationRunsCommand extends Command
                             ->where('updated_at', '<=', $staleBefore)
                             ->update(['status' => EmailDeliveryStatus::Failed, 'failure_reason' => $reason]);
                     });
+                }
+            });
+
+        // An email whose send job was lost sits Queued under a running step.
+        // Touching the row after the push keeps the next sweep off it for a
+        // window, and a failed push leaves it for the next sweep. A throttled
+        // job can keep waiting for a slot until its retry window closes, so
+        // only a row older than that window has no job left to run it.
+        $lostBefore = (int) config('delivery.rate_limit.per_second') > 0
+            ? $staleBefore->copy()->subHours(SendAutomationEmailDelivery::RETRY_WINDOW_HOURS)
+            : $staleBefore;
+        AutomationEmailDelivery::query()
+            ->where('status', EmailDeliveryStatus::Queued)
+            ->whereNull('send_attempted_at')
+            ->where('updated_at', '<=', $lostBefore)
+            ->whereHas('step', fn ($steps) => $steps->where('status', 'running'))
+            ->orderBy('id')
+            ->chunkById(100, function ($deliveries) use (&$resumed): void {
+                foreach ($deliveries as $delivery) {
+                    SendAutomationEmailDelivery::dispatch($delivery->id);
+                    $delivery->touch();
+                    $resumed++;
                 }
             });
 

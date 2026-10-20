@@ -22,12 +22,9 @@ import {
     useForm,
     useHttp,
 } from '@inertiajs/react';
-import type {
-    EmailEditorHandle,
-    ImageResult,
-} from '@maildun/email-builder/editor';
+import type { EmailEditorHandle } from '@maildun/email-builder/editor';
 import type { FormEvent } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteEmailModal from '@/components/delete-email-modal';
 import { EmailBuilderActions } from '@/components/email-builder-actions';
@@ -89,18 +86,17 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useBuilderMediaPicker } from '@/hooks/use-builder-media-picker';
 import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 import {
     firstUploadErrorMessage,
     useUploadToast,
 } from '@/hooks/use-upload-toast';
-import { uploadEditorImage } from '@/lib/editor-media-upload';
 import {
     BUILDER_MERGE_TAGS,
     EMPTY_BUILDER_DOCUMENT,
     getChildrenIds,
     htmlToBuilderDocument,
-    insertBuilderMedia,
     isSourceEditor,
     renderBuilderHtml,
     renderSourceHtml,
@@ -128,7 +124,6 @@ import type {
     EmailSenderDefaults,
     EmailSenderOption,
     MediaLibraryData,
-    MediaItem,
     SendReadiness,
     Team,
 } from '@/types';
@@ -244,7 +239,6 @@ export default function EmailEdit({
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
     const [cancellingSchedule, setCancellingSchedule] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
-    const [mediaDialogOpen, setMediaDialogOpen] = useState(false);
     const [tagsDialogOpen, setTagsDialogOpen] = useState(false);
     const [uploadingAttachments, setUploadingAttachments] = useState(false);
     const [linkCheckResult, setLinkCheckResult] =
@@ -260,13 +254,6 @@ export default function EmailEdit({
         () => [savedSectionsGroup],
         [savedSectionsGroup],
     );
-    const uploadBuilderImage =
-        canManage && mediaLibrary?.canUpload
-            ? (file: File) => uploadEditorImage(currentTeam.slug, file)
-            : undefined;
-    const imagePickerResolve = useRef<
-        ((image: ImageResult | null) => void) | null
-    >(null);
     const uploadToast = useUploadToast();
     const linkCheck = useHttp<Record<string, never>, LinkCheckResponse>({});
     const [templateBody, setTemplateBody] = useState<{
@@ -321,67 +308,20 @@ export default function EmailEdit({
         (segment) => segment.uuid === form.data.segment,
     );
 
-    useEffect(() => {
-        return () => imagePickerResolve.current?.(null);
-    }, []);
-
-    const changeMediaDialogOpen = (open: boolean) => {
-        if (!open) {
-            imagePickerResolve.current?.(null);
-            imagePickerResolve.current = null;
-        }
-
-        setMediaDialogOpen(open);
-    };
-
-    const pickBuilderImage = (): Promise<ImageResult | null> => {
-        if (!canManage || form.processing || !mediaLibrary) {
-            return Promise.resolve(null);
-        }
-
-        imagePickerResolve.current?.(null);
-
-        return new Promise((resolve) => {
-            imagePickerResolve.current = resolve;
-            setMediaDialogOpen(true);
-        });
-    };
-
-    const insertMedia = (image: MediaItem): boolean => {
-        if (
-            !canManage ||
-            form.processing ||
-            image.status !== 'ready' ||
-            !image.absolute_url
-        ) {
-            return false;
-        }
-
-        if (imagePickerResolve.current) {
-            imagePickerResolve.current({
-                url: image.absolute_url,
-                alt: image.alt ?? image.name,
-            });
-            imagePickerResolve.current = null;
-
-            return true;
-        }
-
-        if (!builderRef.current) {
-            return false;
-        }
-
-        const inserted = insertBuilderMedia(builderRef.current.store, image);
-
-        if (!inserted) {
-            toast.add({
-                type: 'error',
-                title: 'Could not insert this image. Try again.',
-            });
-        }
-
-        return inserted;
-    };
+    const {
+        mediaDialogOpen,
+        setMediaDialogOpen,
+        changeMediaDialogOpen,
+        pickBuilderImage,
+        insertMedia,
+        uploadBuilderImage,
+    } = useBuilderMediaPicker({
+        builderRef,
+        canEdit: canManage && !form.processing,
+        hasMediaLibrary: Boolean(mediaLibrary),
+        uploadTeamSlug:
+            canManage && mediaLibrary?.canUpload ? currentTeam.slug : null,
+    });
 
     const uploadAttachments = (files: FileList) => {
         if (files.length === 0 || uploadingAttachments) {

@@ -64,3 +64,33 @@ test('email builder stays contained in the compose card', function () {
         ->toContain('.email-builder[data-fill]')
         ->toContain('flex: 1 1 0%');
 });
+
+test('editor pages share one media picker whose uploads stop once the page unmounts', function (string $page) {
+    $root = dirname(__DIR__, 2).'/resources/js';
+    $upload = file_get_contents($root.'/lib/editor-media-upload.ts');
+    $picker = file_get_contents($root.'/hooks/use-builder-media-picker.ts');
+    $source = file_get_contents($root."/pages/{$page}.tsx");
+
+    expect($upload)->toBeString()
+        ->toContain('signal: AbortSignal,')
+        ->toContain('await pause(signal);')
+        ->toContain('{ signal },')
+        ->toContain('signal.throwIfAborted();')
+        ->and($picker)->toContain('const unmountSignal = useUnmountSignal();')
+        ->toContain('uploadEditorImage(uploadTeamSlug, file, unmountSignal())')
+        ->and($source)->toContain('} = useBuilderMediaPicker({')
+        ->not->toContain('imagePickerResolve')
+        ->not->toContain('uploadEditorImage(');
+})->with([
+    'campaign' => 'emails/edit',
+    'template' => 'email-templates/edit',
+    'transactional' => 'transactional/edit',
+]);
+
+test('saved section requests run beside the draft save and always settle', function () {
+    $group = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/saved-sections-group.tsx');
+
+    expect($group)->toBeString()
+        ->toContain('async: true,')
+        ->toContain("onFinish: () => fail('The request was interrupted. Try again.'),");
+});

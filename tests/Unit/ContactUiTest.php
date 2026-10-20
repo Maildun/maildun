@@ -20,7 +20,7 @@ test('contact and audience pages share the unified add contact dialog', function
 
     expect($contacts)
         ->toContain('<ContactDialog')
-        ->toContain('audiences={audiences}')
+        ->toContain('audiences={addableAudiences}')
         ->and($audience)
         ->toContain('<ContactDialog')
         ->toContain('defaultAudience={{')

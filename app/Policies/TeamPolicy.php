@@ -3,8 +3,11 @@
 namespace App\Policies;
 
 use App\Enums\TeamPermission;
+use App\Enums\TeamRole;
 use App\Models\Team;
+use App\Models\TeamInvitation;
 use App\Models\User;
+use Illuminate\Auth\Access\Response;
 
 class TeamPolicy
 {
@@ -64,6 +67,78 @@ class TeamPolicy
     public function updateMember(User $user, Team $team): bool
     {
         return $user->hasTeamPermission($team, TeamPermission::UpdateMember);
+    }
+
+    /**
+     * Determine whether the user can set or reset a member's password from the team.
+     *
+     * A password unlocks every workspace the member belongs to or has a pending invitation to,
+     * so the user must be able to manage the member in each of them. Every account starts with
+     * a personal workspace, so one the member still uses alone and has left empty is exempt.
+     */
+    public function manageMemberPassword(User $user, Team $team, User $member): Response
+    {
+        if (! $this->updateMember($user, $team)) {
+            return Response::deny();
+        }
+
+        $member->loadMissing(['teamMemberships.team' => fn ($query) => $query
+            ->withCount('members')
+            ->withExists(Team::CONTENT_RELATIONS)]);
+
+        foreach ($member->teamMemberships as $membership) {
+            $memberTeam = $membership->team;
+            $ownsMemberTeam = $membership->role === TeamRole::Owner->value;
+
+            if ($memberTeam->is($team)) {
+                if ($ownsMemberTeam) {
+                    return Response::deny(__('The team owner password cannot be managed.'));
+                }
+
+                continue;
+            }
+
+            if ($member->is($user) || $this->isUntouchedPersonalTeam($memberTeam)) {
+                continue;
+            }
+
+            if ($ownsMemberTeam || ! $user->hasTeamPermission($memberTeam, TeamPermission::UpdateMember)) {
+                return Response::deny(__('This member also belongs to a workspace you cannot manage, so only they can change their password.'));
+            }
+        }
+
+        if ($member->is($user)) {
+            return Response::allow();
+        }
+
+        $invitedTeams = TeamInvitation::query()
+            ->with('team')
+            ->whereRaw('LOWER(email) = ?', [strtolower($member->email)])
+            ->whereNull('accepted_at')
+            ->where(fn ($query) => $query
+                ->whereNull('expires_at')
+                ->orWhere('expires_at', '>=', now()))
+            ->get()
+            ->pluck('team')
+            ->filter();
+
+        foreach ($invitedTeams as $invitedTeam) {
+            if (! $user->hasTeamPermission($invitedTeam, TeamPermission::UpdateMember)) {
+                return Response::deny(__('This member has a pending invitation to a workspace you cannot manage, so only they can change their password.'));
+            }
+        }
+
+        return Response::allow();
+    }
+
+    /**
+     * Determine whether a workspace is the empty personal one its only member started with.
+     */
+    private function isUntouchedPersonalTeam(Team $team): bool
+    {
+        return $team->is_personal
+            && (int) ($team->getAttribute('members_count') ?? $team->members()->count()) === 1
+            && ! $team->hasContent();
     }
 
     /**

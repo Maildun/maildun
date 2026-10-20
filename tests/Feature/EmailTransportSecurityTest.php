@@ -12,6 +12,7 @@ use App\Jobs\SendTransactionalEmailDelivery;
 use App\Mail\TeamEmailIntegrationTest;
 use App\Models\Audience;
 use App\Models\Automation;
+use App\Models\AutomationEmailDelivery;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
 use App\Models\Subscriber;
@@ -321,11 +322,14 @@ test('campaign transactional and automation failures persist only the safe trans
 
     rejectTeamEmailTransport('Request to AWS SES V2 API failed. Reason: signature for '.$secret.' is invalid.');
 
-    app(AdvanceAutomationRun::class)->handle($run);
+    // The sync queue runs the send job inline, fails it, then rethrows.
+    expect(fn () => app(AdvanceAutomationRun::class)->handle($run))
+        ->toThrow(EmailTransportException::class, $safeMessage);
 
     $campaignDelivery->refresh();
     $transactionalDelivery->refresh();
     $run->refresh();
+    $automationDelivery = AutomationEmailDelivery::query()->sole();
 
     expect($campaignDelivery->status)->toBe(EmailDeliveryStatus::Failed)
         ->and($campaignDelivery->failure_reason)->toBe($safeMessage)
@@ -336,9 +340,11 @@ test('campaign transactional and automation failures persist only the safe trans
         ->and($run->status)->toBe(AutomationRunStatus::Failed)
         ->and($run->failure_reason)->toBe($safeMessage)
         ->and($run->steps()->where('node_id', 'send')->value('result'))->toBe(['error' => $safeMessage])
+        ->and($automationDelivery->failure_reason)->toBe($safeMessage)
         ->and(serialize([
             $campaignDelivery->failure_reason,
             $transactionalDelivery->failure_reason,
+            $automationDelivery->failure_reason,
             $run->failure_reason,
             $run->steps()->where('node_id', 'send')->value('result'),
         ]))->not->toContain($secret);

