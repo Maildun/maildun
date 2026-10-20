@@ -12,6 +12,8 @@ use App\Models\Subscriber;
 use App\Models\TeamApiKey;
 use App\Models\TeamEmailIntegration;
 use App\Models\TransactionalEmail;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 
@@ -307,6 +309,24 @@ test('subscriber endpoints enforce key team scope and configured attributes', fu
         ])
         ->assertNotFound();
 });
+
+test('subscriber endpoints answer a malformed audience id with 404 before any query uses it', function (string $method, string $route) {
+    $audience = Audience::factory()->create();
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+    $bindings = [];
+    DB::listen(function (QueryExecuted $query) use (&$bindings): void {
+        array_push($bindings, ...$query->bindings);
+    });
+
+    $this->withToken($issued['token'])
+        ->json($method, route($route, 'not-a-uuid'), ['email' => 'ada@example.com'])
+        ->assertNotFound();
+
+    expect($bindings)->not->toContain('not-a-uuid');
+})->with([
+    'subscribe' => ['POST', 'api.v1.audiences.subscribers.store'],
+    'unsubscribe' => ['DELETE', 'api.v1.audiences.subscribers.destroy'],
+]);
 
 test('subscriber endpoints reject missing and invalid api keys', function () {
     $audience = Audience::factory()->create();
