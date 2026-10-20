@@ -54,26 +54,24 @@ class ApplySegmentRules
 
             match ($operator) {
                 SegmentRuleOperator::Equals => $query->whereRaw("LOWER({$column}) = ?", [$normalizedValue]),
-                SegmentRuleOperator::NotEquals => $query->whereRaw("LOWER({$column}) != ?", [$normalizedValue]),
+                SegmentRuleOperator::NotEquals => $query->where(fn (Builder $textQuery) => $textQuery
+                    ->whereRaw("LOWER({$column}) != ?", [$normalizedValue])
+                    ->orWhereNull($column)),
                 SegmentRuleOperator::Contains => $query->whereRaw("LOWER({$column}) LIKE ?", ['%'.$normalizedValue.'%']),
-                SegmentRuleOperator::DoesNotContain => $query->whereRaw("LOWER({$column}) NOT LIKE ?", ['%'.$normalizedValue.'%']),
+                SegmentRuleOperator::DoesNotContain => $query->where(fn (Builder $textQuery) => $textQuery
+                    ->whereRaw("LOWER({$column}) NOT LIKE ?", ['%'.$normalizedValue.'%'])
+                    ->orWhereNull($column)),
                 default => null,
             };
 
             return;
         }
 
-        if ($field === SegmentRuleField::Language && $operator === SegmentRuleOperator::NotEquals) {
-            $query->where(fn (Builder $languageQuery) => $languageQuery
-                ->where($column, '!=', $value)
-                ->orWhereNull($column));
-
-            return;
-        }
-
         match ($operator) {
             SegmentRuleOperator::Equals => $query->where($column, $value),
-            SegmentRuleOperator::NotEquals => $query->where($column, '!=', $value),
+            SegmentRuleOperator::NotEquals => $query->where(fn (Builder $valueQuery) => $valueQuery
+                ->where($column, '!=', $value)
+                ->orWhereNull($column)),
             SegmentRuleOperator::Before => $query->whereDate($column, '<', $value),
             SegmentRuleOperator::After => $query->whereDate($column, '>', $value),
             default => null,
