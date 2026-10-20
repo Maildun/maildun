@@ -1,9 +1,11 @@
 <?php
 
+use App\Concerns\ThrottlesEmailDelivery;
 use App\Console\Commands\ResumeEmailDeliveriesCommand;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailStatus;
 use App\Jobs\PrepareEmailSendChunk;
+use App\Jobs\ProcessAutomationRun;
 use App\Jobs\SendAutomationEmailDelivery;
 use App\Jobs\SendCampaignTestEmail;
 use App\Jobs\SendEmailDelivery;
@@ -107,7 +109,7 @@ test('no rate limit is applied when the operator has not configured one', functi
         ->and($job->tries)->toBe(3);
 });
 
-test('a configured send rate throttles both campaign and transactional sends', function (string $jobClass) {
+test('a configured send rate throttles every send job', function (string $jobClass) {
     config()->set('delivery.rate_limit.per_second', 14);
     config()->set('delivery.rate_limit.release_after', 7);
 
@@ -116,7 +118,14 @@ test('a configured send rate throttles both campaign and transactional sends', f
     expect($middleware)->toHaveCount(1)
         ->and($middleware[0])->toBeInstanceOf(RateLimited::class)
         ->and($middleware[0]->releaseAfter)->toBe(7);
-})->with([SendEmailDelivery::class, SendTransactionalEmailDelivery::class]);
+})->with([SendEmailDelivery::class, SendTransactionalEmailDelivery::class, SendAutomationEmailDelivery::class]);
+
+test('the automation engine never waits for a send slot', function () {
+    config()->set('delivery.rate_limit.per_second', 14);
+
+    // retryUntil is stamped at dispatch, so a delayed branch would expire before it ran.
+    expect(class_uses_recursive(ProcessAutomationRun::class))->not->toContain(ThrottlesEmailDelivery::class);
+});
 
 test('a throttled job is bounded by time so waiting for a slot never fails a recipient', function () {
     config()->set('delivery.rate_limit.per_second', 14);

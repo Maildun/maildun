@@ -276,3 +276,26 @@ test('a queued email whose job was lost is queued again once per window', functi
     );
     expect($run->refresh()->status)->toBe(AutomationRunStatus::Running);
 });
+
+test('a queued email of a throttled send is treated as lost only after its retry window', function (int $minutesOld, int $pushes) {
+    config()->set('delivery.rate_limit.per_second', 14);
+    $run = parkedRun(AutomationRunStatus::Running, null);
+    $step = $run->steps()->where('node_id', 'wait')->sole();
+    $step->forceFill(['updated_at' => now()->subMinutes($minutesOld)])->saveQuietly();
+    AutomationEmailDelivery::factory()->create([
+        'automation_run_id' => $run->id,
+        'automation_run_step_id' => $step->id,
+        'team_id' => $run->automation->team_id,
+        'status' => EmailDeliveryStatus::Queued,
+        'sent_at' => null,
+        'updated_at' => now()->subMinutes($minutesOld),
+    ]);
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertPushed(SendAutomationEmailDelivery::class, $pushes);
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Running);
+})->with([
+    'still inside the retry window' => [60, 0],
+    'past the retry window' => [380, 1],
+]);

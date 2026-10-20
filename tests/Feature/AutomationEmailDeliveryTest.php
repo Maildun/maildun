@@ -28,6 +28,7 @@ use App\Models\TeamEmailIntegration;
 use App\Models\TransactionalEmail;
 use App\Services\TeamMailer;
 use Illuminate\Database\QueryException;
+use Illuminate\Pipeline\Pipeline;
 use Illuminate\Queue\MaxAttemptsExceededException;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
@@ -64,7 +65,7 @@ function queuedAutomationSend(): array
 
     app(AdvanceAutomationRun::class)->handle($run, 'send');
 
-    return [$run->refresh(), AutomationEmailDelivery::query()->sole()];
+    return [$run->refresh(), AutomationEmailDelivery::query()->where('automation_run_id', $run->id)->sole()];
 }
 
 test('automation mail carries its feedback correlation tag', function () {
@@ -168,6 +169,34 @@ test('a sent automation email is recorded and a late failure report does not und
         ->and($run->steps()->where('node_id', 'send')->value('result'))->toBe(['transactional_email_uuid' => $delivery->transactionalEmail->uuid])
         ->and($run->refresh()->status)->toBe(AutomationRunStatus::Completed)
         ->and(EmailAddressHealth::query()->count())->toBe(0);
+});
+
+test('an automation email waits for a send slot instead of failing its run', function () {
+    Queue::fake([SendAutomationEmailDelivery::class, ProcessAutomationRun::class]);
+    Mail::fake();
+    config()->set('delivery.rate_limit.per_second', 1);
+    config()->set('delivery.rate_limit.release_after', 5);
+    $this->freezeTime();
+    [, $first] = queuedAutomationSend();
+    [$waitingRun, $waiting] = queuedAutomationSend();
+    $runThroughMiddleware = function (int $deliveryId): SendAutomationEmailDelivery {
+        $job = (new SendAutomationEmailDelivery($deliveryId))->withFakeQueueInteractions();
+        (new Pipeline(app()))
+            ->send($job)
+            ->through($job->middleware())
+            ->then(fn (SendAutomationEmailDelivery $job) => app()->call([$job, 'handle']));
+
+        return $job;
+    };
+
+    $runThroughMiddleware($first->id)->assertNotReleased();
+    $runThroughMiddleware($waiting->id)->assertReleased(5);
+
+    Mail::assertSentCount(1);
+    expect($waiting->refresh()->status)->toBe(EmailDeliveryStatus::Queued)
+        ->and($waiting->send_attempted_at)->toBeNull()
+        ->and($waitingRun->steps()->where('node_id', 'send')->value('status'))->toBe('running')
+        ->and($waitingRun->refresh()->status)->toBe(AutomationRunStatus::Running);
 });
 
 test('a transport failure hands the automation email back for the queue to retry', function () {

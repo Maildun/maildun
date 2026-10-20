@@ -8,7 +8,7 @@ return [
     |--------------------------------------------------------------------------
     |
     | The maximum number of messages this instance hands to the mail transport
-    | per second, across campaigns and transactional email. Every provider
+    | per second, across campaign, transactional and automation email. Every provider
     | enforces a quota of its own and rejects the overflow, so this keeps a
     | large campaign from burning through real recipients on throttling errors.
     |

@@ -73,8 +73,12 @@ class ResumeAutomationRunsCommand extends Command
 
         // An email whose send job was lost sits Queued under a running step.
         // Touching the row after the push keeps the next sweep off it for a
-        // window, and a failed push leaves it for the next sweep.
-        $lostBefore = $staleBefore;
+        // window, and a failed push leaves it for the next sweep. A throttled
+        // job can keep waiting for a slot until its retry window closes, so
+        // only a row older than that window has no job left to run it.
+        $lostBefore = (int) config('delivery.rate_limit.per_second') > 0
+            ? $staleBefore->copy()->subHours(SendAutomationEmailDelivery::RETRY_WINDOW_HOURS)
+            : $staleBefore;
         AutomationEmailDelivery::query()
             ->where('status', EmailDeliveryStatus::Queued)
             ->whereNull('send_attempted_at')

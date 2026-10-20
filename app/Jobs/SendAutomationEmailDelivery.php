@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Actions\Automations\AdvanceAutomationRun;
 use App\Actions\Emails\RecordEmailAddressHealth;
+use App\Concerns\ThrottlesEmailDelivery;
 use App\Enums\AutomationStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailFailureCode;
@@ -24,11 +25,12 @@ use Throwable;
  * The send step stays running while this job owns its delivery: a transport
  * error hands the delivery back so the queue retries it on its backoff, and
  * only a delivery that runs out of retries fails the run. It stays on the
- * default queue, never the campaign or transactional ones.
+ * default queue, never the campaign or transactional ones, and waits for a
+ * send slot like every other send.
  */
 class SendAutomationEmailDelivery implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, ThrottlesEmailDelivery;
 
     public int $tries = 3;
 
