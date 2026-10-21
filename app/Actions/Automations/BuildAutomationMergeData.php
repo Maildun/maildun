@@ -2,6 +2,7 @@
 
 namespace App\Actions\Automations;
 
+use App\Actions\Emails\RenderCampaignContent;
 use App\Mail\AutomationEmail;
 use App\Models\AutomationEmailDelivery;
 use App\Models\Subscriber;
@@ -24,7 +25,9 @@ class BuildAutomationMergeData
         $payload = is_array($context['data'] ?? null) ? $context['data'] : [];
 
         return [
-            // First, so a stored attribute can never replace a built-in field.
+            // First, so a stored attribute can never replace a built-in field,
+            // and an audience field with no stored value renders as a blank.
+            ...array_fill_keys(RenderCampaignContent::attributeKeys($subscriber->audience_id), ''),
             ...($subscriber->attribute_values ?? []),
             'email' => $subscriber->email,
             'first_name' => $subscriber->first_name ?? '',

@@ -3,6 +3,7 @@
 namespace App\Actions\Emails;
 
 use App\Enums\SubscriberLanguage;
+use App\Models\AudienceAttribute;
 use App\Models\Email;
 use App\Models\Subscriber;
 use Carbon\CarbonInterface;
@@ -14,12 +15,22 @@ class RenderCampaignContent
 
     public function __construct(private readonly ConvertHtmlToText $htmlToText = new ConvertHtmlToText) {}
 
-    /** @return array<string, mixed> */
-    public function mergeData(Subscriber $subscriber, CarbonInterface $date): array
+    /**
+     * Every audience field is seeded with a blank so a subscriber with no
+     * stored value gets an empty string instead of the raw {{ key }} tag.
+     * Pass the audience's field keys when rendering many subscribers at once;
+     * otherwise they are read from the subscriber's audience.
+     *
+     * @param  array<int, string>|null  $attributeKeys
+     * @return array<string, mixed>
+     */
+    public function mergeData(Subscriber $subscriber, CarbonInterface $date, ?array $attributeKeys = null): array
     {
         $name = Str::of($subscriber->first_name.' '.$subscriber->last_name)->squish()->toString();
+        $attributeKeys ??= self::attributeKeys($subscriber->audience_id);
 
         return [
+            ...array_fill_keys($attributeKeys, ''),
             ...($subscriber->attribute_values ?? []),
             'name' => $name !== '' ? $name : $subscriber->email,
             'first_name' => $subscriber->first_name ?? '',
@@ -33,6 +44,25 @@ class RenderCampaignContent
             'month_name' => $date->format('F'),
             'year' => $date->format('Y'),
         ];
+    }
+
+    /**
+     * The field keys configured on an audience.
+     *
+     * @return array<int, string>
+     */
+    public static function attributeKeys(?int $audienceId): array
+    {
+        if ($audienceId === null) {
+            return [];
+        }
+
+        return AudienceAttribute::query()
+            ->where('audience_id', $audienceId)
+            ->get(['key'])
+            ->map(fn (AudienceAttribute $attribute): string => $attribute->key)
+            ->values()
+            ->all();
     }
 
     /** @return array<string, mixed> */

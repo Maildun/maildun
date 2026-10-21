@@ -2,6 +2,7 @@
 
 use App\Actions\Automations\BuildAutomationMergeData;
 use App\Models\Audience;
+use App\Models\AudienceAttribute;
 use App\Models\Automation;
 use App\Models\AutomationEmailDelivery;
 use App\Models\AutomationRun;
@@ -41,4 +42,14 @@ test('stored attributes cannot replace the built-in subscriber fields', function
         ->first_name->toBe('Ada')
         ->last_name->toBe('Lovelace')
         ->company->toBe('Acme');
+});
+
+test('an audience field with no stored value merges as a blank', function () {
+    $audience = Audience::factory()->for(Team::factory())->create();
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    $subscriber = Subscriber::factory()->for($audience)->create(['attribute_values' => []]);
+
+    $data = app(BuildAutomationMergeData::class)->handle($subscriber, [], automationMergeDelivery($subscriber));
+
+    expect($data)->toHaveKey('company', '');
 });
