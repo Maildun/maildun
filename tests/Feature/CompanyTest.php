@@ -6,6 +6,7 @@ use App\Jobs\RelinkCompanyContacts;
 use App\Jobs\ResolveCompanyFavicon;
 use App\Models\Audience;
 use App\Models\Company;
+use App\Models\CompanyDomain;
 use App\Models\Contact;
 use App\Models\Subscriber;
 use App\Models\Tag;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('company contacts include the fields required by the shared hover card', function () {
@@ -513,6 +515,36 @@ test('a domain claimed by another company during a save is a validation error an
     expect($team->companies()->where('name', 'Newco')->exists())->toBeFalse()
         ->and($acme->fresh()->name)->toBe('Acme')
         ->and($acme->domains()->pluck('domain')->all())->toBe(['old.test']);
+});
+
+test('a unique-key race the conflict check cannot see is still a validation error', function () {
+    Queue::fake([ResolveCompanyFavicon::class]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $rival = Company::factory()->for($team)->create(['name' => 'Rival']);
+
+    CompanyDomain::creating(function (CompanyDomain $domain) use ($rival): void {
+        if ($domain->company_id !== $rival->id) {
+            DB::table('company_domains')->insert([
+                'uuid' => (string) Str::uuid(),
+                'team_id' => $rival->team_id,
+                'company_id' => $rival->id,
+                'domain' => $domain->domain,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+    });
+
+    $this->actingAs($user)
+        ->post(route('companies.store', $team), [
+            'name' => 'Acme',
+            'domains' => ['acme.test'],
+        ])
+        ->assertInvalid(['domains' => 'Someone else changed these companies at the same time. Try again.']);
+
+    expect($team->companies()->where('name', 'Acme')->exists())->toBeFalse();
 });
 
 test('a company name claimed during a save is a validation error', function () {

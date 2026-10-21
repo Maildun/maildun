@@ -223,14 +223,12 @@ class CompanyController extends Controller
     {
         try {
             return DB::transaction($save);
-        } catch (UniqueConstraintViolationException $exception) {
-            $errors = $request->conflictErrors();
-
-            if ($errors === []) {
-                throw $exception;
-            }
-
-            throw ValidationException::withMessages($errors);
+        } catch (UniqueConstraintViolationException) {
+            // The winning row may itself have been rolled back by now; still answer
+            // with a validation error rather than a server error.
+            throw ValidationException::withMessages($request->conflictErrors() ?: [
+                'domains' => __('Someone else changed these companies at the same time. Try again.'),
+            ]);
         }
     }
 
