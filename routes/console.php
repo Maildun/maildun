@@ -25,6 +25,10 @@ Schedule::command('emails:dispatch-tracking-events')->everyMinute()->withoutOver
 // Detailed events expire; durable campaign aggregates remain available.
 Schedule::command('emails:prune-tracking')->daily()->withoutOverlapping();
 
+// Uploaded contact lists are personal data: drop abandoned drafts after a week
+// and the files of failed imports nobody retried after a month.
+Schedule::command('contacts:prune-imports')->daily()->withoutOverlapping();
+
 // DB-IP Lite publishes monthly. Daily checks are cheap because current local
 // MMDB metadata skips the download, while a missed release retries next day.
 Schedule::command('emails:update-geolocation-databases')
