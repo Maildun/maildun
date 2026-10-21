@@ -8,7 +8,6 @@ use App\Actions\Audiences\DeleteAudience;
 use App\Concerns\SearchesText;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
-use App\Enums\SubscriberStatus;
 use App\Enums\TransactionalEmailStatus;
 use App\Http\Requests\DeleteAudienceRequest;
 use App\Http\Requests\SaveAudienceRequest;
