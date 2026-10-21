@@ -883,3 +883,34 @@ test('bulk contact tags stay in the current team and need contact management', f
     expect($foreign->tags()->count())->toBe(0)
         ->and($contact->tags()->count())->toBe(0);
 });
+
+test('blank contact names are saved as null', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $team), [
+            'email' => 'nameless@example.com',
+            'first_name' => '',
+            'last_name' => '   ',
+            'company_assignment_mode' => 'automatic',
+        ])
+        ->assertValid();
+
+    $contact = $team->contacts()->sole();
+
+    expect($contact->only(['first_name', 'last_name']))->toBe(['first_name' => null, 'last_name' => null]);
+
+    $contact->update(['first_name' => 'Ada', 'last_name' => 'Lovelace']);
+
+    $this->actingAs($user)
+        ->patch(route('contacts.update', [$team, $contact]), [
+            'email' => 'nameless@example.com',
+            'first_name' => '',
+            'last_name' => '',
+            'company_assignment_mode' => 'automatic',
+        ])
+        ->assertValid();
+
+    expect($contact->fresh()->only(['first_name', 'last_name']))->toBe(['first_name' => null, 'last_name' => null]);
+});

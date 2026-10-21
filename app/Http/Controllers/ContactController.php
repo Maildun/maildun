@@ -552,8 +552,8 @@ class ContactController extends Controller
 
         $profile = [
             'email' => $request->string('email')->toString(),
-            'first_name' => $request->has('first_name') ? $request->string('first_name')->toString() : null,
-            'last_name' => $request->has('last_name') ? $request->string('last_name')->toString() : null,
+            'first_name' => $attributes['first_name'] ?? null,
+            'last_name' => $attributes['last_name'] ?? null,
             'company_assignment_mode' => $mode,
             'company_id' => $companyId,
         ];

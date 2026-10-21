@@ -241,3 +241,21 @@ test('filters contacts by company', function () {
     MaildunServer::tool(ListContactsTool::class, ['workspace' => $team->slug, 'company' => 'someone'])
         ->assertHasErrors(['Use assigned, unassigned, or a company UUID from this workspace.']);
 });
+
+test('rejects a blank email without erasing the contact address', function () {
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create();
+    $contact = Contact::factory()->for($team)->create(['email' => 'ada@example.com']);
+    Subscriber::factory()->for($audience)->for($contact)->create(['email' => 'ada@example.com']);
+
+    foreach (['', '   '] as $email) {
+        MaildunServer::tool(UpdateContactTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $contact->uuid,
+            'email' => $email,
+        ])->assertHasErrors();
+    }
+
+    expect($contact->fresh()->email)->toBe('ada@example.com')
+        ->and($contact->subscribers()->sole()->email)->toBe('ada@example.com');
+});

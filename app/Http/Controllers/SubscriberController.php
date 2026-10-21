@@ -156,8 +156,8 @@ class SubscriberController extends Controller
     {
         return [
             'email' => $request->string('email')->toString(),
-            'first_name' => $request->has('first_name') ? $request->string('first_name')->toString() : null,
-            'last_name' => $request->has('last_name') ? $request->string('last_name')->toString() : null,
+            'first_name' => $request->validated('first_name'),
+            'last_name' => $request->validated('last_name'),
         ];
     }
 

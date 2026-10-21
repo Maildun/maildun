@@ -53,6 +53,7 @@ class UpdateContactTool extends Tool
         $validated = $request->validate([
             'email' => [
                 'sometimes',
+                'required',
                 'string',
                 'email',
                 'max:255',

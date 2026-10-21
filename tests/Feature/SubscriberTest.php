@@ -856,3 +856,21 @@ test('owners can bulk clear the language of selected subscribers', function () {
 
     expect($keep->fresh()->language)->toBe(SubscriberLanguage::English);
 });
+
+test('subscribers added without a name get a contact with null names', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('audiences.subscribers.store', [$team, $audience]), [
+            'email' => 'nameless@example.com',
+            'first_name' => '',
+            'last_name' => '',
+            'consent_confirmed' => true,
+        ])
+        ->assertValid();
+
+    expect($team->contacts()->sole()->only(['first_name', 'last_name']))
+        ->toBe(['first_name' => null, 'last_name' => null]);
+});
