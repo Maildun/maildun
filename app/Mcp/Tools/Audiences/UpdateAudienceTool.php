@@ -68,7 +68,8 @@ class UpdateAudienceTool extends Tool
         ]);
 
         $changes = $this->context->changes($validated, [...self::FIELDS, ...AudienceLanguageSettings::FIELDS]);
-        $changes = $this->context->blankStringsToNull($changes, [
+        $changes = $this->context->trimStrings($changes, [
+            'name',
             'description',
             'from_name',
             'from_address',

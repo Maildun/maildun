@@ -30,17 +30,17 @@ class SubscriberController extends Controller
 
     public function destroy(UnsubscribeSubscriberRequest $request, UnsubscribeViaApi $unsubscribe): JsonResponse
     {
-        $subscriber = $unsubscribe->handle(
+        $unsubscribe->handle(
             $request->audience(),
             $request->string('email')->value(),
         );
 
+        // The same body whether or not the address was ever a member, so the
+        // response never reveals audience membership.
         return response()->json([
             'data' => [
-                'id' => $subscriber?->uuid,
                 'email' => $request->string('email')->value(),
                 'status' => 'unsubscribed',
-                'unsubscribed_at' => $subscriber?->unsubscribed_at?->toISOString(),
             ],
         ]);
     }

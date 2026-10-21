@@ -72,8 +72,8 @@ class CreateContactTool extends Tool
 
         [$contact, $changedMemberships] = $this->membership->join($team, [
             'email' => $email,
-            'first_name' => $this->context->blankStringsToNull($validated, ['first_name'])['first_name'] ?? null,
-            'last_name' => $this->context->blankStringsToNull($validated, ['last_name'])['last_name'] ?? null,
+            'first_name' => $this->context->trimStrings($validated, ['first_name'])['first_name'] ?? null,
+            'last_name' => $this->context->trimStrings($validated, ['last_name'])['last_name'] ?? null,
         ], $audiences, $validated['tags'] ?? []);
 
         $contact->load(['company:id,uuid,name', 'tags:id,uuid,name', 'subscribers.audience:id,uuid,name']);

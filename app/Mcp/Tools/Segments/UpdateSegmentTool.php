@@ -48,7 +48,7 @@ class UpdateSegmentTool extends Tool
         $segment = $this->context->segment($request, $team);
         $this->context->authorize($request, 'update', $segment);
         $validated = $request->validate([
-            'name' => ['sometimes', 'string', 'max:255'],
+            'name' => ['sometimes', 'required', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'match_type' => ['sometimes', Rule::enum(SegmentMatchType::class)],
             'rules' => ['sometimes', 'array', 'min:1', 'max:10'],
@@ -56,7 +56,10 @@ class UpdateSegmentTool extends Tool
             'rules.*.operator' => ['required', Rule::enum(SegmentRuleOperator::class)],
             'rules.*.value' => ['required', 'string', 'max:255'],
         ]);
-        $changes = $this->context->changes($validated, ['name', 'description', 'match_type', 'rules']);
+        $changes = $this->context->trimStrings(
+            $this->context->changes($validated, ['name', 'description', 'match_type', 'rules']),
+            ['name'],
+        );
 
         if (array_key_exists('rules', $changes)) {
             $errors = $this->validateRules->handle($segment->audience, $changes['rules']);

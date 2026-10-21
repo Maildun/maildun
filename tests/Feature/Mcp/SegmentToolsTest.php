@@ -134,3 +134,24 @@ test('refuses to change the rules of a segment a sending campaign targets', func
 
     expect($segment->refresh()->rules)->toBe($rules);
 });
+
+test('rejects renaming a segment to a blank name and trims new names', function () {
+    $team = Team::factory()->create();
+    $segment = Segment::factory()->for(Audience::factory()->for($team))->create(['name' => 'Engaged']);
+
+    MaildunServer::tool(UpdateSegmentTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $segment->uuid,
+        'name' => '   ',
+    ])->assertHasErrors(['The name field is required.']);
+
+    expect($segment->fresh()->name)->toBe('Engaged');
+
+    MaildunServer::tool(UpdateSegmentTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $segment->uuid,
+        'name' => ' Very engaged ',
+    ])->assertOk();
+
+    expect($segment->fresh()->name)->toBe('Very engaged');
+});

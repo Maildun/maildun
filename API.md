@@ -107,7 +107,9 @@ POST /api/v1/audiences/{audience_uuid}/subscribers
 }
 ```
 
-The operation is idempotent. It creates a subscriber or updates an already subscribed address. Configured required audience attributes are required by the API as well. `language` is optional and must be one of the languages the audience allows.
+The operation is idempotent. It creates a subscriber or updates an already subscribed address. Configured required audience attributes are required by the API as well.
+
+`language` is optional. It must be an ISO 639-1 code from the audience's allowed languages, such as `en` or `id`, and sets the membership's language. A new membership without one takes the audience's default language.
 
 An address that unsubscribed stays unsubscribed. The request records a resubscription request instead: the response has `"status": "unsubscribed"` and `"pending_confirmation": true`. On a double opt-in audience Maildun emails the audience's confirmation link, and the address is resubscribed only when the recipient clicks it. A single opt-in audience has no confirmation email, so a team member must resubscribe the address in Maildun.
 
@@ -140,15 +142,13 @@ DELETE /api/v1/audiences/{audience_uuid}/subscribers
 }
 ```
 
-Unsubscribe is idempotent. Repeating the request, or requesting an address that does not exist in that audience, returns a successful response without disclosing prior membership.
+Unsubscribe is idempotent. Repeating the request, or requesting an address that does not exist in that audience, returns the same successful response, so it never discloses prior membership.
 
 ```json
 {
   "data": {
-    "id": "ff55fd14-4b87-4923-b933-4912e14566f4",
     "email": "ada@example.com",
-    "status": "unsubscribed",
-    "unsubscribed_at": "2026-08-23T03:05:00.000000Z"
+    "status": "unsubscribed"
   }
 }
 ```

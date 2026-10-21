@@ -62,7 +62,7 @@ class UpdateContactTool extends Tool
             'email.unique' => 'This email is already used by another contact.',
         ]);
         $changes = $this->context->changes($validated, ['email', 'first_name', 'last_name', 'tags']);
-        $profile = $this->context->blankStringsToNull(Arr::except($changes, ['tags']), ['first_name', 'last_name']);
+        $profile = $this->context->trimStrings(Arr::except($changes, ['tags']), ['first_name', 'last_name']);
 
         $contact = DB::transaction(function () use ($team, $contact, $profile, $changes): Contact {
             if ($profile !== []) {

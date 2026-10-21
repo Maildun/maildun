@@ -181,6 +181,29 @@ class WorkspaceContext
     }
 
     /**
+     * Trim names and other short free text the way the web forms' TrimStrings
+     * middleware does, and store a blank value as null. Not for message bodies,
+     * whose leading and trailing whitespace can be meaningful.
+     *
+     * @param  array<string, mixed>  $values
+     * @param  list<string>  $fields
+     * @return array<string, mixed>
+     */
+    public function trimStrings(array $values, array $fields): array
+    {
+        foreach ($fields as $field) {
+            $value = $values[$field] ?? null;
+
+            if (is_string($value)) {
+                $trimmed = trim($value);
+                $values[$field] = $trimmed === '' ? null : $trimmed;
+            }
+        }
+
+        return $values;
+    }
+
+    /**
      * @param  array<string, mixed>  $values
      * @param  list<string>  $fields
      * @return array<string, mixed>

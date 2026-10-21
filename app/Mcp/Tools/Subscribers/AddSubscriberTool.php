@@ -57,7 +57,7 @@ class AddSubscriberTool extends Tool
             'consent_confirmed.accepted' => 'Confirm the person consented to marketing email before subscribing them.',
             'language.in' => 'The language must be one of this audience\'s allowed languages.',
         ]);
-        $profile = $this->context->blankStringsToNull($validated, ['first_name', 'last_name']);
+        $profile = $this->context->trimStrings($validated, ['first_name', 'last_name']);
 
         [$contact, $changedMemberships] = $this->membership->join($team, [
             'email' => $validated['email'],

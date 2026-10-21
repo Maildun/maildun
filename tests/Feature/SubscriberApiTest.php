@@ -293,7 +293,7 @@ test('the api unsubscribe operation is opaque and idempotent', function () {
             'email' => $subscriber->email,
         ])
         ->assertOk()
-        ->assertJsonPath('data.status', 'unsubscribed');
+        ->assertExactJson(['data' => ['email' => $subscriber->email, 'status' => 'unsubscribed']]);
 
     $unsubscribedAt = $subscriber->fresh()->unsubscribed_at;
 
@@ -308,7 +308,7 @@ test('the api unsubscribe operation is opaque and idempotent', function () {
             'email' => 'unknown@example.com',
         ])
         ->assertOk()
-        ->assertJsonPath('data.status', 'unsubscribed');
+        ->assertExactJson(['data' => ['email' => 'unknown@example.com', 'status' => 'unsubscribed']]);
 
     expect($subscriber->fresh()->unsubscribed_at?->equalTo($unsubscribedAt))->toBeTrue();
     Event::assertDispatchedTimes(SubscriberLifecycleOccurred::class, 1);

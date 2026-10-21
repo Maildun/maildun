@@ -62,7 +62,7 @@ class CreateSegmentTool extends Tool
 
         $segment = DB::transaction(function () use ($audience, $validated): Segment {
             $segment = $audience->segments()->create([
-                'name' => $validated['name'],
+                'name' => trim($validated['name']),
                 'description' => $validated['description'] ?? null,
                 'match_type' => $validated['match_type'] ?? SegmentMatchType::All->value,
                 'rules' => array_values($validated['rules']),

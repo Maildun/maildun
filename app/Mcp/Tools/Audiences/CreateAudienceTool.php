@@ -53,7 +53,8 @@ class CreateAudienceTool extends Tool
             'unsubscribed_url' => ['nullable', 'url:http,https', 'max:2048'],
         ]);
 
-        $attributes = $this->context->blankStringsToNull($validated, [
+        $attributes = $this->context->trimStrings($validated, [
+            'name',
             'description',
             'from_name',
             'from_address',

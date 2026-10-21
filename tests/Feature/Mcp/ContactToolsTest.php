@@ -133,3 +133,27 @@ test('does not resolve contacts from another workspace', function () {
         'uuid' => $otherContact->uuid,
     ])->assertHasErrors(['contact was not found in this workspace']);
 });
+
+test('trims the names contact tools save', function () {
+    $team = Team::factory()->create();
+
+    MaildunServer::tool(CreateContactTool::class, [
+        'workspace' => $team->slug,
+        'email' => 'ada@example.com',
+        'first_name' => '  Ada ',
+        'last_name' => ' Lovelace  ',
+    ])->assertOk();
+
+    $contact = $team->contacts()->sole();
+
+    expect($contact->only(['first_name', 'last_name']))->toBe(['first_name' => 'Ada', 'last_name' => 'Lovelace']);
+
+    MaildunServer::tool(UpdateContactTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $contact->uuid,
+        'first_name' => ' Augusta Ada ',
+        'last_name' => '   ',
+    ])->assertOk();
+
+    expect($contact->fresh()->only(['first_name', 'last_name']))->toBe(['first_name' => 'Augusta Ada', 'last_name' => null]);
+});

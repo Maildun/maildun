@@ -11,6 +11,7 @@ use App\Mcp\Tools\Audiences\UpdateAudienceTool;
 use App\Models\Audience;
 use App\Models\Email;
 use App\Models\Team;
+use App\Models\User;
 use Illuminate\Testing\Fluent\AssertableJson;
 
 test('manages an audience through its MCP lifecycle', function () {
@@ -145,4 +146,30 @@ test('refuses to delete an audience a sending campaign targets', function () {
     ])->assertHasErrors(['This audience is used by scheduled or sending campaigns: Launch.']);
 
     $this->assertModelExists($audience);
+});
+
+test('trims audience names so the web delete confirmation matches them', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    MaildunServer::tool(CreateAudienceTool::class, [
+        'workspace' => $team->slug,
+        'name' => '  Customers ',
+    ])->assertOk();
+
+    $audience = $team->audiences()->sole();
+
+    expect($audience->name)->toBe('Customers');
+
+    MaildunServer::tool(UpdateAudienceTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $audience->uuid,
+        'name' => ' Clients  ',
+    ])->assertOk();
+
+    $this->actingAs($user)
+        ->delete(route('audiences.destroy', [$team, $audience]), ['name' => 'Clients'])
+        ->assertRedirect(route('audiences.index', $team));
+
+    $this->assertModelMissing($audience);
 });
