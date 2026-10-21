@@ -302,6 +302,47 @@ test('editing a contact fires tagged automations on every membership for newly a
     }
 });
 
+test('a new contact can be added without an audience while the dialog sends unchecked consent', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $team), [
+            'email' => 'workspace-only@example.com',
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'tags' => [],
+            'audience_uuids' => [],
+            'consent_confirmed' => false,
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    $contact = $team->contacts()->sole();
+
+    expect($contact->email)->toBe('workspace-only@example.com')
+        ->and(Subscriber::query()->where('contact_id', $contact->id)->exists())->toBeFalse();
+});
+
+test('adding a new contact to an audience still requires consent confirmation', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $team), [
+            'email' => 'needs-consent@example.com',
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'tags' => [],
+            'audience_uuids' => [$audience->uuid],
+            'consent_confirmed' => false,
+        ])
+        ->assertInvalid(['consent_confirmed']);
+
+    expect($team->contacts()->exists())->toBeFalse();
+});
+
 test('an existing contact requires an audience when reused from the add dialog', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

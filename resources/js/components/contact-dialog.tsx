@@ -545,6 +545,12 @@ export function ContactDialog({
                                     </div>
                                 </Field>
                             ) : null}
+
+                            {!contact && !hasAudienceSelection ? (
+                                <FieldError>
+                                    {form.errors.consent_confirmed}
+                                </FieldError>
+                            ) : null}
                         </FieldGroup>
                         <DialogFooter className="mt-6">
                             <Button

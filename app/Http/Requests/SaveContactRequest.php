@@ -76,7 +76,7 @@ class SaveContactRequest extends FormRequest
             ];
             $rules['consent_confirmed'] = $hasAudienceSelection
                 ? ['required', 'accepted']
-                : ['sometimes', 'accepted'];
+                : ['nullable', 'boolean'];
         }
 
         return $rules;
