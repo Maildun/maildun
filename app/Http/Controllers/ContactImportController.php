@@ -237,6 +237,8 @@ class ContactImportController extends Controller
                 return;
             }
 
+            // Excel only reads the file as UTF-8 with a byte order mark.
+            fwrite($stream, "\xEF\xBB\xBF");
             fputcsv($stream, ['row', 'email', 'outcome', 'detail'], escape: '');
 
             // Emails and details come from the uploaded file, so neutralise formulas.
