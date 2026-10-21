@@ -14,6 +14,8 @@ use App\Models\SubscribeForm;
 use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('owners can create valid dynamic segments', function () {
@@ -223,6 +225,41 @@ test('updating segment rules resyncs matching subscribers', function () {
 
     $segment->refresh();
     expect($segment->subscribers()->pluck('subscribers.id')->all())->toBe([$matching->id]);
+});
+
+test('narrowing the rules of a segment with more members than one query can bind removes every non-match', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $now = now()->toDateTimeString();
+    foreach (array_chunk(range(1, 33000), 500) as $chunk) {
+        DB::table('subscribers')->insert(array_map(fn (int $number): array => [
+            'uuid' => (string) Str::uuid(),
+            'audience_id' => $audience->id,
+            'email' => "user{$number}@example.com",
+            'status' => SubscriberStatus::Subscribed->value,
+            'source' => SubscriberSource::Manual->value,
+            'subscribed_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], $chunk));
+    }
+    $segment = Segment::factory()->for($audience)->create([
+        'rules' => [['field' => 'email', 'operator' => 'contains', 'value' => '@example.com']],
+    ]);
+    app(SyncSegmentSubscribers::class)->handle($segment);
+
+    expect($segment->subscribers()->count())->toBe(33000);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.segments.update', [$team, $audience, $segment]), [
+            'name' => $segment->name,
+            'match_type' => 'all',
+            'rules' => [['field' => 'email', 'operator' => 'equals', 'value' => 'user1@example.com']],
+        ])
+        ->assertRedirect();
+
+    expect($segment->subscribers()->pluck('subscribers.email')->all())->toBe(['user1@example.com']);
 });
 
 test('segments sync command materializes matches for every segment', function () {

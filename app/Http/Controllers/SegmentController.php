@@ -12,6 +12,7 @@ use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -21,8 +22,12 @@ class SegmentController extends Controller
     public function store(SaveSegmentRequest $request, Team $currentTeam, Audience $audience, SyncSegmentSubscribers $syncSegmentSubscribers): RedirectResponse
     {
         Gate::authorize('create', [Segment::class, $audience]);
-        $segment = $audience->segments()->create($request->validated());
-        $syncSegmentSubscribers->handle($segment);
+        $segment = DB::transaction(function () use ($request, $audience, $syncSegmentSubscribers): Segment {
+            $segment = $audience->segments()->create($request->validated());
+            $syncSegmentSubscribers->handle($segment);
+
+            return $segment;
+        });
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Segment created.')]);
 
@@ -89,8 +94,10 @@ class SegmentController extends Controller
     public function update(SaveSegmentRequest $request, Team $currentTeam, Audience $audience, Segment $segment, SyncSegmentSubscribers $syncSegmentSubscribers): RedirectResponse
     {
         Gate::authorize('update', $segment);
-        $segment->update($request->validated());
-        $syncSegmentSubscribers->handle($segment);
+        DB::transaction(function () use ($request, $segment, $syncSegmentSubscribers): void {
+            $segment->update($request->validated());
+            $syncSegmentSubscribers->handle($segment);
+        });
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Segment updated.')]);
 
