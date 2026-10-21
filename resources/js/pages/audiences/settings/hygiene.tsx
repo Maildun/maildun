@@ -57,9 +57,9 @@ const hygieneCopy: Record<
     inactive: {
         title: 'Inactive subscribers',
         description:
-            'Remove people who have never opened or clicked a campaign sent to them.',
+            'Remove people who have never opened or clicked a campaign sent to them. Only campaigns with open tracking on count.',
         criteria:
-            'Currently subscribed, received at least one sent campaign, and has no opens or clicks.',
+            'Currently subscribed, received at least one sent campaign with open tracking on, and has no opens or clicks.',
         action: 'Remove inactive',
         confirmTitle: 'Remove inactive subscribers?',
         confirmDescription: (count) =>

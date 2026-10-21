@@ -204,6 +204,9 @@ class ManageAudienceHygiene
     }
 
     /**
+     * Only campaigns that tracked opens count as a chance to engage, since
+     * opens cannot be recorded for campaigns sent with open tracking off.
+     *
      * @param  Builder<Subscriber>  $query
      * @return Builder<Subscriber>
      */
@@ -212,7 +215,9 @@ class ManageAudienceHygiene
         return $query
             ->where('status', SubscriberStatus::Subscribed)
             ->whereNotNull('subscribed_at')
-            ->whereHas('deliveries', fn (Builder $query): Builder => $query->whereNotNull('sent_at'))
+            ->whereHas('deliveries', fn (Builder $query): Builder => $query
+                ->whereNotNull('sent_at')
+                ->whereHas('email', fn (Builder $emailQuery): Builder => $emailQuery->where('track_opens', true)))
             ->whereDoesntHave('deliveries', fn (Builder $query): Builder => $query
                 ->where(fn (Builder $engagementQuery): Builder => $engagementQuery
                     ->where('opens_count', '>', 0)

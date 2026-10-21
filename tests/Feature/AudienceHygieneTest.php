@@ -370,3 +370,36 @@ test('members can review workspace list hygiene but cannot run cleanup', functio
         ->delete(route('audiences.settings.hygiene.inactive.destroy', [$team, $audience]))
         ->assertForbidden();
 });
+
+test('inactive cleanup keeps subscribers whose only sent campaigns did not track opens', function (bool $tracksClicks) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $untracked = Subscriber::factory()->for($audience)->create();
+    EmailDelivery::factory()
+        ->for(Email::factory()->for($team)->create(['track_opens' => false, 'track_clicks' => $tracksClicks]))
+        ->for($untracked)
+        ->create(['status' => EmailDeliveryStatus::Sent, 'sent_at' => now()]);
+    $inactive = Subscriber::factory()->for($audience)->create();
+    sentDelivery($inactive);
+
+    $this->actingAs($user)
+        ->get(route('audiences.settings.hygiene', [$team, $audience]))
+        ->assertInertia(fn (Assert $page) => $page->where('counts.inactive', 1));
+    $this->actingAs($user)
+        ->get(route('list_hygiene.index', $team))
+        ->assertInertia(fn (Assert $page) => $page->where('audiences.0.inactive_count', 1));
+
+    $this->actingAs($user)
+        ->delete(route('list_hygiene.inactive.destroy', $team), ['subscribers' => [$untracked->uuid]])
+        ->assertRedirect();
+    $this->actingAs($user)
+        ->delete(route('audiences.settings.hygiene.inactive.destroy', [$team, $audience]))
+        ->assertRedirect();
+
+    $this->assertModelExists($untracked);
+    $this->assertModelMissing($inactive);
+})->with([
+    'opens and clicks untracked' => false,
+    'only clicks tracked' => true,
+]);
