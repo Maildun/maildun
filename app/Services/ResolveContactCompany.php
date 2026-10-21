@@ -102,7 +102,7 @@ class ResolveContactCompany
             ->where('company_assignment_mode', ContactCompanyAssignmentMode::Automatic)
             ->where(function (Builder $query) use ($forms): void {
                 foreach ($forms as $form) {
-                    $query->orWhere('email', 'like', '%@'.$form);
+                    $query->orWhereLike('email', '%@'.$form);
                 }
             });
     }
