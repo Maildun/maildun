@@ -166,14 +166,9 @@ class SubscriberController extends Controller
     {
         Gate::authorize('delete', $subscriber);
 
-        $fromProfile = str_contains(url()->previous(), '/subscribers/'.$subscriber->uuid);
         $subscriber->delete();
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber permanently deleted.')]);
-
-        if ($fromProfile) {
-            return to_route('audiences.show', [$currentTeam, $audience]);
-        }
 
         return back();
     }

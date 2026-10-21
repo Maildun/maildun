@@ -759,3 +759,15 @@ test('a list-shaped company name is a validation error', function () {
 
     expect(Company::query()->where('team_id', $user->currentTeam->id)->exists())->toBeFalse();
 });
+
+test('company domain factories keep the domain in its company workspace', function () {
+    $team = Team::factory()->create();
+    $company = Company::factory()->create();
+
+    $forTeam = CompanyDomain::factory()->for($team)->create();
+    $forCompany = CompanyDomain::factory()->for($company)->create();
+
+    expect($forTeam->team_id)->toBe($team->id)
+        ->and($forTeam->company->team_id)->toBe($team->id)
+        ->and($forCompany->team_id)->toBe($company->team_id);
+});

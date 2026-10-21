@@ -523,16 +523,16 @@ test('subscriber profile bindings stay scoped to the audience', function () {
         ->assertNotFound();
 });
 
-test('deleting a subscriber from the profile returns to the audience', function () {
+test('deleting a subscriber returns to the page it was deleted from', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $audience = Audience::factory()->for($team)->create();
     $subscriber = Subscriber::factory()->for($audience)->create();
 
     $this->actingAs($user)
-        ->from(route('audiences.subscribers.show', [$team, $audience, $subscriber]))
+        ->from(route('audiences.show', [$team, $audience, 'page' => 2]))
         ->delete(route('audiences.subscribers.destroy', [$team, $audience, $subscriber]))
-        ->assertRedirect(route('audiences.show', [$team, $audience]));
+        ->assertRedirect(route('audiences.show', [$team, $audience, 'page' => 2]));
 
     $this->assertModelMissing($subscriber);
 });

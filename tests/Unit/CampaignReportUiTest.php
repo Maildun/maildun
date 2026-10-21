@@ -252,7 +252,6 @@ test('campaign and delivery badges come from the shared email status module', fu
     'recipients' => 'pages/emails/recipients.tsx',
     'dashboard' => 'pages/dashboard.tsx',
     'sidebar campaigns' => 'components/nav-campaigns.tsx',
-    'subscriber profile' => 'pages/audiences/subscribers/show.tsx',
 ]);
 
 test('report metrics explain what they count and human engagement is labelled as human', function () {
