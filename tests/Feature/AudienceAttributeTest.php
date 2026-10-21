@@ -107,6 +107,52 @@ test('deleting an attribute removes its stored subscriber values', function () {
     expect($subscriber->fresh()->attribute_values)->toBe(['plan' => 'pro']);
 });
 
+test('an attribute cannot become a date while members hold values that are not dates', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create([
+        'name' => 'Tier',
+        'key' => 'tier',
+        'type' => AudienceAttributeType::Text,
+    ]);
+    Subscriber::factory()->for($audience)->create(['attribute_values' => ['tier' => 'VIP']]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.attributes.update', [$team, $audience, $attribute]), [
+            'name' => 'Tier',
+            'key' => 'tier',
+            'type' => AudienceAttributeType::Date->value,
+        ])
+        ->assertSessionHasErrors([
+            'type' => 'Some subscribers have values that are not a valid date. Fix those values before changing the type.',
+        ]);
+
+    expect($attribute->fresh()->type)->toBe(AudienceAttributeType::Text);
+});
+
+test('an attribute can become a date when every stored value is a date', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create([
+        'name' => 'Renewal',
+        'key' => 'renewal',
+        'type' => AudienceAttributeType::Text,
+    ]);
+    Subscriber::factory()->for($audience)->create(['attribute_values' => ['renewal' => '2026-12-31']]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.attributes.update', [$team, $audience, $attribute]), [
+            'name' => 'Renewal',
+            'key' => 'renewal',
+            'type' => AudienceAttributeType::Date->value,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($attribute->fresh()->type)->toBe(AudienceAttributeType::Date);
+});
+
 test('team owners can configure the main subscriber fields in attribute settings', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

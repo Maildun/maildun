@@ -329,6 +329,25 @@ test('the api returns 422 for attributes on an audience without custom fields', 
     expect($audience->subscribers()->count())->toBe(0);
 });
 
+test('the api stores date fields as Y-m-d', function () {
+    $audience = Audience::factory()->create();
+    $audience->audienceAttributes()->create([
+        'name' => 'Birthday',
+        'key' => 'birthday',
+        'type' => AudienceAttributeType::Date,
+    ]);
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'ada@example.com',
+            'attributes' => ['birthday' => '31.12.2026'],
+        ])
+        ->assertOk();
+
+    expect($audience->subscribers()->sole()->attribute_values)->toBe(['birthday' => '2026-12-31']);
+});
+
 test('subscriber endpoints enforce key team scope and configured attributes', function () {
     $audience = Audience::factory()->create();
     $audience->audienceAttributes()->create([

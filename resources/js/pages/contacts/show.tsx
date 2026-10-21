@@ -73,7 +73,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
-import { formatRelativeTime } from '@/lib/format';
+import { formatAttributeDate, formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
 import { cn } from '@/lib/utils';
 import { show as showAudience } from '@/routes/audiences';
@@ -1385,9 +1385,7 @@ function formatAttributeValue(attribute: ContactAttribute): string {
     }
 
     if (attribute.type === 'date') {
-        return new Intl.DateTimeFormat(undefined, {
-            dateStyle: 'medium',
-        }).format(new Date(attribute.value));
+        return formatAttributeDate(attribute.value);
     }
 
     if (attribute.type === 'boolean') {

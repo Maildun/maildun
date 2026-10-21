@@ -19,6 +19,15 @@ class PublicSubscribeRequest extends FormRequest
         if ($this->has('email')) {
             $this->merge(['email' => Str::lower($this->string('email')->trim()->toString())]);
         }
+
+        $subscribeForm = $this->route('subscribeForm');
+
+        if ($this->has('attributes') && $subscribeForm instanceof SubscribeForm) {
+            $this->merge(['attributes' => AudienceAttribute::normalizeDateInput(
+                $this->input('attributes'),
+                $subscribeForm->audience->audienceAttributes()->get(),
+            )]);
+        }
     }
 
     /** @return array<string, ValidationRule|array<mixed>|string> */

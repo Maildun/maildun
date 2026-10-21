@@ -5,6 +5,7 @@ namespace App\Http\Requests\Api;
 use App\Enums\AudienceAttributeType;
 use App\Enums\SubscriberLanguage;
 use App\Models\Audience;
+use App\Models\AudienceAttribute;
 use App\Models\Team;
 use App\Models\TeamApiKey;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -25,6 +26,13 @@ class SubscribeSubscriberRequest extends FormRequest
     {
         if ($this->has('email')) {
             $this->merge(['email' => Str::lower($this->string('email')->trim()->toString())]);
+        }
+
+        if ($this->has('attributes')) {
+            $this->merge(['attributes' => AudienceAttribute::normalizeDateInput(
+                $this->input('attributes'),
+                $this->audience()->audienceAttributes()->get(),
+            )]);
         }
     }
 

@@ -577,6 +577,44 @@ test('published forms display and store their audience attributes', function () 
     ]);
 });
 
+test('published forms store date fields as Y-m-d', function () {
+    $audience = Audience::factory()->create();
+    AudienceAttribute::factory()->for($audience)->create([
+        'name' => 'Birthday',
+        'key' => 'birthday',
+        'type' => AudienceAttributeType::Date,
+    ]);
+    $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+        'website' => '',
+        'attributes' => ['birthday' => '31.12.2026'],
+    ])->assertOk();
+
+    expect($audience->subscribers()->sole()->attribute_values)->toBe(['birthday' => '2026-12-31']);
+});
+
+test('published forms reject a date field that is not a date', function () {
+    $audience = Audience::factory()->create();
+    AudienceAttribute::factory()->for($audience)->create([
+        'name' => 'Birthday',
+        'key' => 'birthday',
+        'type' => AudienceAttributeType::Date,
+    ]);
+    $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+        'website' => '',
+        'attributes' => ['birthday' => '2026-02-31'],
+    ])->assertInvalid('attributes.birthday');
+
+    expect($audience->subscribers()->count())->toBe(0);
+});
+
 test('published forms collect a configured subscriber language', function () {
     $audience = Audience::factory()->create([
         'language_mode' => SubscribeFormFieldMode::Required,

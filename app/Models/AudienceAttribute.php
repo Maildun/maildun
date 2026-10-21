@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * @property int $id
@@ -85,6 +86,44 @@ class AudienceAttribute extends Model
         }
 
         return $key;
+    }
+
+    /**
+     * Rewrite submitted Date field values as Y-m-d, the format imports store,
+     * so every reader can parse them. Values that are not a date are left for
+     * validation to reject.
+     *
+     * @param  iterable<AudienceAttribute>  $attributes
+     */
+    public static function normalizeDateInput(mixed $values, iterable $attributes): mixed
+    {
+        if (! is_array($values)) {
+            return $values;
+        }
+
+        foreach ($attributes as $attribute) {
+            $value = $values[$attribute->key] ?? null;
+
+            if ($attribute->type !== AudienceAttributeType::Date || ! is_string($value) || trim($value) === '') {
+                continue;
+            }
+
+            $parts = date_parse($value);
+
+            if (strtotime($value) === false
+                || ! is_int($parts['year']) || ! is_int($parts['month']) || ! is_int($parts['day'])
+                || ! checkdate($parts['month'], $parts['day'], $parts['year'])) {
+                continue;
+            }
+
+            try {
+                $values[$attribute->key] = Carbon::parse($value)->toDateString();
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        return $values;
     }
 
     /** @return BelongsTo<Audience, $this> */
