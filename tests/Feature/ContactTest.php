@@ -695,3 +695,74 @@ test('viewers cannot bulk delete contacts', function () {
 
     expect($contact->fresh())->not->toBeNull();
 });
+
+test('a contact-only role cannot add, remove or resubscribe audience memberships from the contact side', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignCustomRole($team, $member, [TeamPermission::ManageContact]);
+    $audience = Audience::factory()->for($team)->create();
+    $contact = Contact::factory()->for($team)->create(['email' => 'ada@example.com']);
+    $unsubscribed = Subscriber::factory()->for(Audience::factory()->for($team))->for($contact)->unsubscribed()->create(['email' => 'ada@example.com']);
+
+    $this->actingAs($member)
+        ->post(route('contacts.audiences.store', [$team, $contact]), [
+            'audience_uuid' => $audience->uuid,
+            'consent_confirmed' => true,
+        ])
+        ->assertForbidden();
+    $this->actingAs($member)
+        ->post(route('contacts.store', $team), [
+            'email' => 'ada@example.com',
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'audience_uuids' => [$unsubscribed->audience->uuid],
+            'consent_confirmed' => true,
+        ])
+        ->assertForbidden();
+    $this->actingAs($member)
+        ->delete(route('contacts.audiences.destroy', [$team, $contact, $unsubscribed]))
+        ->assertForbidden();
+
+    expect($audience->subscribers()->exists())->toBeFalse()
+        ->and($unsubscribed->refresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+});
+
+test('a contact-only role cannot bulk unsubscribe audience memberships', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignCustomRole($team, $member, [TeamPermission::ManageContact]);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->create(['email' => 'ada@example.com']);
+
+    $this->actingAs($member)
+        ->patch(route('contacts.bulk-unsubscribe', $team), ['ids' => [$subscriber->refresh()->contact->uuid]])
+        ->assertForbidden();
+
+    expect($subscriber->refresh()->status)->toBe(SubscriberStatus::Subscribed);
+});
+
+test('the contact pages only offer membership actions to roles that can manage audiences', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignCustomRole($team, $member, [TeamPermission::ManageContact]);
+    $contact = Contact::factory()->for($team)->create();
+
+    Audience::factory()->for($team)->create();
+
+    $this->actingAs($member)
+        ->get(route('contacts.show', [$team, $contact]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('canManage', true)
+            ->where('audiences', []));
+    $this->actingAs($member)
+        ->get(route('contacts.index', $team))
+        ->assertInertia(fn (Assert $page) => $page->where('canAddToAudiences', false));
+    $this->actingAs($owner)
+        ->get(route('contacts.index', $team))
+        ->assertInertia(fn (Assert $page) => $page->where('canAddToAudiences', true));
+});

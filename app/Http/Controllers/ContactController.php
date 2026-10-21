@@ -356,10 +356,15 @@ class ContactController extends Controller
 
     public function bulkUnsubscribe(BulkContactRequest $request, Team $currentTeam): RedirectResponse
     {
-        $subscribers = Subscriber::query()
+        $memberships = Subscriber::query()
+            ->with('audience.team')
             ->whereIn('contact_id', $currentTeam->contacts()->whereIn('uuid', $request->validated('ids'))->select('id'))
-            ->where('status', SubscriberStatus::Subscribed)
             ->get();
+        $memberships->each(fn (Subscriber $subscriber) => Gate::authorize('update', $subscriber));
+
+        $subscribers = $memberships
+            ->where('status', SubscriberStatus::Subscribed)
+            ->values();
 
         Subscriber::query()
             ->whereIn('id', $subscribers->modelKeys())
@@ -369,7 +374,7 @@ class ContactController extends Controller
             ]);
 
         Subscriber::query()
-            ->whereIn('contact_id', $currentTeam->contacts()->whereIn('uuid', $request->validated('ids'))->select('id'))
+            ->whereIn('id', $memberships->modelKeys())
             ->whereNotNull('resubscribe_requested_at')
             ->update(['resubscribe_requested_at' => null]);
 

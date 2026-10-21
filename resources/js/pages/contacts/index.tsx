@@ -396,23 +396,27 @@ export default function ContactsIndex({
                             noun={['contact', 'contacts']}
                             onClear={() => setSelected(new Set())}
                         >
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                    router.patch(
-                                        bulkUnsubscribe.url(currentTeam.slug),
-                                        { ids: [...selected] },
-                                        {
-                                            preserveScroll: true,
-                                            onSuccess: () =>
-                                                setSelected(new Set()),
-                                        },
-                                    );
-                                }}
-                            >
-                                Unsubscribe
-                            </Button>
+                            {canAddToAudiences ? (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        router.patch(
+                                            bulkUnsubscribe.url(
+                                                currentTeam.slug,
+                                            ),
+                                            { ids: [...selected] },
+                                            {
+                                                preserveScroll: true,
+                                                onSuccess: () =>
+                                                    setSelected(new Set()),
+                                            },
+                                        );
+                                    }}
+                                >
+                                    Unsubscribe
+                                </Button>
+                            ) : null}
                             <Button
                                 variant="destructive"
                                 size="sm"
