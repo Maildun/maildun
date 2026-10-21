@@ -21,6 +21,7 @@ use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -178,7 +179,7 @@ class AudienceController extends Controller
     public function update(SaveAudienceRequest $request, Team $currentTeam, Audience $audience): RedirectResponse
     {
         Gate::authorize('update', $audience);
-        $audience->update($this->audienceAttributes($request, $currentTeam));
+        $audience->update($this->audienceAttributes($request, $currentTeam, $audience));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Audience updated.')]);
 
@@ -285,6 +286,7 @@ class AudienceController extends Controller
     private function audienceAttributes(
         SaveAudienceRequest $request,
         Team $team,
+        ?Audience $audience = null,
     ): array {
         $attributes = $request->validated();
 
@@ -320,6 +322,17 @@ class AudienceController extends Controller
 
         if (array_key_exists('double_opt_in', $attributes) && ! $attributes['double_opt_in']) {
             $attributes['double_opt_in_email_id'] = null;
+        }
+
+        $doubleOptIn = $attributes['double_opt_in'] ?? $audience->double_opt_in ?? false;
+        $doubleOptInEmailId = array_key_exists('double_opt_in_email_id', $attributes)
+            ? $attributes['double_opt_in_email_id']
+            : $audience?->double_opt_in_email_id;
+
+        if ($doubleOptIn && $doubleOptInEmailId === null) {
+            throw ValidationException::withMessages([
+                'double_opt_in_email_uuid' => __('Choose a published confirmation email to use double opt-in.'),
+            ]);
         }
 
         return $attributes;

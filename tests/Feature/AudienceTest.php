@@ -282,6 +282,29 @@ test('team owners can configure double opt-in with a published transactional ema
         ->double_opt_in_email_id->toBeNull();
 });
 
+test('double opt-in cannot be left on without a usable confirmation email', function (string $change) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $current = TransactionalEmail::factory()->for($team)->published()->create();
+    $audience = Audience::factory()->for($team)->create([
+        'double_opt_in' => true,
+        'double_opt_in_email_id' => $current->id,
+    ]);
+    $deleted = TransactionalEmail::factory()->for($team)->published()->create();
+    $deleted->delete();
+    $payload = $change === 'cleared'
+        ? ['double_opt_in_email_uuid' => '']
+        : ['double_opt_in' => true, 'double_opt_in_email_uuid' => $deleted->uuid];
+
+    $this->actingAs($user)
+        ->patch(route('audiences.update', [$team, $audience]), $payload)
+        ->assertInvalid(['double_opt_in_email_uuid' => 'confirmation email']);
+
+    expect($audience->fresh())
+        ->double_opt_in->toBeTrue()
+        ->double_opt_in_email_id->toBe($current->id);
+})->with(['cleared', 'deleted']);
+
 test('empty audience subscriber stats are zeroed for the chart', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
