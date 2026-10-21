@@ -18,6 +18,7 @@ class SubscribeViaApi
         private QueueAudienceConfirmationEmail $queueConfirmationEmail,
         private ManageContact $manageContact,
         private NotifyAudienceOfSubscriptionChange $notifyAudience,
+        private RequestResubscription $requestResubscription,
     ) {}
 
     /** @param array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, consent_text?: string|null, attributes?: array<string, string|int|float|null>} $data */
@@ -28,6 +29,18 @@ class SubscribeViaApi
         $subscriber = DB::transaction(function () use ($audience, $data, $ipAddress, &$trigger): Subscriber {
             $lockedAudience = Audience::query()->whereKey($audience->id)->lockForUpdate()->firstOrFail();
             $subscriber = $lockedAudience->subscribers()->where('email', $data['email'])->first();
+
+            if ($lockedAudience->double_opt_in
+                && $subscriber instanceof Subscriber
+                && $subscriber->status === SubscriberStatus::Unsubscribed) {
+                return $this->requestResubscription->handle(
+                    $lockedAudience,
+                    $subscriber,
+                    $data['consent_text'] ?? 'Marketing consent confirmed via API.',
+                    $ipAddress,
+                );
+            }
+
             $attributeValues = Arr::where(
                 $data['attributes'] ?? [],
                 fn (mixed $value): bool => $value !== null && $value !== '',
@@ -78,6 +91,7 @@ class SubscribeViaApi
                 'consent_ip' => $ipAddress,
                 'subscribed_at' => $requiresConfirmation ? null : now(),
                 'unsubscribed_at' => null,
+                'resubscribe_requested_at' => null,
             ];
 
             if ($subscriber instanceof Subscriber) {

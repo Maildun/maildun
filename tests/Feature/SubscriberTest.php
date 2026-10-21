@@ -141,6 +141,28 @@ test('owners can update unsubscribe resubscribe and delete subscribers', functio
     $this->assertModelMissing($subscriber);
 });
 
+test('a team resubscribe of a member awaiting re-signup confirmation clears the pending request', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingResubscription()->create();
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.resubscribe', [$team, $audience, $subscriber]), ['consent_confirmed' => true])
+        ->assertRedirect();
+
+    $subscriber->refresh();
+
+    expect($subscriber->isOptedIn())->toBeTrue()
+        ->and($subscriber->resubscribe_requested_at)->toBeNull();
+    Event::assertDispatchedTimes(SubscriberLifecycleOccurred::class, 1);
+    Event::assertDispatched(
+        SubscriberLifecycleOccurred::class,
+        fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Resubscribed,
+    );
+});
+
 test('a subscriber email cannot be changed to another team contact email', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

@@ -19,6 +19,7 @@ class SubscribeToAudience
         private QueueAudienceConfirmationEmail $queueConfirmationEmail,
         private ManageContact $manageContact,
         private NotifyAudienceOfSubscriptionChange $notifyAudience,
+        private RequestResubscription $requestResubscription,
     ) {}
 
     /** @param array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, attributes?: array<string, string|int|float|null>} $data */
@@ -32,6 +33,12 @@ class SubscribeToAudience
 
             if ($subscriber?->status === SubscriberStatus::Subscribed && ! $subscriber->isPendingConfirmation()) {
                 return $subscriber;
+            }
+
+            if ($audience->double_opt_in
+                && $subscriber instanceof Subscriber
+                && $subscriber->status === SubscriberStatus::Unsubscribed) {
+                return $this->requestResubscription->handle($audience, $subscriber, $subscribeForm->consent_text, $ipAddress);
             }
 
             $contact = $this->manageContact->findOrCreate(
@@ -70,6 +77,7 @@ class SubscribeToAudience
                 'consent_ip' => $ipAddress,
                 'subscribed_at' => $requiresConfirmation ? null : now(),
                 'unsubscribed_at' => null,
+                'resubscribe_requested_at' => null,
             ];
 
             if ($subscriber) {

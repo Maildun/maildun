@@ -8,6 +8,7 @@ use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Jobs\SendTransactionalEmailDelivery;
 use App\Models\Audience;
+use App\Models\Automation;
 use App\Models\Subscriber;
 use App\Models\TeamApiKey;
 use App\Models\TeamEmailIntegration;
@@ -16,6 +17,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
+use Inertia\Testing\AssertableInertia as Assert;
 
 test('the api subscribes idempotently without replacing the shared contact profile', function () {
     $audience = Audience::factory()->create([
@@ -230,6 +232,52 @@ test('the api resubscribes an unsubscribed member and fires the lifecycle event'
         SubscriberLifecycleOccurred::class,
         fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Resubscribed,
     );
+});
+
+test('an api resubscribe on a double opt-in audience keeps the opt-out until the emailed link starts the resubscribed automation', function () {
+    $audience = Audience::factory()->create();
+    TeamEmailIntegration::factory()->for($audience->team)->create();
+    $transactionalEmail = TransactionalEmail::factory()->for($audience->team)->published()->create([
+        'html' => '<a href="{{ confirmation_url }}">Confirm</a>',
+    ]);
+    $audience->update(['double_opt_in' => true, 'double_opt_in_email_id' => $transactionalEmail->id]);
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create(['email' => 'ada@example.com']);
+    $welcome = Automation::factory()->active()->for($audience->team)->triggeredBy(AutomationTrigger::Subscribed)->create();
+    $winBack = Automation::factory()->active()->for($audience->team)->triggeredBy(AutomationTrigger::Resubscribed)->create();
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+    Queue::fake();
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), ['email' => 'ada@example.com'])
+        ->assertOk()
+        ->assertJsonPath('data.status', 'unsubscribed')
+        ->assertJsonPath('data.pending_confirmation', true)
+        ->assertJsonPath('data.subscribed_at', null);
+
+    expect($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed)
+        ->and($subscriber->fresh()->unsubscribed_at)->not->toBeNull();
+
+    preg_match('/href="([^"]+)"/', $transactionalEmail->deliveries()->sole()->html, $link);
+    $this->get(html_entity_decode($link[1]))
+        ->assertInertia(fn (Assert $page) => $page->where('confirmed', true));
+
+    $subscriber->refresh();
+
+    expect($subscriber->isOptedIn())->toBeTrue()
+        ->and($subscriber->unsubscribed_at)->toBeNull()
+        ->and($subscriber->resubscribe_requested_at)->toBeNull()
+        ->and($winBack->runs()->where('subscriber_id', $subscriber->id)->exists())->toBeTrue()
+        ->and($welcome->runs()->where('subscriber_id', $subscriber->id)->exists())->toBeFalse();
+});
+
+test('the api reports a confirmed member as not pending confirmation', function () {
+    $subscriber = Subscriber::factory()->create();
+    $issued = TeamApiKey::issue($subscriber->audience->team, 'Production');
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $subscriber->audience->uuid), ['email' => $subscriber->email])
+        ->assertOk()
+        ->assertJsonPath('data.pending_confirmation', false);
 });
 
 test('the api unsubscribe operation is opaque and idempotent', function () {

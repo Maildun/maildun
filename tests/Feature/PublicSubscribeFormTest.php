@@ -1,7 +1,11 @@
 <?php
 
+use App\Actions\Automations\AdvanceAutomationRun;
 use App\Enums\AudienceAttributeType;
+use App\Enums\AutomationAction;
+use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationTrigger;
+use App\Enums\ContactImportStatus;
 use App\Enums\SubscribeFormArtworkPreset;
 use App\Enums\SubscribeFormArtworkType;
 use App\Enums\SubscribeFormCardPadding;
@@ -19,10 +23,14 @@ use App\Enums\TeamBrandFont;
 use App\Enums\TeamBrandInputStyle;
 use App\Enums\TransactionalEmailStatus;
 use App\Events\SubscriberLifecycleOccurred;
+use App\Jobs\ProcessContactImport;
 use App\Jobs\SendTransactionalEmailDelivery;
+use App\Mail\AutomationEmail;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
+use App\Models\Automation;
 use App\Models\Contact;
+use App\Models\ContactImport;
 use App\Models\EmailAddressHealth;
 use App\Models\SubscribeForm;
 use App\Models\Subscriber;
@@ -30,7 +38,9 @@ use App\Models\TeamEmailIntegration;
 use App\Models\TransactionalEmail;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -370,6 +380,142 @@ test('a pending subscriber who submits again gets a fresh confirmation email at 
     expect($transactionalEmail->deliveries()->sole()->to_address)->toBe('person@example.com')
         ->and($subscriber->fresh()->subscribed_at)->toBeNull();
     Queue::assertPushed(SendTransactionalEmailDelivery::class, 1);
+});
+
+/**
+ * @return array{0: Audience, 1: TransactionalEmail, 2: SubscribeForm}
+ */
+function reconsentForm(): array
+{
+    $audience = Audience::factory()->create([
+        'first_name_mode' => SubscribeFormFieldMode::Optional,
+        'language_mode' => SubscribeFormFieldMode::Optional,
+        'allowed_languages' => [SubscriberLanguage::English->value, SubscriberLanguage::Indonesian->value],
+    ]);
+    TeamEmailIntegration::factory()->for($audience->team)->create();
+    $transactionalEmail = TransactionalEmail::factory()->for($audience->team)->published()->create([
+        'html' => '<a href="{{ confirmation_url }}">Confirm</a>',
+    ]);
+    $audience->update(['double_opt_in' => true, 'double_opt_in_email_id' => $transactionalEmail->id]);
+
+    return [$audience, $transactionalEmail, SubscribeForm::factory()->for($audience)->published()->create()];
+}
+
+test('an anonymous double opt-in signup from an opted-out member keeps the opt-out until they confirm', function () {
+    [$audience, $transactionalEmail, $subscribeForm] = reconsentForm();
+    AudienceAttribute::factory()->for($audience)->create(['key' => 'company', 'type' => AudienceAttributeType::Text]);
+    $unsubscribedAt = now()->subDays(3)->startOfSecond();
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed($unsubscribedAt)->create([
+        'email' => 'person@example.com',
+        'first_name' => 'Ada',
+        'language' => SubscriberLanguage::English,
+        'attribute_values' => ['company' => 'Acme'],
+        'source' => SubscriberSource::Manual,
+    ]);
+    $run = Automation::factory()->active()->for($audience->team)->create()->runs()->create([
+        'subscriber_id' => $subscriber->id,
+        'status' => AutomationRunStatus::Pending,
+        'graph' => [
+            'nodes' => [
+                ['id' => 'trigger', 'type' => 'trigger', 'data' => ['kind' => 'subscribed']],
+                ['id' => 'send', 'type' => 'action', 'data' => [
+                    'kind' => AutomationAction::SendEmail->value,
+                    'transactional_email_uuid' => TransactionalEmail::factory()->for($audience->team)->published()->create()->uuid,
+                ]],
+            ],
+            'edges' => [['source' => 'trigger', 'target' => 'send']],
+        ],
+        'current_node_id' => 'send',
+    ]);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+    Queue::fake([SendTransactionalEmailDelivery::class]);
+    Mail::fake();
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'first_name' => 'Mallory',
+        'language' => SubscriberLanguage::Indonesian->value,
+        'attributes' => ['company' => 'Evil Corp'],
+        'consent' => true,
+        'website' => '',
+    ])->assertOk()->assertExactJson(['message' => $subscribeForm->success_message]);
+    app(AdvanceAutomationRun::class)->handle($run);
+
+    $subscriber->refresh();
+
+    expect($subscriber->status)->toBe(SubscriberStatus::Unsubscribed)
+        ->and($subscriber->unsubscribed_at?->equalTo($unsubscribedAt))->toBeTrue()
+        ->and($subscriber->resubscribe_requested_at)->not->toBeNull()
+        ->and($subscriber->subscribed_at)->toBeNull()
+        ->and($subscriber->first_name)->toBe('Ada')
+        ->and($subscriber->language)->toBe(SubscriberLanguage::English)
+        ->and($subscriber->attribute_values)->toBe(['company' => 'Acme'])
+        ->and($subscriber->source)->toBe(SubscriberSource::Manual)
+        ->and($subscriber->subscribe_form_id)->toBeNull()
+        ->and($subscriber->consent_text)->toBe($subscribeForm->consent_text)
+        ->and($transactionalEmail->deliveries()->sole()->html)->toContain('resubscribe='.$subscriber->resubscribe_requested_at->getTimestamp());
+    Queue::assertPushed(SendTransactionalEmailDelivery::class, 1);
+    Mail::assertNotSent(AutomationEmail::class);
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('a default import after an unconfirmed re-signup keeps the opted-out member unsendable', function () {
+    fakeMailDomains();
+    Storage::fake('local');
+    Queue::fake([SendTransactionalEmailDelivery::class]);
+    [$audience, , $subscribeForm] = reconsentForm();
+    $contact = Contact::factory()->for($audience->team)->create(['email' => 'person@example.com']);
+    $subscriber = Subscriber::factory()->for($audience)->for($contact)->unsubscribed()->create(['email' => $contact->email]);
+    $contactImport = ContactImport::factory()->for($audience->team)->create([
+        'status' => ContactImportStatus::Pending,
+        'headers' => ['email'],
+        'audience_id' => $audience->id,
+        'column_map' => ['email'],
+        'resubscribe_unsubscribed' => false,
+    ]);
+    Storage::disk('local')->put($contactImport->path, "email\nperson@example.com\n");
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+        'website' => '',
+    ])->assertOk();
+    ProcessContactImport::dispatchSync($contactImport->id);
+
+    expect($contactImport->refresh()->skipped_unsubscribed)->toBe(1)
+        ->and(Subscriber::query()->sendableFor($audience->team)->whereKey($subscriber->id)->exists())->toBeFalse();
+});
+
+test('a repeat re-signup inside the cooldown keeps the emailed confirmation link working', function () {
+    [$audience, $transactionalEmail, $subscribeForm] = reconsentForm();
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create(['email' => 'person@example.com']);
+    Queue::fake([SendTransactionalEmailDelivery::class]);
+    $payload = ['email' => 'person@example.com', 'consent' => true, 'website' => ''];
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), $payload)->assertOk();
+    $requestedAt = $subscriber->fresh()->resubscribe_requested_at;
+    $this->travel(2)->minutes();
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), $payload)->assertOk();
+
+    expect($subscriber->fresh()->resubscribe_requested_at?->equalTo($requestedAt))->toBeTrue()
+        ->and($transactionalEmail->deliveries()->sole()->html)->toContain('resubscribe='.$requestedAt->getTimestamp());
+    Queue::assertPushed(SendTransactionalEmailDelivery::class, 1);
+});
+
+test('a confirmation link without the current re-signup token does not resubscribe', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingResubscription()->create();
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->get(URL::signedRoute('public.subscribe.confirm', $subscriber))
+        ->assertInertia(fn (Assert $page) => $page->where('confirmed', false));
+    $this->get(URL::signedRoute('public.subscribe.confirm', [
+        'subscriber' => $subscriber,
+        'resubscribe' => $subscriber->resubscribe_requested_at->getTimestamp() - 60,
+    ]))->assertInertia(fn (Assert $page) => $page->where('confirmed', false));
+
+    expect($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
 });
 
 test('a pending subscriber is confirmed on a new submission after double opt-in is turned off', function () {

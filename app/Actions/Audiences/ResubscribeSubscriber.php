@@ -22,6 +22,7 @@ class ResubscribeSubscriber
             'consent_ip' => $ipAddress,
             'subscribed_at' => now(),
             'unsubscribed_at' => null,
+            'resubscribe_requested_at' => null,
         ]);
 
         $subscriber = $subscriber->fresh() ?? $subscriber;

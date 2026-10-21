@@ -12,30 +12,51 @@ class ConfirmSubscriberSubscription
 {
     public function __construct(private NotifyAudienceOfSubscriptionChange $notifyAudience) {}
 
-    public function handle(Subscriber $subscriber): Subscriber
+    /**
+     * Confirm a double opt-in from the subscriber's own link. A first signup
+     * fires Subscribed. A rejoin after an opt-out fires Resubscribed, and only
+     * when the link carries the current resubscribe_requested_at, so a link
+     * from an older request or from before a later opt-out does nothing.
+     */
+    public function handle(Subscriber $subscriber, ?string $resubscribeToken = null): Subscriber
     {
-        $confirmed = false;
+        $trigger = null;
 
-        $subscriber = DB::transaction(function () use ($subscriber, &$confirmed): Subscriber {
+        $subscriber = DB::transaction(function () use ($subscriber, $resubscribeToken, &$trigger): Subscriber {
             $lockedSubscriber = Subscriber::query()
                 ->with('audience')
                 ->whereKey($subscriber->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($lockedSubscriber->status !== SubscriberStatus::Subscribed
-                || $lockedSubscriber->subscribed_at !== null) {
+            if ($lockedSubscriber->isPendingResubscription()) {
+                if ($resubscribeToken !== (string) $lockedSubscriber->resubscribe_requested_at?->getTimestamp()) {
+                    return $lockedSubscriber;
+                }
+
+                $lockedSubscriber->update([
+                    'status' => SubscriberStatus::Subscribed,
+                    'subscribed_at' => now(),
+                    'unsubscribed_at' => null,
+                    'resubscribe_requested_at' => null,
+                ]);
+                $trigger = AutomationTrigger::Resubscribed;
+
+                return $lockedSubscriber->fresh(['audience']) ?? $lockedSubscriber;
+            }
+
+            if (! $lockedSubscriber->isPendingConfirmation()) {
                 return $lockedSubscriber;
             }
 
             $lockedSubscriber->update(['subscribed_at' => now()]);
-            $confirmed = true;
+            $trigger = AutomationTrigger::Subscribed;
 
             return $lockedSubscriber->fresh(['audience']) ?? $lockedSubscriber;
         });
 
-        if ($confirmed) {
-            event(new SubscriberLifecycleOccurred(AutomationTrigger::Subscribed, $subscriber));
+        if ($trigger instanceof AutomationTrigger) {
+            event(new SubscriberLifecycleOccurred($trigger, $subscriber));
             $this->notifyAudience->handle($subscriber, subscribed: true);
         }
 

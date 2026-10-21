@@ -123,17 +123,25 @@ class UnsubscribeController extends Controller
 
     /**
      * The shared opt-out transition. Idempotent: a second click on the same link
-     * neither restamps unsubscribed_at nor fires the lifecycle event again.
+     * neither restamps unsubscribed_at nor fires the lifecycle event again, but
+     * it still cancels a pending request to rejoin.
      */
     private function optOut(?Subscriber $subscriber): void
     {
-        if (! $subscriber instanceof Subscriber || $subscriber->status === SubscriberStatus::Unsubscribed) {
+        if (! $subscriber instanceof Subscriber) {
+            return;
+        }
+
+        if ($subscriber->status === SubscriberStatus::Unsubscribed) {
+            $subscriber->update(['resubscribe_requested_at' => null]);
+
             return;
         }
 
         $subscriber->update([
             'status' => SubscriberStatus::Unsubscribed,
             'unsubscribed_at' => now(),
+            'resubscribe_requested_at' => null,
         ]);
 
         event(new SubscriberLifecycleOccurred(AutomationTrigger::Unsubscribed, $subscriber));

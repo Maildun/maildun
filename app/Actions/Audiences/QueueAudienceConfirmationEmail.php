@@ -31,12 +31,13 @@ class QueueAudienceConfirmationEmail
      * confirmation email, or an address the workspace suppressed) must not
      * roll the signup back. The subscriber stays
      * pending and the operator gets a warning in the log instead.
+     *
+     * A re-consent link also signs the subscriber's resubscribe_requested_at,
+     * so it stops working once they opt out again or a newer request replaces it.
      */
     public function handle(Audience $audience, Subscriber $subscriber): ?TransactionalEmailDelivery
     {
-        $cooldownKey = 'audience-confirmation:'.$subscriber->id;
-
-        if (RateLimiter::tooManyAttempts($cooldownKey, 1)) {
+        if ($this->isCoolingDown($subscriber)) {
             return null;
         }
 
@@ -54,7 +55,12 @@ class QueueAudienceConfirmationEmail
         $confirmationUrl = URL::temporarySignedRoute(
             'public.subscribe.confirm',
             now()->addDays(7),
-            ['subscriber' => $subscriber],
+            [
+                'subscriber' => $subscriber,
+                ...($subscriber->isPendingResubscription()
+                    ? ['resubscribe' => $subscriber->resubscribe_requested_at?->getTimestamp()]
+                    : []),
+            ],
         );
 
         try {
@@ -77,9 +83,23 @@ class QueueAudienceConfirmationEmail
             return null;
         }
 
-        RateLimiter::hit($cooldownKey, self::RESEND_COOLDOWN_SECONDS);
+        RateLimiter::hit($this->cooldownKey($subscriber), self::RESEND_COOLDOWN_SECONDS);
 
         return $delivery;
+    }
+
+    /**
+     * Whether a confirmation went out to this subscriber too recently to send
+     * another one.
+     */
+    public function isCoolingDown(Subscriber $subscriber): bool
+    {
+        return RateLimiter::tooManyAttempts($this->cooldownKey($subscriber), 1);
+    }
+
+    private function cooldownKey(Subscriber $subscriber): string
+    {
+        return 'audience-confirmation:'.$subscriber->id;
     }
 
     private function warn(Audience $audience, Subscriber $subscriber, string $reason): void

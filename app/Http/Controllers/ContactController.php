@@ -369,6 +369,11 @@ class ContactController extends Controller
                 'unsubscribed_at' => now(),
             ]);
 
+        Subscriber::query()
+            ->whereIn('contact_id', $currentTeam->contacts()->whereIn('uuid', $request->validated('ids'))->select('id'))
+            ->whereNotNull('resubscribe_requested_at')
+            ->update(['resubscribe_requested_at' => null]);
+
         foreach ($subscribers as $subscriber) {
             $subscriber->status = SubscriberStatus::Unsubscribed;
             $subscriber->setAttribute('unsubscribed_at', now());

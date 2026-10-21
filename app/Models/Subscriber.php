@@ -38,6 +38,7 @@ use Illuminate\Support\Str;
  * @property string|null $consent_ip
  * @property Carbon|null $subscribed_at
  * @property Carbon|null $unsubscribed_at
+ * @property Carbon|null $resubscribe_requested_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Audience $audience
@@ -65,6 +66,7 @@ use Illuminate\Support\Str;
     'consent_ip',
     'subscribed_at',
     'unsubscribed_at',
+    'resubscribe_requested_at',
 ])]
 class Subscriber extends Model
 {
@@ -183,6 +185,15 @@ class Subscriber extends Model
         return $this->status === SubscriberStatus::Subscribed && $this->subscribed_at === null;
     }
 
+    /**
+     * A person who opted out and then asked to rejoin a double opt-in
+     * audience. They stay unsubscribed until they click the confirmation link.
+     */
+    public function isPendingResubscription(): bool
+    {
+        return $this->status === SubscriberStatus::Unsubscribed && $this->resubscribe_requested_at !== null;
+    }
+
     /** @return Attribute<string, string> */
     protected function email(): Attribute
     {
@@ -213,6 +224,7 @@ class Subscriber extends Model
             'consented_at' => 'datetime',
             'subscribed_at' => 'datetime',
             'unsubscribed_at' => 'datetime',
+            'resubscribe_requested_at' => 'datetime',
         ];
     }
 

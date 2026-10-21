@@ -99,6 +99,20 @@ test('requires renewed consent to resubscribe', function () {
     expect($subscriber->refresh()->status)->toBe(SubscriberStatus::Unsubscribed);
 });
 
+test('lists a member awaiting re-signup confirmation as pending confirmation', function () {
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    Subscriber::factory()->for($audience)->pendingResubscription()->create();
+
+    MaildunServer::tool(ListSubscribersTool::class, [
+        'workspace' => $team->slug,
+        'audience_uuid' => $audience->uuid,
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('subscribers.0.status', 'unsubscribed')
+        ->where('subscribers.0.pending_confirmation', true)
+        ->etc());
+});
+
 test('does not resolve subscribers from another workspace', function () {
     $team = Team::factory()->create();
     $otherSubscriber = Subscriber::factory()->create();

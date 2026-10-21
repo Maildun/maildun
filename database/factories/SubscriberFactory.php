@@ -64,6 +64,18 @@ class SubscriberFactory extends Factory
     }
 
     /**
+     * Someone who opted out and asked to rejoin a double opt-in audience, but
+     * has not clicked the confirmation link yet.
+     */
+    public function pendingResubscription(?CarbonInterface $requestedAt = null): static
+    {
+        return $this->unsubscribed(now()->subMonth())->state(fn (): array => [
+            'subscribed_at' => null,
+            'resubscribe_requested_at' => $requestedAt ?? now(),
+        ]);
+    }
+
+    /**
      * A double opt-in signup who has not clicked the confirmation link yet.
      */
     public function pendingConfirmation(): static

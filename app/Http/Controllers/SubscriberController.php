@@ -93,6 +93,7 @@ class SubscriberController extends Controller
         $subscriber->update([
             'status' => SubscriberStatus::Unsubscribed,
             'unsubscribed_at' => now(),
+            'resubscribe_requested_at' => null,
         ]);
 
         event(new SubscriberLifecycleOccurred(AutomationTrigger::Unsubscribed, $subscriber));
@@ -153,6 +154,11 @@ class SubscriberController extends Controller
                 'status' => SubscriberStatus::Unsubscribed,
                 'unsubscribed_at' => now(),
             ]);
+
+        $audience->subscribers()
+            ->whereIn('uuid', $request->validated('ids'))
+            ->whereNotNull('resubscribe_requested_at')
+            ->update(['resubscribe_requested_at' => null]);
 
         foreach ($subscribers as $subscriber) {
             $subscriber->status = SubscriberStatus::Unsubscribed;

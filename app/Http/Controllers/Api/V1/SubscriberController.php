@@ -45,7 +45,7 @@ class SubscriberController extends Controller
         ]);
     }
 
-    /** @return array{id: string, email: string, first_name: string|null, last_name: string|null, language: string|null, status: string, subscribed_at: string|null} */
+    /** @return array{id: string, email: string, first_name: string|null, last_name: string|null, language: string|null, status: string, pending_confirmation: bool, subscribed_at: string|null} */
     private function subscriberPayload(Subscriber $subscriber): array
     {
         return [
@@ -55,6 +55,7 @@ class SubscriberController extends Controller
             'last_name' => $subscriber->last_name,
             'language' => $subscriber->language?->value,
             'status' => $subscriber->status->value,
+            'pending_confirmation' => $subscriber->isPendingConfirmation() || $subscriber->isPendingResubscription(),
             'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
         ];
     }
