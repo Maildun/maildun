@@ -112,9 +112,14 @@ Route::get('forms/{subscribeForm}', [PublicSubscribeFormController::class, 'show
 Route::post('forms/{subscribeForm}/subscribe', [PublicSubscribeFormController::class, 'store'])
     ->middleware('throttle:public-subscribe')
     ->name('public.subscribe_forms.store');
-Route::get('confirm/{subscriber}', [SubscriptionConfirmationController::class, 'confirm'])
+Route::get('confirm/{subscriber}', [SubscriptionConfirmationController::class, 'show'])
     ->middleware(['inbox-signed', 'throttle:10,1'])
     ->name('public.subscribe.confirm');
+// The page's Confirm button posts to the same signed URL. confirm/* is CSRF
+// exempt in bootstrap/app.php, like unsubscribe/*: the signature guards it.
+Route::post('confirm/{subscriber}', [SubscriptionConfirmationController::class, 'store'])
+    ->middleware(['inbox-signed', 'throttle:10,1'])
+    ->name('public.subscribe.confirm.store');
 Route::get('sender-verifications/{teamSender}', TeamSenderVerificationController::class)
     ->whereUuid('teamSender')
     ->middleware(['signed', 'throttle:10,1'])

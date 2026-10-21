@@ -42,6 +42,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('only published subscribe forms are public', function () {
@@ -334,29 +335,6 @@ test('a double opt-in signup is kept when the address is suppressed', function (
         ->once();
 });
 
-test('a signed double opt-in link confirms a pending subscriber', function () {
-    $audience = Audience::factory()->create(['double_opt_in' => true]);
-    $subscriber = Subscriber::factory()->for($audience)->create([
-        'subscribed_at' => null,
-        'status' => SubscriberStatus::Subscribed,
-    ]);
-    Event::fake([SubscriberLifecycleOccurred::class]);
-
-    $response = $this->get(URL::signedRoute('public.subscribe.confirm', $subscriber));
-
-    $response->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('subscribe-forms/confirmed')
-            ->where('audienceName', $audience->name)
-            ->where('confirmed', true));
-
-    expect($subscriber->fresh()->subscribed_at)->not->toBeNull();
-    Event::assertDispatched(
-        SubscriberLifecycleOccurred::class,
-        fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Subscribed,
-    );
-});
-
 test('a pending subscriber who submits again gets a fresh confirmation email at most once per cooldown', function () {
     $audience = Audience::factory()->create();
     TeamEmailIntegration::factory()->for($audience->team)->ses()->create();
@@ -507,12 +485,17 @@ test('a confirmation link without the current re-signup token does not resubscri
     $subscriber = Subscriber::factory()->for($audience)->pendingResubscription()->create();
     Event::fake([SubscriberLifecycleOccurred::class]);
 
-    $this->get(URL::signedRoute('public.subscribe.confirm', $subscriber))
-        ->assertInertia(fn (Assert $page) => $page->where('confirmed', false));
-    $this->get(URL::signedRoute('public.subscribe.confirm', [
+    $withoutToken = URL::signedRoute('public.subscribe.confirm', $subscriber);
+    $staleToken = URL::signedRoute('public.subscribe.confirm', [
         'subscriber' => $subscriber,
         'resubscribe' => $subscriber->resubscribe_requested_at->getTimestamp() - 60,
-    ]))->assertInertia(fn (Assert $page) => $page->where('confirmed', false));
+    ]);
+
+    $this->post($withoutToken);
+    $this->post($staleToken);
+    $this->get($staleToken)->assertInertia(fn (Assert $page) => $page
+        ->where('confirmed', false)
+        ->where('canConfirm', false));
 
     expect($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
     Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
@@ -779,4 +762,75 @@ test('public subscribe submissions are throttled per form and email', function (
     $this->postJson(route('public.subscribe_forms.store', $subscribeForm), $payload)->assertOk();
     $this->postJson(route('public.subscribe_forms.store', $subscribeForm), $payload)->assertOk();
     $this->postJson(route('public.subscribe_forms.store', $subscribeForm), $payload)->assertTooManyRequests();
+});
+
+test('opening or prefetching a double opt-in link only shows the confirm button', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $openedByGet = Subscriber::factory()->for($audience)->pendingConfirmation()->create();
+    $prefetchedByHead = Subscriber::factory()->for($audience)->pendingConfirmation()->create();
+    $confirmationUrl = URL::signedRoute('public.subscribe.confirm', $openedByGet);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->withHeaders(['User-Agent' => 'Microsoft SafeLinks Defenderoffice365'])
+        ->get($confirmationUrl)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('subscribe-forms/confirmed')
+            ->where('audienceName', $audience->name)
+            ->where('confirmed', false)
+            ->where('canConfirm', true)
+            ->where('confirmUrl', Str::after($confirmationUrl, config('app.url'))));
+    $this->call('HEAD', URL::signedRoute('public.subscribe.confirm', $prefetchedByHead));
+
+    expect($openedByGet->fresh()->subscribed_at)->toBeNull()
+        ->and($prefetchedByHead->fresh()->subscribed_at)->toBeNull();
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('pressing confirm on a signed double opt-in link confirms a pending subscriber', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingConfirmation()->create();
+    $confirmationUrl = URL::signedRoute('public.subscribe.confirm', $subscriber);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->post($confirmationUrl)->assertRedirect($confirmationUrl);
+
+    expect($subscriber->fresh()->subscribed_at)->not->toBeNull();
+    Event::assertDispatched(
+        SubscriberLifecycleOccurred::class,
+        fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Subscribed,
+    );
+    $this->get($confirmationUrl)->assertInertia(fn (Assert $page) => $page
+        ->where('confirmed', true)
+        ->where('canConfirm', false));
+});
+
+test('confirming a double opt-in needs a valid signature', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingConfirmation()->create();
+
+    $this->post(route('public.subscribe.confirm', $subscriber))->assertForbidden();
+
+    expect($subscriber->fresh()->subscribed_at)->toBeNull();
+});
+
+test('pressing confirm on a re-signup link with the current token resubscribes', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingResubscription()->create();
+    $confirmationUrl = URL::signedRoute('public.subscribe.confirm', [
+        'subscriber' => $subscriber,
+        'resubscribe' => $subscriber->resubscribe_requested_at->getTimestamp(),
+    ]);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->get($confirmationUrl)->assertInertia(fn (Assert $page) => $page->where('canConfirm', true));
+    expect($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+
+    $this->post($confirmationUrl)->assertRedirect($confirmationUrl);
+
+    expect($subscriber->fresh()->status)->toBe(SubscriberStatus::Subscribed);
+    Event::assertDispatched(
+        SubscriberLifecycleOccurred::class,
+        fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Resubscribed,
+    );
 });

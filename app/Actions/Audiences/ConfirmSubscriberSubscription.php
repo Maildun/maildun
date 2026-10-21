@@ -13,6 +13,19 @@ class ConfirmSubscriberSubscription
     public function __construct(private NotifyAudienceOfSubscriptionChange $notifyAudience) {}
 
     /**
+     * Whether the link would confirm anything: a pending first signup, or a
+     * pending rejoin whose link carries the current request's token.
+     */
+    public function canConfirm(Subscriber $subscriber, ?string $resubscribeToken = null): bool
+    {
+        if ($subscriber->isPendingResubscription()) {
+            return $resubscribeToken === (string) $subscriber->resubscribe_requested_at?->getTimestamp();
+        }
+
+        return $subscriber->isPendingConfirmation();
+    }
+
+    /**
      * Confirm a double opt-in from the subscriber's own link. A first signup
      * fires Subscribed. A rejoin after an opt-out fires Resubscribed, and only
      * when the link carries the current resubscribe_requested_at, so a link
@@ -29,11 +42,11 @@ class ConfirmSubscriberSubscription
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($lockedSubscriber->isPendingResubscription()) {
-                if ($resubscribeToken !== (string) $lockedSubscriber->resubscribe_requested_at?->getTimestamp()) {
-                    return $lockedSubscriber;
-                }
+            if (! $this->canConfirm($lockedSubscriber, $resubscribeToken)) {
+                return $lockedSubscriber;
+            }
 
+            if ($lockedSubscriber->isPendingResubscription()) {
                 $lockedSubscriber->update([
                     'status' => SubscriberStatus::Subscribed,
                     'subscribed_at' => now(),
@@ -43,10 +56,6 @@ class ConfirmSubscriberSubscription
                 $trigger = AutomationTrigger::Resubscribed;
 
                 return $lockedSubscriber->fresh(['audience']) ?? $lockedSubscriber;
-            }
-
-            if (! $lockedSubscriber->isPendingConfirmation()) {
-                return $lockedSubscriber;
             }
 
             $lockedSubscriber->update(['subscribed_at' => now()]);

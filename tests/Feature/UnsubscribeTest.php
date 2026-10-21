@@ -374,7 +374,7 @@ test('a one click unsubscribe while a re-signup is pending cancels it and voids 
     Event::fake([SubscriberLifecycleOccurred::class]);
 
     $this->post(URL::signedRoute('public.unsubscribe.subscriber.store', ['subscriber' => $subscriber]))->assertNoContent();
-    $this->get($confirmationUrl)->assertInertia(fn (Assert $page) => $page->where('confirmed', false));
+    $this->post($confirmationUrl);
 
     $subscriber->refresh();
 
@@ -393,7 +393,7 @@ test('an api unsubscribe while a re-signup is pending cancels it and voids the c
     $this->withToken($issued['token'])
         ->deleteJson(route('api.v1.audiences.subscribers.destroy', $subscriber->audience->uuid), ['email' => $subscriber->email])
         ->assertOk();
-    $this->get($confirmationUrl)->assertInertia(fn (Assert $page) => $page->where('confirmed', false));
+    $this->post($confirmationUrl);
 
     $subscriber->refresh();
 

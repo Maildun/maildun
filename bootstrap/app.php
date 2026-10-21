@@ -43,6 +43,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->validateCsrfTokens(except: [
             'forms/*/subscribe',
+            'confirm/*',
             'unsubscribe/*',
             'webhooks/aws/ses',
         ]);

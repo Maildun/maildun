@@ -260,7 +260,8 @@ test('an api resubscribe on a double opt-in audience keeps the opt-out until the
 
     preg_match('/href="([^"]+)"/', $transactionalEmail->deliveries()->sole()->html, $link);
     $this->get(html_entity_decode($link[1]))
-        ->assertInertia(fn (Assert $page) => $page->where('confirmed', true));
+        ->assertInertia(fn (Assert $page) => $page->where('canConfirm', true));
+    $this->post(html_entity_decode($link[1]))->assertRedirect();
 
     $subscriber->refresh();
 
