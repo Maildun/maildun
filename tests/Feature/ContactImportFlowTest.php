@@ -702,3 +702,20 @@ test('the import report lists every failed row beyond the page preview', functio
         ->and($lines)->toHaveCount(503)
         ->and($lines[502])->toBe('503,broken502,failed,"Invalid email address."');
 });
+
+test('the import report neutralises spreadsheet formulas taken from the uploaded file', function () {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $contactImport = runImport(draftImport($user->currentTeam, "email\n\"=HYPERLINK(\"\"https://evil.example\"\")\"\n@SUM(1+1)\n", [
+        'column_map' => ['email'],
+        'status' => ContactImportStatus::Pending,
+    ]));
+
+    $content = $this->actingAs($user)
+        ->get(route('contacts.imports.report', [$user->currentTeam, $contactImport]))
+        ->streamedContent();
+
+    expect($content)->toBe(
+        "row,email,outcome,detail\n2,\"'=hyperlink(\"\"https://evil.example\"\")\",failed,\"Invalid email address.\"\n3,'@sum(1+1),failed,\"Invalid email address.\"\n",
+    );
+});

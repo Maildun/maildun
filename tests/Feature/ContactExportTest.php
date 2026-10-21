@@ -124,6 +124,37 @@ test('workspace contacts can be exported as an Excel XML workbook', function () 
         ->toContain('A &amp; B');
 });
 
+test('CSV exports neutralise a formula even when the cell holds invalid UTF-8', function () {
+    $user = User::factory()->create();
+    Contact::factory()->for($user->currentTeam)->create([
+        'email' => 'visitor@example.com',
+        'first_name' => '=HYPERLINK("https://evil.test/?'."\xff".'","Open")',
+    ]);
+
+    $content = $this->actingAs($user)
+        ->get(route('contacts.exports.show', ['current_team' => $user->currentTeam, 'format' => 'csv']))
+        ->streamedContent();
+
+    expect($content)->toContain('visitor@example.com,"\'=HYPERLINK(""https://evil.test/?')
+        ->and(mb_check_encoding($content, 'UTF-8'))->toBeTrue();
+});
+
+test('Excel exports stay well-formed when a name holds a control character', function () {
+    $user = User::factory()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    Subscriber::factory()->for($audience)
+        ->for(Contact::factory()->for($user->currentTeam)->state(['email' => 'visitor@example.com', 'first_name' => "Mal\x01lory"]))
+        ->create(['email' => 'visitor@example.com', 'first_name' => "Mal\x01lory"]);
+
+    $workbooks = collect([
+        route('contacts.exports.show', ['current_team' => $user->currentTeam, 'format' => 'xls']),
+        route('audiences.exports.show', ['current_team' => $user->currentTeam, 'audience' => $audience, 'format' => 'xls']),
+    ])->map(fn (string $url): string => $this->actingAs($user)->get($url)->streamedContent());
+
+    $workbooks->each(fn (string $content) => expect(simplexml_load_string($content))->not->toBeFalse()
+        ->and($content)->toContain('Mallory'));
+});
+
 test('audience exports cannot target another workspace audience', function () {
     $user = User::factory()->create();
     $otherAudience = Audience::factory()->for(Team::factory())->create();

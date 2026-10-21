@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Concerns\SanitizesCsvCells;
+use App\Concerns\SanitizesSpreadsheetCells;
 use App\Enums\ContactImportIssue;
 use App\Enums\ContactImportStatus;
 use App\Enums\StorageBackend;
@@ -32,7 +32,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ContactImportController extends Controller
 {
-    use SanitizesCsvCells;
+    use SanitizesSpreadsheetCells;
 
     public function index(Team $currentTeam): Response
     {
@@ -239,6 +239,7 @@ class ContactImportController extends Controller
 
             fputcsv($stream, ['row', 'email', 'outcome', 'detail'], escape: '');
 
+            // Emails and details come from the uploaded file, so neutralise formulas.
             foreach ($this->reportRows($contactImport) as $row) {
                 fputcsv($stream, $this->sanitizeCsvRow($row), escape: '');
             }

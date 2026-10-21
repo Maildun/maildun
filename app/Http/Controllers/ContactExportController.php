@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Concerns\FiltersCampaignRecipients;
-use App\Concerns\SanitizesCsvCells;
+use App\Concerns\SanitizesSpreadsheetCells;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
@@ -23,7 +23,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class ContactExportController extends Controller
 {
     use FiltersCampaignRecipients;
-    use SanitizesCsvCells;
+    use SanitizesSpreadsheetCells;
 
     public function contacts(Request $request, Team $currentTeam, string $format): StreamedResponse
     {
@@ -216,7 +216,7 @@ class ContactExportController extends Controller
 
         foreach ($cells as $cell) {
             echo '<Cell><Data ss:Type="String">'
-                .htmlspecialchars((string) $cell, ENT_QUOTES | ENT_XML1, 'UTF-8')
+                .$this->spreadsheetXmlText($cell)
                 .'</Data></Cell>';
         }
 
@@ -236,7 +236,7 @@ class ContactExportController extends Controller
                 ? $company
                 : '',
             'audience' => Str::isUuid($audience) ? $audience : '',
-            'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())?->value ?? '',
+            'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())->value ?? '',
         ];
     }
 
