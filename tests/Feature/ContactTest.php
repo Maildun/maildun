@@ -766,3 +766,30 @@ test('the contact pages only offer membership actions to roles that can manage a
         ->get(route('contacts.index', $team))
         ->assertInertia(fn (Assert $page) => $page->where('canAddToAudiences', true));
 });
+
+test('resubscribing from the contact dialog keeps the membership source and form', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $form = SubscribeForm::factory()->for($audience)->create();
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create([
+        'email' => 'ada@example.com',
+        'source' => SubscriberSource::Form,
+        'subscribe_form_id' => $form->id,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $team), [
+            'email' => 'ada@example.com',
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'audience_uuids' => [$audience->uuid],
+            'consent_confirmed' => true,
+        ])
+        ->assertRedirect();
+
+    expect($subscriber->refresh())
+        ->status->toBe(SubscriberStatus::Subscribed)
+        ->source->toBe(SubscriberSource::Form)
+        ->subscribe_form_id->toBe($form->id);
+});

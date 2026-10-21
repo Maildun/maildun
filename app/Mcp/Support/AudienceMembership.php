@@ -3,6 +3,7 @@
 namespace App\Mcp\Support;
 
 use App\Actions\Audiences\AddContactToAudiences;
+use App\Actions\Automations\DispatchTaggedTriggers;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
 use App\Models\AudienceOptOut;
@@ -18,6 +19,7 @@ class AudienceMembership
     public function __construct(
         private ManageContact $manageContact,
         private AddContactToAudiences $addContactToAudiences,
+        private DispatchTaggedTriggers $dispatchTaggedTriggers,
     ) {}
 
     /**
@@ -29,9 +31,10 @@ class AudienceMembership
      * @param  array{email: string, first_name?: string|null, last_name?: string|null}  $profile
      * @param  Collection<int, Audience>  $audiences
      * @param  list<string>  $tags
+     * @param  string|null  $language  for new memberships; defaults to each audience's default
      * @return array{0: Contact, 1: int}
      */
-    public function join(Team $team, array $profile, Collection $audiences, array $tags = []): array
+    public function join(Team $team, array $profile, Collection $audiences, array $tags = [], ?string $language = null): array
     {
         $unsubscribedFrom = $audiences->filter(fn (Audience $audience): bool => AudienceOptOut::existsFor($audience->id, $profile['email'])
             || $audience->subscribers()
@@ -46,14 +49,16 @@ class AudienceMembership
             ]);
         }
 
-        return DB::transaction(function () use ($team, $profile, $audiences, $tags): array {
+        return DB::transaction(function () use ($team, $profile, $audiences, $tags, $language): array {
             $contact = $this->manageContact->findOrCreate($team, $profile);
+            $addedTags = $contact->wasRecentlyCreated
+                ? $this->manageContact->syncTags($team, $contact, $tags)
+                : [];
 
-            if ($contact->wasRecentlyCreated) {
-                $this->manageContact->syncTags($team, $contact, $tags);
-            }
+            $changedMemberships = $this->addContactToAudiences->handle($contact, $audiences, null, language: $language);
+            $this->dispatchTaggedTriggers->handle($contact, $addedTags);
 
-            return [$contact, $this->addContactToAudiences->handle($contact, $audiences, null)];
+            return [$contact, $changedMemberships];
         });
     }
 }

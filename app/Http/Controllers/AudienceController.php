@@ -48,7 +48,10 @@ class AudienceController extends Controller
                 'subscribers',
                 fn ($subscribers) => $subscribers->optedIn(),
             ))
-            ->when($filters['filter'] === 'empty', fn ($query) => $query->doesntHave('subscribers'))
+            ->when($filters['filter'] === 'empty', fn ($query) => $query->whereDoesntHave(
+                'subscribers',
+                fn ($subscribers) => $subscribers->optedIn(),
+            ))
             ->when($filters['filter'] === 'segments', fn ($query) => $query->has('segments'))
             ->when($filters['filter'] === 'forms', fn ($query) => $query->has('subscribeForms'));
 

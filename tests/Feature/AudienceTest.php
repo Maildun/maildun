@@ -358,6 +358,19 @@ test('view-only members are refused before validation when saving an audience', 
         ->and($team->audiences()->count())->toBe(1);
 });
 
+test('an audience with only unsubscribed members is listed as empty', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->unsubscribed()->create();
+
+    $this->actingAs($user)
+        ->get(route('audiences.index', [$team, 'filter' => 'empty']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('audiences.data', 1)
+            ->where('audiences.data.0.uuid', $audience->uuid));
+});
+
 test('empty audience subscriber stats are zeroed for the chart', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

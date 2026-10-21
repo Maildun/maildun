@@ -3,6 +3,7 @@
 namespace App\Actions\Audiences;
 
 use App\Enums\AutomationTrigger;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
@@ -16,6 +17,9 @@ use Illuminate\Database\Eloquent\Collection;
 class AddContactToAudiences
 {
     /**
+     * A new membership takes the given language, or the audience default. It
+     * is set before the save so Subscribed automations see it.
+     *
      * @param  Collection<int, Audience>  $audiences
      * @param  string|null  $consentText  Where consent came from, when more is known than "a team member".
      * @param  CarbonInterface|null  $consentedAt  When consent was attested, if not now.
@@ -26,6 +30,7 @@ class AddContactToAudiences
         ?string $ipAddress,
         ?string $consentText = null,
         ?CarbonInterface $consentedAt = null,
+        SubscriberLanguage|string|null $language = null,
     ): int {
         $changedMemberships = 0;
 
@@ -61,14 +66,22 @@ class AddContactToAudiences
                 continue;
             }
 
+            // A resubscribe keeps where the membership came from; only a new
+            // membership is a manual add.
+            if (! $subscriber->exists) {
+                $subscriber->fill([
+                    'source' => SubscriberSource::Manual,
+                    'subscribe_form_id' => null,
+                ]);
+            }
+
             $subscriber->fill([
                 'contact_id' => $contact->id,
                 'email' => $contact->email,
                 'first_name' => $contact->first_name,
                 'last_name' => $contact->last_name,
-                'language' => $subscriber->language ?? $audience->default_language,
+                'language' => $subscriber->language ?? $language ?? $audience->default_language,
                 'status' => SubscriberStatus::Subscribed,
-                'source' => SubscriberSource::Manual,
                 'consent_text' => $consentText ?? 'Marketing consent confirmed by a team member.',
                 'consented_at' => $consentedAt ?? now(),
                 'consent_ip' => $ipAddress,

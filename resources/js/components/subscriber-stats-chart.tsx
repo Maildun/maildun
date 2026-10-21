@@ -190,6 +190,10 @@ export function SubscriberStatsChart({
                 ) : (
                     <Skeleton className="h-40 w-full" />
                 )}
+                <p className="mt-2 px-2 text-xs text-muted-foreground sm:px-0">
+                    Past days are rebuilt from current members, so deleting or
+                    resubscribing someone also changes earlier totals.
+                </p>
             </CardContent>
         </Card>
     );

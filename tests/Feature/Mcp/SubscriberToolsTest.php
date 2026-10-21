@@ -124,3 +124,25 @@ test('does not resolve subscribers from another workspace', function () {
 
     expect($otherSubscriber->refresh()->status)->toBe(SubscriberStatus::Subscribed);
 });
+
+test('the chosen language is set before welcome automations start', function () {
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create([
+        'allowed_languages' => ['en', 'id'],
+        'default_language' => 'en',
+    ]);
+    $languagesSeen = [];
+    Event::listen(SubscriberLifecycleOccurred::class, function (SubscriberLifecycleOccurred $event) use (&$languagesSeen): void {
+        $languagesSeen[] = $event->subscriber->language?->value;
+    });
+
+    MaildunServer::tool(AddSubscriberTool::class, [
+        'workspace' => $team->slug,
+        'audience_uuid' => $audience->uuid,
+        'email' => 'ada@example.com',
+        'language' => 'id',
+        'consent_confirmed' => true,
+    ])->assertOk();
+
+    expect($languagesSeen)->toBe(['id']);
+});

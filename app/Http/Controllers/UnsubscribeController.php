@@ -3,9 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audiences\NotifyAudienceOfSubscriptionChange;
-use App\Enums\AutomationTrigger;
+use App\Actions\Audiences\UnsubscribeSubscriber;
 use App\Enums\SubscriberStatus;
-use App\Events\SubscriberLifecycleOccurred;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use Illuminate\Http\Request;
@@ -18,7 +17,10 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 class UnsubscribeController extends Controller
 {
-    public function __construct(private NotifyAudienceOfSubscriptionChange $notifyAudience) {}
+    public function __construct(
+        private UnsubscribeSubscriber $unsubscribeSubscriber,
+        private NotifyAudienceOfSubscriptionChange $notifyAudience,
+    ) {}
 
     /**
      * Test copies have no delivery to sign, so this page explains the link
@@ -125,9 +127,8 @@ class UnsubscribeController extends Controller
     }
 
     /**
-     * The shared opt-out transition. Idempotent: a second click on the same link
-     * neither restamps unsubscribed_at nor fires the lifecycle event again, but
-     * it still cancels a pending request to rejoin.
+     * Opting out reuses the app's idempotent transition. A link whose member
+     * is gone has nothing left to opt out.
      */
     private function optOut(?Subscriber $subscriber): void
     {
@@ -135,20 +136,12 @@ class UnsubscribeController extends Controller
             return;
         }
 
-        if ($subscriber->status === SubscriberStatus::Unsubscribed) {
-            $subscriber->update(['resubscribe_requested_at' => null]);
+        $wasUnsubscribed = $subscriber->status === SubscriberStatus::Unsubscribed;
+        $subscriber = $this->unsubscribeSubscriber->handle($subscriber);
 
-            return;
+        if (! $wasUnsubscribed && $subscriber->status === SubscriberStatus::Unsubscribed) {
+            $this->notifyAudience->handle($subscriber, subscribed: false);
         }
-
-        $subscriber->update([
-            'status' => SubscriberStatus::Unsubscribed,
-            'unsubscribed_at' => now(),
-            'resubscribe_requested_at' => null,
-        ]);
-
-        event(new SubscriberLifecycleOccurred(AutomationTrigger::Unsubscribed, $subscriber));
-        $this->notifyAudience->handle($subscriber, subscribed: false);
     }
 
     /**

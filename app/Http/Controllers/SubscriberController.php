@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audiences\ResubscribeSubscriber;
+use App\Actions\Audiences\UnsubscribeSubscriber;
 use App\Actions\Automations\DispatchTaggedTriggers;
 use App\Enums\AutomationTrigger;
 use App\Enums\SubscriberSource;
@@ -96,16 +97,10 @@ class SubscriberController extends Controller
         return back();
     }
 
-    public function unsubscribe(Team $currentTeam, Audience $audience, Subscriber $subscriber): RedirectResponse
+    public function unsubscribe(Team $currentTeam, Audience $audience, Subscriber $subscriber, UnsubscribeSubscriber $unsubscribeSubscriber): RedirectResponse
     {
         Gate::authorize('update', $subscriber);
-        $subscriber->update([
-            'status' => SubscriberStatus::Unsubscribed,
-            'unsubscribed_at' => now(),
-            'resubscribe_requested_at' => null,
-        ]);
-
-        event(new SubscriberLifecycleOccurred(AutomationTrigger::Unsubscribed, $subscriber));
+        $unsubscribeSubscriber->handle($subscriber);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber unsubscribed.')]);
 
@@ -115,6 +110,13 @@ class SubscriberController extends Controller
     public function resubscribe(ResubscribeSubscriberRequest $request, Team $currentTeam, Audience $audience, Subscriber $subscriber, ResubscribeSubscriber $resubscribeSubscriber): RedirectResponse
     {
         Gate::authorize('update', $subscriber);
+
+        if ($subscriber->status !== SubscriberStatus::Unsubscribed) {
+            Inertia::flash('toast', ['type' => 'info', 'message' => __('This subscriber is already subscribed.')]);
+
+            return back();
+        }
+
         $resubscribeSubscriber->handle($subscriber, $request->ip());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber resubscribed.')]);

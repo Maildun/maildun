@@ -9,6 +9,7 @@ use App\Models\Subscriber;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\ResponseFactory;
@@ -47,12 +48,14 @@ class AddSubscriberTool extends Tool
             'email' => ['required', 'string', 'email', 'max:255'],
             'first_name' => ['nullable', 'string', 'max:255'],
             'last_name' => ['nullable', 'string', 'max:255'],
+            'language' => ['nullable', 'string', Rule::in($audience->allowed_languages ?? [])],
             'tags' => ['sometimes', 'array', 'max:20'],
             'tags.*' => ['string', 'max:50'],
             'consent_confirmed' => ['required', 'accepted'],
         ], [
             'consent_confirmed.required' => 'Confirm the person consented to marketing email before subscribing them.',
             'consent_confirmed.accepted' => 'Confirm the person consented to marketing email before subscribing them.',
+            'language.in' => 'The language must be one of this audience\'s allowed languages.',
         ]);
         $profile = $this->context->blankStringsToNull($validated, ['first_name', 'last_name']);
 
@@ -60,7 +63,7 @@ class AddSubscriberTool extends Tool
             'email' => $validated['email'],
             'first_name' => $profile['first_name'] ?? null,
             'last_name' => $profile['last_name'] ?? null,
-        ], $team->audiences()->whereKey($audience->id)->get(), $validated['tags'] ?? []);
+        ], $team->audiences()->whereKey($audience->id)->get(), $validated['tags'] ?? [], $validated['language'] ?? null);
 
         $subscriber = $audience->subscribers()
             ->with(['audience:id,uuid,name', 'contact:id,uuid', 'tags:id,uuid,name'])
@@ -87,6 +90,7 @@ class AddSubscriberTool extends Tool
             'email' => $schema->string()->description('Subscriber email address.')->format('email')->max(255)->required(),
             'first_name' => $schema->string()->description('First name, used only when the contact is new.')->max(255),
             'last_name' => $schema->string()->description('Last name, used only when the contact is new.')->max(255),
+            'language' => $schema->string()->description('Subscriber language as an ISO 639-1 code from the audience\'s allowed_languages, used only when this subscription is new. Defaults to the audience default_language. Use update-subscriber to change an existing member\'s language.')->max(10),
             'tags' => $schema->array()->description('Tag names, used only when the contact is new; missing tags are created.')->items($schema->string()->max(50))->max(20),
             'consent_confirmed' => $schema->boolean()->description('The person consented to receive marketing email from this audience.')->required(),
         ];

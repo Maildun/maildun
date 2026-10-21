@@ -705,3 +705,42 @@ test('an audience-only role can still change a member language when the contact 
         ->get(route('audiences.show', [$team, $audience]))
         ->assertInertia(fn (Assert $page) => $page->where('canManageContacts', false));
 });
+
+test('resubscribing a member who never left changes nothing', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create(['consent_text' => 'Joined from the checkout form', 'subscribed_at' => now()->subYear()]);
+    $subscribedAt = $subscriber->subscribed_at;
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.resubscribe', [$team, $audience, $subscriber]), ['consent_confirmed' => true])
+        ->assertRedirect()
+        ->assertInertiaFlash('toast.type', 'info');
+
+    $subscriber->refresh();
+
+    expect($subscriber->consent_text)->toBe('Joined from the checkout form')
+        ->and($subscriber->subscribed_at?->equalTo($subscribedAt))->toBeTrue();
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('unsubscribing someone already unsubscribed keeps the original opt-out date', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->pendingResubscription()->create();
+    $unsubscribedAt = $subscriber->unsubscribed_at;
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.unsubscribe', [$team, $audience, $subscriber]))
+        ->assertRedirect();
+
+    $subscriber->refresh();
+
+    expect($subscriber->unsubscribed_at?->equalTo($unsubscribedAt))->toBeTrue()
+        ->and($subscriber->resubscribe_requested_at)->toBeNull();
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});

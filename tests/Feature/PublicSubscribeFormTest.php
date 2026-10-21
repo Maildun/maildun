@@ -834,3 +834,13 @@ test('pressing confirm on a re-signup link with the current token resubscribes',
         fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Resubscribed,
     );
 });
+
+test('reopening a confirmation link after unsubscribing does not say the subscription is confirmed', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create();
+
+    $this->get(URL::signedRoute('public.subscribe.confirm', $subscriber))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('confirmed', false)
+            ->where('canConfirm', false));
+});
