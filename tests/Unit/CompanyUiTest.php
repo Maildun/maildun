@@ -99,3 +99,17 @@ test('the company delete action is disabled while the delete runs', function () 
         ->toContain('onFinish: () => setDeleting(false)')
         ->toMatch('/disabled=\{deleting\}\s*onClick=\{deleteCompany\}/');
 });
+
+test('company names on the contacts index and hover card link to the company', function () {
+    $indexPage = file_get_contents(
+        dirname(__DIR__, 2).'/resources/js/pages/contacts/index.tsx',
+    );
+    $hoverCard = file_get_contents(
+        dirname(__DIR__, 2).'/resources/js/components/contact-hover-card.tsx',
+    );
+
+    expect($indexPage)->toBeString()
+        ->toContain('href={showCompany.url([teamSlug, contact.company.uuid])}');
+    expect($hoverCard)->toBeString()
+        ->toMatch('/href=\{showCompany\.url\(\[\s*currentTeam\.slug,\s*contact\.company\.uuid,\s*\]\)\}/');
+});

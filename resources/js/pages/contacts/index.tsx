@@ -7,7 +7,7 @@ import {
     UserIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
 import { ContactDialog } from '@/components/contact-dialog';
@@ -56,6 +56,7 @@ import {
 import { useListFilters } from '@/hooks/use-list-filters';
 import { formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
+import { show as showCompany } from '@/routes/companies';
 import { bulkDestroy, bulkUnsubscribe, index, show } from '@/routes/contacts';
 import { show as showContactExport } from '@/routes/contacts/exports';
 import type { ContactIndexProps, ContactSummary } from '@/types/contacts';
@@ -554,7 +555,14 @@ function ContactRow({
                 )}
             </TableCell>
             <TableCell>
-                {contact.company?.name ?? (
+                {contact.company ? (
+                    <Link
+                        href={showCompany.url([teamSlug, contact.company.uuid])}
+                        className="underline-offset-4 hover:underline"
+                    >
+                        {contact.company.name}
+                    </Link>
+                ) : (
                     <span className="text-muted-foreground">—</span>
                 )}
             </TableCell>
