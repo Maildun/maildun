@@ -179,6 +179,7 @@ Route::prefix('{current_team}')
 
             Route::get('audiences/{audience}/exports/{format}', [ContactExportController::class, 'audience'])
                 ->whereIn('format', ['csv', 'xls'])
+                ->middleware('throttle:10,1')
                 ->name('audiences.exports.show');
             Route::resource('audiences', AudienceController::class)
                 ->only(['index', 'store', 'show', 'update', 'destroy']);
@@ -212,6 +213,7 @@ Route::prefix('{current_team}')
                 ->name('contacts.imports.report');
             Route::get('contacts/exports/{format}', [ContactExportController::class, 'contacts'])
                 ->whereIn('format', ['csv', 'xls'])
+                ->middleware('throttle:10,1')
                 ->name('contacts.exports.show');
             Route::get('contacts/lookup', [ContactController::class, 'lookup'])
                 ->name('contacts.lookup');

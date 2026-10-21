@@ -245,3 +245,15 @@ test('audience exports include and filter by subscriber language', function () {
         ->toContain(',id,')
         ->not->toContain('ada@example.com');
 });
+
+test('contacts and audience exports are limited to ten downloads a minute', function (string $routeName) {
+    $user = User::factory()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    $url = route($routeName, ['current_team' => $user->currentTeam, 'audience' => $audience, 'format' => 'csv']);
+
+    for ($download = 1; $download <= 10; $download++) {
+        $this->actingAs($user)->get($url)->assertOk();
+    }
+
+    $this->actingAs($user)->get($url)->assertTooManyRequests();
+})->with(['contacts.exports.show', 'audiences.exports.show']);
