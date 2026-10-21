@@ -77,6 +77,8 @@ export type ContactImportRowError = {
 };
 
 export type ContactImportMapping = {
+    delimiter: string;
+    delimiters: { value: string; label: string }[];
     headers: string[];
     sampleRows: string[][];
     columnMap: (string | null)[];

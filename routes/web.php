@@ -195,6 +195,9 @@ Route::prefix('{current_team}')
             Route::delete('contacts/imports/{contactImport}', [ContactImportController::class, 'destroy'])
                 ->whereUuid('contactImport')
                 ->name('contacts.imports.destroy');
+            Route::put('contacts/imports/{contactImport}/delimiter', [ContactImportController::class, 'delimiter'])
+                ->whereUuid('contactImport')
+                ->name('contacts.imports.delimiter');
             Route::post('contacts/imports/{contactImport}/start', [ContactImportController::class, 'start'])
                 ->whereUuid('contactImport')
                 ->name('contacts.imports.start');

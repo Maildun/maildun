@@ -21,7 +21,7 @@ class ContactImportCsv
     private const int DETECTION_ROWS = 20;
 
     /** @var list<string> */
-    private const array DELIMITERS = [',', ';', "\t", '|'];
+    public const array DELIMITERS = [',', ';', "\t", '|'];
 
     /** @var array<string, list<string>> */
     private const array FIELD_ALIASES = [
@@ -37,11 +37,82 @@ class ContactImportCsv
     ];
 
     /**
-     * Read the header, a few sample rows, and the data row count from a local CSV file.
+     * Bring an uploaded file into the shape the importer reads: UTF-8 (UTF-16
+     * files from Excel's "Unicode text" export are converted), \n or \r\n
+     * line endings (old Mac CR-only files are converted), and the header on
+     * the first line (leading blank lines and an Excel "sep=;" line are
+     * removed, the latter's delimiter returned).
+     *
+     * The returned path is a new temporary file when anything changed; the
+     * caller must delete it.
+     *
+     * @return array{path: string, delimiter: string|null}
+     */
+    public function normalize(string $path): array
+    {
+        $original = @file_get_contents($path);
+
+        if ($original === false) {
+            throw new ContactImportFailed(__('The uploaded CSV file could not be read.'));
+        }
+
+        $contents = $this->decodeUtf16($original);
+
+        if (str_contains($contents, "\r") && ! str_contains($contents, "\n")) {
+            $contents = str_replace("\r", "\n", $contents);
+        }
+
+        if (str_starts_with($contents, self::UTF8_BOM)) {
+            $contents = substr($contents, strlen(self::UTF8_BOM));
+        }
+
+        $contents = (string) preg_replace('/\A(?:[ \t]*\r?\n)+/', '', $contents);
+        $delimiter = null;
+
+        if (preg_match('/\Asep=(.)[ \t]*\r?\n/i', $contents, $matches) === 1 && in_array($matches[1], self::DELIMITERS, true)) {
+            $delimiter = $matches[1];
+            $contents = (string) preg_replace('/\A(?:[ \t]*\r?\n)+/', '', substr($contents, strlen($matches[0])));
+        }
+
+        // A file that only differs by its UTF-8 BOM is read as is: the reader
+        // skips the BOM itself.
+        $originalWithoutBom = str_starts_with($original, self::UTF8_BOM) ? substr($original, strlen(self::UTF8_BOM)) : $original;
+
+        if ($contents === $originalWithoutBom) {
+            return ['path' => $path, 'delimiter' => $delimiter];
+        }
+
+        $normalizedPath = tempnam(sys_get_temp_dir(), 'contact-import');
+
+        if ($normalizedPath === false || file_put_contents($normalizedPath, $contents) === false) {
+            throw new ContactImportFailed(__('The uploaded CSV file could not be read.'));
+        }
+
+        return ['path' => $normalizedPath, 'delimiter' => $delimiter];
+    }
+
+    /**
+     * Delimiters a user can choose when automatic detection guessed wrong.
+     *
+     * @return list<array{value: string, label: string}>
+     */
+    public function delimiterOptions(): array
+    {
+        return [
+            ['value' => ',', 'label' => __('Comma')],
+            ['value' => ';', 'label' => __('Semicolon')],
+            ['value' => "\t", 'label' => __('Tab')],
+            ['value' => '|', 'label' => __('Pipe')],
+        ];
+    }
+
+    /**
+     * Read the header, a few sample rows, and the data row count from a local
+     * CSV file, detecting the delimiter unless one is given.
      *
      * @return array{delimiter: string, headers: list<string>, sample_rows: list<list<string>>, total_rows: int}
      */
-    public function analyze(string $path): array
+    public function analyze(string $path, ?string $delimiter = null): array
     {
         $stream = fopen($path, 'rb');
 
@@ -57,7 +128,7 @@ class ContactImportCsv
                 throw new ContactImportFailed(__('The CSV is empty.'));
             }
 
-            $delimiter = $this->detectDelimiter($sample, strlen($sample) === self::DETECTION_BYTES);
+            $delimiter ??= $this->detectDelimiter($sample, strlen($sample) === self::DETECTION_BYTES);
             rewind($stream);
             $this->skipByteOrderMark($stream);
             $headers = $this->readRow($stream, $delimiter);
@@ -91,6 +162,41 @@ class ContactImportCsv
             'sample_rows' => $sampleRows,
             'total_rows' => $totalRows,
         ];
+    }
+
+    /**
+     * Convert UTF-16 text, recognised by its byte order mark or, without one,
+     * by the zero byte in every other position of ASCII text, to UTF-8.
+     */
+    private function decodeUtf16(string $contents): string
+    {
+        $encoding = match (substr($contents, 0, 2)) {
+            "\xFF\xFE" => 'UTF-16LE',
+            "\xFE\xFF" => 'UTF-16BE',
+            default => null,
+        };
+
+        if ($encoding !== null) {
+            return mb_convert_encoding(substr($contents, 2), 'UTF-8', $encoding);
+        }
+
+        $head = substr($contents, 0, 4096);
+        $length = strlen($head) - strlen($head) % 2;
+
+        if ($length < 2 || substr_count($head, "\0") < $length / 4) {
+            return $contents;
+        }
+
+        $oddZeros = 0;
+        $evenZeros = 0;
+
+        for ($index = 0; $index < $length; $index++) {
+            if ($head[$index] === "\0") {
+                $index % 2 === 1 ? $oddZeros++ : $evenZeros++;
+            }
+        }
+
+        return mb_convert_encoding($contents, 'UTF-8', $oddZeros >= $evenZeros ? 'UTF-16LE' : 'UTF-16BE');
     }
 
     /**

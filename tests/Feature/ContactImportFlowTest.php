@@ -205,6 +205,7 @@ test('the import page shows mapping options for a draft', function () {
             ->component('contacts/imports/show')
             ->where('contactImport.status', 'draft')
             ->where('mapping.headers', ['email', 'first'])
+            ->where('mapping.delimiter', ',')
             ->where('mapping.columnMap', ['email', 'first_name'])
             ->where('canManage', true));
 });
@@ -718,4 +719,74 @@ test('the import report neutralises spreadsheet formulas taken from the uploaded
     expect($content)->toBe(
         "\xEF\xBB\xBFrow,email,outcome,detail\n2,\"'=hyperlink(\"\"https://evil.example\"\")\",failed,\"Invalid email address.\"\n3,'@sum(1+1),failed,\"Invalid email address.\"\n",
     );
+});
+
+test('uploads read UTF-16, CR-only and sep= files and skip leading blank lines', function (string $contents, string $delimiter) {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('contacts.imports.store', $team), [
+            'file' => UploadedFile::fake()->createWithContent('contacts.csv', $contents),
+        ])
+        ->assertSessionHasNoErrors();
+    $contactImport = $team->contactImports()->sole();
+    $this->actingAs($user)
+        ->post(route('contacts.imports.start', [$team, $contactImport]), [
+            'column_map' => $contactImport->column_map,
+            'merge_strategy' => 'skip',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($contactImport->refresh()->only(['delimiter', 'headers', 'total_rows']))->toBe([
+        'delimiter' => $delimiter,
+        'headers' => ['email', 'first_name'],
+        'total_rows' => 2,
+    ])
+        ->and($team->contacts()->orderBy('email')->pluck('first_name', 'email')->all())
+        ->toBe(['ada@example.com' => 'Ada', 'zoe@example.com' => 'Zoë']);
+})->with([
+    'UTF-16 with a byte order mark' => ["\xFF\xFE".mb_convert_encoding("email\tfirst_name\r\nada@example.com\tAda\r\nzoe@example.com\tZoë\r\n", 'UTF-16LE', 'UTF-8'), "\t"],
+    'UTF-16 without a byte order mark' => [mb_convert_encoding("email,first_name\nada@example.com,Ada\nzoe@example.com,Zoë\n", 'UTF-16LE', 'UTF-8'), ','],
+    'CR-only line endings' => ["email,first_name\rada@example.com,Ada\rzoe@example.com,Zoë\r", ','],
+    'an Excel sep= line' => ["sep=|\nemail|first_name\nada@example.com|Ada\nzoe@example.com|Zoë\n", '|'],
+    'leading blank lines' => ["\n\r\n  \nemail;first_name\nada@example.com;Ada\nzoe@example.com;Zoë\n", ';'],
+]);
+
+test('a draft can be re-read with the delimiter the user picks', function () {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $contactImport = draftImport($team, "email;first_name\nada@example.com;Ada\n", ['column_map' => [null]]);
+
+    $this->actingAs($user)
+        ->put(route('contacts.imports.delimiter', [$team, $contactImport]), ['delimiter' => ';'])
+        ->assertRedirect(route('contacts.imports.show', [$team, $contactImport]));
+
+    expect($contactImport->refresh()->only(['delimiter', 'headers', 'sample_rows', 'column_map', 'total_rows']))->toBe([
+        'delimiter' => ';',
+        'headers' => ['email', 'first_name'],
+        'sample_rows' => [['ada@example.com', 'Ada']],
+        'column_map' => ['email', 'first_name'],
+        'total_rows' => 1,
+    ]);
+});
+
+test('the delimiter can only be one of the supported ones and only on a draft', function () {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $draft = draftImport($team, "email\nada@example.com\n");
+    $started = draftImport($team, "email\nada@example.com\n", ['status' => ContactImportStatus::Pending]);
+
+    $this->actingAs($user)
+        ->put(route('contacts.imports.delimiter', [$team, $draft]), ['delimiter' => ':'])
+        ->assertSessionHasErrors(['delimiter' => 'Choose comma, semicolon, tab or pipe.']);
+    $this->actingAs($user)
+        ->put(route('contacts.imports.delimiter', [$team, $started]), ['delimiter' => ';'])
+        ->assertConflict();
+
+    expect($draft->refresh()->delimiter)->toBe(',')
+        ->and($started->refresh()->delimiter)->toBe(',');
 });

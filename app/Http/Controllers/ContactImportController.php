@@ -10,6 +10,7 @@ use App\Enums\SubscriberLanguage;
 use App\Exceptions\ContactImportFailed;
 use App\Http\Requests\StartContactImportRequest;
 use App\Http\Requests\StoreContactImportRequest;
+use App\Http\Requests\UpdateContactImportDelimiterRequest;
 use App\Jobs\ProcessContactImport;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
@@ -18,6 +19,7 @@ use App\Models\ContactImport;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Services\ContactImportCsv;
+use Illuminate\Http\File;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -74,18 +76,28 @@ class ContactImportController extends Controller
         $file = $request->file('file');
         $audience = $request->targetAudience();
 
+        $uploadedPath = (string) $file->getRealPath();
+        $disk = StorageBackend::current()->privateDisk();
+
         try {
-            $analysis = $csv->analyze((string) $file->getRealPath());
+            $normalized = $csv->normalize($uploadedPath);
+            $analysis = $csv->analyze($normalized['path'], $normalized['delimiter']);
+
+            if ($analysis['total_rows'] === 0) {
+                throw new ContactImportFailed(__('The CSV has a header row but no contacts.'));
+            }
+
+            $path = $normalized['path'] === $uploadedPath
+                ? $file->store('contact-imports/'.$currentTeam->uuid, $disk)
+                : Storage::disk($disk)->putFile('contact-imports/'.$currentTeam->uuid, new File($normalized['path']));
         } catch (ContactImportFailed $exception) {
             throw ValidationException::withMessages(['file' => $exception->getMessage()]);
+        } finally {
+            if (isset($normalized) && $normalized['path'] !== $uploadedPath) {
+                @unlink($normalized['path']);
+            }
         }
 
-        if ($analysis['total_rows'] === 0) {
-            throw ValidationException::withMessages(['file' => __('The CSV has a header row but no contacts.')]);
-        }
-
-        $disk = StorageBackend::current()->privateDisk();
-        $path = $file->store('contact-imports/'.$currentTeam->uuid, $disk);
         $attributeKeys = $audience?->audienceAttributes()->get(['key'])
             ->map(fn (AudienceAttribute $attribute): string => $attribute->key)
             ->values()
@@ -132,6 +144,8 @@ class ContactImportController extends Controller
                 'sampleRows' => $contactImport->sample_rows ?? [],
                 // A suggested field can disappear after upload (a deleted audience
                 // attribute), so offer it unmapped rather than as a value Start rejects.
+                'delimiter' => $contactImport->delimiter,
+                'delimiters' => $csv->delimiterOptions(),
                 'columnMap' => array_map(
                     fn (?string $field): ?string => in_array($field, $fieldValues, true) ? $field : null,
                     $contactImport->column_map ?? [],
@@ -144,6 +158,51 @@ class ContactImportController extends Controller
                 && Storage::disk($contactImport->disk)->exists($contactImport->path),
             'canManage' => Gate::allows('update', $contactImport),
         ]);
+    }
+
+    /**
+     * Re-read a draft with the delimiter the user picked when detection
+     * guessed wrong. The suggested mapping is rebuilt for the new columns.
+     */
+    public function delimiter(UpdateContactImportDelimiterRequest $request, Team $currentTeam, ContactImport $contactImport, ContactImportCsv $csv): RedirectResponse
+    {
+        abort_unless($contactImport->status === ContactImportStatus::Draft, 409);
+
+        $localPath = tempnam(sys_get_temp_dir(), 'contact-import');
+        $stream = Storage::disk($contactImport->disk)->readStream($contactImport->path);
+
+        try {
+            if ($localPath === false || ! is_resource($stream) || file_put_contents($localPath, $stream) === false) {
+                throw new ContactImportFailed(__('The uploaded CSV file could not be read.'));
+            }
+
+            $analysis = $csv->analyze($localPath, $request->validated('delimiter'));
+        } catch (ContactImportFailed $exception) {
+            throw ValidationException::withMessages(['delimiter' => $exception->getMessage()]);
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+
+            if ($localPath !== false) {
+                @unlink($localPath);
+            }
+        }
+
+        $attributeKeys = $contactImport->audience?->audienceAttributes()->get(['key'])
+            ->map(fn (AudienceAttribute $attribute): string => $attribute->key)
+            ->values()
+            ->all() ?? [];
+
+        $contactImport->update([
+            'delimiter' => $analysis['delimiter'],
+            'headers' => $analysis['headers'],
+            'sample_rows' => $analysis['sample_rows'],
+            'column_map' => $csv->suggestMapping($analysis['headers'], $attributeKeys, $contactImport->audience_id !== null),
+            'total_rows' => $analysis['total_rows'],
+        ]);
+
+        return to_route('contacts.imports.show', [$currentTeam, $contactImport]);
     }
 
     public function start(StartContactImportRequest $request, Team $currentTeam, ContactImport $contactImport): RedirectResponse

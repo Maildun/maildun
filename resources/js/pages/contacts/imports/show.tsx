@@ -4,7 +4,15 @@ import {
     InformationCircleIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Form, Head, Link, useForm, usePage, usePoll } from '@inertiajs/react';
+import {
+    Form,
+    Head,
+    Link,
+    router,
+    useForm,
+    usePage,
+    usePoll,
+} from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import {
@@ -61,6 +69,7 @@ import { cn } from '@/lib/utils';
 import { show as showAudience } from '@/routes/audiences';
 import {
     cancel,
+    delimiter as changeDelimiter,
     destroy,
     report as downloadReport,
     retry,
@@ -187,6 +196,7 @@ export default function ContactImportShow({
 
                 {mapping && canManage ? (
                     <MappingForm
+                        key={mapping.delimiter}
                         contactImport={contactImport}
                         mapping={mapping}
                         issues={issues}
@@ -321,6 +331,56 @@ function Outcome({
     return null;
 }
 
+function DelimiterSelect({
+    mapping,
+    routeArgs,
+}: {
+    mapping: ContactImportMapping;
+    routeArgs: RouteArgs;
+}) {
+    const [processing, setProcessing] = useState(false);
+
+    return (
+        <Select
+            items={mapping.delimiters}
+            value={mapping.delimiter}
+            disabled={processing}
+            onValueChange={(value) => {
+                if (typeof value !== 'string' || value === mapping.delimiter) {
+                    return;
+                }
+
+                router.put(
+                    changeDelimiter.url(routeArgs),
+                    { delimiter: value },
+                    {
+                        preserveScroll: true,
+                        onStart: () => setProcessing(true),
+                        onFinish: () => setProcessing(false),
+                    },
+                );
+            }}
+        >
+            <SelectTrigger
+                className="w-40"
+                aria-label="Column delimiter"
+                data-test="import-delimiter"
+            >
+                <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectGroup>
+                    {mapping.delimiters.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                        </SelectItem>
+                    ))}
+                </SelectGroup>
+            </SelectContent>
+        </Select>
+    );
+}
+
 function MappingForm({
     contactImport,
     mapping,
@@ -378,6 +438,9 @@ function MappingForm({
                 variant="inset"
                 title="Map columns"
                 description="Choose what each column holds. Columns set to Don't import are skipped."
+                actions={
+                    <DelimiterSelect mapping={mapping} routeArgs={routeArgs} />
+                }
             >
                 <Table className="table-fixed">
                     <TableHeader>
