@@ -137,7 +137,7 @@ class SaveAudienceAttributeRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'key.not_in' => __('That key is reserved for a built-in subscriber field.'),
+            'key.not_in' => __('That key is reserved for a built-in subscriber field or merge tag.'),
             'key.regex' => __('The key must start with a letter and contain only lowercase letters, numbers, and underscores.'),
             'key.unique' => __('An attribute with that key already exists in this audience.'),
             'name.unique' => __('An attribute with that name already exists in this audience.'),

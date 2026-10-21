@@ -238,6 +238,42 @@ test('reserved subscriber fields cannot be used as attribute keys', function (st
         ->assertInvalid('key');
 })->with(['Email', 'Language']);
 
+test('built-in merge tag names cannot be used as attribute keys', function (string $name) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('audiences.attributes.store', [$team, $audience]), [
+            'name' => $name,
+            'type' => AudienceAttributeType::Text->value,
+        ])
+        ->assertInvalid(['key' => 'That key is reserved for a built-in subscriber field or merge tag.']);
+
+    expect($audience->audienceAttributes()->count())->toBe(0);
+})->with(['Year', 'Unsubscribe URL', 'Web view URL']);
+
+test('deleting an attribute removes its stored values from members', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    $member = Subscriber::factory()->for($audience)->create([
+        'attribute_values' => ['company' => 'Acme', 'city' => 'Paris'],
+    ]);
+    $otherAudienceMember = Subscriber::factory()->for(Audience::factory()->for($team))->create([
+        'attribute_values' => ['company' => 'Globex'],
+    ]);
+
+    $this->actingAs($user)
+        ->delete(route('audiences.attributes.destroy', [$team, $audience, $attribute]))
+        ->assertRedirect();
+
+    $this->assertModelMissing($attribute);
+    expect($member->fresh()->attribute_values)->toBe(['city' => 'Paris']);
+    expect($otherAudienceMember->fresh()->attribute_values)->toBe(['company' => 'Globex']);
+});
+
 test('members cannot manage audience attributes', function () {
     $owner = User::factory()->create();
     $member = User::factory()->create();

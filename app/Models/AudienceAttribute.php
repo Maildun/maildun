@@ -32,16 +32,36 @@ class AudienceAttribute extends Model
     use HasFactory;
 
     /**
-     * Subscriber columns and other built-in keys that custom fields cannot reuse.
+     * Merge tags every campaign and automation email fills in itself. A custom
+     * field with one of these keys would never be shown.
+     *
+     * @var list<string>
+     */
+    public const array BUILT_IN_MERGE_TAGS = [
+        'name',
+        'first_name',
+        'last_name',
+        'email',
+        'language',
+        'language_name',
+        'day',
+        'day_name',
+        'month',
+        'month_name',
+        'year',
+        'unsubscribe_url',
+        'web_view_url',
+        'subscribe_url',
+    ];
+
+    /**
+     * Subscriber columns, built-in merge tags and other keys that custom
+     * fields cannot reuse.
      *
      * @var list<string>
      */
     public const array RESERVED_KEYS = [
-        'email',
-        'first_name',
-        'last_name',
-        'language',
-        'language_name',
+        ...self::BUILT_IN_MERGE_TAGS,
         'status',
         'source',
         'tags',
@@ -50,7 +70,6 @@ class AudienceAttribute extends Model
         'consent',
         'uuid',
         'id',
-        'name',
     ];
 
     protected $attributes = [

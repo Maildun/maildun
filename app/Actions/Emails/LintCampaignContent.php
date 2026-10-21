@@ -2,6 +2,7 @@
 
 namespace App\Actions\Emails;
 
+use App\Models\AudienceAttribute;
 use App\Models\Email;
 
 class LintCampaignContent
@@ -13,11 +14,7 @@ class LintCampaignContent
     public const int GMAIL_CLIP_BYTES = 102 * 1024;
 
     /** Merge tags every campaign can use, besides the audience's own attributes. */
-    private const array STANDARD_TAGS = [
-        'name', 'first_name', 'last_name', 'email', 'language', 'language_name',
-        'day', 'day_name', 'month', 'month_name', 'year',
-        'unsubscribe_url', 'web_view_url', 'subscribe_url',
-    ];
+    private const array STANDARD_TAGS = AudienceAttribute::BUILT_IN_MERGE_TAGS;
 
     /**
      * Problems worth fixing before a campaign goes out. Nothing here blocks a
