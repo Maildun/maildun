@@ -188,6 +188,21 @@ export default function AudienceShow(props: Props) {
     );
     const [formOpen, setFormOpen] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [selectionRows, setSelectionRows] = useState(subscribers.data);
+
+    // A filter, search, page change or row delete brings new rows; keep only
+    // the selected ones still on screen so a bulk action never reaches rows
+    // the manager can no longer see.
+    if (selectionRows !== subscribers.data) {
+        const visibleIds = new Set(subscribers.data.map(({ uuid }) => uuid));
+
+        setSelectionRows(subscribers.data);
+        setSelected(
+            (current) =>
+                new Set([...current].filter((id) => visibleIds.has(id))),
+        );
+    }
+
     const [bulkTagsOpen, setBulkTagsOpen] = useState(false);
     const [confirmBulkDeleteOpen, setConfirmBulkDeleteOpen] = useState(false);
     const [copiedText, copy] = useClipboard();
@@ -208,6 +223,13 @@ export default function AudienceShow(props: Props) {
     }
 
     const routeArgs: [string, string] = [currentTeam.slug, audience.uuid];
+    const bulkActionFailed =
+        (title: string) => (errors: Record<string, string>) =>
+            toast.add({
+                type: 'error',
+                title,
+                description: errors.ids ?? Object.values(errors)[0],
+            });
 
     return (
         <>
@@ -497,6 +519,9 @@ export default function AudienceShow(props: Props) {
                                                 preserveScroll: true,
                                                 onSuccess: () =>
                                                     setSelected(new Set()),
+                                                onError: bulkActionFailed(
+                                                    'Subscribers not unsubscribed.',
+                                                ),
                                             },
                                         );
                                     }}
@@ -540,6 +565,10 @@ export default function AudienceShow(props: Props) {
                                                                 onSuccess: () =>
                                                                     setSelected(
                                                                         new Set(),
+                                                                    ),
+                                                                onError:
+                                                                    bulkActionFailed(
+                                                                        'Language not changed.',
                                                                     ),
                                                             },
                                                         )
@@ -614,6 +643,10 @@ export default function AudienceShow(props: Props) {
                                                         onSuccess: () =>
                                                             setSelected(
                                                                 new Set(),
+                                                            ),
+                                                        onError:
+                                                            bulkActionFailed(
+                                                                'Subscribers not deleted.',
                                                             ),
                                                         onFinish: () =>
                                                             setConfirmBulkDeleteOpen(

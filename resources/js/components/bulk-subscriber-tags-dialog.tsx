@@ -62,6 +62,11 @@ export function BulkSubscriberTagsDialog({
 
     const busy = (action: BulkTagAction) =>
         form.processing && form.data.action === action;
+    const idsError =
+        form.errors.ids ??
+        Object.entries(form.errors).find(([key]) =>
+            key.startsWith('ids.'),
+        )?.[1];
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -85,6 +90,11 @@ export function BulkSubscriberTagsDialog({
                     />
                     <FieldError>{form.errors.tags}</FieldError>
                 </Field>
+                {idsError && (
+                    <FieldError data-test="bulk-tags-ids-error">
+                        {idsError}
+                    </FieldError>
+                )}
 
                 <DialogFooter>
                     <Button
