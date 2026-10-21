@@ -435,3 +435,22 @@ test('negative name rules also match subscribers without a name', function (stri
 
     expect($matches)->toBe(['noname@example.com']);
 })->with(['not_equals', 'does_not_contain']);
+
+test('subscribe form not equals also matches subscribers without a form', function () {
+    $audience = Audience::factory()->create();
+    $formA = SubscribeForm::factory()->for($audience)->create();
+    $formB = SubscribeForm::factory()->for($audience)->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'form-a@example.com', 'subscribe_form_id' => $formA->id]);
+    Subscriber::factory()->for($audience)->create(['email' => 'form-b@example.com', 'subscribe_form_id' => $formB->id]);
+    Subscriber::factory()->for($audience)->create(['email' => 'manual@example.com', 'subscribe_form_id' => null]);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [
+            ['field' => 'subscribe_form', 'operator' => 'not_equals', 'value' => $formA->uuid],
+        ], SegmentMatchType::All)
+        ->orderBy('email')
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe(['form-b@example.com', 'manual@example.com']);
+});
