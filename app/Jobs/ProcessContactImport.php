@@ -73,6 +73,12 @@ class ProcessContactImport implements ShouldQueue
             return;
         }
 
+        if ($contactImport->team === null) {
+            $this->cancelForDeletedWorkspace($contactImport);
+
+            return;
+        }
+
         $contactImport->update([
             'status' => ContactImportStatus::Processing,
             'started_at' => $contactImport->started_at ?? now(),
@@ -177,6 +183,20 @@ class ProcessContactImport implements ShouldQueue
                 : __('The import could not be completed.'),
             'completed_at' => now(),
         ]);
+    }
+
+    /**
+     * The workspace was deleted after the import was queued. Stop the import the
+     * same way a dashboard cancel does, so its uploaded CSV and review rows go.
+     */
+    private function cancelForDeletedWorkspace(ContactImport $contactImport): void
+    {
+        $contactImport->update([
+            'status' => ContactImportStatus::Cancelled,
+            'completed_at' => now(),
+        ]);
+        DB::table('contact_import_emails')->where('contact_import_id', $contactImport->id)->delete();
+        Storage::disk($contactImport->disk)->delete($contactImport->path);
     }
 
     /**

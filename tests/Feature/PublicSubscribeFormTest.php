@@ -501,6 +501,20 @@ test('a confirmation link without the current re-signup token does not resubscri
     Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
 });
 
+test('a double opt-in link confirms without starting automations after the workspace is deleted', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingConfirmation()->create();
+    Automation::factory()->for($audience->team)->active()->create(['trigger' => AutomationTrigger::Subscribed]);
+    $audience->team->delete();
+
+    $this->get(URL::signedRoute('public.subscribe.confirm', $subscriber))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('confirmed', true));
+
+    expect($subscriber->fresh()->subscribed_at)->not->toBeNull()
+        ->and($subscriber->automationRuns()->exists())->toBeFalse();
+});
+
 test('a pending subscriber is confirmed on a new submission after double opt-in is turned off', function () {
     $audience = Audience::factory()->create(['double_opt_in' => false]);
     $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
@@ -748,6 +762,19 @@ test('public subscribe endpoints are unavailable after a form is deleted', funct
         'email' => 'person@example.com',
         'consent' => true,
     ])->assertNotFound();
+});
+
+test('public subscribe endpoints are unavailable after the workspace is deleted', function () {
+    $subscribeForm = SubscribeForm::factory()->published()->create();
+    $subscribeForm->audience->team->delete();
+
+    $this->get(route('public.subscribe_forms.show', $subscribeForm))->assertNotFound();
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+    ])->assertNotFound();
+
+    expect(Subscriber::query()->where('email', 'person@example.com')->exists())->toBeFalse();
 });
 
 test('public subscribe submissions are throttled per form and email', function () {

@@ -15,7 +15,7 @@ class PublicSubscribeFormController extends Controller
 {
     public function show(Request $request, SubscribeForm $subscribeForm): Response
     {
-        abort_unless($subscribeForm->isPublished(), 404);
+        abort_unless($subscribeForm->acceptsPublicSignups(), 404);
 
         return Inertia::render('subscribe-forms/public', [
             'subscribeForm' => [
@@ -70,7 +70,7 @@ class PublicSubscribeFormController extends Controller
 
     public function store(PublicSubscribeRequest $request, SubscribeForm $subscribeForm, SubscribeToAudience $subscribe): JsonResponse
     {
-        abort_unless($subscribeForm->isPublished(), 404);
+        abort_unless($subscribeForm->acceptsPublicSignups(), 404);
 
         $subscribe->handle($subscribeForm, [
             'email' => $request->string('email')->toString(),

@@ -160,6 +160,15 @@ class SubscribeForm extends Model
     }
 
     /**
+     * Whether the hosted form may be shown and submitted. A deleted workspace
+     * keeps its rows until it is purged, but its forms must stop answering.
+     */
+    public function acceptsPublicSignups(): bool
+    {
+        return $this->isPublished() && $this->audience->team()->exists();
+    }
+
+    /**
      * @return Attribute<string|null, never>
      */
     protected function logo(): Attribute

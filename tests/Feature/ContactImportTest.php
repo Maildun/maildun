@@ -325,6 +325,25 @@ test('imports that fail on an unexpected error show a generic message instead of
         ->and($contactImport->failure_message)->toBe('The import could not be completed.');
 });
 
+test('an import queued for a workspace that was deleted is cancelled and its file removed', function () {
+    Storage::fake('local');
+    $team = Team::factory()->create();
+    $contactImport = ContactImport::factory()->for($team)->create([
+        'status' => ContactImportStatus::Pending,
+        'column_map' => ['email'],
+    ]);
+    Storage::disk('local')->put($contactImport->path, "email\nada@example.com\n");
+    DB::table('contact_import_emails')->insert(['contact_import_id' => $contactImport->id, 'email' => 'ada@example.com', 'row_number' => 2]);
+    $team->delete();
+
+    ProcessContactImport::dispatchSync($contactImport->id);
+
+    expect($contactImport->refresh()->status)->toBe(ContactImportStatus::Cancelled)
+        ->and(Contact::query()->where('team_id', $team->id)->exists())->toBeFalse()
+        ->and(DB::table('contact_import_emails')->where('contact_import_id', $contactImport->id)->exists())->toBeFalse();
+    Storage::disk('local')->assertMissing($contactImport->path);
+});
+
 test('imports reject files that are not CSV data', function () {
     Storage::fake('local');
 

@@ -55,7 +55,7 @@ use Illuminate\Support\Str;
  * @property Carbon|null $completed_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read Team $team
+ * @property-read Team|null $team
  * @property-read Audience|null $audience
  * @property-read User|null $uploadedBy
  */

@@ -544,3 +544,13 @@ test('automation links sent before deliveries kept their recipient still find a 
 
     expect($readded->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
 });
+
+test('an unsubscribe link still records the opt-out after the workspace is deleted', function () {
+    $delivery = unsubscribeDelivery();
+    $delivery->email->team->delete();
+
+    $this->post(URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]))
+        ->assertNoContent();
+
+    expect($delivery->subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+});

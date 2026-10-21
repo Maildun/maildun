@@ -16,14 +16,18 @@ class DispatchAutomationTrigger
      */
     public function handle(AutomationTrigger $trigger, Subscriber $subscriber, array $context = []): void
     {
-        $subscriber->loadMissing('audience.team');
+        $subscriber->loadMissing('audience');
 
-        $team = $subscriber->audience->team;
+        // A deleted workspace keeps its rows until it is purged, but runs no automations.
+        if (! $subscriber->audience->team()->exists()) {
+            return;
+        }
+
         $tagUuid = is_string($context['tag_uuid'] ?? null) ? $context['tag_uuid'] : null;
         $sourceAutomationUuid = is_string($context['source_automation_uuid'] ?? null) ? $context['source_automation_uuid'] : null;
 
         Automation::query()
-            ->where('team_id', $team->id)
+            ->where('team_id', $subscriber->audience->team_id)
             ->where('status', AutomationStatus::Active)
             ->where('trigger', $trigger)
             ->when($sourceAutomationUuid !== null, fn ($query) => $query->where('uuid', '!=', $sourceAutomationUuid))
