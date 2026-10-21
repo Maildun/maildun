@@ -9,13 +9,23 @@ use App\Events\SubscriberLifecycleOccurred;
 use App\Models\Audience;
 use App\Models\Contact;
 use App\Models\Subscriber;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 
 class AddContactToAudiences
 {
-    /** @param Collection<int, Audience> $audiences */
-    public function handle(Contact $contact, Collection $audiences, ?string $ipAddress): int
-    {
+    /**
+     * @param  Collection<int, Audience>  $audiences
+     * @param  string|null  $consentText  Where consent came from, when more is known than "a team member".
+     * @param  CarbonInterface|null  $consentedAt  When consent was attested, if not now.
+     */
+    public function handle(
+        Contact $contact,
+        Collection $audiences,
+        ?string $ipAddress,
+        ?string $consentText = null,
+        ?CarbonInterface $consentedAt = null,
+    ): int {
         $changedMemberships = 0;
 
         foreach ($audiences as $audience) {
@@ -43,8 +53,8 @@ class AddContactToAudiences
                 'language' => $subscriber->language ?? $audience->default_language,
                 'status' => SubscriberStatus::Subscribed,
                 'source' => SubscriberSource::Manual,
-                'consent_text' => 'Marketing consent confirmed by a team member.',
-                'consented_at' => now(),
+                'consent_text' => $consentText ?? 'Marketing consent confirmed by a team member.',
+                'consented_at' => $consentedAt ?? now(),
                 'consent_ip' => $ipAddress,
                 'subscribed_at' => now(),
                 'unsubscribed_at' => null,

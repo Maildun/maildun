@@ -509,3 +509,23 @@ test('audience imports keep the language an existing member chose', function (st
     'resubscribed with a language column' => ['unsubscribed', ['email', 'language'], "email,language\nada@example.com,de\n"],
     'pending double opt-in with a language column' => ['pendingConfirmation', ['email', 'language'], "email,language\nada@example.com,de\n"],
 ]);
+
+test('imported memberships record the import that attested consent', function () {
+    Storage::fake('local');
+    $user = User::factory()->create(['name' => 'Grace Hopper']);
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    $contactImport = ContactImport::factory()->for($user->currentTeam)->for($audience)->create([
+        'uploaded_by' => $user->id,
+        'original_name' => 'webinar.csv',
+        'consent_ip' => '198.51.100.7',
+        'consent_confirmed_at' => '2026-10-01 09:30:00',
+    ]);
+    Storage::disk('local')->put($contactImport->path, "email\nada@example.com\n");
+
+    ProcessContactImport::dispatchSync($contactImport->id);
+
+    $subscriber = $audience->subscribers()->sole();
+    expect($subscriber->consent_text)->toBe("Marketing consent confirmed by Grace Hopper when importing webinar.csv (import {$contactImport->uuid}).")
+        ->and($subscriber->consented_at?->toDateTimeString())->toBe('2026-10-01 09:30:00')
+        ->and($subscriber->consent_ip)->toBe('198.51.100.7');
+});

@@ -67,7 +67,7 @@ class ProcessContactImport implements ShouldQueue
         ContactImportCsv $csv,
         ImportEmailReview $emailReview,
     ): void {
-        $contactImport = ContactImport::query()->with(['team', 'audience.audienceAttributes'])->find($this->contactImportId);
+        $contactImport = ContactImport::query()->with(['team', 'audience.audienceAttributes', 'uploadedBy:id,name'])->find($this->contactImportId);
 
         if ($contactImport === null || ! $contactImport->status->isRunning()) {
             return;
@@ -411,6 +411,19 @@ class ProcessContactImport implements ShouldQueue
         }
     }
 
+    /**
+     * The consent record of an imported membership points back at the import
+     * whose consent attestation it relies on.
+     */
+    private function consentText(ContactImport $contactImport): string
+    {
+        return __('Marketing consent confirmed by :name when importing :file (import :uuid).', [
+            'name' => $contactImport->uploadedBy->name ?? __('a team member'),
+            'file' => $contactImport->original_name,
+            'uuid' => $contactImport->uuid,
+        ]);
+    }
+
     private function unsupportedLanguageError(string $value): string
     {
         return __('Language ":value" is not supported.', ['value' => $value]);
@@ -478,7 +491,13 @@ class ProcessContactImport implements ShouldQueue
             return [0, false, true];
         }
 
-        $createdMembership = $addContactToAudiences->handle($contact, $audience->newCollection([$audience]), $contactImport->consent_ip);
+        $createdMembership = $addContactToAudiences->handle(
+            $contact,
+            $audience->newCollection([$audience]),
+            $contactImport->consent_ip,
+            $this->consentText($contactImport),
+            $contactImport->consent_confirmed_at,
+        );
 
         if (($attributes === [] && $language === null) || ($existing !== null && ! $fillBlanks)) {
             return [$createdMembership, false, false];
