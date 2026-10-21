@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Workspaces;
 
+use App\Concerns\SearchesText;
 use App\Mcp\Support\ResourcePayload;
 use App\Models\Team;
 use App\Models\User;
@@ -22,6 +23,8 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[Name('list-workspaces')]
 class ListWorkspacesTool extends Tool
 {
+    use SearchesText;
+
     public function __construct(private ResourcePayload $payload) {}
 
     public function handle(Request $request): ResponseFactory
@@ -39,11 +42,7 @@ class ListWorkspacesTool extends Tool
 
         $workspaces = $query
             ->when($search !== '', function ($query) use ($search): void {
-                $pattern = '%'.addcslashes($search, '%_\\').'%';
-
-                $query->where(fn ($inner) => $inner
-                    ->whereLike('name', $pattern)
-                    ->orWhereLike('slug', $pattern));
+                $this->whereAnyColumnContains($query, ['name', 'slug'], $search);
             })
             ->orderByRaw('LOWER(name)')
             ->orderBy('id')

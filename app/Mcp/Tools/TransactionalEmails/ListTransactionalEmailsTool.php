@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\TransactionalEmails;
 
+use App\Concerns\SearchesText;
 use App\Enums\TransactionalEmailStatus;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
@@ -24,6 +25,8 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[Name('list-transactional-emails')]
 class ListTransactionalEmailsTool extends Tool
 {
+    use SearchesText;
+
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
@@ -43,12 +46,7 @@ class ListTransactionalEmailsTool extends Tool
 
         $emails = $team->transactionalEmails()
             ->when($search !== '', function ($query) use ($search): void {
-                $pattern = '%'.addcslashes($search, '%_\\').'%';
-
-                $query->where(fn ($inner) => $inner
-                    ->whereLike('name', $pattern)
-                    ->orWhereLike('slug', $pattern)
-                    ->orWhereLike('subject', $pattern));
+                $this->whereAnyColumnContains($query, ['name', 'slug', 'subject'], $search);
             })
             ->when(isset($validated['status']), fn ($query) => $query->where('status', $validated['status']))
             ->orderByDesc('updated_at')

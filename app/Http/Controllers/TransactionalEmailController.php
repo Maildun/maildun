@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\Emails\InsertPreheader;
 use App\Actions\Media\BuildMediaLibrary;
 use App\Actions\Transactional\RenderTransactionalContent;
+use App\Concerns\SearchesText;
 use App\Enums\EmailEditor;
 use App\Enums\TestSendStatus;
 use App\Enums\TransactionalEmailStatus;
@@ -28,6 +29,8 @@ use Inertia\Response;
 
 class TransactionalEmailController extends Controller
 {
+    use SearchesText;
+
     public function index(Request $request, Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [TransactionalEmail::class, $currentTeam]);
@@ -48,11 +51,7 @@ class TransactionalEmailController extends Controller
                 'updated_at',
             ])
             ->when($filters['q'] !== '', function ($query) use ($filters): void {
-                $search = '%'.addcslashes($filters['q'], '%_\\').'%';
-                $query->where(fn ($inner) => $inner
-                    ->whereLike('name', $search)
-                    ->orWhereLike('slug', $search)
-                    ->orWhereLike('subject', $search));
+                $this->whereAnyColumnContains($query, ['name', 'slug', 'subject'], $filters['q']);
             })
             ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']))
             ->when($filters['editor'] !== '', fn ($query) => $query->where('editor', $filters['editor']))

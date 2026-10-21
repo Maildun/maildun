@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Automations\ValidateAutomationGraph;
+use App\Concerns\SearchesText;
 use App\Enums\AutomationAction;
 use App\Enums\AutomationCondition;
 use App\Enums\AutomationDelayUnit;
@@ -30,6 +31,8 @@ use Inertia\Response;
 
 class AutomationController extends Controller
 {
+    use SearchesText;
+
     public function index(Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [Automation::class, $currentTeam]);
@@ -269,8 +272,7 @@ class AutomationController extends Controller
         $runs = $automation->runs()
             ->with(['subscriber:id,uuid,email,first_name,last_name,audience_id', 'subscriber.audience:id,uuid', 'steps'])
             ->when($filters['q'] !== '', function ($query) use ($filters): void {
-                $search = '%'.addcslashes($filters['q'], '%_\\').'%';
-                $query->whereHas('subscriber', fn ($subscriber) => $subscriber->whereLike('email', $search));
+                $query->whereHas('subscriber', fn ($subscriber) => $this->whereAnyColumnContains($subscriber, ['email'], $filters['q']));
             })
             ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']))
             ->orderByDesc('id')

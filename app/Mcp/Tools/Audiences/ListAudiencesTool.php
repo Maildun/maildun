@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Audiences;
 
+use App\Concerns\SearchesText;
 use App\Enums\SubscriberStatus;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
@@ -23,6 +24,8 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[Name('list-audiences')]
 class ListAudiencesTool extends Tool
 {
+    use SearchesText;
+
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
@@ -46,11 +49,7 @@ class ListAudiencesTool extends Tool
                 'segments',
             ])
             ->when($search !== '', function ($query) use ($search): void {
-                $pattern = '%'.addcslashes($search, '%_\\').'%';
-
-                $query->where(fn ($inner) => $inner
-                    ->whereLike('name', $pattern)
-                    ->orWhereLike('description', $pattern));
+                $this->whereAnyColumnContains($query, ['name', 'description'], $search);
             })
             ->orderByDesc('updated_at')
             ->orderByDesc('id')

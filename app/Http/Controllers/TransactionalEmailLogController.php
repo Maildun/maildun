@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Concerns\SearchesText;
 use App\Enums\EmailDeliveryStatus;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
@@ -15,6 +16,8 @@ use Inertia\Response;
 
 class TransactionalEmailLogController extends Controller
 {
+    use SearchesText;
+
     /**
      * Every message sent from one transactional email, newest first, with
      * who it went to, whether it went out, and why not.
@@ -35,8 +38,7 @@ class TransactionalEmailLogController extends Controller
             'deliveries' => $transactionalEmail->deliveries()
                 ->with('apiKey:id,name')
                 ->when($filters['status'] !== '', fn (Builder $query) => $query->where('status', $filters['status']))
-                ->when($filters['q'] !== '', fn (Builder $query) => $query
-                    ->whereRaw('LOWER(to_address) LIKE ?', ['%'.mb_strtolower($filters['q']).'%']))
+                ->when($filters['q'] !== '', fn (Builder $query) => $this->whereAnyColumnContains($query, ['to_address'], $filters['q']))
                 ->latest('id')
                 ->paginate(25)
                 ->withQueryString()

@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Contacts;
 
+use App\Concerns\SearchesText;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
 use App\Models\Contact;
@@ -22,6 +23,8 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[Name('list-contacts')]
 class ListContactsTool extends Tool
 {
+    use SearchesText;
+
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
@@ -45,12 +48,7 @@ class ListContactsTool extends Tool
             ->with(['company:id,uuid,name', 'tags:id,uuid,name'])
             ->withCount('subscribers')
             ->when($search !== '', function ($query) use ($search): void {
-                $pattern = '%'.addcslashes($search, '%_\\').'%';
-
-                $query->where(fn ($contactQuery) => $contactQuery
-                    ->whereRaw('LOWER(email) LIKE ?', [$pattern])
-                    ->orWhereRaw('LOWER(first_name) LIKE ?', [$pattern])
-                    ->orWhereRaw('LOWER(last_name) LIKE ?', [$pattern]));
+                $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $search);
             })
             ->when($tag !== '', fn ($query) => $query->whereHas(
                 'tags',

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audiences\BuildAudienceSubscriberStats;
+use App\Concerns\SearchesText;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
@@ -23,6 +24,8 @@ use Inertia\Response;
 
 class AudienceController extends Controller
 {
+    use SearchesText;
+
     public function index(Request $request): Response
     {
         $team = $this->currentTeam($request);
@@ -36,10 +39,7 @@ class AudienceController extends Controller
                 'subscribeForms',
             ])
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                $search = '%'.str($filters['search'])->lower().'%';
-                $query->where(fn ($audienceQuery) => $audienceQuery
-                    ->whereRaw('LOWER(name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(description) LIKE ?', [$search]));
+                $this->whereAnyColumnContains($query, ['name', 'description'], $filters['search']);
             })
             ->when($filters['filter'] === 'active', fn ($query) => $query->whereHas(
                 'subscribers',
@@ -101,11 +101,7 @@ class AudienceController extends Controller
         $subscribers = $audience->subscribers()
             ->with(['subscribeForm:id,uuid,name,deleted_at', 'tags:id,uuid,name,color'])
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                $search = '%'.mb_strtolower($filters['search']).'%';
-                $query->where(fn ($subscriberQuery) => $subscriberQuery
-                    ->whereRaw('LOWER(email) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(first_name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(last_name) LIKE ?', [$search]));
+                $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $filters['search']);
             })
             ->when($filters['status'] !== 'all', fn ($query) => $query->where('status', $filters['status']))
             ->when($filters['source'] !== 'all', fn ($query) => $query->where('source', $filters['source']))

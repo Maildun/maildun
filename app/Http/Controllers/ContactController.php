@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Audiences\AddContactToAudiences;
 use App\Actions\Automations\DispatchTaggedTriggers;
+use App\Concerns\SearchesText;
 use App\Enums\AutomationTrigger;
 use App\Enums\ContactCompanyAssignmentMode;
 use App\Enums\EmailDeliveryStatus;
@@ -37,6 +38,8 @@ use Inertia\Response;
 
 class ContactController extends Controller
 {
+    use SearchesText;
+
     public function index(Request $request, Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [Contact::class, $currentTeam]);
@@ -46,11 +49,7 @@ class ContactController extends Controller
             ->with(['company:id,uuid,name', 'tags:id,uuid,name,color'])
             ->withCount('subscribers')
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                $search = '%'.mb_strtolower($filters['search']).'%';
-                $query->where(fn ($contactQuery) => $contactQuery
-                    ->whereRaw('LOWER(email) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(first_name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(last_name) LIKE ?', [$search]));
+                $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $filters['search']);
             })
             ->when($filters['company'] === 'assigned', fn ($query) => $query->whereNotNull('company_id'))
             ->when($filters['company'] === 'unassigned', fn ($query) => $query->whereNull('company_id'))

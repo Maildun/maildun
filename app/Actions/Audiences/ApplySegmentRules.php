@@ -2,6 +2,7 @@
 
 namespace App\Actions\Audiences;
 
+use App\Concerns\SearchesText;
 use App\Enums\SegmentMatchType;
 use App\Enums\SegmentRuleField;
 use App\Enums\SegmentRuleOperator;
@@ -13,6 +14,8 @@ use Illuminate\Support\Str;
 
 class ApplySegmentRules
 {
+    use SearchesText;
+
     /**
      * @param  Builder<Subscriber>  $query
      * @param  list<array{field: string, operator: string, value: string}>  $rules
@@ -52,16 +55,15 @@ class ApplySegmentRules
 
         if (in_array($field, [SegmentRuleField::Email, SegmentRuleField::FirstName, SegmentRuleField::LastName], true)) {
             $normalizedValue = Str::lower((string) $value);
-            $containsPattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $normalizedValue).'%';
 
             match ($operator) {
                 SegmentRuleOperator::Equals => $query->whereRaw("LOWER({$column}) = ?", [$normalizedValue]),
                 SegmentRuleOperator::NotEquals => $query->where(fn (Builder $textQuery) => $textQuery
                     ->whereRaw("LOWER({$column}) != ?", [$normalizedValue])
                     ->orWhereNull($column)),
-                SegmentRuleOperator::Contains => $query->whereRaw("LOWER({$column}) LIKE ? ESCAPE '!'", [$containsPattern]),
+                SegmentRuleOperator::Contains => $query->whereRaw("LOWER({$column}) LIKE ? ESCAPE '!'", [$this->containsPattern($normalizedValue)]),
                 SegmentRuleOperator::DoesNotContain => $query->where(fn (Builder $textQuery) => $textQuery
-                    ->whereRaw("LOWER({$column}) NOT LIKE ? ESCAPE '!'", [$containsPattern])
+                    ->whereRaw("LOWER({$column}) NOT LIKE ? ESCAPE '!'", [$this->containsPattern($normalizedValue)])
                     ->orWhereNull($column)),
                 default => null,
             };

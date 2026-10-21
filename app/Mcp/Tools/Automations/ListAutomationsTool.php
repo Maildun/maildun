@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Automations;
 
+use App\Concerns\SearchesText;
 use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationStatus;
 use App\Mcp\Support\ResourcePayload;
@@ -25,6 +26,8 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[Name('list-automations')]
 class ListAutomationsTool extends Tool
 {
+    use SearchesText;
+
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
@@ -48,11 +51,7 @@ class ListAutomationsTool extends Tool
                 'runs as running_count' => fn ($query) => $query->whereIn('status', AutomationRunStatus::open()),
             ])
             ->when($search !== '', function ($query) use ($search): void {
-                $pattern = '%'.addcslashes($search, '%_\\').'%';
-
-                $query->where(fn ($inner) => $inner
-                    ->whereLike('name', $pattern)
-                    ->orWhereLike('description', $pattern));
+                $this->whereAnyColumnContains($query, ['name', 'description'], $search);
             })
             ->when(isset($validated['status']), fn ($query) => $query->where('status', $validated['status']))
             ->orderByDesc('updated_at')

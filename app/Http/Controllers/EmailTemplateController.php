@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Media\BuildMediaLibrary;
+use App\Concerns\SearchesText;
 use App\Enums\EmailEditor;
 use App\Http\Requests\SaveEmailTemplateRequest;
 use App\Models\EmailTemplate;
@@ -17,6 +18,8 @@ use Inertia\Response;
 
 class EmailTemplateController extends Controller
 {
+    use SearchesText;
+
     public function index(Request $request, Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [EmailTemplate::class, $currentTeam]);
@@ -26,11 +29,7 @@ class EmailTemplateController extends Controller
         $templates = EmailTemplate::query()
             ->availableTo($currentTeam)
             ->when($filters['q'] !== '', function ($query) use ($filters): void {
-                $search = '%'.addcslashes($filters['q'], '%_\\').'%';
-                $query->where(fn ($inner) => $inner
-                    ->whereLike('name', $search)
-                    ->orWhereLike('description', $search)
-                    ->orWhereLike('subject', $search));
+                $this->whereAnyColumnContains($query, ['name', 'description', 'subject'], $filters['q']);
             })
             ->when($filters['editor'] !== '', fn ($query) => $query->where('editor', $filters['editor']))
             ->when($filters['type'] === 'starter', fn ($query) => $query->whereNull('team_id'))

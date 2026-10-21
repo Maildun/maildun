@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\SavedSections;
 
+use App\Concerns\SearchesText;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
 use App\Models\SavedSection;
@@ -22,6 +23,8 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[Name('list-saved-sections')]
 class ListSavedSectionsTool extends Tool
 {
+    use SearchesText;
+
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
@@ -36,7 +39,7 @@ class ListSavedSectionsTool extends Tool
         ]);
         $search = trim((string) ($validated['search'] ?? ''));
         $sections = $team->savedSections()
-            ->when($search !== '', fn ($query) => $query->whereRaw('LOWER(name) LIKE ?', ['%'.mb_strtolower($search).'%']))
+            ->when($search !== '', fn ($query) => $this->whereAnyColumnContains($query, ['name'], $search))
             ->newestFirst()
             ->get();
 

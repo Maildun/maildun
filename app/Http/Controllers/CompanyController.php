@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Concerns\SearchesText;
 use App\Enums\ContactCompanyAssignmentMode;
 use App\Http\Requests\SaveCompanyRequest;
 use App\Jobs\RelinkCompanyContacts;
@@ -25,6 +26,8 @@ use Inertia\Response;
 
 class CompanyController extends Controller
 {
+    use SearchesText;
+
     public function index(Request $request, Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [Company::class, $currentTeam]);
@@ -34,10 +37,8 @@ class CompanyController extends Controller
             ->with('domains:id,company_id,domain')
             ->withCount('contacts')
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                $search = '%'.mb_strtolower($filters['search']).'%';
-                $query->where(fn ($companyQuery) => $companyQuery
-                    ->whereRaw('LOWER(name) LIKE ?', [$search])
-                    ->orWhereHas('domains', fn ($domainQuery) => $domainQuery->whereLike('domain', $search)));
+                $query->where(fn ($companyQuery) => $this->whereAnyColumnContains($companyQuery, ['name'], $filters['search'])
+                    ->orWhereHas('domains', fn ($domainQuery) => $this->whereAnyColumnContains($domainQuery, ['domain'], $filters['search'])));
             });
 
         $companies = match ($filters['sort']) {
@@ -84,11 +85,7 @@ class CompanyController extends Controller
                     ])
                     ->withCount('subscribers')
                     ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                        $term = '%'.mb_strtolower($filters['search']).'%';
-                        $query->where(fn ($contactQuery) => $contactQuery
-                            ->whereRaw('LOWER(email) LIKE ?', [$term])
-                            ->orWhereRaw('LOWER(first_name) LIKE ?', [$term])
-                            ->orWhereRaw('LOWER(last_name) LIKE ?', [$term]));
+                        $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $filters['search']);
                     })
                     ->when($filters['audience'] !== '', fn ($query) => $query->whereHas(
                         'subscribers.audience',

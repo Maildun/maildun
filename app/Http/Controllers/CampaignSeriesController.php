@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Emails\BuildCampaignSeriesReport;
+use App\Concerns\SearchesText;
 use App\Enums\CampaignSeriesGoal;
 use App\Enums\EmailStatus;
 use App\Http\Requests\StoreCampaignSeriesRequest;
@@ -20,6 +21,8 @@ use Inertia\Response;
 
 class CampaignSeriesController extends Controller
 {
+    use SearchesText;
+
     public function index(Request $request, Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [CampaignSeries::class, $currentTeam]);
@@ -35,11 +38,7 @@ class CampaignSeriesController extends Controller
                         ->orWhereNotNull('sent_at')),
             ])
             ->when($search !== '', function ($query) use ($search): void {
-                $term = '%'.addcslashes($search, '%_\\').'%';
-                $query->where(fn ($inner) => $inner
-                    ->whereLike('name', $term)
-                    ->orWhereLike('description', $term)
-                    ->orWhereLike('objective', $term));
+                $this->whereAnyColumnContains($query, ['name', 'description', 'objective'], $search);
             })
             ->orderByDesc('updated_at')
             ->paginate(15)

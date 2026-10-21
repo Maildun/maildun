@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Subscribers;
 
+use App\Concerns\SearchesText;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
@@ -25,6 +27,8 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[Name('list-subscribers')]
 class ListSubscribersTool extends Tool
 {
+    use SearchesText;
+
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
@@ -38,6 +42,7 @@ class ListSubscribersTool extends Tool
             'status' => ['nullable', Rule::enum(SubscriberStatus::class)],
             'search' => ['nullable', 'string', 'max:255'],
             'tag' => ['nullable', 'string', 'max:50'],
+            'language' => ['nullable', Rule::enum(SubscriberLanguage::class)],
             'segment_uuid' => ['nullable', 'uuid', Rule::exists(Segment::class, 'uuid')->where('audience_id', $audience->id)],
             'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
         ], [
@@ -50,13 +55,9 @@ class ListSubscribersTool extends Tool
         $subscribers = $audience->subscribers()
             ->with(['audience:id,uuid,name', 'contact:id,uuid', 'tags:id,uuid,name'])
             ->when(isset($validated['status']), fn ($query) => $query->where('status', $validated['status']))
+            ->when(isset($validated['language']), fn ($query) => $query->where('language', $validated['language']))
             ->when($search !== '', function ($query) use ($search): void {
-                $pattern = '%'.addcslashes($search, '%_\\').'%';
-
-                $query->where(fn ($subscriberQuery) => $subscriberQuery
-                    ->whereRaw('LOWER(subscribers.email) LIKE ?', [$pattern])
-                    ->orWhereRaw('LOWER(subscribers.first_name) LIKE ?', [$pattern])
-                    ->orWhereRaw('LOWER(subscribers.last_name) LIKE ?', [$pattern]));
+                $this->whereAnyColumnContains($query, ['subscribers.email', 'subscribers.first_name', 'subscribers.last_name'], $search);
             })
             ->when($tag !== '', fn ($query) => $query->whereHas(
                 'tags',
@@ -95,6 +96,7 @@ class ListSubscribersTool extends Tool
             'status' => $schema->string()->description('Optional subscription status filter.')->enum(SubscriberStatus::class),
             'search' => $schema->string()->description('Optional email, first name, or last name search.')->max(255),
             'tag' => $schema->string()->description('Optional tag name filter.')->max(50),
+            'language' => $schema->string()->description('Optional subscriber language filter (ISO 639-1 code).')->enum(SubscriberLanguage::class),
             'segment_uuid' => $schema->string()->description('Optional segment UUID in this audience.')->format('uuid'),
             'limit' => $schema->integer()->description('Maximum subscribers to return.')->min(1)->max(100)->default(20),
         ];

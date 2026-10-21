@@ -15,6 +15,7 @@ use App\Actions\Emails\StartEmailSend;
 use App\Actions\Emails\StopEmailSend;
 use App\Actions\Media\BuildMediaLibrary;
 use App\Concerns\FiltersCampaignRecipients;
+use App\Concerns\SearchesText;
 use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
@@ -65,7 +66,7 @@ use Inertia\Response;
 
 class EmailController extends Controller
 {
-    use FiltersCampaignRecipients;
+    use FiltersCampaignRecipients, SearchesText;
 
     public function index(Request $request, Team $currentTeam): Response
     {
@@ -113,10 +114,7 @@ class EmailController extends Controller
                 },
             ])
             ->when($filters['q'] !== '', function ($query) use ($filters): void {
-                $search = '%'.addcslashes($filters['q'], '%_\\').'%';
-                $query->where(fn ($inner) => $inner
-                    ->whereLike('name', $search)
-                    ->orWhereLike('subject', $search));
+                $this->whereAnyColumnContains($query, ['name', 'subject'], $filters['q']);
             })
             ->when($filters['status'] !== '', function ($query) use ($filters): void {
                 $this->applyCampaignStatusFilter($query, $filters['status']);
@@ -1244,12 +1242,7 @@ class EmailController extends Controller
             (clone $recipientQuery)
                 ->select(['subscribers.id', 'subscribers.uuid', 'subscribers.email', 'subscribers.first_name', 'subscribers.last_name'])
                 ->when($search !== '', function (Builder $query) use ($search): void {
-                    $term = '%'.addcslashes($search, '%_\\').'%';
-
-                    $query->where(fn ($inner) => $inner
-                        ->whereLike('subscribers.first_name', $term)
-                        ->orWhereLike('subscribers.last_name', $term)
-                        ->orWhereLike('subscribers.email', $term));
+                    $this->whereAnyColumnContains($query, ['subscribers.first_name', 'subscribers.last_name', 'subscribers.email'], $search);
                 })
                 ->orderBy('subscribers.email')
                 ->orderBy('subscribers.id')

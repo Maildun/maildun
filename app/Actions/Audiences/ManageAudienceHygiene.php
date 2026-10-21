@@ -2,6 +2,7 @@
 
 namespace App\Actions\Audiences;
 
+use App\Concerns\SearchesText;
 use App\Enums\EmailAddressHealthStatus;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
@@ -14,6 +15,8 @@ use Illuminate\Support\Carbon;
 
 class ManageAudienceHygiene
 {
+    use SearchesText;
+
     /** @return array{unconfirmed: int, inactive: int} */
     public function handle(Audience $audience): array
     {
@@ -131,11 +134,7 @@ class ManageAudienceHygiene
                     ->select('id'),
             )
             ->when($search !== '', function (Builder $query) use ($search): void {
-                $search = '%'.mb_strtolower($search).'%';
-                $query->where(fn (Builder $subscriberQuery): Builder => $subscriberQuery
-                    ->whereRaw('LOWER(email) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(first_name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(last_name) LIKE ?', [$search]));
+                $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $search);
             });
 
         $query = match ($kind) {

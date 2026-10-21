@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Concerns\FiltersCampaignRecipients;
 use App\Concerns\SanitizesSpreadsheetCells;
+use App\Concerns\SearchesText;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
@@ -25,6 +26,7 @@ class ContactExportController extends Controller
 {
     use FiltersCampaignRecipients;
     use SanitizesSpreadsheetCells;
+    use SearchesText;
 
     public function contacts(Request $request, Team $currentTeam, string $format): StreamedResponse
     {
@@ -39,11 +41,7 @@ class ContactExportController extends Controller
                 'subscribers.audience:id,name',
             ])
             ->when($filters['search'] !== '', function (Builder $query) use ($filters): void {
-                $search = '%'.mb_strtolower($filters['search']).'%';
-                $query->where(fn (Builder $contactQuery) => $contactQuery
-                    ->whereRaw('LOWER(email) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(first_name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(last_name) LIKE ?', [$search]));
+                $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $filters['search']);
             })
             ->when($filters['company'] === 'assigned', fn (Builder $query) => $query->whereNotNull('company_id'))
             ->when($filters['company'] === 'unassigned', fn (Builder $query) => $query->whereNull('company_id'))
@@ -96,11 +94,7 @@ class ContactExportController extends Controller
             ->whereBelongsTo($audience)
             ->with('tags:id,name')
             ->when($filters['search'] !== '', function (Builder $query) use ($filters): void {
-                $search = '%'.mb_strtolower($filters['search']).'%';
-                $query->where(fn (Builder $subscriberQuery) => $subscriberQuery
-                    ->whereRaw('LOWER(email) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(first_name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(last_name) LIKE ?', [$search]));
+                $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $filters['search']);
             })
             ->when($filters['status'] !== 'all', fn (Builder $query) => $query->where('status', $filters['status']))
             ->when($filters['source'] !== 'all', fn (Builder $query) => $query->where('source', $filters['source']))
