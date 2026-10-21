@@ -9,9 +9,12 @@ use App\Models\Audience;
 use App\Models\EmailAddressHealth;
 use App\Models\Subscriber;
 use App\Models\Team;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ManageAudienceHygiene
 {
@@ -26,14 +29,28 @@ class ManageAudienceHygiene
         ];
     }
 
-    public function deleteUnconfirmed(Audience $audience): int
+    /**
+     * Removes the unconfirmed members the user confirmed: those that matched
+     * when the page counted them and have not changed since.
+     */
+    public function deleteUnconfirmed(Audience $audience, CarbonInterface $countedAt, int $confirmedCount): int
     {
-        return $this->unconfirmedQuery($audience)->delete();
+        return $this->deleteConfirmedSet(
+            $this->applyUnconfirmedCriteria($this->snapshotQuery($audience, $countedAt)),
+            $confirmedCount,
+        );
     }
 
-    public function deleteInactive(Audience $audience): int
+    /**
+     * Removes the inactive members the user confirmed. Campaigns sent after
+     * the count do not make anyone newly inactive.
+     */
+    public function deleteInactive(Audience $audience, CarbonInterface $countedAt, int $confirmedCount): int
     {
-        return $this->inactiveQuery($audience)->delete();
+        return $this->deleteConfirmedSet(
+            $this->applyInactiveCriteria($this->snapshotQuery($audience, $countedAt), $countedAt),
+            $confirmedCount,
+        );
     }
 
     /**
@@ -175,6 +192,38 @@ class ManageAudienceHygiene
         )->delete();
     }
 
+    /**
+     * The audience's members as of the count: joined by then and not changed
+     * since, so later signups and edits are never swept in.
+     *
+     * @return Builder<Subscriber>
+     */
+    private function snapshotQuery(Audience $audience, CarbonInterface $countedAt): Builder
+    {
+        return Subscriber::query()
+            ->whereBelongsTo($audience)
+            ->where('subscribers.created_at', '<=', $countedAt)
+            ->where('subscribers.updated_at', '<=', $countedAt);
+    }
+
+    /**
+     * Deletes the set, refusing when it grew past what the user confirmed.
+     *
+     * @param  Builder<Subscriber>  $query
+     */
+    private function deleteConfirmedSet(Builder $query, int $confirmedCount): int
+    {
+        return DB::transaction(function () use ($query, $confirmedCount): int {
+            if ((clone $query)->count() > $confirmedCount) {
+                throw ValidationException::withMessages([
+                    'count' => __('This list changed since you opened the page. Review the new count and try again.'),
+                ]);
+            }
+
+            return $query->delete();
+        });
+    }
+
     /** @return Builder<Subscriber> */
     private function unconfirmedQuery(Audience $audience): Builder
     {
@@ -205,17 +254,19 @@ class ManageAudienceHygiene
     /**
      * Only campaigns that tracked opens count as a chance to engage, since
      * opens cannot be recorded for campaigns sent with open tracking off.
+     * With $sentBy, only campaigns sent by then count.
      *
      * @param  Builder<Subscriber>  $query
      * @return Builder<Subscriber>
      */
-    private function applyInactiveCriteria(Builder $query): Builder
+    private function applyInactiveCriteria(Builder $query, ?CarbonInterface $sentBy = null): Builder
     {
         return $query
             ->where('status', SubscriberStatus::Subscribed)
             ->whereNotNull('subscribed_at')
             ->whereHas('deliveries', fn (Builder $query): Builder => $query
                 ->whereNotNull('sent_at')
+                ->when($sentBy !== null, fn (Builder $sentQuery): Builder => $sentQuery->where('sent_at', '<=', $sentBy))
                 ->whereHas('email', fn (Builder $emailQuery): Builder => $emailQuery->where('track_opens', true)))
             ->whereDoesntHave('deliveries', fn (Builder $query): Builder => $query
                 ->where(fn (Builder $engagementQuery): Builder => $engagementQuery

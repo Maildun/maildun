@@ -21,6 +21,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { toast } from '@/components/ui/toast';
 import AudienceSettingsLayout from '@/layouts/audiences/settings-layout';
 import type { Audience } from '@/types/audiences';
 
@@ -29,6 +30,8 @@ type HygieneKind = 'unconfirmed' | 'inactive';
 type Props = {
     audience: Pick<Audience, 'uuid' | 'name' | 'avatar'>;
     counts: Record<HygieneKind, number>;
+    /** When the counts were taken; a cleanup removes only that set. */
+    countedAt: string;
 };
 
 const hygieneCopy: Record<
@@ -68,7 +71,11 @@ const hygieneCopy: Record<
     },
 };
 
-export default function AudienceHygieneSettings({ audience, counts }: Props) {
+export default function AudienceHygieneSettings({
+    audience,
+    counts,
+    countedAt,
+}: Props) {
     const { currentTeam } = usePage().props;
     const [confirmation, setConfirmation] = useState<HygieneKind | null>(null);
     const [processing, setProcessing] = useState(false);
@@ -86,9 +93,19 @@ export default function AudienceHygieneSettings({ audience, counts }: Props) {
                 : destroyInactive(routeArgs);
 
         router.delete(action.url, {
+            data: { counted_at: countedAt, count: counts[kind] },
             preserveScroll: true,
             onStart: () => setProcessing(true),
             onSuccess: () => setConfirmation(null),
+            onError: (errors) => {
+                setConfirmation(null);
+                toast.add({
+                    type: 'error',
+                    title: 'Nothing was removed.',
+                    description: errors.count ?? Object.values(errors)[0],
+                });
+                router.reload({ only: ['counts', 'countedAt'] });
+            },
             onFinish: () => setProcessing(false),
         });
     };

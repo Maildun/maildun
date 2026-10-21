@@ -24,6 +24,17 @@ function sentDelivery(Subscriber $subscriber, array $attributes = []): EmailDeli
         ]);
 }
 
+/**
+ * What the audience hygiene page sends back: when it counted and how many
+ * it showed.
+ *
+ * @return array{counted_at: string, count: int}
+ */
+function hygieneSnapshot(int $count): array
+{
+    return ['counted_at' => now()->toISOString(), 'count' => $count];
+}
+
 test('list hygiene shows unconfirmed and inactive subscriber counts', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
@@ -280,7 +291,7 @@ test('unconfirmed cleanup only removes subscribed records without a confirmation
     $other = Subscriber::factory()->for($otherAudience)->create(['subscribed_at' => null]);
 
     $this->actingAs($user)
-        ->delete(route('audiences.settings.hygiene.unconfirmed.destroy', [$team, $audience]))
+        ->delete(route('audiences.settings.hygiene.unconfirmed.destroy', [$team, $audience]), hygieneSnapshot(1))
         ->assertRedirect();
 
     $this->assertModelMissing($unconfirmed);
@@ -314,7 +325,7 @@ test('inactive cleanup only removes subscribed recipients with sent but unengage
     sentDelivery($unsubscribed);
 
     $this->actingAs($user)
-        ->delete(route('audiences.settings.hygiene.inactive.destroy', [$team, $audience]))
+        ->delete(route('audiences.settings.hygiene.inactive.destroy', [$team, $audience]), hygieneSnapshot(1))
         ->assertRedirect();
 
     $this->assertModelMissing($inactive);
@@ -363,11 +374,11 @@ test('members can review workspace list hygiene but cannot run cleanup', functio
         ->assertForbidden();
 
     $this->actingAs($member)
-        ->delete(route('audiences.settings.hygiene.unconfirmed.destroy', [$team, $audience]))
+        ->delete(route('audiences.settings.hygiene.unconfirmed.destroy', [$team, $audience]), hygieneSnapshot(1))
         ->assertForbidden();
 
     $this->actingAs($member)
-        ->delete(route('audiences.settings.hygiene.inactive.destroy', [$team, $audience]))
+        ->delete(route('audiences.settings.hygiene.inactive.destroy', [$team, $audience]), hygieneSnapshot(1))
         ->assertForbidden();
 });
 
@@ -394,7 +405,7 @@ test('inactive cleanup keeps subscribers whose only sent campaigns did not track
         ->delete(route('list_hygiene.inactive.destroy', $team), ['subscribers' => [$untracked->uuid]])
         ->assertRedirect();
     $this->actingAs($user)
-        ->delete(route('audiences.settings.hygiene.inactive.destroy', [$team, $audience]))
+        ->delete(route('audiences.settings.hygiene.inactive.destroy', [$team, $audience]), hygieneSnapshot(1))
         ->assertRedirect();
 
     $this->assertModelExists($untracked);
@@ -403,3 +414,71 @@ test('inactive cleanup keeps subscribers whose only sent campaigns did not track
     'opens and clicks untracked' => false,
     'only clicks tracked' => true,
 ]);
+
+test('audience cleanup removes only the members counted when the page loaded', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $counted = Subscriber::factory()->for($audience)->create(['subscribed_at' => null]);
+    $snapshot = hygieneSnapshot(1);
+
+    $this->travel(5)->minutes();
+    $joinedLater = Subscriber::factory()->for($audience)->create(['subscribed_at' => null]);
+
+    $this->actingAs($user)
+        ->delete(route('audiences.settings.hygiene.unconfirmed.destroy', [$team, $audience]), $snapshot)
+        ->assertSessionHasNoErrors();
+
+    $this->assertModelMissing($counted);
+    $this->assertModelExists($joinedLater);
+});
+
+test('audience cleanup keeps members changed or newly inactive since the count', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $counted = Subscriber::factory()->for($audience)->create();
+    sentDelivery($counted);
+    $edited = Subscriber::factory()->for($audience)->create();
+    sentDelivery($edited);
+    $notYetSent = Subscriber::factory()->for($audience)->create();
+    $snapshot = hygieneSnapshot(2);
+
+    $this->travel(5)->minutes();
+    $edited->update(['first_name' => 'Renamed']);
+    sentDelivery($notYetSent);
+
+    $this->actingAs($user)
+        ->delete(route('audiences.settings.hygiene.inactive.destroy', [$team, $audience]), $snapshot)
+        ->assertSessionHasNoErrors();
+
+    $this->assertModelMissing($counted);
+    $this->assertModelExists($edited);
+    $this->assertModelExists($notYetSent);
+});
+
+test('audience cleanup refuses when more members match than the user confirmed', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $unconfirmed = Subscriber::factory()->for($audience)->count(2)->create(['subscribed_at' => null]);
+
+    $this->actingAs($user)
+        ->delete(route('audiences.settings.hygiene.unconfirmed.destroy', [$team, $audience]), hygieneSnapshot(1))
+        ->assertSessionHasErrors('count');
+
+    $unconfirmed->each(fn (Subscriber $subscriber) => $this->assertModelExists($subscriber));
+});
+
+test('audience cleanup requires the confirmed count', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $unconfirmed = Subscriber::factory()->for($audience)->create(['subscribed_at' => null]);
+
+    $this->actingAs($user)
+        ->delete(route('audiences.settings.hygiene.unconfirmed.destroy', [$team, $audience]))
+        ->assertSessionHasErrors(['counted_at', 'count']);
+
+    $this->assertModelExists($unconfirmed);
+});
