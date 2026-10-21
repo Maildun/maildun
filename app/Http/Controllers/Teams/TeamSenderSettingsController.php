@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Teams;
 
+use App\Enums\EmailStatus;
 use App\Enums\TeamPermission;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Teams\StoreTeamSenderRequest;
@@ -15,6 +16,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -133,6 +135,11 @@ class TeamSenderSettingsController extends Controller
             if ($lockedTeam->active_sender_id === $sender->id) {
                 $this->applySender($lockedTeam, $sender);
             }
+
+            $this->syncSenderCopies($lockedTeam, $sender->email, [
+                'from_name' => $sender->name,
+                'reply_to' => $sender->reply_to,
+            ]);
         });
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Sender details updated.')]);
@@ -238,6 +245,12 @@ class TeamSenderSettingsController extends Controller
                 ])->save();
             }
 
+            $this->syncSenderCopies($lockedTeam, $sender->email, [
+                'from_name' => null,
+                'from_address' => null,
+                'reply_to' => null,
+            ]);
+
             $sender->delete();
         });
 
@@ -260,6 +273,26 @@ class TeamSenderSettingsController extends Controller
             'email_from_address' => $sender->email,
             'email_reply_to' => $sender->reply_to,
         ])->save();
+    }
+
+    /**
+     * Audiences and draft campaigns keep a copy of the sender they picked, so
+     * rewrite (or clear) every copy whose From address is this sender's.
+     *
+     * @param  array{from_name?: ?string, from_address?: null, reply_to?: ?string}  $attributes
+     */
+    private function syncSenderCopies(Team $team, string $senderEmail, array $attributes): void
+    {
+        $address = Str::lower(trim($senderEmail));
+
+        $team->audiences()
+            ->whereRaw('lower(from_address) = ?', [$address])
+            ->update($attributes);
+
+        $team->emails()
+            ->where('status', EmailStatus::Draft->value)
+            ->whereRaw('lower(from_address) = ?', [$address])
+            ->update($attributes);
     }
 
     private function verifiedDomainForAddress(

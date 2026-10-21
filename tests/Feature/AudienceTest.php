@@ -740,6 +740,79 @@ test('audience sender selection rejects unverified and cross-workspace senders',
     expect($audience->fresh()->from_address)->toBe('original@example.com');
 })->with(['unverified', 'cross workspace']);
 
+test('campaigns use the audience sender as a whole without borrowing the workspace default name or reply-to', function () {
+    $team = Team::factory()->create([
+        'email_from_name' => 'Acme Support',
+        'email_from_address' => 'support@example.com',
+        'email_reply_to' => 'help@example.com',
+    ]);
+    $audience = Audience::factory()->for($team)->create([
+        'from_name' => null,
+        'from_address' => 'news@example.com',
+        'reply_to' => null,
+    ]);
+    $campaign = Email::factory()->for($team)->create(['audience_id' => $audience->id]);
+
+    expect($campaign->fresh())
+        ->resolvedFromAddress()->toBe('news@example.com')
+        ->resolvedFromName()->toBe('')
+        ->resolvedReplyTo()->toBeNull();
+});
+
+test('editing a workspace sender refreshes the audiences and draft campaigns that use it', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->withoutSender()->create();
+    $sender = TeamSender::factory()->for($team)->create([
+        'name' => 'Acme News',
+        'email' => 'news@example.com',
+        'reply_to' => 'old-replies@example.com',
+    ]);
+    $copy = ['from_name' => 'Acme News', 'from_address' => 'news@example.com', 'reply_to' => 'old-replies@example.com'];
+    $audience = Audience::factory()->for($team)->create($copy);
+    $draft = Email::factory()->for($team)->create($copy);
+    $sent = Email::factory()->for($team)->create([...$copy, 'status' => EmailStatus::Sent]);
+
+    $this->actingAs($user)
+        ->patch(route('teams.sender.update', [$team, $sender]), [
+            'name' => 'Acme Weekly',
+            'reply_to' => 'replies@example.com',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($audience->fresh())
+        ->from_name->toBe('Acme Weekly')
+        ->reply_to->toBe('replies@example.com');
+    expect($draft->fresh())
+        ->from_name->toBe('Acme Weekly')
+        ->reply_to->toBe('replies@example.com');
+    expect($sent->fresh())
+        ->from_name->toBe('Acme News')
+        ->reply_to->toBe('old-replies@example.com');
+});
+
+test('removing a workspace sender clears it from the audiences and draft campaigns that use it', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $sender = TeamSender::factory()->for($team)->create(['email' => 'news@example.com']);
+    $copy = ['from_name' => 'Acme News', 'from_address' => 'news@example.com', 'reply_to' => 'replies@example.com'];
+    $audience = Audience::factory()->for($team)->create($copy);
+    $draft = Email::factory()->for($team)->create($copy);
+
+    $this->actingAs($user)
+        ->delete(route('teams.sender.destroy', [$team, $sender]))
+        ->assertSessionHasNoErrors();
+
+    expect($audience->fresh())
+        ->from_name->toBeNull()
+        ->from_address->toBeNull()
+        ->reply_to->toBeNull();
+    expect($draft->fresh())
+        ->from_name->toBeNull()
+        ->from_address->toBeNull()
+        ->reply_to->toBeNull();
+});
+
 test('legacy audience settings tabs redirect to dedicated pages', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
