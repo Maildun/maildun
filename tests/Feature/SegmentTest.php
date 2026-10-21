@@ -420,3 +420,18 @@ test('segment validation rejects unknown languages and text operators on languag
         ])
         ->assertInvalid(['rules.0.value', 'rules.1.operator']);
 });
+
+test('negative name rules also match subscribers without a name', function (string $operator) {
+    $audience = Audience::factory()->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'test@example.com', 'first_name' => 'Test']);
+    Subscriber::factory()->for($audience)->create(['email' => 'noname@example.com', 'first_name' => null]);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [
+            ['field' => 'first_name', 'operator' => $operator, 'value' => 'test'],
+        ], SegmentMatchType::All)
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe(['noname@example.com']);
+})->with(['not_equals', 'does_not_contain']);
