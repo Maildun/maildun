@@ -5,6 +5,7 @@ use App\Enums\EmailStatus;
 use App\Enums\TeamRole;
 use App\Models\Audience;
 use App\Models\Automation;
+use App\Models\ContactImport;
 use App\Models\Email;
 use App\Models\Segment;
 use App\Models\SubscribeForm;
@@ -15,6 +16,7 @@ use App\Models\TeamSender;
 use App\Models\TransactionalEmail;
 use App\Models\User;
 use App\Services\DiceBearAvatarGenerator;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -907,4 +909,39 @@ test('a malformed allowed language list is a validation error', function () {
         ->assertSessionHasErrors(['allowed_languages.0', 'default_language']);
 
     expect($team->audiences()->exists())->toBeFalse();
+});
+
+test('deleting an audience removes its import files and subscribe form images', function () {
+    Storage::fake('local');
+    Storage::fake('public');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['name' => 'Customers']);
+    ContactImport::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'disk' => 'local',
+        'path' => 'contact-imports/draft.csv',
+    ]);
+    SubscribeForm::factory()->for($audience)->create([
+        'image_path' => 'subscribe-form-images/form.webp',
+        'logo_path' => 'subscribe-form-logos/logo.png',
+        'image_upload_disk' => 'local',
+        'image_upload_path' => 'subscribe-form-images/pending/upload.png',
+    ]);
+    $otherImport = ContactImport::factory()->for($team)->create(['disk' => 'local', 'path' => 'contact-imports/other.csv']);
+    Storage::disk('local')->put('contact-imports/draft.csv', 'email');
+    Storage::disk('local')->put('contact-imports/other.csv', 'email');
+    Storage::disk('local')->put('subscribe-form-images/pending/upload.png', 'png');
+    Storage::disk('public')->put('subscribe-form-images/form.webp', 'webp');
+    Storage::disk('public')->put('subscribe-form-logos/logo.png', 'png');
+
+    $this->actingAs($user)
+        ->delete(route('audiences.destroy', [$team, $audience]), ['name' => 'Customers'])
+        ->assertRedirect(route('audiences.index', $team));
+
+    Storage::disk('local')->assertMissing('contact-imports/draft.csv');
+    Storage::disk('local')->assertMissing('subscribe-form-images/pending/upload.png');
+    Storage::disk('public')->assertMissing('subscribe-form-images/form.webp');
+    Storage::disk('public')->assertMissing('subscribe-form-logos/logo.png');
+    Storage::disk('local')->assertExists($otherImport->path);
 });
