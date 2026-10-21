@@ -66,7 +66,7 @@ class ContactExportController extends Controller
         return $this->download(
             $format,
             'contacts-'.now()->format('Y-m-d'),
-            ['Email', 'First name', 'Last name', 'Company', 'Tags', 'Audiences', 'Created at'],
+            ['Email', 'First name', 'Last name', 'Company', 'Tags', 'Audiences', 'Languages', 'Created at'],
             $query,
             fn (Contact $contact): array => [
                 $contact->email,
@@ -74,7 +74,10 @@ class ContactExportController extends Controller
                 $contact->last_name,
                 $contact->company?->name,
                 $contact->tags->pluck('name')->implode(', '),
-                $contact->subscribers->pluck('audience.name')->unique()->implode(', '),
+                $contact->subscribers
+                    ->map(fn (Subscriber $subscriber): string => $subscriber->audience->name.' ('.$this->membershipStatus($subscriber).')')
+                    ->implode(', '),
+                $contact->subscribers->map(fn (Subscriber $subscriber): ?string => $subscriber->language?->value)->filter()->unique()->implode(', '),
                 $contact->created_at?->toIso8601String(),
             ],
         );
@@ -241,6 +244,16 @@ class ContactExportController extends Controller
         }
 
         echo '</Row>';
+    }
+
+    /**
+     * The membership state shown in the contacts export's Audiences column.
+     */
+    private function membershipStatus(Subscriber $subscriber): string
+    {
+        return $subscriber->isPendingConfirmation()
+            ? 'pending confirmation'
+            : $subscriber->status->value;
     }
 
     /**

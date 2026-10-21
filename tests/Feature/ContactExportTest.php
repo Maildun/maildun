@@ -34,11 +34,30 @@ test('workspace contacts can be exported as a filtered CSV', function () {
     $response->assertOk()->assertDownload('contacts-'.now()->format('Y-m-d').'.csv');
 
     expect($response->streamedContent())
-        ->toContain('Email,"First name","Last name",Company,Tags,Audiences,"Created at"')
+        ->toContain('Email,"First name","Last name",Company,Tags,Audiences,Languages,"Created at"')
         ->toContain('included@example.com')
         ->toContain("'=Included")
         ->not->toContain('excluded@example.com')
         ->not->toContain('other-team@example.com');
+});
+
+test('contacts exports show each membership status and the contact languages', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $contact = Contact::factory()->for($team)->create(['email' => 'ada@example.com']);
+    $newsletter = Audience::factory()->for($team)->create(['name' => 'Newsletter']);
+    $beta = Audience::factory()->for($team)->create(['name' => 'Beta']);
+    $events = Audience::factory()->for($team)->create(['name' => 'Events', 'double_opt_in' => true]);
+    Subscriber::factory()->for($newsletter)->for($contact)->create(['email' => $contact->email, 'language' => SubscriberLanguage::French]);
+    Subscriber::factory()->for($beta)->for($contact)->unsubscribed()->create(['email' => $contact->email, 'language' => SubscriberLanguage::English]);
+    Subscriber::factory()->for($events)->for($contact)->pendingConfirmation()->create(['email' => $contact->email, 'language' => SubscriberLanguage::French]);
+
+    $lines = explode("\n", trim($this->actingAs($user)
+        ->get(route('contacts.exports.show', ['current_team' => $team, 'format' => 'csv']))
+        ->streamedContent()));
+
+    expect($lines[0])->toContain('Audiences,Languages,"Created at"')
+        ->and($lines[1])->toContain('"Newsletter (subscribed), Beta (unsubscribed), Events (pending confirmation)","fr, en"');
 });
 
 test('audience contacts can be exported with the active subscriber filters', function () {
