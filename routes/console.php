@@ -40,6 +40,10 @@ Schedule::command('automations:resume')->everyFiveMinutes()->withoutOverlapping(
 // closes campaigns whose batch disappeared mid-send.
 Schedule::command('emails:resume')->everyFiveMinutes()->withoutOverlapping();
 
+// And for contact imports: re-queues imports whose job was lost so they
+// continue from their checkpoint instead of staying Queued or Importing.
+Schedule::command('contacts:resume-imports')->everyFiveMinutes()->withoutOverlapping();
+
 // Starts campaigns whose scheduled time has come. withoutOverlapping plus the
 // per-campaign claim in ScheduleEmailSend::claimDue mean each starts once.
 Schedule::command('emails:send-scheduled')->everyMinute()->withoutOverlapping(10);
