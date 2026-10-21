@@ -92,6 +92,17 @@ export default function ContactsIndex({
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
     const [bulkTagsOpen, setBulkTagsOpen] = useState(false);
+
+    // A search, filter or sort change (from any control, Esc or history)
+    // drops the selection, so a bulk action never reaches hidden contacts.
+    const filterKey = JSON.stringify(filters);
+    const [selectionFilterKey, setSelectionFilterKey] = useState(filterKey);
+
+    if (selectionFilterKey !== filterKey) {
+        setSelectionFilterKey(filterKey);
+        setSelected(new Set());
+    }
+
     const { visit, clear, clearAll, hasActiveFilters, searchKey } =
         useListFilters({
             url: currentTeam ? index.url(currentTeam.slug) : '',
