@@ -182,6 +182,61 @@ test('segments targeted by an unsent campaign cannot be deleted', function (arra
     'unscheduled draft' => [['status' => EmailStatus::Draft, 'scheduled_at' => null]],
 ]);
 
+test('segment rules cannot change while a campaign to it is in flight', function (EmailStatus $status) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $rules = [['field' => 'language', 'operator' => 'equals', 'value' => 'fr']];
+    $segment = Segment::factory()->for($audience)->create(['name' => 'French', 'rules' => $rules]);
+    Email::factory()->for($team)->create([
+        'name' => 'Launch',
+        'audience_id' => $audience->id,
+        'segment_id' => $segment->id,
+        'status' => $status,
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('audiences.segments.show', [$team, $audience, $segment]))
+        ->patch(route('audiences.segments.update', [$team, $audience, $segment]), [
+            'name' => 'French',
+            'match_type' => 'any',
+            'rules' => [['field' => 'status', 'operator' => 'equals', 'value' => 'subscribed']],
+        ])
+        ->assertSessionHasErrors(['rules' => 'The rules cannot change while these campaigns are sending: Launch.']);
+
+    $segment->refresh();
+    expect($segment->rules)->toBe($rules)
+        ->and($segment->match_type)->toBe(SegmentMatchType::All);
+})->with([EmailStatus::Queued, EmailStatus::Sending]);
+
+test('a sending segment can still be renamed when its rules stay the same', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $rules = [['field' => 'language', 'operator' => 'equals', 'value' => 'fr']];
+    $segment = Segment::factory()->for($audience)->create(['name' => 'French', 'rules' => $rules]);
+    Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'segment_id' => $segment->id,
+        'status' => EmailStatus::Sending,
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.segments.update', [$team, $audience, $segment]), [
+            'name' => 'French readers',
+            'description' => 'Readers who chose French',
+            'match_type' => 'all',
+            'rules' => $rules,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($segment->refresh()->only(['name', 'description', 'rules']))->toBe([
+        'name' => 'French readers',
+        'description' => 'Readers who chose French',
+        'rules' => $rules,
+    ]);
+});
+
 test('creating a segment immediately syncs matching subscribers', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

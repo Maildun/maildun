@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\EmailStatus;
 use App\Enums\SegmentMatchType;
 use Database\Factories\SegmentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -9,7 +10,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
@@ -54,6 +57,26 @@ class Segment extends Model
     public function subscribers(): BelongsToMany
     {
         return $this->belongsToMany(Subscriber::class)->withTimestamps();
+    }
+
+    /** @return HasMany<Email, $this> */
+    public function emails(): HasMany
+    {
+        return $this->hasMany(Email::class);
+    }
+
+    /**
+     * Names of the campaigns targeting this segment that are in one of the statuses.
+     *
+     * @param  list<EmailStatus>  $statuses
+     * @return Collection<int, string>
+     */
+    public function campaignNamesWithStatus(array $statuses): Collection
+    {
+        return $this->emails()
+            ->whereIn('status', $statuses)
+            ->orderBy('name')
+            ->pluck('name');
     }
 
     /** @return array<string, string> */

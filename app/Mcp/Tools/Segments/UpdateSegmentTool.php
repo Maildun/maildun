@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Segments;
 
+use App\Actions\Audiences\EnsureSegmentRulesCanChange;
 use App\Actions\Audiences\SyncSegmentSubscribers;
 use App\Actions\Audiences\ValidateSegmentRules;
 use App\Enums\SegmentMatchType;
@@ -25,7 +26,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('Updates selected fields on a segment and recomputes its matching subscribers. rules replaces the full rule list.')]
+#[Description('Updates selected fields on a segment and recomputes its matching subscribers. rules replaces the full rule list. rules and match_type are locked while a campaign to the segment is queued or sending.')]
 #[IsDestructive(false)]
 #[IsIdempotent]
 #[IsOpenWorld(false)]
@@ -38,6 +39,7 @@ class UpdateSegmentTool extends Tool
         private ResourcePayload $payload,
         private ValidateSegmentRules $validateRules,
         private SyncSegmentSubscribers $syncSubscribers,
+        private EnsureSegmentRulesCanChange $ensureRulesCanChange,
     ) {}
 
     public function handle(Request $request): ResponseFactory
@@ -65,6 +67,8 @@ class UpdateSegmentTool extends Tool
 
             $changes['rules'] = array_values($changes['rules']);
         }
+
+        $this->ensureRulesCanChange->handle($segment, $changes);
 
         DB::transaction(function () use ($segment, $changes): void {
             $segment->update($changes);

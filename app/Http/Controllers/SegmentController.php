@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audiences\DeleteSegment;
+use App\Actions\Audiences\EnsureSegmentRulesCanChange;
 use App\Actions\Audiences\SyncSegmentSubscribers;
 use App\Enums\SubscriberLanguage;
 use App\Http\Requests\SaveSegmentRequest;
@@ -91,9 +92,10 @@ class SegmentController extends Controller
         ]);
     }
 
-    public function update(SaveSegmentRequest $request, Team $currentTeam, Audience $audience, Segment $segment, SyncSegmentSubscribers $syncSegmentSubscribers): RedirectResponse
+    public function update(SaveSegmentRequest $request, Team $currentTeam, Audience $audience, Segment $segment, SyncSegmentSubscribers $syncSegmentSubscribers, EnsureSegmentRulesCanChange $ensureSegmentRulesCanChange): RedirectResponse
     {
         Gate::authorize('update', $segment);
+        $ensureSegmentRulesCanChange->handle($segment, $request->validated());
         DB::transaction(function () use ($request, $segment, $syncSegmentSubscribers): void {
             $segment->update($request->validated());
             $syncSegmentSubscribers->handle($segment);

@@ -113,3 +113,24 @@ test('refuses to delete a segment an unsent campaign targets', function (array $
     'sending' => [['status' => EmailStatus::Sending]],
     'scheduled' => [['status' => EmailStatus::Draft, 'scheduled_at' => now()->addDay()]],
 ]);
+
+test('refuses to change the rules of a segment a sending campaign targets', function () {
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create();
+    $rules = [['field' => 'language', 'operator' => 'equals', 'value' => 'fr']];
+    $segment = Segment::factory()->for($audience)->create(['rules' => $rules]);
+    Email::factory()->for($team)->create([
+        'name' => 'Launch',
+        'audience_id' => $audience->id,
+        'segment_id' => $segment->id,
+        'status' => EmailStatus::Sending,
+    ]);
+
+    MaildunServer::tool(UpdateSegmentTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $segment->uuid,
+        'rules' => [['field' => 'status', 'operator' => 'equals', 'value' => 'subscribed']],
+    ])->assertHasErrors(['cannot change while these campaigns are sending: Launch']);
+
+    expect($segment->refresh()->rules)->toBe($rules);
+});
