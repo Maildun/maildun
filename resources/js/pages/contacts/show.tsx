@@ -55,7 +55,12 @@ import {
     EmptyMedia,
     EmptyTitle,
 } from '@/components/ui/empty';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
+import {
+    Field,
+    FieldDescription,
+    FieldError,
+    FieldLabel,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
     Select,
@@ -124,7 +129,7 @@ export default function ContactShow({
     const [consentConfirmed, setConsentConfirmed] = useState(false);
     const addMembership = useForm({
         audience_uuid: '',
-        consent_confirmed: true,
+        consent_confirmed: false,
     });
     const deleteContact = useForm({ confirmation: '' });
 
@@ -539,54 +544,107 @@ export default function ContactShow({
                         {canManage && availableAudiences.length ? (
                             <form
                                 onSubmit={submitMembership}
-                                className="flex w-full gap-2 sm:w-auto"
+                                className="flex w-full flex-col gap-3 sm:w-auto"
                             >
-                                <Select
-                                    value={
-                                        addMembership.data.audience_uuid || null
-                                    }
-                                    onValueChange={(value) =>
-                                        addMembership.setData(
-                                            'audience_uuid',
-                                            (value as string | null) ?? '',
-                                        )
-                                    }
-                                >
-                                    <SelectTrigger className="w-full sm:w-52">
-                                        <SelectValue placeholder="Choose audience" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectGroup>
-                                            {availableAudiences.map(
-                                                (audience) => (
-                                                    <SelectItem
-                                                        key={audience.uuid}
-                                                        value={audience.uuid}
-                                                    >
-                                                        {audience.name}
-                                                    </SelectItem>
-                                                ),
+                                <div className="flex gap-2">
+                                    <Select
+                                        value={
+                                            addMembership.data.audience_uuid ||
+                                            null
+                                        }
+                                        onValueChange={(value) =>
+                                            addMembership.setData({
+                                                audience_uuid:
+                                                    (value as string | null) ??
+                                                    '',
+                                                consent_confirmed: false,
+                                            })
+                                        }
+                                    >
+                                        <SelectTrigger className="w-full sm:w-52">
+                                            <SelectValue placeholder="Choose audience" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectGroup>
+                                                {availableAudiences.map(
+                                                    (audience) => (
+                                                        <SelectItem
+                                                            key={audience.uuid}
+                                                            value={
+                                                                audience.uuid
+                                                            }
+                                                        >
+                                                            {audience.name}
+                                                        </SelectItem>
+                                                    ),
+                                                )}
+                                            </SelectGroup>
+                                        </SelectContent>
+                                    </Select>
+                                    <Button
+                                        type="submit"
+                                        disabled={
+                                            !addMembership.data.audience_uuid ||
+                                            !addMembership.data
+                                                .consent_confirmed ||
+                                            addMembership.processing
+                                        }
+                                    >
+                                        {addMembership.processing ? (
+                                            <Spinner data-icon="inline-start" />
+                                        ) : (
+                                            <HugeiconsIcon
+                                                icon={Add01Icon}
+                                                data-icon="inline-start"
+                                            />
+                                        )}
+                                        Add
+                                    </Button>
+                                </div>
+                                {addMembership.data.audience_uuid ? (
+                                    <Field
+                                        orientation="horizontal"
+                                        data-invalid={Boolean(
+                                            addMembership.errors
+                                                .consent_confirmed,
+                                        )}
+                                        className="sm:max-w-80"
+                                    >
+                                        <Checkbox
+                                            id="membership-consent-confirmed"
+                                            checked={
+                                                addMembership.data
+                                                    .consent_confirmed
+                                            }
+                                            onCheckedChange={(checked) =>
+                                                addMembership.setData(
+                                                    'consent_confirmed',
+                                                    checked === true,
+                                                )
+                                            }
+                                            aria-invalid={Boolean(
+                                                addMembership.errors
+                                                    .consent_confirmed,
                                             )}
-                                        </SelectGroup>
-                                    </SelectContent>
-                                </Select>
-                                <Button
-                                    type="submit"
-                                    disabled={
-                                        !addMembership.data.audience_uuid ||
-                                        addMembership.processing
-                                    }
-                                >
-                                    {addMembership.processing ? (
-                                        <Spinner data-icon="inline-start" />
-                                    ) : (
-                                        <HugeiconsIcon
-                                            icon={Add01Icon}
-                                            data-icon="inline-start"
                                         />
-                                    )}
-                                    Add
-                                </Button>
+                                        <div className="flex flex-col gap-1">
+                                            <FieldLabel htmlFor="membership-consent-confirmed">
+                                                Marketing consent confirmed
+                                            </FieldLabel>
+                                            <FieldDescription>
+                                                I confirm this person gave
+                                                permission to receive marketing
+                                                email.
+                                            </FieldDescription>
+                                            <FieldError>
+                                                {
+                                                    addMembership.errors
+                                                        .consent_confirmed
+                                                }
+                                            </FieldError>
+                                        </div>
+                                    </Field>
+                                ) : null}
                             </form>
                         ) : null}
                     </div>
