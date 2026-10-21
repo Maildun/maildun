@@ -3,6 +3,7 @@
 use App\Enums\AutomationTrigger;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberLanguage;
+use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamPermission;
 use App\Enums\TeamRole;
@@ -12,6 +13,7 @@ use App\Models\Company;
 use App\Models\Contact;
 use App\Models\Email;
 use App\Models\EmailDelivery;
+use App\Models\SubscribeForm;
 use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\Team;
@@ -213,6 +215,35 @@ test('adding an existing contact to another audience preserves its shared profil
         ->and($subscriber->contact_id)->toBe($contact->id)
         ->and($subscriber->first_name)->toBe('Existing')
         ->and($subscriber->last_name)->toBe('Person');
+});
+
+test('adding a contact to an audience from its profile does not confirm a pending double opt-in membership', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    $form = SubscribeForm::factory()->for($audience)->create();
+    $pending = Subscriber::factory()->for($audience)->fromForm($form)->pendingConfirmation()->create([
+        'email' => 'pending@example.com',
+        'consent_text' => 'Yes, send me the newsletter.',
+        'consent_ip' => '203.0.113.9',
+    ]);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->actingAs($user)
+        ->post(route('contacts.audiences.store', [$team, $pending->contact]), [
+            'audience_uuid' => $audience->uuid,
+            'consent_confirmed' => true,
+        ])
+        ->assertValid()
+        ->assertRedirect();
+
+    $pending->refresh();
+
+    expect($pending->isPendingConfirmation())->toBeTrue()
+        ->and($pending->source)->toBe(SubscriberSource::Form)
+        ->and($pending->consent_text)->toBe('Yes, send me the newsletter.')
+        ->and($pending->consent_ip)->toBe('203.0.113.9');
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
 });
 
 test('creating a contact fires tagged automations once its audience memberships exist', function () {

@@ -58,10 +58,19 @@ class AddContactToAudiences
         return $changedMemberships;
     }
 
+    /**
+     * A membership still awaiting double opt-in confirmation is left alone:
+     * only the subscriber's own confirmation may make it sendable, and its
+     * form consent record must survive a teammate adding them again.
+     */
     private function lifecycleTrigger(Subscriber $subscriber): ?AutomationTrigger
     {
         if ($subscriber->status === SubscriberStatus::Unsubscribed || $subscriber->unsubscribed_at !== null) {
             return AutomationTrigger::Resubscribed;
+        }
+
+        if ($subscriber->exists && $subscriber->isPendingConfirmation()) {
+            return null;
         }
 
         if (! $subscriber->exists || $subscriber->subscribed_at === null) {

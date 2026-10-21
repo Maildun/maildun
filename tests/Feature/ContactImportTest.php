@@ -4,6 +4,7 @@ use App\Actions\Audiences\AddContactToAudiences;
 use App\Enums\ContactImportMergeStrategy;
 use App\Enums\ContactImportStatus;
 use App\Enums\SubscriberLanguage;
+use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Events\SubscriberLifecycleOccurred;
@@ -11,6 +12,7 @@ use App\Jobs\ProcessContactImport;
 use App\Models\Audience;
 use App\Models\Contact;
 use App\Models\ContactImport;
+use App\Models\SubscribeForm;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\User;
@@ -426,4 +428,40 @@ test('the import language fills rows whose language cell is empty', function () 
         'blank@example.com' => 'id',
         'french@example.com' => 'fr',
     ]);
+});
+
+test('audience imports leave a pending double opt-in membership and its form consent untouched', function () {
+    Storage::fake('local');
+
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    $form = SubscribeForm::factory()->for($audience)->create();
+    $pending = Subscriber::factory()->for($audience)->fromForm($form)->pendingConfirmation()->create([
+        'email' => 'pending@example.com',
+        'consent_text' => 'Yes, send me the newsletter.',
+        'consent_ip' => '203.0.113.9',
+    ]);
+    $contactImport = ContactImport::factory()->for($team)->for($audience)->create([
+        'consent_ip' => '198.51.100.1',
+    ]);
+    Storage::disk('local')->put($contactImport->path, "email\npending@example.com\n");
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    (new ProcessContactImport($contactImport->id))->handle(
+        app(ManageContact::class),
+        app(AddContactToAudiences::class),
+        app(ContactImportCsv::class),
+        app(ImportEmailReview::class),
+    );
+
+    $pending->refresh();
+    $contactImport->refresh();
+
+    expect($pending->isPendingConfirmation())->toBeTrue()
+        ->and($pending->source)->toBe(SubscriberSource::Form)
+        ->and($pending->consent_text)->toBe('Yes, send me the newsletter.')
+        ->and($pending->consent_ip)->toBe('203.0.113.9');
+    expect($contactImport->imported_subscribers)->toBe(0)
+        ->and($contactImport->duplicate_rows)->toBe(1);
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
 });
