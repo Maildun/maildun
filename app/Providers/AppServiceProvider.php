@@ -143,6 +143,15 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(120)->by('team-api:'.$key);
         });
 
+        // A cap on top of team-api, so a burst of conversion webhooks cannot
+        // use up the key's whole allowance for subscribes and sends.
+        RateLimiter::for('conversion-api', function (Request $request): Limit {
+            $apiKey = $request->attributes->get('teamApiKey');
+            $key = $apiKey instanceof TeamApiKey ? $apiKey->uuid : $request->ip();
+
+            return Limit::perMinute(60)->by('conversion-api:'.$key);
+        });
+
         RateLimiter::for('mcp-oauth', function (Request $request): array {
             return [
                 Limit::perMinute(60)->by('mcp-oauth:ip:'.$request->ip()),
