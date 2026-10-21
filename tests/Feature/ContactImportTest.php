@@ -465,3 +465,27 @@ test('audience imports leave a pending double opt-in membership and its form con
         ->and($contactImport->duplicate_rows)->toBe(1);
     Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
 });
+
+test('audience imports keep the language an existing member chose', function (string $state, array $columnMap, string $csv) {
+    Storage::fake('local');
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create(['default_language' => 'en', 'double_opt_in' => $state === 'pendingConfirmation']);
+    $subscriber = Subscriber::factory()->for($audience)
+        ->for(Contact::factory()->for($team)->state(['email' => 'ada@example.com']))
+        ->{$state}()
+        ->create(['email' => 'ada@example.com', 'language' => SubscriberLanguage::French]);
+    $contactImport = ContactImport::factory()->for($team)->for($audience)->create([
+        'column_map' => $columnMap,
+        'resubscribe_unsubscribed' => true,
+        'language' => SubscriberLanguage::Indonesian,
+    ]);
+    Storage::disk('local')->put($contactImport->path, $csv);
+
+    ProcessContactImport::dispatchSync($contactImport->id);
+
+    expect($subscriber->refresh()->language)->toBe(SubscriberLanguage::French);
+})->with([
+    'resubscribed with the import language' => ['unsubscribed', ['email'], "email\nada@example.com\n"],
+    'resubscribed with a language column' => ['unsubscribed', ['email', 'language'], "email,language\nada@example.com,de\n"],
+    'pending double opt-in with a language column' => ['pendingConfirmation', ['email', 'language'], "email,language\nada@example.com,de\n"],
+]);

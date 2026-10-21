@@ -480,7 +480,7 @@ class ProcessContactImport implements ShouldQueue
 
         $createdMembership = $addContactToAudiences->handle($contact, $audience->newCollection([$audience]), $contactImport->consent_ip);
 
-        if (($attributes === [] && $language === null) || ($existing !== null && $createdMembership === 0 && ! $fillBlanks)) {
+        if (($attributes === [] && $language === null) || ($existing !== null && ! $fillBlanks)) {
             return [$createdMembership, false, false];
         }
 
