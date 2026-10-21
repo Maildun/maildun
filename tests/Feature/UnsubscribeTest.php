@@ -402,3 +402,36 @@ test('an api unsubscribe while a re-signup is pending cancels it and voids the c
         ->and($subscriber->unsubscribed_at?->equalTo($unsubscribedAt))->toBeTrue();
     Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
 });
+
+test('an older campaign unsubscribe link opts out the membership of a person who was removed and added back', function () {
+    $delivery = unsubscribeDelivery();
+    $audience = $delivery->email->audience;
+    $address = $delivery->email_address;
+    $delivery->subscriber->delete();
+    $readded = Subscriber::factory()->for($audience)->create(['email' => $address]);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->get(URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]))
+        ->assertInertia(fn (Assert $page) => $page->where('unsubscribed', false));
+    $this->post(URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]))->assertNoContent();
+
+    expect($delivery->fresh()->subscriber_id)->toBeNull()
+        ->and($readded->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+    Event::assertDispatched(
+        SubscriberLifecycleOccurred::class,
+        fn (SubscriberLifecycleOccurred $event): bool => $event->subscriber->is($readded),
+    );
+});
+
+test('an unsubscribe link for a removed member does not touch the same address in another audience', function () {
+    $delivery = unsubscribeDelivery();
+    $address = $delivery->email_address;
+    $delivery->subscriber->delete();
+    $elsewhere = Subscriber::factory()->for(Audience::factory()->for($delivery->email->team))->create(['email' => $address]);
+
+    $this->get(URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]))
+        ->assertInertia(fn (Assert $page) => $page->where('unsubscribed', true));
+    $this->post(URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]))->assertNoContent();
+
+    expect($elsewhere->fresh()->status)->toBe(SubscriberStatus::Subscribed);
+});

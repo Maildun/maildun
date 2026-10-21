@@ -11,6 +11,7 @@ use App\Models\Subscriber;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
@@ -63,7 +64,7 @@ class UnsubscribeController extends Controller
     {
         $delivery->loadMissing(['subscriber', 'email' => fn ($query) => $query->withTrashed()->with('audience')]);
 
-        $this->optOut($delivery->subscriber);
+        $this->optOut($this->currentMembership($delivery));
 
         // One-click providers only need a 2xx; they never render a page.
         if (! $request->header('X-Inertia')) {
@@ -190,10 +191,33 @@ class UnsubscribeController extends Controller
         return [
             'email' => $delivery->email_address,
             'audience' => $delivery->email->audience?->name,
-            'unsubscribed' => $delivery->subscriber?->status === SubscriberStatus::Unsubscribed
-                || $delivery->subscriber === null,
+            'unsubscribed' => $this->currentMembership($delivery)?->status !== SubscriberStatus::Subscribed,
             'action' => URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]),
         ];
+    }
+
+    /**
+     * The membership a campaign's opt-out applies to. Removing a member nulls
+     * the delivery's subscriber_id, so when the person was later added back
+     * the link falls back to their current membership in the same audience,
+     * by contact and then by address. It never reaches another audience.
+     */
+    private function currentMembership(EmailDelivery $delivery): ?Subscriber
+    {
+        if ($delivery->subscriber instanceof Subscriber) {
+            return $delivery->subscriber;
+        }
+
+        $audience = $delivery->email->audience;
+
+        if ($audience === null) {
+            return null;
+        }
+
+        return ($delivery->contact_id !== null
+            ? $audience->subscribers()->where('contact_id', $delivery->contact_id)->first()
+            : null)
+            ?? $audience->subscribers()->where('email', Str::lower($delivery->email_address))->first();
     }
 
     private function showUrl(EmailDelivery $delivery): string
