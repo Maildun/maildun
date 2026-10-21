@@ -1590,10 +1590,10 @@ test('a queued delivery is cancelled, not sent, once its recipient unsubscribes 
             ->delete(route('audiences.subscribers.bulk-destroy', [$team, $audience]), ['ids' => [$subscriber->uuid]]),
         'contact delete' => $this->actingAs($user)
             ->delete(route('contacts.destroy', [$team, $contact]), ['confirmation' => $contact->email]),
-        'audience delete' => $this->actingAs($user)
-            ->delete(route('audiences.destroy', [$team, $audience]), ['name' => 'Main']),
+        // The app refuses to delete an audience mid-send (MAIL-94), so this is the workspace purge path.
+        'audience delete' => tap(null, fn () => $audience->delete()),
     };
-    $response->assertSessionHasNoErrors();
+    $response?->assertSessionHasNoErrors();
 
     app()->call([new SendEmailDelivery($queued->id), 'handle']);
 

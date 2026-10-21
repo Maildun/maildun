@@ -507,7 +507,10 @@ test('a double opt-in link confirms without starting automations after the works
     Automation::factory()->for($audience->team)->active()->create(['trigger' => AutomationTrigger::Subscribed]);
     $audience->team->delete();
 
-    $this->get(URL::signedRoute('public.subscribe.confirm', $subscriber))
+    $confirmationUrl = URL::signedRoute('public.subscribe.confirm', $subscriber);
+
+    $this->post($confirmationUrl)->assertRedirect($confirmationUrl);
+    $this->get($confirmationUrl)
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page->where('confirmed', true));
 
