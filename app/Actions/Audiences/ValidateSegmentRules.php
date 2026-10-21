@@ -25,9 +25,9 @@ class ValidateSegmentRules
 
         foreach ($rules as $index => $rule) {
             $rule = is_array($rule) ? $rule : [];
-            $field = SegmentRuleField::tryFrom((string) ($rule['field'] ?? ''));
-            $operator = SegmentRuleOperator::tryFrom((string) ($rule['operator'] ?? ''));
-            $value = $rule['value'] ?? null;
+            $field = SegmentRuleField::tryFrom($this->text($rule['field'] ?? null));
+            $operator = SegmentRuleOperator::tryFrom($this->text($rule['operator'] ?? null));
+            $value = $this->text($rule['value'] ?? null);
 
             if (! $field || ! $operator || ! in_array($operator, $field->operators(), true)) {
                 $errors["rules.{$index}.operator"] = 'The selected operator is not valid for this field.';
@@ -35,15 +35,15 @@ class ValidateSegmentRules
                 continue;
             }
 
-            if ($field === SegmentRuleField::Status && ! SubscriberStatus::tryFrom((string) $value)) {
+            if ($field === SegmentRuleField::Status && ! SubscriberStatus::tryFrom($value)) {
                 $errors["rules.{$index}.value"] = 'The selected subscriber status is invalid.';
             }
 
-            if ($field === SegmentRuleField::Source && ! SubscriberSource::tryFrom((string) $value)) {
+            if ($field === SegmentRuleField::Source && ! SubscriberSource::tryFrom($value)) {
                 $errors["rules.{$index}.value"] = 'The selected subscriber source is invalid.';
             }
 
-            if ($field === SegmentRuleField::Language && ! SubscriberLanguage::tryFrom((string) $value)) {
+            if ($field === SegmentRuleField::Language && ! SubscriberLanguage::tryFrom($value)) {
                 $errors["rules.{$index}.value"] = 'The selected language is invalid.';
             }
 
@@ -57,6 +57,15 @@ class ValidateSegmentRules
         }
 
         return $errors;
+    }
+
+    /**
+     * The rule part as text, or '' when a hand-crafted request sends a list or
+     * object, so it fails validation instead of throwing on the string cast.
+     */
+    private function text(mixed $value): string
+    {
+        return is_scalar($value) ? (string) $value : '';
     }
 
     /**

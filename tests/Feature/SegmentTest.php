@@ -551,6 +551,54 @@ test('segment validation rejects unknown languages and text operators on languag
         ->assertInvalid(['rules.0.value', 'rules.1.operator']);
 });
 
+test('malformed segment rules return validation errors instead of a server error', function (mixed $rules, string $invalidKey) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('audiences.segments.store', [$team, $audience]), [
+            'name' => 'Malformed',
+            'match_type' => 'all',
+            'rules' => $rules,
+        ])
+        ->assertInvalid([$invalidKey]);
+
+    expect($audience->segments()->exists())->toBeFalse();
+})->with([
+    'rules as text' => ['subscribed', 'rules'],
+    'field as a list' => [[['field' => ['status'], 'operator' => 'equals', 'value' => 'subscribed']], 'rules.0.field'],
+    'operator as a list' => [[['field' => 'status', 'operator' => ['equals'], 'value' => 'subscribed']], 'rules.0.operator'],
+    'value as a list' => [[['field' => 'status', 'operator' => 'equals', 'value' => ['subscribed']]], 'rules.0.value'],
+]);
+
+test('segment rules must be a list so the editor can read them back', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $segment = Segment::factory()->for($audience)->create();
+    $keyedRules = ['first' => ['field' => 'status', 'operator' => 'equals', 'value' => 'subscribed']];
+
+    $this->actingAs($user)
+        ->post(route('audiences.segments.store', [$team, $audience]), [
+            'name' => 'Keyed',
+            'match_type' => 'all',
+            'rules' => $keyedRules,
+        ])
+        ->assertInvalid(['rules']);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.segments.update', [$team, $audience, $segment]), [
+            'name' => $segment->name,
+            'match_type' => 'all',
+            'rules' => $keyedRules,
+        ])
+        ->assertInvalid(['rules']);
+
+    expect($audience->segments()->count())->toBe(1)
+        ->and($segment->fresh()->rules)->toBe($segment->rules);
+});
+
 test('negative name rules also match subscribers without a name', function (string $operator) {
     $audience = Audience::factory()->create();
     Subscriber::factory()->for($audience)->create(['email' => 'test@example.com', 'first_name' => 'Test']);
