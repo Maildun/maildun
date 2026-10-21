@@ -123,7 +123,10 @@ export default function CompanyShow({
                                 {company.name}
                             </h1>
                             <p className="text-sm text-muted-foreground">
-                                {company.contacts_count} linked contacts
+                                {company.contacts_count} linked{' '}
+                                {company.contacts_count === 1
+                                    ? 'contact'
+                                    : 'contacts'}
                             </p>
                         </div>
                     </div>
