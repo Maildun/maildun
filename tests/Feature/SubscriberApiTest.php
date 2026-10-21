@@ -214,24 +214,25 @@ test('an api double opt-in signup is kept when the workspace cannot send', funct
     Queue::assertNothingPushed();
 });
 
-test('the api resubscribes an unsubscribed member and fires the lifecycle event', function () {
-    $subscriber = Subscriber::factory()->unsubscribed()->create();
-    $issued = TeamApiKey::issue($subscriber->audience->team, 'Production');
+test('an api subscribe on a single opt-in audience keeps an opted-out member unsubscribed', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => false]);
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create(['email' => 'ada@example.com']);
+    $issued = TeamApiKey::issue($audience->team, 'Production');
     Event::fake([SubscriberLifecycleOccurred::class]);
 
     $this->withToken($issued['token'])
-        ->postJson(route('api.v1.audiences.subscribers.store', $subscriber->audience->uuid), [
-            'email' => $subscriber->email,
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'ada@example.com',
+            'consent_text' => 'Signed up during checkout',
         ])
         ->assertOk()
-        ->assertJsonPath('data.status', 'subscribed');
+        ->assertJsonPath('data.status', 'unsubscribed')
+        ->assertJsonPath('data.pending_confirmation', true)
+        ->assertJsonPath('data.subscribed_at', null);
 
-    expect($subscriber->fresh()->unsubscribed_at)->toBeNull()
-        ->and($subscriber->fresh()->source)->toBe(SubscriberSource::Api);
-    Event::assertDispatched(
-        SubscriberLifecycleOccurred::class,
-        fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Resubscribed,
-    );
+    expect($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed)
+        ->and($subscriber->fresh()->unsubscribed_at)->not->toBeNull();
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
 });
 
 test('an api resubscribe on a double opt-in audience keeps the opt-out until the emailed link starts the resubscribed automation', function () {

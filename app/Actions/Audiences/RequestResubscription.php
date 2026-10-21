@@ -10,10 +10,12 @@ class RequestResubscription
     public function __construct(private QueueAudienceConfirmationEmail $queueConfirmationEmail) {}
 
     /**
-     * Record that someone asked to rejoin a double opt-in audience they left,
-     * and email them a confirmation link. The opt-out stands until they click
-     * it, and nothing from the unverified submission besides the consent
-     * record touches their profile.
+     * Record that someone asked to rejoin an audience they left, and email
+     * them a confirmation link. The opt-out stands until they click it, and
+     * nothing from the unverified submission besides the consent record
+     * touches their profile. An audience with no confirmation email (every
+     * single opt-in audience) sends nothing, so the opt-out stays until a
+     * team member resubscribes them.
      *
      * While a confirmation is cooling down, the pending request keeps its
      * timestamp so the link already in their inbox still works.

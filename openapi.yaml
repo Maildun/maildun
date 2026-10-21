@@ -186,9 +186,15 @@ paths:
                 - Subscribers
             summary: Subscribe an address
             description: |
-                Creates an audience membership, returns an existing subscribed membership,
-                or resubscribes an unsubscribed membership. The operation is idempotent for
-                an email address within an audience.
+                Creates an audience membership or returns an existing subscribed membership.
+                The operation is idempotent for an email address within an audience.
+
+                An unsubscribed membership stays unsubscribed. Maildun records a
+                resubscription request and returns `status: unsubscribed` with
+                `pending_confirmation: true`. On a double opt-in audience the recipient
+                is emailed the confirmation link and is resubscribed only when they click
+                it. A single opt-in audience has no confirmation email, so a team member
+                must resubscribe the address in Maildun.
 
                 Custom attributes are defined per audience. Required attributes must be
                 supplied, unknown attribute keys are rejected when the audience has a
@@ -217,7 +223,7 @@ paths:
                                         company: Analytical Engines
             responses:
                 '200':
-                    description: The address is subscribed or awaiting double opt-in confirmation.
+                    description: The address is subscribed, awaiting double opt-in confirmation, or an unsubscribed address with a recorded resubscription request.
                     headers:
                         X-RateLimit-Limit:
                             $ref: '#/components/headers/RateLimitLimit'
@@ -235,7 +241,9 @@ paths:
                                             email: ada@example.com
                                             first_name: Ada
                                             last_name: Lovelace
+                                            language: null
                                             status: subscribed
+                                            pending_confirmation: false
                                             subscribed_at: '2026-08-23T03:00:00.000000Z'
                                 confirmationPending:
                                     summary: Double opt-in confirmation is pending
@@ -245,7 +253,21 @@ paths:
                                             email: ada@example.com
                                             first_name: Ada
                                             last_name: Lovelace
+                                            language: null
                                             status: subscribed
+                                            pending_confirmation: true
+                                            subscribed_at: null
+                                resubscriptionRequested:
+                                    summary: An unsubscribed address asked to rejoin
+                                    value:
+                                        data:
+                                            id: ff55fd14-4b87-4923-b933-4912e14566f4
+                                            email: ada@example.com
+                                            first_name: Ada
+                                            last_name: Lovelace
+                                            language: null
+                                            status: unsubscribed
+                                            pending_confirmation: true
                                             subscribed_at: null
                 '401':
                     $ref: '#/components/responses/Unauthenticated'
@@ -727,6 +749,7 @@ components:
                 - last_name
                 - language
                 - status
+                - pending_confirmation
                 - subscribed_at
             properties:
                 id:
@@ -749,13 +772,19 @@ components:
                         - type: 'null'
                 status:
                     type: string
-                    const: subscribed
+                    enum:
+                        - subscribed
+                        - unsubscribed
+                    description: Stays `unsubscribed` for an address that opted out until its resubscription is confirmed.
+                pending_confirmation:
+                    type: boolean
+                    description: True while a double opt-in signup or a resubscription request awaits confirmation.
                 subscribed_at:
                     type:
                         - string
                         - 'null'
                     format: date-time
-                    description: Null while double opt-in confirmation is pending.
+                    description: Null while confirmation is pending.
 
         SubscriberLanguage:
             type: string

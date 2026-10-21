@@ -107,7 +107,9 @@ POST /api/v1/audiences/{audience_uuid}/subscribers
 }
 ```
 
-The operation is idempotent. It creates a subscriber, updates an already subscribed address, or resubscribes an unsubscribed address. Configured required audience attributes are required by the API as well. `language` is optional and must be one of the languages the audience allows.
+The operation is idempotent. It creates a subscriber or updates an already subscribed address. Configured required audience attributes are required by the API as well. `language` is optional and must be one of the languages the audience allows.
+
+An address that unsubscribed stays unsubscribed. The request records a resubscription request instead: the response has `"status": "unsubscribed"` and `"pending_confirmation": true`. On a double opt-in audience Maildun emails the audience's confirmation link, and the address is resubscribed only when the recipient clicks it. A single opt-in audience has no confirmation email, so a team member must resubscribe the address in Maildun.
 
 `consent_ip` is the IP address of the person who gave consent, kept on their consent record. Send it when your server subscribes someone on their behalf; when it is omitted, Maildun records the IP address of the API request instead.
 
@@ -120,6 +122,7 @@ The operation is idempotent. It creates a subscriber, updates an already subscri
     "last_name": "Lovelace",
     "language": "en",
     "status": "subscribed",
+    "pending_confirmation": false,
     "subscribed_at": "2026-08-23T03:00:00.000000Z"
   }
 }

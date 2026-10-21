@@ -22,7 +22,13 @@ class SubscribeToAudience
         private RequestResubscription $requestResubscription,
     ) {}
 
-    /** @param array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, attributes?: array<string, string|int|float|null>} $data */
+    /**
+     * An anonymous form signup never reverses an opt-out, even on a single
+     * opt-in audience. It only requests a resubscription, which the person
+     * must confirm from their own inbox.
+     *
+     * @param  array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, attributes?: array<string, string|int|float|null>}  $data
+     */
     public function handle(SubscribeForm $subscribeForm, array $data, ?string $ipAddress): Subscriber
     {
         $trigger = null;
@@ -35,9 +41,7 @@ class SubscribeToAudience
                 return $subscriber;
             }
 
-            if ($audience->double_opt_in
-                && $subscriber instanceof Subscriber
-                && $subscriber->status === SubscriberStatus::Unsubscribed) {
+            if ($subscriber?->status === SubscriberStatus::Unsubscribed) {
                 return $this->requestResubscription->handle($audience, $subscriber, $subscribeForm->consent_text, $ipAddress);
             }
 
@@ -53,9 +57,7 @@ class SubscribeToAudience
             $requiresConfirmation = $audience->double_opt_in;
 
             if (! $requiresConfirmation) {
-                $trigger = $subscriber?->status === SubscriberStatus::Unsubscribed
-                    ? AutomationTrigger::Resubscribed
-                    : AutomationTrigger::Subscribed;
+                $trigger = AutomationTrigger::Subscribed;
             }
 
             $attributeValues = Arr::where(

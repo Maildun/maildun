@@ -21,7 +21,14 @@ class SubscribeViaApi
         private RequestResubscription $requestResubscription,
     ) {}
 
-    /** @param array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, consent_text?: string|null, attributes?: array<string, string|int|float|null>} $data */
+    /**
+     * An API caller relays a signup it collected, so like a public form it
+     * never reverses an opt-out, even on a single opt-in audience. It only
+     * requests a resubscription, which the person must confirm from their own
+     * inbox. A team member can still resubscribe them from the app.
+     *
+     * @param  array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, consent_text?: string|null, attributes?: array<string, string|int|float|null>}  $data
+     */
     public function handle(Audience $audience, array $data, ?string $ipAddress): Subscriber
     {
         $trigger = null;
@@ -30,9 +37,7 @@ class SubscribeViaApi
             $lockedAudience = Audience::query()->whereKey($audience->id)->lockForUpdate()->firstOrFail();
             $subscriber = $lockedAudience->subscribers()->where('email', $data['email'])->first();
 
-            if ($lockedAudience->double_opt_in
-                && $subscriber instanceof Subscriber
-                && $subscriber->status === SubscriberStatus::Unsubscribed) {
+            if ($subscriber?->status === SubscriberStatus::Unsubscribed) {
                 return $this->requestResubscription->handle(
                     $lockedAudience,
                     $subscriber,
@@ -75,9 +80,7 @@ class SubscribeViaApi
             $requiresConfirmation = $lockedAudience->double_opt_in;
 
             if (! $requiresConfirmation) {
-                $trigger = $subscriber?->status === SubscriberStatus::Unsubscribed
-                    ? AutomationTrigger::Resubscribed
-                    : AutomationTrigger::Subscribed;
+                $trigger = AutomationTrigger::Subscribed;
             }
 
             $values = [

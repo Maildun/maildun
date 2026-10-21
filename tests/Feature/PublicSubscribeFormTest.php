@@ -728,28 +728,31 @@ test('a public form reuses an existing team contact without replacing its profil
         ->and($subscriber->last_name)->toBe('Person');
 });
 
-test('an unsubscribed address can subscribe again with fresh consent', function () {
-    $audience = Audience::factory()->create();
+test('an anonymous single opt-in signup from an opted-out member keeps the opt-out', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => false]);
     $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
-    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create([
+    $unsubscribedAt = now()->subDays(3)->startOfSecond();
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed($unsubscribedAt)->create([
         'email' => 'person@example.com',
-        'consented_at' => now()->subYear(),
+        'first_name' => 'Ada',
     ]);
-    $previousConsentAt = $subscriber->consented_at;
-
-    $this->travel(1)->day();
+    Event::fake([SubscriberLifecycleOccurred::class]);
 
     $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
         'email' => 'person@example.com',
+        'first_name' => 'Mallory',
         'consent' => true,
         'website' => '',
-    ])->assertOk();
+    ])->assertOk()->assertExactJson(['message' => $subscribeForm->success_message]);
 
     $subscriber->refresh();
 
-    expect($subscriber->status)->toBe(SubscriberStatus::Subscribed)
-        ->and($subscriber->unsubscribed_at)->toBeNull()
-        ->and($subscriber->consented_at->isAfter($previousConsentAt))->toBeTrue();
+    expect($subscriber->status)->toBe(SubscriberStatus::Unsubscribed)
+        ->and($subscriber->unsubscribed_at?->equalTo($unsubscribedAt))->toBeTrue()
+        ->and($subscriber->isOptedIn())->toBeFalse()
+        ->and($subscriber->isPendingResubscription())->toBeTrue()
+        ->and($subscriber->first_name)->toBe('Ada');
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
 });
 
 test('public subscribe endpoints are unavailable after a form is deleted', function () {

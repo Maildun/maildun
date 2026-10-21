@@ -186,8 +186,9 @@ class Subscriber extends Model
     }
 
     /**
-     * A person who opted out and then asked to rejoin a double opt-in
-     * audience. They stay unsubscribed until they click the confirmation link.
+     * A person who opted out and then asked to rejoin from a form or the API.
+     * They stay unsubscribed until they click the confirmation link or a team
+     * member resubscribes them.
      */
     public function isPendingResubscription(): bool
     {
