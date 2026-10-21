@@ -402,6 +402,7 @@ test('a delivery job sends one tracked message through the configured mailer', f
     ]);
     TeamEmailIntegration::factory()->for($email->team)->ses()->create();
     $delivery = $email->deliveries()->create([
+        'subscriber_id' => Subscriber::factory()->create()->id,
         'email_address' => 'reader@example.com',
         'status' => 'queued',
         'provider' => 'smtp',
@@ -1545,4 +1546,72 @@ test('finishing a campaign fails deliveries that never reported back', function 
         ->and($stuckAttempt->fresh()->status)->toBe(EmailDeliveryStatus::Failed)
         ->and($stuckAttempt->fresh()->failure_reason)->toBe($stuck->fresh()->failure_reason)
         ->and($email->fresh()->status)->toBe(EmailStatus::PartiallyFailed);
+});
+
+test('a queued delivery is cancelled, not sent, once its recipient unsubscribes or is removed', function (string $removal) {
+    Mail::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->create();
+    $audience = Audience::factory()->for($team)->create(['name' => 'Main']);
+    $subscriber = Subscriber::factory()->for($audience)->create(['email' => 'leaving@example.com']);
+    $contact = $subscriber->contact;
+    $previousDelivery = EmailDelivery::factory()
+        ->for(Email::factory()->for($team)->create(['audience_id' => $audience->id, 'status' => EmailStatus::Sent]))
+        ->for($subscriber)
+        ->create(['email_address' => $subscriber->email, 'status' => EmailDeliveryStatus::Delivered]);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello</p>',
+        'status' => EmailStatus::Sending,
+        'send_started_at' => now(),
+    ]);
+    $queued = EmailDelivery::factory()->for($email)->for($subscriber)->create([
+        'email_address' => $subscriber->email,
+        'status' => EmailDeliveryStatus::Queued,
+    ]);
+
+    $response = match ($removal) {
+        'one-click unsubscribe' => $this->post(
+            URL::signedRoute('public.unsubscribe.store', ['delivery' => $previousDelivery]),
+            ['List-Unsubscribe' => 'One-Click'],
+        ),
+        'contact bulk unsubscribe' => $this->actingAs($user)
+            ->patch(route('contacts.bulk-unsubscribe', $team), ['ids' => [$contact->uuid]]),
+        'membership delete' => $this->actingAs($user)
+            ->delete(route('audiences.subscribers.bulk-destroy', [$team, $audience]), ['ids' => [$subscriber->uuid]]),
+        'contact delete' => $this->actingAs($user)
+            ->delete(route('contacts.destroy', [$team, $contact]), ['confirmation' => $contact->email]),
+        'audience delete' => $this->actingAs($user)
+            ->delete(route('audiences.destroy', [$team, $audience]), ['name' => 'Main']),
+    };
+    $response->assertSessionHasNoErrors();
+
+    app()->call([new SendEmailDelivery($queued->id), 'handle']);
+
+    Mail::assertNotSent(CampaignEmail::class);
+    expect($queued->fresh()->status)->toBe(EmailDeliveryStatus::Cancelled)
+        ->and($queued->fresh()->failure_code)->toBe(EmailFailureCode::RecipientUnavailable)
+        ->and($queued->fresh()->send_attempted_at)->toBeNull()
+        ->and($queued->attempts()->count())->toBe(0);
+})->with([
+    'one-click unsubscribe',
+    'contact bulk unsubscribe',
+    'membership delete',
+    'contact delete',
+    'audience delete',
+]);
+
+test('a recipient cancelled for leaving does not mark the finished campaign as stopped', function () {
+    $email = Email::factory()->create(['status' => EmailStatus::Sending, 'recipient_count' => 2]);
+    EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Sent]);
+    EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Cancelled,
+        'failure_code' => EmailFailureCode::RecipientUnavailable,
+    ]);
+
+    (new FinalizeEmailSend($email->id))(Mockery::mock(Batch::class));
+
+    expect($email->fresh()->status)->toBe(EmailStatus::Sent);
 });

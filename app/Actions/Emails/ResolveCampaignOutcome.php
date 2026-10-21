@@ -3,8 +3,10 @@
 namespace App\Actions\Emails;
 
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailStatus;
 use App\Models\Email;
+use Illuminate\Database\Eloquent\Builder;
 
 class ResolveCampaignOutcome
 {
@@ -19,9 +21,16 @@ class ResolveCampaignOutcome
     {
         // A person stopped it; that stays the outcome whatever finished, even
         // after a retry of the deliveries that failed set the status back to
-        // Sending. The recipients the stop cancelled are what remember it.
+        // Sending. The recipients the stop cancelled are what remember it;
+        // a recipient cancelled because they unsubscribed or were removed is
+        // not a stop.
         if ($email->status === EmailStatus::Stopped
-            || $email->deliveries()->where('status', EmailDeliveryStatus::Cancelled)->exists()) {
+            || $email->deliveries()
+                ->where('status', EmailDeliveryStatus::Cancelled)
+                ->where(fn (Builder $deliveries) => $deliveries
+                    ->whereNull('failure_code')
+                    ->orWhere('failure_code', '!=', EmailFailureCode::RecipientUnavailable))
+                ->exists()) {
             return EmailStatus::Stopped;
         }
 

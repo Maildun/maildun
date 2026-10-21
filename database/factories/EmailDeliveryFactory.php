@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Enums\EmailDeliveryStatus;
 use App\Models\Email;
 use App\Models\EmailDelivery;
+use App\Models\Subscriber;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -21,6 +22,7 @@ class EmailDeliveryFactory extends Factory
     {
         return [
             'email_id' => Email::factory(),
+            'subscriber_id' => Subscriber::factory(),
             'email_address' => fake()->unique()->safeEmail(),
             'first_name' => fake()->firstName(),
             'last_name' => fake()->lastName(),

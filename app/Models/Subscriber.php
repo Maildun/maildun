@@ -145,13 +145,34 @@ class Subscriber extends Model
     public function scopeSendableFor(Builder $query, Team $team): void
     {
         $query
-            ->where('subscribers.status', SubscriberStatus::Subscribed)
-            ->whereNotNull('subscribers.subscribed_at')
+            ->optedIn()
             ->whereNotExists(
                 EmailAddressHealth::query()
                     ->suppressedFor($team)
                     ->whereColumn('email_address_healths.email', 'subscribers.email'),
             );
+    }
+
+    /**
+     * The one definition of a member who may be mailed: subscribed and, for
+     * double opt-in, confirmed. Campaign claims, retries and automations all
+     * use it (or isOptedIn() in memory) so they can never disagree.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeOptedIn(Builder $query): void
+    {
+        $query
+            ->where('subscribers.status', SubscriberStatus::Subscribed)
+            ->whereNotNull('subscribers.subscribed_at');
+    }
+
+    /**
+     * The in-memory form of the optedIn scope.
+     */
+    public function isOptedIn(): bool
+    {
+        return $this->status === SubscriberStatus::Subscribed && $this->subscribed_at !== null;
     }
 
     /**
