@@ -10,7 +10,9 @@ Schedule::call(function () {
         ->delete();
 })->daily()->description('Delete expired team invitations');
 
-Schedule::command('segments:sync')->everyFiveMinutes();
+// withoutOverlapping because a run over many large segments can outlast five
+// minutes, and two runs would sync the same pivots at once.
+Schedule::command('segments:sync')->everyFiveMinutes()->withoutOverlapping()->onOneServer();
 
 Schedule::command('horizon:snapshot')->everyFiveMinutes();
 

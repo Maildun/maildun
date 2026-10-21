@@ -46,7 +46,8 @@ class SyncSegmentSubscribers
                 ])->values()->all());
             }
 
-            $segment->forceFill(['rules_synced_at' => $now])->save();
+            // A sync is not an edit, so leave updated_at alone.
+            Segment::withoutTimestamps(fn () => $segment->forceFill(['rules_synced_at' => $now])->save());
         });
     }
 }

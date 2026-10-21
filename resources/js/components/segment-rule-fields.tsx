@@ -30,6 +30,7 @@ import type {
     SegmentRule,
     SegmentRuleField,
     SegmentRuleOperator,
+    SegmentRuleOptions,
     SubscriberLanguageOption,
 } from '@/types/audiences';
 
@@ -55,7 +56,7 @@ export function SegmentRuleFields({
     data,
     setData,
     errors,
-    forms,
+    options,
     languages,
     disabled = false,
 }: {
@@ -66,7 +67,7 @@ export function SegmentRuleFields({
         value: SegmentFormData[K],
     ) => void;
     errors?: Partial<Record<string, string>>;
-    forms: { uuid: string; name: string }[];
+    options: SegmentRuleOptions;
     languages: SubscriberLanguageOption[];
     disabled?: boolean;
 }) {
@@ -139,7 +140,7 @@ export function SegmentRuleFields({
                             operator: errors?.[`rules.${index}.operator`],
                             value: errors?.[`rules.${index}.value`],
                         }}
-                        forms={forms}
+                        options={options}
                         languages={languages}
                         disabled={disabled}
                         canRemove={data.rules.length > 1}
@@ -189,7 +190,7 @@ export function SegmentRuleFields({
 function SegmentRuleRow({
     rule,
     errors,
-    forms,
+    options,
     languages,
     disabled,
     canRemove,
@@ -198,7 +199,7 @@ function SegmentRuleRow({
 }: {
     rule: SegmentRule;
     errors: SegmentRuleErrors;
-    forms: { uuid: string; name: string }[];
+    options: SegmentRuleOptions;
     languages: SubscriberLanguageOption[];
     disabled: boolean;
     canRemove: boolean;
@@ -224,7 +225,7 @@ function SegmentRuleRow({
                         onChange({
                             field: value,
                             operator: operatorsFor(value)[0].value,
-                            value: defaultRuleValue(value, forms, languages),
+                            value: defaultRuleValue(value, options, languages),
                         });
                     }}
                 >
@@ -286,7 +287,7 @@ function SegmentRuleRow({
                 <RuleValue
                     rule={rule}
                     invalid={Boolean(errors.value)}
-                    forms={forms}
+                    options={options}
                     languages={languages}
                     disabled={disabled}
                     onChange={(value) => onChange({ ...rule, value })}
@@ -312,14 +313,14 @@ function SegmentRuleRow({
 function RuleValue({
     rule,
     invalid,
-    forms,
+    options,
     languages,
     disabled,
     onChange,
 }: {
     rule: SegmentRule;
     invalid: boolean;
-    forms: { uuid: string; name: string }[];
+    options: SegmentRuleOptions;
     languages: SubscriberLanguageOption[];
     disabled: boolean;
     onChange: (value: string) => void;
@@ -346,10 +347,10 @@ function RuleValue({
                 invalid={invalid}
                 disabled={disabled}
                 onChange={onChange}
-                options={[
-                    ['manual', 'Manual'],
-                    ['form', 'Subscribe form'],
-                ]}
+                options={options.sources.map((source) => [
+                    source.value,
+                    source.label,
+                ])}
             />
         );
     }
@@ -361,9 +362,12 @@ function RuleValue({
                 invalid={invalid}
                 disabled={disabled}
                 onChange={onChange}
-                options={forms.map((form) => [form.uuid, form.name])}
+                options={options.forms.map((form) => [
+                    form.uuid,
+                    form.deleted ? `${form.name} (deleted)` : form.name,
+                ])}
                 placeholder={
-                    forms.length > 0
+                    options.forms.length > 0
                         ? 'Select value'
                         : 'No subscribe forms in this audience'
                 }
@@ -444,7 +448,9 @@ function RuleDatePicker({
                 }
             >
                 <HugeiconsIcon icon={Calendar02Icon} data-icon="inline-start" />
-                {isValidSelected ? format(selected, 'PPP') : 'Pick a date'}
+                {isValidSelected
+                    ? `${format(selected, 'PPP')} (UTC)`
+                    : 'Pick a date (UTC)'}
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0">
                 <Calendar
@@ -531,7 +537,7 @@ function operatorsFor(
 
 function defaultRuleValue(
     field: SegmentRuleField,
-    forms: { uuid: string; name: string }[],
+    options: SegmentRuleOptions,
     languages: SubscriberLanguageOption[],
 ): string {
     if (field === 'status') {
@@ -543,7 +549,7 @@ function defaultRuleValue(
     }
 
     if (field === 'subscribe_form') {
-        return forms[0]?.uuid || '';
+        return options.forms.find((form) => !form.deleted)?.uuid || '';
     }
 
     if (field === 'language') {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Audiences\BuildSegmentRuleOptions;
 use App\Actions\Audiences\DeleteSegment;
 use App\Actions\Audiences\EnsureSegmentRulesCanChange;
 use App\Actions\Audiences\SyncSegmentSubscribers;
@@ -39,7 +40,7 @@ class SegmentController extends Controller
         ]);
     }
 
-    public function show(Team $currentTeam, Audience $audience, Segment $segment): Response
+    public function show(Team $currentTeam, Audience $audience, Segment $segment, BuildSegmentRuleOptions $buildSegmentRuleOptions): Response
     {
         Gate::authorize('view', $segment);
 
@@ -83,10 +84,7 @@ class SegmentController extends Controller
                 'rules_synced_at' => $segment->rules_synced_at?->toISOString(),
             ],
             'subscribers' => $subscribers,
-            'forms' => $audience->subscribeForms()->withTrashed()->get(['uuid', 'name'])->map(fn ($form) => [
-                'uuid' => $form->uuid,
-                'name' => $form->name,
-            ]),
+            'segmentRuleOptions' => $buildSegmentRuleOptions->handle($audience),
             'languages' => SubscriberLanguage::options(),
             'canManage' => Gate::allows('update', $segment),
         ]);

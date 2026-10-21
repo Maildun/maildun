@@ -165,6 +165,11 @@ export type SubscriberLanguageOption = {
     label: string;
 };
 
+export type SegmentRuleOptions = {
+    forms: { uuid: string; name: string; deleted: boolean }[];
+    sources: { value: string; label: string }[];
+};
+
 export type AudienceSenderFallbacks = {
     from_name: string | null;
     from_address: string | null;

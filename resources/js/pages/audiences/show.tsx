@@ -120,6 +120,7 @@ import type {
     Paginated,
     Segment,
     SegmentRule,
+    SegmentRuleOptions,
     Subscriber,
     SubscribeFormSummary,
     SubscriberIndexFilters,
@@ -136,6 +137,7 @@ type Props = {
     subscriberStats: AudienceSubscriberStats;
     segments: Segment[];
     forms: SubscribeFormSummary[];
+    segmentRuleOptions: SegmentRuleOptions;
     languages: SubscriberLanguageOption[];
     subscriberLanguages: SubscriberLanguageOption[];
     companies: CompanyOption[];
@@ -166,6 +168,7 @@ export default function AudienceShow(props: Props) {
         subscriberStats,
         segments,
         forms,
+        segmentRuleOptions,
         languages,
         subscriberLanguages,
         companies,
@@ -642,7 +645,7 @@ export default function AudienceShow(props: Props) {
                                 }
                             }}
                             routeArgs={routeArgs}
-                            forms={forms}
+                            segmentRuleOptions={segmentRuleOptions}
                             languages={languages}
                             segment={segmentToEdit}
                         />
@@ -1422,14 +1425,14 @@ function SegmentDialog({
     open,
     onOpenChange,
     routeArgs,
-    forms,
+    segmentRuleOptions,
     languages,
     segment,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     routeArgs: [string, string];
-    forms: SubscribeFormSummary[];
+    segmentRuleOptions: SegmentRuleOptions;
     languages: SubscriberLanguageOption[];
     segment?: Segment | null;
 }) {
@@ -1492,7 +1495,7 @@ function SegmentDialog({
                         data={form.data}
                         setData={form.setData}
                         errors={form.errors}
-                        forms={forms}
+                        options={segmentRuleOptions}
                         languages={languages}
                     />
                     <DialogFooter className="mt-6">

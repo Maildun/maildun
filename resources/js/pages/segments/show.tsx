@@ -60,6 +60,7 @@ import { show as showSubscriber } from '@/routes/audiences/subscribers';
 import type {
     Paginated,
     Segment,
+    SegmentRuleOptions,
     Subscriber,
     SubscriberLanguageOption,
 } from '@/types/audiences';
@@ -68,7 +69,7 @@ type Props = {
     audience: { uuid: string; name: string };
     segment: Segment;
     subscribers: Paginated<Subscriber>;
-    forms: { uuid: string; name: string }[];
+    segmentRuleOptions: SegmentRuleOptions;
     languages: SubscriberLanguageOption[];
     canManage: boolean;
     currentTeam: { slug: string };
@@ -78,7 +79,7 @@ export default function SegmentShow({
     audience,
     segment,
     subscribers,
-    forms,
+    segmentRuleOptions,
     languages,
     canManage,
     currentTeam,
@@ -109,7 +110,7 @@ export default function SegmentShow({
                             {subscribers.total} subscribers match this dynamic
                             segment.{' '}
                             {segment.rules_synced_at
-                                ? `Rules synced ${formatRelativeTime(segment.rules_synced_at)} ago.`
+                                ? `Rules synced ${formatSyncedTime(segment.rules_synced_at)}.`
                                 : 'Rules have not synced yet.'}
                         </p>
                     </div>
@@ -252,7 +253,7 @@ export default function SegmentShow({
                 onOpenChange={setEditOpen}
                 routeArgs={routeArgs}
                 segment={segment}
-                forms={forms}
+                segmentRuleOptions={segmentRuleOptions}
                 languages={languages}
                 canManage={canManage}
             />
@@ -265,7 +266,7 @@ function SegmentEditDialog({
     onOpenChange,
     routeArgs,
     segment,
-    forms,
+    segmentRuleOptions,
     languages,
     canManage,
 }: {
@@ -273,7 +274,7 @@ function SegmentEditDialog({
     onOpenChange: (open: boolean) => void;
     routeArgs: [string, string, string];
     segment: Segment;
-    forms: { uuid: string; name: string }[];
+    segmentRuleOptions: SegmentRuleOptions;
     languages: SubscriberLanguageOption[];
     canManage: boolean;
 }) {
@@ -323,7 +324,7 @@ function SegmentEditDialog({
                         data={form.data}
                         setData={form.setData}
                         errors={form.errors}
-                        forms={forms}
+                        options={segmentRuleOptions}
                         languages={languages}
                         disabled={!canManage}
                     />
@@ -366,3 +367,13 @@ SegmentShow.layout = (props: Props) => ({
         },
     ],
 });
+
+function formatSyncedTime(value: string): string {
+    const relative = formatRelativeTime(value);
+
+    if (relative === 'Now') {
+        return 'just now';
+    }
+
+    return /^\d+[mhd]$/.test(relative) ? `${relative} ago` : `on ${relative}`;
+}

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audiences\BuildAudienceSubscriberStats;
+use App\Actions\Audiences\BuildSegmentRuleOptions;
 use App\Concerns\SearchesText;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
@@ -93,6 +94,7 @@ class AudienceController extends Controller
         Team $currentTeam,
         Audience $audience,
         BuildAudienceSubscriberStats $buildSubscriberStats,
+        BuildSegmentRuleOptions $buildSegmentRuleOptions,
     ): Response {
         Gate::authorize('view', $audience);
 
@@ -163,6 +165,7 @@ class AudienceController extends Controller
             'subscriberStats' => $buildSubscriberStats->handle($audience),
             'segments' => $segments,
             'forms' => $forms,
+            'segmentRuleOptions' => $buildSegmentRuleOptions->handle($audience),
             'languages' => SubscriberLanguage::options(),
             'subscriberLanguages' => $audience->languageOptions(),
             'filters' => $filters,

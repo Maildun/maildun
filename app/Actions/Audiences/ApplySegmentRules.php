@@ -25,7 +25,7 @@ class ApplySegmentRules
     {
         $formIds = $audience->subscribeForms()
             ->withTrashed()
-            ->whereIn('uuid', collect($rules)->where('field', SegmentRuleField::SubscribeForm->value)->pluck('value'))
+            ->whereIn('uuid', collect($rules)->where('field', SegmentRuleField::SubscribeForm->value)->pluck('value')->map(fn (mixed $uuid): string => Str::lower((string) $uuid)))
             ->pluck('id', 'uuid');
 
         return $query->where(function (Builder $rulesQuery) use ($rules, $matchType, $formIds): void {
@@ -36,8 +36,14 @@ class ApplySegmentRules
                     $field = SegmentRuleField::from($rule['field']);
                     $operator = SegmentRuleOperator::from($rule['operator']);
                     $value = $field === SegmentRuleField::SubscribeForm
-                        ? $formIds->get($rule['value'])
+                        ? $formIds->get(Str::lower($rule['value']))
                         : $rule['value'];
+
+                    if ($field === SegmentRuleField::SubscribeForm && $value === null) {
+                        $this->applyMissingFormRule($ruleQuery, $operator);
+
+                        return;
+                    }
 
                     $this->applyRule($ruleQuery, $field, $operator, $value);
                 });
@@ -80,6 +86,19 @@ class ApplySegmentRules
             SegmentRuleOperator::After => $query->whereDate($column, '>', $this->calendarDate($value)),
             default => null,
         };
+    }
+
+    /**
+     * A form rule whose form is gone matches nobody for "is" and everyone for
+     * "is not", instead of comparing the column with NULL.
+     *
+     * @param  Builder<Subscriber>  $query
+     */
+    private function applyMissingFormRule(Builder $query, SegmentRuleOperator $operator): void
+    {
+        if ($operator !== SegmentRuleOperator::NotEquals) {
+            $query->whereRaw('1 = 0');
+        }
     }
 
     /**

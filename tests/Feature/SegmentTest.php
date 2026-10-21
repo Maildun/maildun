@@ -14,6 +14,8 @@ use App\Models\SubscribeForm;
 use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\User;
+use Illuminate\Console\Scheduling\Event;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Str;
@@ -577,4 +579,84 @@ test('subscribe form not equals also matches subscribers without a form', functi
         ->all();
 
     expect($matches)->toBe(['form-b@example.com', 'manual@example.com']);
+});
+
+test('form rules find the form whatever the case of its id', function () {
+    $audience = Audience::factory()->create();
+    $form = SubscribeForm::factory()->for($audience)->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'form@example.com', 'subscribe_form_id' => $form->id]);
+    Subscriber::factory()->for($audience)->create(['email' => 'manual@example.com', 'subscribe_form_id' => null]);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [
+            ['field' => 'subscribe_form', 'operator' => 'equals', 'value' => Str::upper($form->uuid)],
+        ], SegmentMatchType::All)
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe(['form@example.com']);
+});
+
+test('form rules for a missing form match nobody or everyone', function (string $operator, array $expectedEmails) {
+    $audience = Audience::factory()->create();
+    $form = SubscribeForm::factory()->for($audience)->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'form@example.com', 'subscribe_form_id' => $form->id]);
+    Subscriber::factory()->for($audience)->create(['email' => 'manual@example.com', 'subscribe_form_id' => null]);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [
+            ['field' => 'subscribe_form', 'operator' => $operator, 'value' => (string) Str::uuid()],
+        ], SegmentMatchType::All)
+        ->orderBy('email')
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe($expectedEmails);
+})->with([
+    'equals matches nobody' => ['equals', []],
+    'not equals matches everyone' => ['not_equals', ['form@example.com', 'manual@example.com']],
+]);
+
+test('syncing a segment does not change when it was last updated', function () {
+    $audience = Audience::factory()->create();
+    $segment = Segment::factory()->for($audience)->create(['updated_at' => '2026-10-01 09:00:00']);
+    $this->travelTo('2026-10-21 12:00:00');
+
+    app(SyncSegmentSubscribers::class)->handle($segment);
+
+    $segment->refresh();
+    expect($segment->rules_synced_at->toDateTimeString())->toBe('2026-10-21 12:00:00')
+        ->and($segment->updated_at->toDateTimeString())->toBe('2026-10-01 09:00:00');
+});
+
+test('both segment editors get the same form and source options', function (string $routeName) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $segment = Segment::factory()->for($audience)->create();
+    $retired = SubscribeForm::factory()->for($audience)->create(['name' => 'Beta form']);
+    $retired->delete();
+    $live = SubscribeForm::factory()->for($audience)->create(['name' => 'Alpha form']);
+
+    $this->actingAs($user)
+        ->get(route($routeName, ['current_team' => $team, 'audience' => $audience, 'segment' => $segment]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('segmentRuleOptions.forms', [
+                ['uuid' => $live->uuid, 'name' => 'Alpha form', 'deleted' => false],
+                ['uuid' => $retired->uuid, 'name' => 'Beta form', 'deleted' => true],
+            ])
+            ->where('segmentRuleOptions.sources', [
+                ['value' => 'manual', 'label' => 'Manual'],
+                ['value' => 'form', 'label' => 'Form'],
+                ['value' => 'api', 'label' => 'API'],
+            ]));
+})->with(['audiences.show', 'audiences.segments.show']);
+
+test('the segment sync is scheduled so runs cannot overlap', function () {
+    $event = collect(app(Schedule::class)->events())
+        ->first(fn (Event $event): bool => str_contains((string) $event->command, 'segments:sync'));
+
+    expect($event)->toBeInstanceOf(Event::class)
+        ->and($event->withoutOverlapping)->toBeTrue()
+        ->and($event->onOneServer)->toBeTrue();
 });
