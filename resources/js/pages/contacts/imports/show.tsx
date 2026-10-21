@@ -65,6 +65,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { formatRelativeTime } from '@/lib/format';
+import { tagsError } from '@/lib/tags';
 import { cn } from '@/lib/utils';
 import { show as showAudience } from '@/routes/audiences';
 import {
@@ -617,7 +618,7 @@ function MappingForm({
                         <FieldError>{form.errors.merge_strategy}</FieldError>
                     </Field>
 
-                    <Field data-invalid={Boolean(form.errors.tags)}>
+                    <Field data-invalid={Boolean(tagsError(form.errors))}>
                         <FieldLabel htmlFor="import-tags">
                             Tag every imported contact
                         </FieldLabel>
@@ -634,7 +635,7 @@ function MappingForm({
                             Useful to find this batch later, such as
                             &ldquo;Webinar 2026&rdquo;.
                         </FieldDescription>
-                        <FieldError>{form.errors.tags}</FieldError>
+                        <FieldError>{tagsError(form.errors)}</FieldError>
                     </Field>
 
                     {isAudienceImport ? (

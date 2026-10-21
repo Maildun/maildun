@@ -33,6 +33,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import { tagsError } from '@/lib/tags';
 import { lookup, show, store, update } from '@/routes/contacts';
 import type { Tag } from '@/types/audiences';
 import type {
@@ -731,15 +732,15 @@ function NewContactFields({
                     <FieldError>{form.errors.company_uuid}</FieldError>
                 </Field>
             ) : null}
-            <Field data-invalid={Boolean(form.errors.tags)}>
+            <Field data-invalid={Boolean(tagsError(form.errors))}>
                 <FieldLabel>Tags</FieldLabel>
                 <TagsCombobox
                     value={form.data.tags}
                     availableTags={tags}
                     onValueChange={(value) => form.setData('tags', value)}
-                    aria-invalid={Boolean(form.errors.tags)}
+                    aria-invalid={Boolean(tagsError(form.errors))}
                 />
-                <FieldError>{form.errors.tags}</FieldError>
+                <FieldError>{tagsError(form.errors)}</FieldError>
             </Field>
         </>
     );

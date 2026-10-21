@@ -30,6 +30,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import { tagsError } from '@/lib/tags';
 import {
     store as storeSubscriber,
     update as updateSubscriber,
@@ -254,7 +255,7 @@ export function SubscriberDialog({
                                 <FieldError>{form.errors.language}</FieldError>
                             </Field>
                         )}
-                        <Field data-invalid={Boolean(form.errors.tags)}>
+                        <Field data-invalid={Boolean(tagsError(form.errors))}>
                             <FieldLabel>Tags</FieldLabel>
                             <TagsCombobox
                                 value={form.data.tags}
@@ -262,9 +263,9 @@ export function SubscriberDialog({
                                 onValueChange={(next) =>
                                     form.setData('tags', next)
                                 }
-                                aria-invalid={Boolean(form.errors.tags)}
+                                aria-invalid={Boolean(tagsError(form.errors))}
                             />
-                            <FieldError>{form.errors.tags}</FieldError>
+                            <FieldError>{tagsError(form.errors)}</FieldError>
                         </Field>
                         {!subscriber && (
                             <Field

@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
+import { tagsError } from '@/lib/tags';
 import { bulkTags } from '@/routes/audiences/subscribers';
 import type { Tag } from '@/types/audiences';
 
@@ -80,15 +81,15 @@ export function BulkSubscriberTagsDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <Field data-invalid={Boolean(form.errors.tags)}>
+                <Field data-invalid={Boolean(tagsError(form.errors))}>
                     <FieldLabel>Tags</FieldLabel>
                     <TagsCombobox
                         value={form.data.tags}
                         availableTags={tags}
                         onValueChange={(next) => form.setData('tags', next)}
-                        aria-invalid={Boolean(form.errors.tags)}
+                        aria-invalid={Boolean(tagsError(form.errors))}
                     />
-                    <FieldError>{form.errors.tags}</FieldError>
+                    <FieldError>{tagsError(form.errors)}</FieldError>
                 </Field>
                 {idsError && (
                     <FieldError data-test="bulk-tags-ids-error">

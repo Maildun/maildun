@@ -63,7 +63,9 @@ class SaveContactRequest extends FormRequest
                 'string',
                 Rule::exists(Company::class, 'uuid')->where('team_id', $team->id),
             ],
-            'tags' => ['sometimes', 'array', 'max:20'],
+            // A contact already past the limit (from an import, bulk tags or
+            // an automation) can still be edited without dropping tags first.
+            'tags' => ['sometimes', 'array', 'max:'.max(20, $contact instanceof Contact ? $contact->tags()->count() : 0)],
             'tags.*' => ['string', 'max:50'],
         ];
 

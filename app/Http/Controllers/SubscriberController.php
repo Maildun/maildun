@@ -62,7 +62,10 @@ class SubscriberController extends Controller
             'subscribed_at' => now(),
         ]);
 
-        $addedTags = $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []));
+        // An existing contact keeps the tags it has in its other audiences.
+        $addedTags = $contact->wasRecentlyCreated
+            ? $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []))
+            : $manageContact->addTags($currentTeam, $contact, $request->validated('tags', []));
 
         if ($subscriber->status === SubscriberStatus::Unsubscribed) {
             Inertia::flash('toast', ['type' => 'warning', 'message' => __('This person unsubscribed from this audience before, so they were added back as unsubscribed. Resubscribe them only if they consented again.')]);
@@ -89,7 +92,9 @@ class SubscriberController extends Controller
             'contact_id' => $contact->id,
             ...($request->has('language') ? ['language' => $request->validated('language')] : []),
         ]);
-        $addedTags = $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []));
+        $addedTags = $request->has('tags')
+            ? $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []))
+            : [];
         $dispatchTaggedTriggers->handle($contact, $addedTags);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber updated.')]);
