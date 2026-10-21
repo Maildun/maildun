@@ -1,6 +1,8 @@
 <?php
 
 use App\Enums\ContactCompanyAssignmentMode;
+use App\Enums\TeamPermission;
+use App\Enums\TeamRole;
 use App\Http\Requests\SaveCompanyRequest;
 use App\Jobs\RelinkCompanyContacts;
 use App\Jobs\ResolveCompanyFavicon;
@@ -52,6 +54,25 @@ test('company contacts include the fields required by the shared hover card', fu
             ->where('audiences.0.uuid', $audience->uuid)
             ->where('tags.0.uuid', $tag->uuid));
 });
+
+test('company pages offer contact Edit only to roles that can edit contacts', function (array $permissions, bool $canManage, bool $canManageContacts) {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignCustomRole($team, $member, $permissions);
+    $company = Company::factory()->for($team)->create();
+
+    $this->actingAs($member)
+        ->get(route('companies.show', [$team, $company]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('companies/show')
+            ->where('canManage', $canManage)
+            ->where('canManageContacts', $canManageContacts));
+})->with([
+    'company managers' => [[TeamPermission::ManageCompany], true, false],
+    'contact managers' => [[TeamPermission::ManageContact], false, true],
+]);
 
 test('company contacts can be filtered by audience', function () {
     $user = User::factory()->create();

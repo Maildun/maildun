@@ -127,6 +127,7 @@ class CompanyController extends Controller
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'filters' => $filters,
             'canManage' => Gate::allows('update', $company),
+            'canManageContacts' => Gate::allows('create', [Contact::class, $currentTeam]),
         ]);
     }
 

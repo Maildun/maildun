@@ -65,6 +65,7 @@ type Props = {
     tags: Tag[];
     filters: CompanyContactFilters;
     canManage: boolean;
+    canManageContacts: boolean;
 };
 
 export default function CompanyShow({
@@ -74,6 +75,7 @@ export default function CompanyShow({
     tags,
     filters,
     canManage,
+    canManageContacts,
 }: Props) {
     const { currentTeam } = usePage().props;
     const [editOpen, setEditOpen] = useState(false);
@@ -269,7 +271,7 @@ export default function CompanyShow({
                                         teamSlug={currentTeam.slug}
                                         companies={companies}
                                         tags={tags}
-                                        canManage={canManage}
+                                        canManageContacts={canManageContacts}
                                     />
                                 ))}
                             </TableBody>
@@ -343,13 +345,13 @@ function CompanyContactRow({
     teamSlug,
     companies,
     tags,
-    canManage,
+    canManageContacts,
 }: {
     contact: CompanyContact;
     teamSlug: string;
     companies: CompanyOption[];
     tags: Tag[];
-    canManage: boolean;
+    canManageContacts: boolean;
 }) {
     const [hoverOpen, setHoverOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
@@ -373,8 +375,8 @@ function CompanyContactRow({
                 <ContactHoverCard
                     contact={contact}
                     href={href}
-                    canManage={canManage}
-                    onEdit={canManage ? openEdit : undefined}
+                    canManage={canManageContacts}
+                    onEdit={canManageContacts ? openEdit : undefined}
                     open={hoverOpen}
                     onOpenChange={(next) => {
                         if (editOpen) {
@@ -386,7 +388,7 @@ function CompanyContactRow({
                         setHoverOpen(next);
                     }}
                 />
-                {canManage && (
+                {canManageContacts && (
                     <ContactDialog
                         key={editGeneration}
                         teamSlug={teamSlug}
