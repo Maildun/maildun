@@ -38,7 +38,7 @@ test('company contacts use the shared contact hover card', function () {
         ->toContain('ContactHoverCard')
         ->toContain('data-test="company-contact-row"')
         ->toContain('showContact.url([teamSlug, contact.uuid])')
-        ->toContain('onEdit={canManage ? openEdit : undefined}')
+        ->toContain('onEdit={canManageContacts ? openEdit : undefined}')
         ->toContain('<ContactDialog')
         ->toContain('className="table-fixed"')
         ->toContain('className="max-w-80"');
