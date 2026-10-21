@@ -445,6 +445,7 @@ test('an outdated favicon lookup does not overwrite the favicon of the current f
 });
 
 test('favicon lookup falls back to the placeholder on a redirect without a location', function () {
+    config()->set('inertia.ssr.enabled', false);
     Http::preventStrayRequests();
     Http::fake([
         'www.google.com/s2/favicons*' => Http::response('', 302),
@@ -463,6 +464,7 @@ test('favicon lookup falls back to the placeholder on a redirect without a locat
 });
 
 test('company placeholder icons keep loading after the app key changes', function () {
+    config()->set('inertia.ssr.enabled', false);
     Http::preventStrayRequests();
     Http::fake([
         'www.google.com/s2/favicons*' => Http::response('', 404),
