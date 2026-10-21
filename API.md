@@ -153,6 +153,87 @@ Unsubscribe is idempotent. Repeating the request, or requesting an address that 
 }
 ```
 
+## Record a conversion
+
+```http
+POST /api/v1/conversions
+```
+
+Send a completed sales outcome, such as a booked meeting, a started trial, or a purchase, from your booking, billing, or CRM system. Maildun credits it to a [campaign series](#how-conversions-are-attributed) and shows it in the series report.
+
+```json
+{
+  "event_id": "booking_01J9Y8PGT2",
+  "event": "meeting_booked",
+  "email": "lead@example.com",
+  "occurred_at": "2026-09-14T08:30:00Z",
+  "value_minor": 250000,
+  "currency": "USD",
+  "campaign_series": "5b0e8f3c-3a5e-4f43-9d0e-6f1e2a7c9b10",
+  "metadata": {
+    "booking_id": "demo_1842"
+  }
+}
+```
+
+| Field | Required | Rules |
+| --- | --- | --- |
+| `event_id` | Yes | Your own ID for this event, up to 255 characters. Unique within the workspace. |
+| `event` | Yes | The event key: lowercase letters, numbers, and underscores, starting with a letter, up to 64 characters. It must match the conversion event configured on a series to be credited to it. |
+| `email` | Yes | The person who converted. Matched case-insensitively. |
+| `occurred_at` | No | ISO 8601 time of the conversion. Defaults to when Maildun receives it. May not be more than 5 minutes in the future. |
+| `value_minor` | No | A non-negative integer in the currency's minor unit, such as cents. Requires `currency`. |
+| `currency` | With `value_minor` | A three-letter ISO 4217 code. Values in different currencies are reported separately, never converted. |
+| `campaign_series` | No | A series UUID in your workspace. Restricts attribution to that series. |
+| `metadata` | No | Up to 20 string keys with string, number, boolean, or null values, at most 4096 bytes as JSON. |
+
+A new event returns `201 Created`:
+
+```json
+{
+  "data": {
+    "id": "0f9b6c2e-5d1a-4c7e-8f3b-2a9d4e6c1b70",
+    "event_id": "booking_01J9Y8PGT2",
+    "event": "meeting_booked",
+    "email": "lead@example.com",
+    "occurred_at": "2026-09-14T08:30:00.000000Z",
+    "received_at": "2026-09-14T08:30:02.000000Z",
+    "value_minor": 250000,
+    "currency": "USD",
+    "metadata": {
+      "booking_id": "demo_1842"
+    },
+    "attribution": {
+      "type": "click",
+      "model": "last_touch",
+      "campaign_series": "5b0e8f3c-3a5e-4f43-9d0e-6f1e2a7c9b10",
+      "campaign": "9c3a7d52-1f4b-4e8a-b6d0-3e5f7a9c2b41",
+      "delivery": "2d6e8a14-7b3c-4f5e-9a1d-0c8b6e4f2a37",
+      "touched_at": "2026-09-12T15:04:11.000000Z"
+    }
+  },
+  "meta": {
+    "idempotent_replay": false
+  }
+}
+```
+
+### Retries
+
+`event_id` makes the request idempotent within the workspace. Repeating it with identical data returns the stored event with `200 OK` and `"idempotent_replay": true`, and nothing is counted twice. Reusing it with different data returns `409 Conflict` with the code `idempotency_conflict`. If you omit `occurred_at`, retries still match, because the omitted field is compared rather than the time Maildun filled in.
+
+### How conversions are attributed
+
+A series takes part when its conversion event is set to the event's `event` key in the series settings. When the request names a `campaign_series`, only that series takes part, whatever its conversion event. Maildun decides the attribution once, when the event arrives, and stores it. Later changes to campaigns or series settings do not move it.
+
+1. Only campaigns sent to the person no later than the conversion, and within the series' attribution window before it (30 days unless the series sets another), are eligible. The window boundary is inclusive.
+2. **`click`**: the latest tracked link click before the conversion, across every eligible series, credits that campaign and its series. Opens never earn credit.
+3. **`assisted`**: without a click, the latest eligible delivery credits its series. The response names that delivery and its campaign for audit, but the campaign gets no credit.
+4. **`explicit`**: when `campaign_series` was sent and that series has no eligible touch, the event is credited to that series without a campaign.
+5. **`unattributed`**: otherwise the event is stored for audit and appears in no report.
+
+Validation failures return `422` with the code `validation_failed`. An unknown `campaign_series` and one that belongs to another workspace get the same error. Conversions are limited to 60 requests per minute per key, in addition to the general API limit.
+
 ## Trigger an automation
 
 ```http
