@@ -34,6 +34,7 @@ import {
     subscriberSourceLabel,
 } from '@/components/subscriber-hover-card';
 import { SubscriberStatsChart } from '@/components/subscriber-stats-chart';
+import { SubscriberStatusBadge } from '@/components/subscriber-status-badge';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -953,11 +954,10 @@ function SubscriberRow({
                 </div>
             </TableCell>
             <TableCell className="hidden sm:table-cell">
-                {subscriber.status === 'subscribed' ? (
-                    <Badge variant="success">Subscribed</Badge>
-                ) : (
-                    <Badge variant="secondary">Unsubscribed</Badge>
-                )}
+                <SubscriberStatusBadge
+                    status={subscriber.status}
+                    pendingConfirmation={subscriber.pending_confirmation}
+                />
             </TableCell>
             <TableCell className="hidden max-w-0 lg:table-cell">
                 {subscriber.tags.length > 0 ? (

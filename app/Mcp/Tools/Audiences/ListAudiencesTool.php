@@ -3,7 +3,6 @@
 namespace App\Mcp\Tools\Audiences;
 
 use App\Concerns\SearchesText;
-use App\Enums\SubscriberStatus;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
 use App\Models\Audience;
@@ -45,7 +44,7 @@ class ListAudiencesTool extends Tool
         $audiences = $team->audiences()
             ->withCount([
                 'subscribers',
-                'subscribers as subscribed_count' => fn ($query) => $query->where('status', SubscriberStatus::Subscribed),
+                'subscribers as subscribed_count' => fn ($query) => $query->optedIn(),
                 'segments',
             ])
             ->when($search !== '', function ($query) use ($search): void {

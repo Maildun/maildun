@@ -37,7 +37,7 @@ class AudienceController extends Controller
         $query = $team->audiences()
             ->withCount([
                 'subscribers',
-                'subscribers as subscribed_count' => fn ($query) => $query->where('status', SubscriberStatus::Subscribed),
+                'subscribers as subscribed_count' => fn ($query) => $query->optedIn(),
                 'segments',
                 'subscribeForms',
             ])
@@ -46,7 +46,7 @@ class AudienceController extends Controller
             })
             ->when($filters['filter'] === 'active', fn ($query) => $query->whereHas(
                 'subscribers',
-                fn ($subscribers) => $subscribers->where('status', SubscriberStatus::Subscribed),
+                fn ($subscribers) => $subscribers->optedIn(),
             ))
             ->when($filters['filter'] === 'empty', fn ($query) => $query->doesntHave('subscribers'))
             ->when($filters['filter'] === 'segments', fn ($query) => $query->has('segments'))
@@ -133,6 +133,7 @@ class AudienceController extends Controller
                     'color' => $tag->color,
                 ])->all()),
                 'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
+                'pending_confirmation' => $subscriber->isPendingConfirmation() || $subscriber->isPendingResubscription(),
             ]);
 
         $segments = $audience->segments()->withCount('subscribers')->latest()->get()->map(fn (Segment $segment) => [

@@ -109,6 +109,7 @@ export type ContactMembership = {
     language_name: string | null;
     can_manage: boolean;
     subscribed_at: string | null;
+    pending_confirmation: boolean;
     source_form: CompanyOption | null;
     unsubscribed_at: string | null;
     consent_text: string | null;

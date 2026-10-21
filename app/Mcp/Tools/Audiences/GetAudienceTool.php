@@ -2,7 +2,6 @@
 
 namespace App\Mcp\Tools\Audiences;
 
-use App\Enums\SubscriberStatus;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -33,7 +32,7 @@ class GetAudienceTool extends Tool
         $audience = $this->context->audience($request, $team);
         $audience->loadCount([
             'subscribers',
-            'subscribers as subscribed_count' => fn ($query) => $query->where('status', SubscriberStatus::Subscribed),
+            'subscribers as subscribed_count' => fn ($query) => $query->optedIn(),
             'segments',
         ]);
 

@@ -305,6 +305,40 @@ test('double opt-in cannot be left on without a usable confirmation email', func
         ->double_opt_in_email_id->toBe($current->id);
 })->with(['cleared', 'deleted']);
 
+test('unconfirmed double opt-in members count as pending, not subscribed', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    $onlyPending = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    Subscriber::factory()->for($audience)->pendingConfirmation()->count(2)->create();
+    $confirmed = Subscriber::factory()->for($audience)->create();
+    Subscriber::factory()->for($audience)->pendingResubscription()->create();
+    Subscriber::factory()->for($onlyPending)->pendingConfirmation()->create();
+
+    $this->actingAs($user)
+        ->get(route('audiences.show', [$team, $audience]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('subscriberStats.total.value', 4)
+            ->where('subscriberStats.subscribed.value', 1)
+            ->where('subscriberStats.unsubscribed.value', 1)
+            ->where('subscriberStats.pending.value', 2)
+            ->where('subscriberStats.subscribe_rate.value', 25)
+            ->where('subscribers.data', fn ($rows): bool => collect($rows)->mapWithKeys(
+                fn (array $row): array => [$row['uuid'] => $row['pending_confirmation']],
+            )->sortKeys()->all() === $audience->subscribers()->get()->mapWithKeys(
+                fn (Subscriber $subscriber): array => [$subscriber->uuid => ! $subscriber->is($confirmed)],
+            )->sortKeys()->all()));
+    $this->actingAs($user)
+        ->get(route('audiences.index', [$team, 'filter' => 'active']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('audiences.data', 1)
+            ->where('audiences.data.0.uuid', $audience->uuid)
+            ->where('audiences.data.0.subscribed_count', 1));
+    $this->actingAs($user)
+        ->get(route('audiences.edit', [$team, $audience]))
+        ->assertInertia(fn (Assert $page) => $page->where('stats.subscribed', 1));
+});
+
 test('empty audience subscriber stats are zeroed for the chart', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

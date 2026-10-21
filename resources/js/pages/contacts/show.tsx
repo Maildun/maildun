@@ -21,6 +21,7 @@ import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ContactDialog } from '@/components/contact-dialog';
+import { SubscriberStatusBadge } from '@/components/subscriber-status-badge';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -1045,17 +1046,10 @@ function MembershipPanel({
                 <span className="min-w-0 flex-1 truncate font-medium">
                     {membership.audience.name}
                 </span>
-                <Badge
-                    variant={
-                        membership.status === 'subscribed'
-                            ? 'success'
-                            : 'secondary'
-                    }
-                >
-                    {membership.status === 'subscribed'
-                        ? 'Subscribed'
-                        : 'Unsubscribed'}
-                </Badge>
+                <SubscriberStatusBadge
+                    status={membership.status}
+                    pendingConfirmation={membership.pending_confirmation}
+                />
                 <span
                     className="hidden shrink-0 text-muted-foreground sm:inline"
                     title={absoluteTime(membership.subscribed_at)}
@@ -1142,9 +1136,11 @@ function MembershipPanel({
                 >
                     <PropertyList>
                         <PropertyRow label="Status" className="px-3">
-                            {membership.status === 'subscribed'
-                                ? 'Subscribed'
-                                : 'Unsubscribed'}
+                            {membership.pending_confirmation
+                                ? 'Pending confirmation'
+                                : membership.status === 'subscribed'
+                                  ? 'Subscribed'
+                                  : 'Unsubscribed'}
                         </PropertyRow>
                         <PropertyRow label="Source" className="px-3">
                             <span className="capitalize">

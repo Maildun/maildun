@@ -12,6 +12,7 @@ import {
     SubscriberHoverCard,
     subscriberSourceLabel,
 } from '@/components/subscriber-hover-card';
+import { SubscriberStatusBadge } from '@/components/subscriber-status-badge';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -22,7 +23,6 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -225,15 +225,12 @@ export default function SegmentShow({
                                         />
                                     </TableCell>
                                     <TableCell>
-                                        {subscriber.status === 'subscribed' ? (
-                                            <Badge variant="success">
-                                                Subscribed
-                                            </Badge>
-                                        ) : (
-                                            <Badge variant="secondary">
-                                                Unsubscribed
-                                            </Badge>
-                                        )}
+                                        <SubscriberStatusBadge
+                                            status={subscriber.status}
+                                            pendingConfirmation={
+                                                subscriber.pending_confirmation
+                                            }
+                                        />
                                     </TableCell>
                                     <TableCell className="text-muted-foreground">
                                         {subscriberSourceLabel(subscriber)}

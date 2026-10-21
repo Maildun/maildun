@@ -223,6 +223,7 @@ export type AudienceSubscriberStats = {
     total: AudienceSubscriberMetric;
     subscribed: AudienceSubscriberMetric;
     unsubscribed: AudienceSubscriberMetric;
+    pending: AudienceSubscriberMetric;
     new_this_week: AudienceSubscriberMetric;
     subscribe_rate: AudienceSubscriberMetric;
     series: AudienceSubscriberSeriesPoint[];
@@ -247,6 +248,7 @@ export type Subscriber = {
     source_form: { uuid: string; name: string } | null;
     tags: Tag[];
     subscribed_at: string | null;
+    pending_confirmation: boolean;
 };
 
 export type SubscriberProfile = Subscriber & {

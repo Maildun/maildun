@@ -4,7 +4,6 @@ namespace App\Mcp\Tools\Audiences;
 
 use App\Enums\SubscribeFormFieldMode;
 use App\Enums\SubscriberLanguage;
-use App\Enums\SubscriberStatus;
 use App\Mcp\Support\AudienceLanguageSettings;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
@@ -85,7 +84,7 @@ class UpdateAudienceTool extends Tool
         $audience->refresh();
         $audience->loadCount([
             'subscribers',
-            'subscribers as subscribed_count' => fn ($query) => $query->where('status', SubscriberStatus::Subscribed),
+            'subscribers as subscribed_count' => fn ($query) => $query->optedIn(),
             'segments',
         ]);
 

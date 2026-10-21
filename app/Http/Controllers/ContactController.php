@@ -224,6 +224,7 @@ class ContactController extends Controller
                         'language_name' => $subscriber->language?->label(),
                         'can_manage' => Gate::allows('update', $subscriber),
                         'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
+                        'pending_confirmation' => $subscriber->isPendingConfirmation() || $subscriber->isPendingResubscription(),
                         'source_form' => $subscriber->subscribeForm ? [
                             'uuid' => $subscriber->subscribeForm->uuid,
                             'name' => $subscriber->subscribeForm->name,

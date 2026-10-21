@@ -2,6 +2,7 @@
 
 namespace App\Actions\Audiences;
 
+use App\Enums\SubscriberStatus;
 use App\Models\Audience;
 use Carbon\CarbonInterface;
 use Carbon\CarbonPeriod;
@@ -19,6 +20,7 @@ class BuildAudienceSubscriberStats
      *     total: array{value: int, change: float|null},
      *     subscribed: array{value: int, change: float|null},
      *     unsubscribed: array{value: int, change: float|null},
+     *     pending: array{value: int, change: float|null},
      *     new_this_week: array{value: int, change: float|null},
      *     subscribe_rate: array{value: float, change: float|null},
      *     series: list<array{
@@ -46,11 +48,13 @@ class BuildAudienceSubscriberStats
 
         $createdByDay = $this->countsByDay($audience, 'created_at', $lookbackStart);
         $unsubscribedByDay = $this->countsByDay($audience, 'unsubscribed_at', $lookbackStart);
+        $pendingByDay = $this->countsByDay($audience, 'created_at', $lookbackStart, pendingOnly: true);
 
         $baseline = $audience->subscribers()
             ->toBase()
             ->selectRaw('count(*) as total')
             ->selectRaw('count(case when unsubscribed_at is not null and unsubscribed_at < ? then 1 end) as unsubscribed', [$lookbackStart])
+            ->selectRaw('count(case when status = ? and subscribed_at is null then 1 end) as pending', [SubscriberStatus::Subscribed->value])
             ->where('created_at', '<', $lookbackStart)
             ->first();
 
@@ -59,8 +63,10 @@ class BuildAudienceSubscriberStats
             $today,
             $createdByDay,
             $unsubscribedByDay,
+            $pendingByDay,
             (int) ($baseline->total ?? 0),
             (int) ($baseline->unsubscribed ?? 0),
+            (int) ($baseline->pending ?? 0),
         );
 
         $currentDays = $daily->slice(-self::PERIOD_DAYS)->values();
@@ -70,6 +76,7 @@ class BuildAudienceSubscriberStats
             'total' => 0,
             'subscribed' => 0,
             'unsubscribed' => 0,
+            'pending' => 0,
             'new' => 0,
             'subscribe_rate' => 0.0,
         ];
@@ -86,6 +93,7 @@ class BuildAudienceSubscriberStats
             'total' => $this->metric((int) $todaySnapshot['total'], (int) $weekAgoSnapshot['total']),
             'subscribed' => $this->metric((int) $todaySnapshot['subscribed'], (int) $weekAgoSnapshot['subscribed']),
             'unsubscribed' => $this->metric((int) $todaySnapshot['unsubscribed'], (int) $weekAgoSnapshot['unsubscribed']),
+            'pending' => $this->metric((int) $todaySnapshot['pending'], (int) $weekAgoSnapshot['pending']),
             'new_this_week' => $this->metric($newThisWeek, $newPreviousWeek),
             'subscribe_rate' => $this->metric($todaySnapshot['subscribe_rate'], $weekAgoSnapshot['subscribe_rate']),
             'series' => array_values($currentDays->map(function (array $day, int $index) use ($previousDays): array {
@@ -115,16 +123,22 @@ class BuildAudienceSubscriberStats
     }
 
     /**
+     * Pass pendingOnly to count just the members still awaiting double opt-in
+     * confirmation. They are counted as pending from the day they joined.
+     *
      * @param  literal-string  $column
      * @return Collection<string, int>
      */
-    private function countsByDay(Audience $audience, string $column, CarbonInterface $since): Collection
+    private function countsByDay(Audience $audience, string $column, CarbonInterface $since, bool $pendingOnly = false): Collection
     {
         return $audience->subscribers()
             ->toBase()
             ->selectRaw("DATE({$column}) as day, count(*) as aggregate")
             ->whereNotNull($column)
             ->where($column, '>=', $since)
+            ->when($pendingOnly, fn ($query) => $query
+                ->where('status', SubscriberStatus::Subscribed)
+                ->whereNull('subscribed_at'))
             ->groupByRaw("DATE({$column})")
             ->get()
             ->mapWithKeys(fn (object $row): array => [
@@ -135,15 +149,18 @@ class BuildAudienceSubscriberStats
     /**
      * @param  Collection<string, int>  $createdByDay
      * @param  Collection<string, int>  $unsubscribedByDay
-     * @return Collection<int, array{date: string, total: int, subscribed: int, unsubscribed: int, new: int, subscribe_rate: float}>
+     * @param  Collection<string, int>  $pendingByDay
+     * @return Collection<int, array{date: string, total: int, subscribed: int, unsubscribed: int, pending: int, new: int, subscribe_rate: float}>
      */
     private function dailySnapshots(
         CarbonInterface $from,
         CarbonInterface $to,
         Collection $createdByDay,
         Collection $unsubscribedByDay,
+        Collection $pendingByDay,
         int $total,
         int $unsubscribed,
+        int $pending,
     ): Collection {
         $days = collect();
 
@@ -151,13 +168,15 @@ class BuildAudienceSubscriberStats
             $key = $date->toDateString();
             $total += $createdByDay->get($key, 0);
             $unsubscribed += $unsubscribedByDay->get($key, 0);
-            $subscribed = max($total - $unsubscribed, 0);
+            $pending += $pendingByDay->get($key, 0);
+            $subscribed = max($total - $unsubscribed - $pending, 0);
 
             $days->push([
                 'date' => $key,
                 'total' => $total,
                 'subscribed' => $subscribed,
                 'unsubscribed' => $unsubscribed,
+                'pending' => $pending,
                 'new' => $createdByDay->get($key, 0),
                 'subscribe_rate' => $total === 0
                     ? 0.0
@@ -169,7 +188,7 @@ class BuildAudienceSubscriberStats
     }
 
     /**
-     * @param  Collection<int, array{date: string, total: int, subscribed: int, unsubscribed: int, new: int, subscribe_rate: float}>  $daily
+     * @param  Collection<int, array{date: string, total: int, subscribed: int, unsubscribed: int, pending: int, new: int, subscribe_rate: float}>  $daily
      */
     private function sumNewBetween(Collection $daily, CarbonInterface $from, CarbonInterface $to): int
     {

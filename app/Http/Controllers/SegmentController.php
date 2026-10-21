@@ -68,6 +68,7 @@ class SegmentController extends Controller
                     'color' => $tag->color,
                 ])->all()),
                 'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
+                'pending_confirmation' => $subscriber->isPendingConfirmation() || $subscriber->isPendingResubscription(),
             ]);
 
         return Inertia::render('segments/show', [
