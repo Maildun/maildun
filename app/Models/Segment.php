@@ -28,6 +28,7 @@ use Illuminate\Support\Str;
  * @property Carbon|null $updated_at
  * @property-read Audience $audience
  * @property int $subscribers_count
+ * @property int $sendable_count
  * @property int $subscribed_count
  */
 #[Fillable(['audience_id', 'name', 'description', 'match_type', 'rules'])]

@@ -115,8 +115,10 @@ export default function SegmentShow({
                             </p>
                         )}
                         <p className="text-sm text-muted-foreground">
-                            {subscribers.total} subscribers match this dynamic
-                            segment.{' '}
+                            {subscribers.total.toLocaleString()} subscribers
+                            match this dynamic segment, and{' '}
+                            {(segment.sendable_count ?? 0).toLocaleString()} of
+                            them can be emailed.{' '}
                             {segment.rules_synced_at
                                 ? `Rules synced ${formatSyncedTime(segment.rules_synced_at)}.`
                                 : 'Rules have not synced yet.'}

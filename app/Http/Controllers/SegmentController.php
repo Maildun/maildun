@@ -85,6 +85,8 @@ class SegmentController extends Controller
                 'match_type' => $segment->match_type->value,
                 'rules' => $segment->rules,
                 'rules_synced_at' => $segment->rules_synced_at?->toISOString(),
+                // What a campaign to this segment would reach right now.
+                'sendable_count' => $segment->subscribers()->sendableFor($currentTeam)->count(),
             ],
             'subscribers' => $subscribers,
             'segmentRuleOptions' => $buildSegmentRuleOptions->handle($audience),

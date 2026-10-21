@@ -273,6 +273,8 @@ export type Segment = {
     rules: SegmentRule[];
     rules_synced_at?: string | null;
     subscribers_count?: number;
+    /** Members a campaign would reach: opted in and not suppressed. */
+    sendable_count?: number;
 };
 
 export type SubscribeFormSummary = {

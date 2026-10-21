@@ -146,13 +146,18 @@ class AudienceController extends Controller
                 'pending_confirmation' => $subscriber->isPendingConfirmation() || $subscriber->isPendingResubscription(),
             ]);
 
-        $segments = $audience->segments()->withCount('subscribers')->latest()->get()->map(fn (Segment $segment) => [
+        // Sendable matches what a campaign to the segment would reach.
+        $segments = $audience->segments()->withCount([
+            'subscribers',
+            'subscribers as sendable_count' => fn ($query) => $query->sendableFor($currentTeam),
+        ])->latest()->get()->map(fn (Segment $segment) => [
             'uuid' => $segment->uuid,
             'name' => $segment->name,
             'description' => $segment->description,
             'match_type' => $segment->match_type->value,
             'rules' => $segment->rules,
             'subscribers_count' => $segment->subscribers_count,
+            'sendable_count' => $segment->sendable_count,
         ]);
 
         $forms = $audience->subscribeForms()->withCount('subscribers')->latest()->get()->map(fn (SubscribeForm $form) => [

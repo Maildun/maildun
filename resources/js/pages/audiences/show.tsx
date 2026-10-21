@@ -1202,8 +1202,16 @@ function SegmentTable({
                             {segment.rules.length}
                         </TableCell>
                         <TableCell>
-                            <Badge variant="secondary">
-                                {segment.subscribers_count ?? 0} matching
+                            <Badge
+                                variant="secondary"
+                                title="Members a campaign to this segment would reach, out of everyone who matches"
+                            >
+                                {(segment.sendable_count ?? 0).toLocaleString()}{' '}
+                                of{' '}
+                                {(
+                                    segment.subscribers_count ?? 0
+                                ).toLocaleString()}{' '}
+                                sendable
                             </Badge>
                         </TableCell>
                         <TableCell className="text-right">
