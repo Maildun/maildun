@@ -371,6 +371,27 @@ test('cancelled imports stop processing and remove the uploaded file', function 
     Storage::disk('local')->assertMissing($contactImport->path);
 });
 
+test('cancelling an import while a chunk runs stops before the next row and keeps it cancelled', function () {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $contactImport = draftImport($team, "email\none@example.com\ntwo@example.com\nthree@example.com\n", [
+        'column_map' => ['email'],
+        'status' => ContactImportStatus::Pending,
+    ]);
+    Contact::created(function (Contact $contact) use ($user, $team, $contactImport): void {
+        if ($contact->email === 'one@example.com') {
+            $this->actingAs($user)->post(route('contacts.imports.cancel', [$team, $contactImport]));
+        }
+    });
+
+    runImport($contactImport);
+
+    expect($contactImport->status)->toBe(ContactImportStatus::Cancelled)
+        ->and($team->contacts()->pluck('email')->all())->toBe(['one@example.com']);
+    Storage::disk('local')->assertMissing($contactImport->path);
+});
+
 test('the import report downloads failed and flagged rows as a CSV', function () {
     Storage::fake('local');
     $user = User::factory()->create();

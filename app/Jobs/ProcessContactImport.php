@@ -84,6 +84,7 @@ class ProcessContactImport implements ShouldQueue
         }
 
         $completed = false;
+        $stopped = false;
 
         try {
             $headers = $csv->readRow($stream, $contactImport->delimiter);
@@ -106,6 +107,11 @@ class ProcessContactImport implements ShouldQueue
             $deadline = microtime(true) + 30;
 
             for ($rows = 0; $rows < self::CHUNK_SIZE && microtime(true) < $deadline; $rows++) {
+                if (! $this->isStillRunning($contactImport)) {
+                    $stopped = true;
+                    break;
+                }
+
                 $row = $csv->readRow($stream, $contactImport->delimiter);
 
                 if ($row === false) {
@@ -134,15 +140,15 @@ class ProcessContactImport implements ShouldQueue
             }
 
             if ($completed) {
-                $contactImport->update([
-                    'status' => ContactImportStatus::Completed,
-                    'total_rows' => $contactImport->processed_rows,
-                    'completed_at' => now(),
-                ]);
-                DB::table('contact_import_emails')->where('contact_import_id', $contactImport->id)->delete();
+                $completed = $this->markCompleted($contactImport);
+                $stopped = ! $completed;
             }
         } finally {
             fclose($stream);
+        }
+
+        if ($stopped) {
+            return;
         }
 
         if ($completed) {
@@ -172,6 +178,46 @@ class ProcessContactImport implements ShouldQueue
                 : 'The import could not be completed.',
             'completed_at' => now(),
         ]);
+    }
+
+    /**
+     * A cancel from the dashboard writes the status directly, so re-read it
+     * before every row instead of trusting the copy loaded with the chunk.
+     */
+    private function isStillRunning(ContactImport $contactImport): bool
+    {
+        $status = ContactImport::query()->whereKey($contactImport->id)->value('status');
+
+        return $status instanceof ContactImportStatus && $status->isRunning();
+    }
+
+    /**
+     * Complete the import only if nobody cancelled it meanwhile.
+     */
+    private function markCompleted(ContactImport $contactImport): bool
+    {
+        $completedAt = now();
+        $updated = ContactImport::query()
+            ->whereKey($contactImport->id)
+            ->whereIn('status', [ContactImportStatus::Pending, ContactImportStatus::Processing])
+            ->update([
+                'status' => ContactImportStatus::Completed,
+                'total_rows' => $contactImport->processed_rows,
+                'completed_at' => $completedAt,
+            ]);
+
+        if ($updated === 0) {
+            return false;
+        }
+
+        $contactImport->forceFill([
+            'status' => ContactImportStatus::Completed,
+            'total_rows' => $contactImport->processed_rows,
+            'completed_at' => $completedAt,
+        ])->syncOriginal();
+        DB::table('contact_import_emails')->where('contact_import_id', $contactImport->id)->delete();
+
+        return true;
     }
 
     /**
