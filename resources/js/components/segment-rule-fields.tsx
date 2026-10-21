@@ -34,7 +34,14 @@ import type {
 } from '@/types/audiences';
 
 const RULE_DATE_FORMAT = 'yyyy-MM-dd';
+const MAX_RULES = 10;
 const RULE_SELECT_TRIGGER_CLASSNAME = 'w-full border-none bg-muted';
+
+type SegmentRuleErrors = {
+    field?: string;
+    operator?: string;
+    value?: string;
+};
 
 export type SegmentFormData = {
     name: string;
@@ -58,11 +65,13 @@ export function SegmentRuleFields({
         key: K,
         value: SegmentFormData[K],
     ) => void;
-    errors?: { name?: string };
+    errors?: Partial<Record<string, string>>;
     forms: { uuid: string; name: string }[];
     languages: SubscriberLanguageOption[];
     disabled?: boolean;
 }) {
+    const canAddRule = data.rules.length < MAX_RULES;
+
     return (
         <FieldGroup>
             <Field data-invalid={Boolean(errors?.name)}>
@@ -77,7 +86,7 @@ export function SegmentRuleFields({
                 />
                 <FieldError>{errors?.name}</FieldError>
             </Field>
-            <Field>
+            <Field data-invalid={Boolean(errors?.description)}>
                 <FieldLabel htmlFor={`${idPrefix}-description`}>
                     Description
                 </FieldLabel>
@@ -89,9 +98,11 @@ export function SegmentRuleFields({
                     }
                     disabled={disabled}
                     placeholder="Who this segment is for, and why"
+                    aria-invalid={Boolean(errors?.description)}
                 />
+                <FieldError>{errors?.description}</FieldError>
             </Field>
-            <Field>
+            <Field data-invalid={Boolean(errors?.match_type)}>
                 <FieldLabel>Match</FieldLabel>
                 <Select
                     value={data.match_type}
@@ -102,7 +113,7 @@ export function SegmentRuleFields({
                     }}
                     disabled={disabled}
                 >
-                    <SelectTrigger>
+                    <SelectTrigger aria-invalid={Boolean(errors?.match_type)}>
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -116,12 +127,18 @@ export function SegmentRuleFields({
                         </SelectGroup>
                     </SelectContent>
                 </Select>
+                <FieldError>{errors?.match_type}</FieldError>
             </Field>
             <div className="flex flex-col gap-3">
                 {data.rules.map((rule, index) => (
                     <SegmentRuleRow
                         key={index}
                         rule={rule}
+                        errors={{
+                            field: errors?.[`rules.${index}.field`],
+                            operator: errors?.[`rules.${index}.operator`],
+                            value: errors?.[`rules.${index}.value`],
+                        }}
                         forms={forms}
                         languages={languages}
                         disabled={disabled}
@@ -144,10 +161,12 @@ export function SegmentRuleFields({
                         }
                     />
                 ))}
+                <FieldError>{errors?.rules}</FieldError>
                 {!disabled && (
                     <Button
                         type="button"
                         variant="outline"
+                        disabled={!canAddRule}
                         onClick={() =>
                             setData('rules', [
                                 ...data.rules,
@@ -159,7 +178,7 @@ export function SegmentRuleFields({
                             ])
                         }
                     >
-                        Add rule
+                        {canAddRule ? 'Add rule' : `Up to ${MAX_RULES} rules`}
                     </Button>
                 )}
             </div>
@@ -169,6 +188,7 @@ export function SegmentRuleFields({
 
 function SegmentRuleRow({
     rule,
+    errors,
     forms,
     languages,
     disabled,
@@ -177,6 +197,7 @@ function SegmentRuleRow({
     onRemove,
 }: {
     rule: SegmentRule;
+    errors: SegmentRuleErrors;
     forms: { uuid: string; name: string }[];
     languages: SubscriberLanguageOption[];
     disabled: boolean;
@@ -185,106 +206,119 @@ function SegmentRuleRow({
     onRemove: () => void;
 }) {
     const operators = useMemo(() => operatorsFor(rule.field), [rule.field]);
+    const ruleErrors = [errors.field, errors.operator, errors.value]
+        .filter((message): message is string => Boolean(message))
+        .map((message) => ({ message }));
 
     return (
-        <div className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
-            <Select
-                value={rule.field}
-                disabled={disabled}
-                onValueChange={(value) => {
-                    if (!value) {
-                        return;
-                    }
+        <Field data-invalid={ruleErrors.length > 0} className="gap-2">
+            <div className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
+                <Select
+                    value={rule.field}
+                    disabled={disabled}
+                    onValueChange={(value) => {
+                        if (!value) {
+                            return;
+                        }
 
-                    onChange({
-                        field: value,
-                        operator: operatorsFor(value)[0].value,
-                        value: defaultRuleValue(value, forms, languages),
-                    });
-                }}
-            >
-                <SelectTrigger
-                    aria-label="Rule field"
-                    className={RULE_SELECT_TRIGGER_CLASSNAME}
+                        onChange({
+                            field: value,
+                            operator: operatorsFor(value)[0].value,
+                            value: defaultRuleValue(value, forms, languages),
+                        });
+                    }}
                 >
-                    <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectGroup>
-                        <SelectItem value="email">Email</SelectItem>
-                        <SelectItem value="first_name">First name</SelectItem>
-                        <SelectItem value="last_name">Last name</SelectItem>
-                        <SelectItem value="status">Status</SelectItem>
-                        <SelectItem value="source">Source</SelectItem>
-                        <SelectItem value="subscribe_form">
-                            Subscribe form
-                        </SelectItem>
-                        <SelectItem value="subscribed_at">
-                            Subscribed date
-                        </SelectItem>
-                        <SelectItem value="language">Language</SelectItem>
-                    </SelectGroup>
-                </SelectContent>
-            </Select>
-            <Select
-                value={rule.operator}
-                disabled={disabled}
-                onValueChange={(value) => {
-                    if (value) {
-                        onChange({ ...rule, operator: value });
-                    }
-                }}
-            >
-                <SelectTrigger
-                    aria-label="Rule operator"
-                    className={RULE_SELECT_TRIGGER_CLASSNAME}
-                >
-                    <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectGroup>
-                        {operators.map((operator) => (
-                            <SelectItem
-                                key={operator.value}
-                                value={operator.value}
-                            >
-                                {operator.label}
+                    <SelectTrigger
+                        aria-label="Rule field"
+                        aria-invalid={Boolean(errors.field)}
+                        className={RULE_SELECT_TRIGGER_CLASSNAME}
+                    >
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectGroup>
+                            <SelectItem value="email">Email</SelectItem>
+                            <SelectItem value="first_name">
+                                First name
                             </SelectItem>
-                        ))}
-                    </SelectGroup>
-                </SelectContent>
-            </Select>
-            <RuleValue
-                rule={rule}
-                forms={forms}
-                languages={languages}
-                disabled={disabled}
-                onChange={(value) => onChange({ ...rule, value })}
-            />
-            {!disabled && (
-                <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    onClick={onRemove}
-                    disabled={!canRemove}
-                    aria-label="Remove rule"
+                            <SelectItem value="last_name">Last name</SelectItem>
+                            <SelectItem value="status">Status</SelectItem>
+                            <SelectItem value="source">Source</SelectItem>
+                            <SelectItem value="subscribe_form">
+                                Subscribe form
+                            </SelectItem>
+                            <SelectItem value="subscribed_at">
+                                Subscribed date
+                            </SelectItem>
+                            <SelectItem value="language">Language</SelectItem>
+                        </SelectGroup>
+                    </SelectContent>
+                </Select>
+                <Select
+                    value={rule.operator}
+                    disabled={disabled}
+                    onValueChange={(value) => {
+                        if (value) {
+                            onChange({ ...rule, operator: value });
+                        }
+                    }}
                 >
-                    <HugeiconsIcon icon={Delete02Icon} />
-                </Button>
-            )}
-        </div>
+                    <SelectTrigger
+                        aria-label="Rule operator"
+                        aria-invalid={Boolean(errors.operator)}
+                        className={RULE_SELECT_TRIGGER_CLASSNAME}
+                    >
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectGroup>
+                            {operators.map((operator) => (
+                                <SelectItem
+                                    key={operator.value}
+                                    value={operator.value}
+                                >
+                                    {operator.label}
+                                </SelectItem>
+                            ))}
+                        </SelectGroup>
+                    </SelectContent>
+                </Select>
+                <RuleValue
+                    rule={rule}
+                    invalid={Boolean(errors.value)}
+                    forms={forms}
+                    languages={languages}
+                    disabled={disabled}
+                    onChange={(value) => onChange({ ...rule, value })}
+                />
+                {!disabled && (
+                    <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        onClick={onRemove}
+                        disabled={!canRemove}
+                        aria-label="Remove rule"
+                    >
+                        <HugeiconsIcon icon={Delete02Icon} />
+                    </Button>
+                )}
+            </div>
+            <FieldError errors={ruleErrors} />
+        </Field>
     );
 }
 
 function RuleValue({
     rule,
+    invalid,
     forms,
     languages,
     disabled,
     onChange,
 }: {
     rule: SegmentRule;
+    invalid: boolean;
     forms: { uuid: string; name: string }[];
     languages: SubscriberLanguageOption[];
     disabled: boolean;
@@ -294,6 +328,7 @@ function RuleValue({
         return (
             <RuleSelect
                 value={rule.value}
+                invalid={invalid}
                 disabled={disabled}
                 onChange={onChange}
                 options={[
@@ -308,6 +343,7 @@ function RuleValue({
         return (
             <RuleSelect
                 value={rule.value}
+                invalid={invalid}
                 disabled={disabled}
                 onChange={onChange}
                 options={[
@@ -322,9 +358,15 @@ function RuleValue({
         return (
             <RuleSelect
                 value={rule.value}
+                invalid={invalid}
                 disabled={disabled}
                 onChange={onChange}
                 options={forms.map((form) => [form.uuid, form.name])}
+                placeholder={
+                    forms.length > 0
+                        ? 'Select value'
+                        : 'No subscribe forms in this audience'
+                }
             />
         );
     }
@@ -333,6 +375,7 @@ function RuleValue({
         return (
             <RuleSelect
                 value={rule.value}
+                invalid={invalid}
                 disabled={disabled}
                 onChange={onChange}
                 options={languages.map((language) => [
@@ -347,6 +390,7 @@ function RuleValue({
         return (
             <RuleDatePicker
                 value={rule.value}
+                invalid={invalid}
                 disabled={disabled}
                 onChange={onChange}
             />
@@ -361,16 +405,19 @@ function RuleValue({
             onChange={(event) => onChange(event.target.value)}
             placeholder="Value to match"
             aria-label="Rule value"
+            aria-invalid={invalid}
         />
     );
 }
 
 function RuleDatePicker({
     value,
+    invalid,
     disabled,
     onChange,
 }: {
     value: string;
+    invalid: boolean;
     disabled: boolean;
     onChange: (value: string) => void;
 }) {
@@ -388,6 +435,7 @@ function RuleDatePicker({
                         variant="outline"
                         disabled={disabled}
                         aria-label="Rule value"
+                        aria-invalid={invalid}
                         className={cn(
                             'w-full justify-start font-normal',
                             !isValidSelected && 'text-muted-foreground',
@@ -413,14 +461,18 @@ function RuleDatePicker({
 
 function RuleSelect({
     value,
+    invalid,
     disabled,
     onChange,
     options,
+    placeholder = 'Select value',
 }: {
     value: string;
+    invalid: boolean;
     disabled: boolean;
     onChange: (value: string) => void;
     options: string[][];
+    placeholder?: string;
 }) {
     return (
         <Select
@@ -434,9 +486,10 @@ function RuleSelect({
         >
             <SelectTrigger
                 aria-label="Rule value"
+                aria-invalid={invalid}
                 className={RULE_SELECT_TRIGGER_CLASSNAME}
             >
-                <SelectValue placeholder="Select value" />
+                <SelectValue placeholder={placeholder} />
             </SelectTrigger>
             <SelectContent>
                 <SelectGroup>

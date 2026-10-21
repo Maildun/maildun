@@ -511,6 +511,23 @@ test('a stored date rule in an older format still matches by its calendar day', 
     expect($matches)->toBe(['old@example.com']);
 });
 
+test('segment rule errors name the rule part instead of the input key', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('audiences.segments.store', [$team, $audience]), [
+            'name' => 'Empty value',
+            'match_type' => 'all',
+            'rules' => [
+                ['field' => 'status', 'operator' => 'equals', 'value' => 'subscribed'],
+                ['field' => 'email', 'operator' => 'contains', 'value' => ''],
+            ],
+        ])
+        ->assertInvalid(['rules.1.value' => 'The rule value field is required.']);
+});
+
 test('segment validation rejects unknown languages and text operators on language', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

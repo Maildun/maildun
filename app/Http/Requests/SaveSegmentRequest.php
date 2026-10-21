@@ -39,6 +39,16 @@ class SaveSegmentRequest extends FormRequest
         ];
     }
 
+    /** @return array<string, string> */
+    public function attributes(): array
+    {
+        return [
+            'rules.*.field' => 'rule field',
+            'rules.*.operator' => 'rule operator',
+            'rules.*.value' => 'rule value',
+        ];
+    }
+
     /** @return array<callable(Validator): void> */
     public function after(ValidateSegmentRules $validateSegmentRules): array
     {
