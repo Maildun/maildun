@@ -26,7 +26,9 @@ class PublicSubscribeRequest extends FormRequest
     {
         $subscribeForm = $this->route('subscribeForm');
 
-        abort_unless($subscribeForm instanceof SubscribeForm, 404);
+        // A draft form, or one from a deleted workspace, answers 404 before any
+        // field error can reveal its fields or attribute keys.
+        abort_unless($subscribeForm instanceof SubscribeForm && $subscribeForm->acceptsPublicSignups(), 404);
 
         $attributes = $subscribeForm->audience->audienceAttributes()
             ->orderBy('position')

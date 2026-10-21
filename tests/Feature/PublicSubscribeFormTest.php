@@ -777,6 +777,18 @@ test('public subscribe endpoints are unavailable after the workspace is deleted'
     expect(Subscriber::query()->where('email', 'person@example.com')->exists())->toBeFalse();
 });
 
+test('an unpublished form returns 404 before validating the submission', function () {
+    $audience = Audience::factory()->create();
+    AudienceAttribute::factory()->for($audience)->create(['key' => 'company', 'required' => true]);
+    $draft = SubscribeForm::factory()->for($audience)->create();
+
+    $this->postJson(route('public.subscribe_forms.store', $draft), ['email' => 'not-an-email'])
+        ->assertNotFound()
+        ->assertJsonMissingPath('errors');
+
+    expect($audience->subscribers()->exists())->toBeFalse();
+});
+
 test('public subscribe submissions are throttled per form and email', function () {
     $subscribeForm = SubscribeForm::factory()->published()->create();
     $payload = [
