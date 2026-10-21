@@ -157,7 +157,7 @@ test('owners can delete a segment no active campaign targets', function () {
     expect(Segment::query()->whereKey($segment->id)->exists())->toBeFalse();
 });
 
-test('segments targeted by a sending or scheduled campaign cannot be deleted', function (array $campaignAttributes) {
+test('segments targeted by an unsent campaign cannot be deleted', function (array $campaignAttributes) {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $audience = Audience::factory()->for($team)->create();
@@ -173,12 +173,13 @@ test('segments targeted by a sending or scheduled campaign cannot be deleted', f
         ->from(route('audiences.segments.show', [$team, $audience, $segment]))
         ->delete(route('audiences.segments.destroy', [$team, $audience, $segment]))
         ->assertRedirect(route('audiences.segments.show', [$team, $audience, $segment]))
-        ->assertSessionHasErrors(['segment' => 'This segment is used by scheduled or sending campaigns: Launch.']);
+        ->assertSessionHasErrors(['segment' => 'This segment is used by campaigns that have not been sent yet: Launch.']);
 
     expect(Segment::query()->whereKey($segment->id)->exists())->toBeTrue();
 })->with([
     'sending' => [['status' => EmailStatus::Sending]],
     'scheduled' => [['status' => EmailStatus::Draft, 'scheduled_at' => now()->addDay()]],
+    'unscheduled draft' => [['status' => EmailStatus::Draft, 'scheduled_at' => null]],
 ]);
 
 test('creating a segment immediately syncs matching subscribers', function () {

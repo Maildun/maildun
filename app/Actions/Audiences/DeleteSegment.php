@@ -11,13 +11,13 @@ use Illuminate\Validation\ValidationException;
 class DeleteSegment
 {
     /**
-     * Delete the segment unless a scheduled or sending campaign still targets it.
+     * Delete the segment unless a draft or sending campaign still targets it.
      *
      * A campaign reads its segment while it loads recipients, and emails.segment_id
-     * is nulled on delete, so removing it mid-send or before a scheduled send would
-     * widen the send to the whole audience. Every campaign row that references the
-     * segment stays locked from the check to the delete, so scheduling or starting
-     * one of them in the meantime waits and is then seen by the check.
+     * is nulled on delete, so removing it mid-send or before any draft is sent
+     * would widen that send to the whole audience. Every campaign row that
+     * references the segment stays locked from the check to the delete, so
+     * starting one of them in the meantime waits and is then seen by the check.
      *
      * @throws ValidationException
      */
@@ -29,14 +29,14 @@ class DeleteSegment
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->get(['id', 'name', 'status', 'scheduled_at'])
-                ->filter(fn (Email $email): bool => $email->status->isActive()
-                    || ($email->status === EmailStatus::Draft && $email->scheduled_at !== null))
+                ->filter(fn (Email $email): bool => $email->status === EmailStatus::Draft
+                    || $email->status->isActive())
                 ->sortBy('name')
                 ->pluck('name');
 
             if ($campaigns->isNotEmpty()) {
                 throw ValidationException::withMessages([
-                    $errorKey => __('This segment is used by scheduled or sending campaigns: :campaigns.', [
+                    $errorKey => __('This segment is used by campaigns that have not been sent yet: :campaigns.', [
                         'campaigns' => $campaigns->join(', '),
                     ]),
                 ]);

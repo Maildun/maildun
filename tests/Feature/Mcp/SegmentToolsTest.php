@@ -91,7 +91,7 @@ test('rejects an operator that does not fit the rule field', function () {
     expect($audience->segments()->exists())->toBeFalse();
 });
 
-test('refuses to delete a segment a sending or scheduled campaign targets', function (array $campaignAttributes) {
+test('refuses to delete a segment an unsent campaign targets', function (array $campaignAttributes) {
     $team = Team::factory()->create();
     $audience = Audience::factory()->for($team)->create();
     $segment = Segment::factory()->for($audience)->create(['name' => 'Customers']);
@@ -106,7 +106,7 @@ test('refuses to delete a segment a sending or scheduled campaign targets', func
         'workspace' => $team->slug,
         'uuid' => $segment->uuid,
         'confirm_name' => 'Customers',
-    ])->assertHasErrors(['used by scheduled or sending campaigns: Launch']);
+    ])->assertHasErrors(['used by campaigns that have not been sent yet: Launch']);
 
     expect(Segment::query()->whereKey($segment->id)->exists())->toBeTrue();
 })->with([

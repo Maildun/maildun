@@ -18,7 +18,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('Permanently deletes a segment after its exact name is supplied as confirmation. Subscribers are kept. Refused while a scheduled or sending campaign targets the segment.')]
+#[Description('Permanently deletes a segment after its exact name is supplied as confirmation. Subscribers are kept. Refused while a draft, scheduled or sending campaign targets the segment.')]
 #[IsDestructive]
 #[IsOpenWorld(false)]
 #[IsReadOnly(false)]
