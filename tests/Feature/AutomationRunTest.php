@@ -418,6 +418,65 @@ test('an unsubscribed subscriber skips the send but keeps walking the graph', fu
         ->and($run->steps()->where('node_id', 'send')->value('result'))->toBe(['reason' => 'unsubscribed']);
 });
 
+test('a subscriber who never confirmed double opt-in skips an automation email', function () {
+    Mail::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->create();
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    $pending = Subscriber::factory()->for($audience)->pendingConfirmation()->create();
+    $email = TransactionalEmail::factory()->for($team)->create();
+    $tag = Tag::factory()->for($team)->create(['name' => 'VIP']);
+    $automation = Automation::factory()->for($team)->active()->triggeredBy(AutomationTrigger::Tagged)->create();
+    $graph = $automation->graph;
+    $graph['nodes'][] = ['id' => 'send', 'type' => 'action', 'position' => ['x' => 0, 'y' => 100], 'data' => [
+        'kind' => AutomationAction::SendEmail->value,
+        'transactional_email_uuid' => $email->uuid,
+    ]];
+    $graph['edges'][] = ['id' => 'e1', 'source' => $graph['nodes'][0]['id'], 'target' => 'send'];
+    $automation->update([
+        'graph' => $graph,
+        'trigger_config' => ['audience_uuid' => null, 'tag_uuid' => $tag->uuid],
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-tags', [$team, $audience]), [
+            'ids' => [$pending->uuid],
+            'action' => 'add',
+            'tags' => ['VIP'],
+        ])
+        ->assertRedirect();
+
+    $run = $automation->runs()->where('subscriber_id', $pending->id)->sole();
+
+    app(AdvanceAutomationRun::class)->handle($run->refresh(), 'send');
+
+    Mail::assertNothingSent();
+    expect($run->steps()->where('node_id', 'send')->value('status'))->toBe('skipped')
+        ->and($run->steps()->where('node_id', 'send')->value('result'))->toBe(['reason' => 'unconfirmed'])
+        ->and(AutomationEmailDelivery::query()->count())->toBe(0);
+});
+
+test('the is subscribed condition takes the false branch for a subscriber who never confirmed', function () {
+    $automation = Automation::factory()->active()->create();
+    $subscriber = Subscriber::factory()
+        ->for(Audience::factory()->for($automation->team)->state(['double_opt_in' => true]))
+        ->pendingConfirmation()
+        ->create();
+
+    $run = automationRun(
+        nodes: [['id' => 'check', 'type' => 'condition', 'data' => ['kind' => AutomationCondition::IsSubscribed->value]]],
+        edges: [['source' => 'trigger', 'target' => 'check']],
+        subscriber: $subscriber,
+        automation: $automation,
+    );
+
+    app(AdvanceAutomationRun::class)->handle($run);
+
+    expect($run->steps()->where('node_id', 'check')->value('result'))->toBe(['matched' => false]);
+});
+
 test('a suppressed subscriber skips an automation email', function () {
     Mail::fake();
 

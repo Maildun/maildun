@@ -452,6 +452,7 @@ class AutomationController extends Controller
         if (is_string($result['reason'] ?? null)) {
             return match ($result['reason']) {
                 'unsubscribed' => __('Skipped: the recipient had unsubscribed'),
+                'unconfirmed' => __('Skipped: the recipient has not confirmed their subscription'),
                 'already_attempted' => __('Skipped: this step was already attempted'),
                 default => $result['reason'],
             };

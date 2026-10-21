@@ -15,7 +15,6 @@ use App\Enums\AutomationStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
-use App\Enums\SubscriberStatus;
 use App\Jobs\ProcessAutomationRun;
 use App\Jobs\SendAutomationEmailDelivery;
 use App\Mail\AutomationEmail;
@@ -210,10 +209,10 @@ class AdvanceAutomationRun
      */
     public function sendableEmail(AutomationRun $run, Subscriber $subscriber, ?TransactionalEmail $email): TransactionalEmail|array
     {
-        if ($subscriber->status !== SubscriberStatus::Subscribed) {
+        if (! $subscriber->isOptedIn()) {
             return [
                 'status' => 'skipped',
-                'result' => ['reason' => 'unsubscribed'],
+                'result' => ['reason' => $subscriber->isPendingConfirmation() ? 'unconfirmed' : 'unsubscribed'],
                 'handle' => null,
             ];
         }
@@ -445,7 +444,7 @@ class AdvanceAutomationRun
             AutomationCondition::HasTag => $subscriber->tags->contains(
                 fn (Tag $tag): bool => $tag->uuid === ($data['tag_uuid'] ?? null),
             ),
-            AutomationCondition::IsSubscribed => $subscriber->status === SubscriberStatus::Subscribed,
+            AutomationCondition::IsSubscribed => $subscriber->isOptedIn(),
             AutomationCondition::Source => $subscriber->source === SubscriberSource::tryFrom(
                 (string) ($data['source'] ?? ''),
             ),
