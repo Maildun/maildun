@@ -48,6 +48,7 @@ class SegmentController extends Controller
         $subscribers = $segment->subscribers()
             ->with(['subscribeForm:id,uuid,name,deleted_at', 'tags:id,uuid,name,color'])
             ->orderByDesc('subscribers.created_at')
+            ->orderByDesc('subscribers.id')
             ->paginate(20)
             ->through(fn (Subscriber $subscriber) => [
                 'uuid' => $subscriber->uuid,

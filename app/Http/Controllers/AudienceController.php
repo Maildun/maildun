@@ -115,6 +115,7 @@ class AudienceController extends Controller
             ->when($filters['source'] !== 'all', fn ($query) => $query->where('source', $filters['source']))
             ->when($filters['language'] !== 'all', fn ($query) => $query->where('language', $filters['language']))
             ->latest()
+            ->orderByDesc('subscribers.id')
             ->paginate(20)
             ->withQueryString()
             ->through(fn (Subscriber $subscriber) => [
@@ -167,7 +168,7 @@ class AudienceController extends Controller
         return Inertia::render('audiences/show', [
             'audience' => $this->audiencePayload($audience),
             'subscribers' => $subscribers,
-            'companies' => $currentTeam->companies()->orderBy('name')->get(['uuid', 'name']),
+            'companies' => $currentTeam->companies()->alphabetical()->get(['uuid', 'name']),
             'tags' => $tags,
             'subscriberStats' => $buildSubscriberStats->handle($audience),
             'segments' => $segments,

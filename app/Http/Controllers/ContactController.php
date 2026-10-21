@@ -43,7 +43,7 @@ class ContactController extends Controller
     use ReadsQueryFilters;
     use SearchesText;
 
-    public function index(Request $request, Team $currentTeam): Response
+    public function index(Request $request, Team $currentTeam): Response|RedirectResponse
     {
         Gate::authorize('viewAny', [Contact::class, $currentTeam]);
         $filters = $this->indexFilters($request, $currentTeam);
@@ -71,13 +71,19 @@ class ContactController extends Controller
 
         $contacts = match ($filters['sort']) {
             'oldest' => $contacts->oldest('created_at')->orderBy('id'),
-            'name' => $contacts->orderBy('last_name')->orderBy('first_name')->orderBy('id'),
+            'name' => $contacts->orderByName(),
             default => $contacts->latest()->orderByDesc('id'),
         };
+        $contacts = $contacts->paginate(20)->withQueryString();
+
+        // A bulk delete or a filter change can leave the page past the end.
+        if ($contacts->isEmpty() && $contacts->currentPage() > 1) {
+            return redirect($contacts->url($contacts->lastPage()));
+        }
 
         return Inertia::render('contacts/index', [
-            'contacts' => $contacts->paginate(20)->withQueryString()->through(fn (Contact $contact): array => $this->summary($contact)),
-            'companies' => $currentTeam->companies()->orderBy('name')->get(['uuid', 'name']),
+            'contacts' => $contacts->through(fn (Contact $contact): array => $this->summary($contact)),
+            'companies' => $currentTeam->companies()->alphabetical()->get(['uuid', 'name']),
             'audiences' => $currentTeam->audiences()->orderBy('name')->get(['uuid', 'name']),
             'addableAudiences' => $this->addableAudiences($currentTeam),
             'canAddToAudiences' => Gate::allows('create', [Audience::class, $currentTeam]),
@@ -319,7 +325,7 @@ class ContactController extends Controller
                     ],
                 ])->all(),
             'selectedAudienceUuid' => $selectedAudienceUuid,
-            'companies' => $currentTeam->companies()->orderBy('name')->get(['uuid', 'name']),
+            'companies' => $currentTeam->companies()->alphabetical()->get(['uuid', 'name']),
             'audiences' => $this->addableAudiences($currentTeam),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'canManage' => Gate::allows('update', $contact),

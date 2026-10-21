@@ -20,6 +20,7 @@ use App\Models\Team;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -63,11 +64,19 @@ class ContactExportController extends Controller
                 fn (Builder $subscriberQuery) => $subscriberQuery->where('language', $filters['language']),
             ));
 
+        // Follow the list's sort. Name order is not unique per row, so it
+        // pages by offset with the id as the tiebreaker instead of by id.
+        $contacts = match ($filters['sort']) {
+            'oldest' => $query->lazyById(500),
+            'name' => $query->orderByName()->lazy(500),
+            default => $query->lazyByIdDesc(500),
+        };
+
         return $this->download(
             $format,
             'contacts-'.now()->format('Y-m-d'),
             ['Email', 'First name', 'Last name', 'Company', 'Tags', 'Audiences', 'Languages', 'Created at'],
-            $query,
+            $contacts,
             fn (Contact $contact): array => [
                 $contact->email,
                 $contact->first_name,
@@ -117,7 +126,7 @@ class ContactExportController extends Controller
                 'Unsubscribed at', 'Consent text', 'Consented at', 'Consent IP',
                 ...$attributeKeys,
             ],
-            $query,
+            $query->lazyById(500),
             fn (Subscriber $subscriber): array => [
                 $subscriber->email,
                 $subscriber->first_name,
@@ -160,7 +169,7 @@ class ContactExportController extends Controller
             $format,
             (Str::slug($email->name) ?: 'campaign').'-recipients-'.now()->format('Y-m-d'),
             ['Email', 'First name', 'Last name', 'Status', 'Failure', 'Opens', 'Clicks', 'Sent at', 'Delivered at'],
-            $query,
+            $query->lazyById(500),
             fn (EmailDelivery $delivery): array => [
                 $delivery->email_address,
                 $delivery->first_name,
@@ -179,20 +188,20 @@ class ContactExportController extends Controller
      * @template TModel of Contact|Subscriber|EmailDelivery
      *
      * @param  list<string>  $headers
-     * @param  Builder<TModel>  $query
+     * @param  LazyCollection<int, TModel>  $models
      * @param  callable(TModel): list<string|null>  $row
      */
     private function download(
         string $format,
         string $filename,
         array $headers,
-        Builder $query,
+        LazyCollection $models,
         callable $row,
     ): StreamedResponse {
         abort_unless(in_array($format, ['csv', 'xls'], true), 404);
 
         if ($format === 'csv') {
-            return response()->streamDownload(function () use ($headers, $query, $row): void {
+            return response()->streamDownload(function () use ($headers, $models, $row): void {
                 $output = fopen('php://output', 'wb');
 
                 if ($output === false) {
@@ -202,7 +211,7 @@ class ContactExportController extends Controller
                 fwrite($output, "\xEF\xBB\xBF");
                 fputcsv($output, $this->sanitizeCsvRow($headers), ',', '"', '');
 
-                foreach ($query->lazyById(500) as $model) {
+                foreach ($models as $model) {
                     fputcsv($output, $this->sanitizeCsvRow($row($model)), ',', '"', '');
                 }
 
@@ -212,13 +221,13 @@ class ContactExportController extends Controller
             ]);
         }
 
-        return response()->streamDownload(function () use ($headers, $query, $row): void {
+        return response()->streamDownload(function () use ($headers, $models, $row): void {
             echo '<?xml version="1.0" encoding="UTF-8"?>';
             echo '<?mso-application progid="Excel.Sheet"?>';
             echo '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Contacts"><Table>';
             $this->writeSpreadsheetRow($headers);
 
-            foreach ($query->lazyById(500) as $model) {
+            foreach ($models as $model) {
                 $this->writeSpreadsheetRow($row($model));
             }
 
@@ -265,12 +274,13 @@ class ContactExportController extends Controller
         };
     }
 
-    /** @return array{search: string, company: string, audience: string, language: string} */
+    /** @return array{search: string, company: string, audience: string, language: string, sort: string} */
     private function contactFilters(Request $request, Team $team): array
     {
         $company = $this->queryFilter($request, 'company');
         $company = Str::isUuid($company) && ! $team->companies()->where('uuid', $company)->exists() ? '' : $company;
         $audience = $this->queryFilter($request, 'audience');
+        $sort = $this->queryFilter($request, 'sort');
 
         return [
             'search' => $this->queryFilter($request, 'search'),
@@ -279,6 +289,7 @@ class ContactExportController extends Controller
                 : '',
             'audience' => Str::isUuid($audience) ? $audience : '',
             'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))->value ?? '',
+            'sort' => in_array($sort, ['oldest', 'name'], true) ? $sort : 'newest',
         ];
     }
 

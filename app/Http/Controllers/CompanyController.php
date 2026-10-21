@@ -40,7 +40,7 @@ class CompanyController extends Controller
         $companies = match ($filters['sort']) {
             'oldest' => $companies->oldest('created_at')->orderBy('id'),
             'name' => $companies->orderBy('normalized_name')->orderBy('id'),
-            'contacts' => $companies->orderByDesc('contacts_count')->latest(),
+            'contacts' => $companies->orderByDesc('contacts_count')->latest()->orderByDesc('id'),
             default => $companies->latest()->orderByDesc('id'),
         };
 
@@ -61,31 +61,37 @@ class CompanyController extends Controller
         return to_route('companies.show', [$currentTeam, $company]);
     }
 
-    public function show(Request $request, Team $currentTeam, Company $company): Response
+    public function show(Request $request, Team $currentTeam, Company $company): Response|RedirectResponse
     {
         Gate::authorize('view', $company);
         $filters = $this->showFilters($request);
 
+        $contacts = $company->contacts()
+            ->with([
+                'tags:id,uuid,name,color',
+                'subscribers.audience:id,uuid,name',
+            ])
+            ->withCount('subscribers')
+            ->when($filters['search'] !== '', function ($query) use ($filters): void {
+                $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $filters['search']);
+            })
+            ->when($filters['audience'] !== '', fn ($query) => $query->whereHas(
+                'subscribers.audience',
+                fn ($audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
+            ))
+            ->orderByName()
+            ->paginate(20)
+            ->withQueryString();
+
+        // Contacts can move to another company, leaving the page past the end.
+        if ($contacts->isEmpty() && $contacts->currentPage() > 1) {
+            return redirect($contacts->url($contacts->lastPage()));
+        }
+
         return Inertia::render('companies/show', [
             'company' => [
                 ...$this->payload($company->load('domains')),
-                'contacts' => $company->contacts()
-                    ->with([
-                        'tags:id,uuid,name,color',
-                        'subscribers.audience:id,uuid,name',
-                    ])
-                    ->withCount('subscribers')
-                    ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                        $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $filters['search']);
-                    })
-                    ->when($filters['audience'] !== '', fn ($query) => $query->whereHas(
-                        'subscribers.audience',
-                        fn ($audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
-                    ))
-                    ->orderBy('last_name')
-                    ->orderBy('first_name')
-                    ->paginate(20)
-                    ->withQueryString()
+                'contacts' => $contacts
                     ->through(fn (Contact $contact): array => [
                         'uuid' => $contact->uuid,
                         'email' => $contact->email,
@@ -113,7 +119,7 @@ class CompanyController extends Controller
                         'created_at' => $contact->created_at?->toISOString(),
                     ]),
             ],
-            'companies' => $currentTeam->companies()->orderBy('name')->get(['uuid', 'name']),
+            'companies' => $currentTeam->companies()->alphabetical()->get(['uuid', 'name']),
             'audiences' => $currentTeam->audiences()->orderBy('name')->get(['uuid', 'name']),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'filters' => $filters,

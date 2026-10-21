@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Services\DiceBearAvatarGenerator;
 use Database\Factories\CompanyFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -57,6 +58,16 @@ class Company extends Model
     public function contacts(): HasMany
     {
         return $this->hasMany(Contact::class);
+    }
+
+    /**
+     * Alphabetical regardless of capitalisation, with the id breaking ties.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeAlphabetical(Builder $query): void
+    {
+        $query->orderBy('companies.normalized_name')->orderBy('companies.id');
     }
 
     /** @return Attribute<string, string> */
