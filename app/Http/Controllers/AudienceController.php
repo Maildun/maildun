@@ -109,7 +109,7 @@ class AudienceController extends Controller
         $subscribers = $audience->subscribers()
             ->with(['subscribeForm:id,uuid,name,deleted_at', 'tags:id,uuid,name,color'])
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $filters['search']);
+                $this->wherePersonContains($query, $filters['search']);
             })
             ->when($filters['status'] !== 'all', fn ($query) => $query->where('status', $filters['status']))
             ->when($filters['source'] !== 'all', fn ($query) => $query->where('source', $filters['source']))
@@ -168,7 +168,8 @@ class AudienceController extends Controller
         return Inertia::render('audiences/show', [
             'audience' => $this->audiencePayload($audience),
             'subscribers' => $subscribers,
-            'companies' => $currentTeam->companies()->alphabetical()->get(['uuid', 'name']),
+            // Only the contact dialog needs these; it loads them when it opens.
+            'companies' => Inertia::optional(fn () => $currentTeam->companies()->alphabetical()->get(['uuid', 'name'])),
             'tags' => $tags,
             'subscriberStats' => $buildSubscriberStats->handle($audience),
             'segments' => $segments,

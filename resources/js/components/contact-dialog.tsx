@@ -1,7 +1,7 @@
 import { Add01Icon, ArrowLeft01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Link, useForm, useHttp } from '@inertiajs/react';
-import { useState } from 'react';
+import { Link, router, useForm, useHttp } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
 import { TagsCombobox } from '@/components/tags-combobox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -56,7 +56,11 @@ type ContactFormData = {
 
 type ContactDialogProps = {
     teamSlug: string;
-    companies: CompanyOption[];
+    /**
+     * Undefined while the page has not loaded its optional `companies` prop;
+     * the dialog reloads it when it opens.
+     */
+    companies?: CompanyOption[];
     tags: Tag[];
     audiences?: CompanyOption[];
     lacksAudienceAccess?: boolean;
@@ -68,7 +72,7 @@ type ContactDialogProps = {
 
 export function ContactDialog({
     teamSlug,
-    companies,
+    companies: loadedCompanies,
     tags,
     audiences = [],
     lacksAudienceAccess = false,
@@ -77,6 +81,15 @@ export function ContactDialog({
     open,
     onOpenChange,
 }: ContactDialogProps) {
+    const companiesLoading = loadedCompanies === undefined;
+    const companies = loadedCompanies ?? [];
+
+    useEffect(() => {
+        if (open && companiesLoading) {
+            router.reload({ only: ['companies'] });
+        }
+    }, [open, companiesLoading]);
+
     const [step, setStep] = useState<'email' | 'details'>(
         contact ? 'details' : 'email',
     );
@@ -402,6 +415,7 @@ export function ContactDialog({
                                 <NewContactFields
                                     form={form}
                                     companies={companies}
+                                    companiesLoading={companiesLoading}
                                     tags={tags}
                                     contactUuid={contact?.uuid}
                                 />
@@ -563,7 +577,8 @@ export function ContactDialog({
                                 type="submit"
                                 disabled={
                                     form.processing ||
-                                    cannotSubmitExistingContact
+                                    cannotSubmitExistingContact ||
+                                    companiesLoading
                                 }
                             >
                                 {form.processing ? (
@@ -590,11 +605,13 @@ function knownCompanyUuid(companies: CompanyOption[], uuid: string): string {
 function NewContactFields({
     form,
     companies,
+    companiesLoading,
     tags,
     contactUuid,
 }: {
     form: ReturnType<typeof useForm<ContactFormData>>;
     companies: CompanyOption[];
+    companiesLoading: boolean;
     tags: Tag[];
     contactUuid?: string;
 }) {
@@ -696,6 +713,7 @@ function NewContactFields({
                         Company
                     </FieldLabel>
                     <Select
+                        disabled={companiesLoading}
                         value={
                             knownCompanyUuid(
                                 companies,
@@ -713,7 +731,13 @@ function NewContactFields({
                             id={`contact-company-${suffix}`}
                             className="w-full"
                         >
-                            <SelectValue placeholder="No company" />
+                            <SelectValue
+                                placeholder={
+                                    companiesLoading
+                                        ? 'Loading companies…'
+                                        : 'No company'
+                                }
+                            />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectGroup>

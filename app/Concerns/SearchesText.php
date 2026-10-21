@@ -36,6 +36,24 @@ trait SearchesText
     }
 
     /**
+     * Matches people (contacts or subscribers) by email, either name, or the
+     * full "first last" name.
+     *
+     * @template TModel of Model
+     *
+     * @param  Builder<TModel>  $query
+     * @return Builder<TModel>
+     */
+    protected function wherePersonContains(Builder $query, string $term): Builder
+    {
+        return $this->whereAnyColumnContains(
+            $query,
+            ['email', 'first_name', 'last_name', "first_name || ' ' || last_name"],
+            $term,
+        );
+    }
+
+    /**
      * The lowercased LIKE pattern for a term, for use with "LIKE ? ESCAPE '!'".
      */
     protected function containsPattern(string $term): string

@@ -141,7 +141,7 @@ type Props = {
     segmentRuleOptions: SegmentRuleOptions;
     languages: SubscriberLanguageOption[];
     subscriberLanguages: SubscriberLanguageOption[];
-    companies: CompanyOption[];
+    companies?: CompanyOption[];
     tags: Tag[];
     filters: SubscriberIndexFilters;
     canManage: boolean;

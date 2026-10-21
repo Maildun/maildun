@@ -83,7 +83,8 @@ test('company options are sorted ignoring capitalisation', function () {
 
     $this->actingAs($user)
         ->get(route('audiences.show', [$team, $audience]))
-        ->assertInertia(fn (Assert $page) => $page->where('companies.0.name', 'apple Labs'));
+        ->assertInertia(fn (Assert $page) => $page
+            ->reloadOnly('companies', fn (Assert $reload) => $reload->where('companies.0.name', 'apple Labs')));
 });
 
 test('the contacts export follows the list sort', function (string $sort, array $expectedEmails) {

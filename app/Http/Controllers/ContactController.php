@@ -52,7 +52,7 @@ class ContactController extends Controller
             ->with(['company:id,uuid,name', 'tags:id,uuid,name,color'])
             ->withCount('subscribers')
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $filters['search']);
+                $this->wherePersonContains($query, $filters['search']);
             })
             ->when($filters['company'] === 'assigned', fn ($query) => $query->whereNotNull('company_id'))
             ->when($filters['company'] === 'unassigned', fn ($query) => $query->whereNull('company_id'))
@@ -60,13 +60,15 @@ class ContactController extends Controller
                 $filters['company'] !== '' && ! in_array($filters['company'], ['assigned', 'unassigned'], true),
                 fn ($query) => $query->whereHas('company', fn ($companyQuery) => $companyQuery->where('uuid', $filters['company'])),
             )
-            ->when($filters['audience'] !== '', fn ($query) => $query->whereHas(
-                'subscribers.audience',
-                fn ($audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
-            ))
-            ->when($filters['language'] !== '', fn ($query) => $query->whereHas(
+            // Audience and language must hold on the same membership.
+            ->when($filters['audience'] !== '' || $filters['language'] !== '', fn ($query) => $query->whereHas(
                 'subscribers',
-                fn ($subscriberQuery) => $subscriberQuery->where('language', $filters['language']),
+                fn ($subscriberQuery) => $subscriberQuery
+                    ->when($filters['audience'] !== '', fn ($membership) => $membership->whereHas(
+                        'audience',
+                        fn ($audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
+                    ))
+                    ->when($filters['language'] !== '', fn ($membership) => $membership->where('language', $filters['language'])),
             ));
 
         $contacts = match ($filters['sort']) {
@@ -325,7 +327,8 @@ class ContactController extends Controller
                     ],
                 ])->all(),
             'selectedAudienceUuid' => $selectedAudienceUuid,
-            'companies' => $currentTeam->companies()->alphabetical()->get(['uuid', 'name']),
+            // Only the contact dialog needs these; it loads them when it opens.
+            'companies' => Inertia::optional(fn () => $currentTeam->companies()->alphabetical()->get(['uuid', 'name'])),
             'audiences' => $this->addableAudiences($currentTeam),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'canManage' => Gate::allows('update', $contact),
@@ -337,7 +340,14 @@ class ContactController extends Controller
     private function activity(Contact $contact): array
     {
         $stats = $contact->deliveries()
-            ->whereNot('status', EmailDeliveryStatus::Cancelled)
+            // Only deliveries handed to the recipient's mail server count as
+            // received: queued, bounced, rejected, failed and stopped ones do not.
+            ->whereIn('status', [
+                EmailDeliveryStatus::Sent,
+                EmailDeliveryStatus::Delivered,
+                EmailDeliveryStatus::Delayed,
+                EmailDeliveryStatus::Complained,
+            ])
             ->toBase()
             ->selectRaw('count(*) as received')
             ->selectRaw('sum(case when opens_count > 0 then 1 else 0 end) as opened')

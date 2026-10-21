@@ -102,7 +102,7 @@ type Props = {
     activity: ContactActivity;
     automations: ContactAutomation[];
     selectedAudienceUuid: string | null;
-    companies: CompanyOption[];
+    companies?: CompanyOption[];
     audiences: CompanyOption[];
     tags: Tag[];
     canManage: boolean;
@@ -126,6 +126,8 @@ export default function ContactShow({
     const [membershipToUnsubscribe, setMembershipToUnsubscribe] =
         useState<ContactMembership | null>(null);
     const [membershipToResubscribe, setMembershipToResubscribe] =
+        useState<ContactMembership | null>(null);
+    const [membershipToRemove, setMembershipToRemove] =
         useState<ContactMembership | null>(null);
     const [openMemberships, setOpenMemberships] = useState<string[]>(() =>
         initialOpenMemberships(contact.memberships, selectedAudienceUuid),
@@ -190,7 +192,10 @@ export default function ContactShow({
                 contact.uuid,
                 membershipUuid,
             ]),
-            { preserveScroll: true },
+            {
+                preserveScroll: true,
+                onFinish: () => setMembershipToRemove(null),
+            },
         );
     };
 
@@ -691,8 +696,8 @@ export default function ContactShow({
                                                 )
                                             }
                                             onRemove={() =>
-                                                removeMembership(
-                                                    membership.uuid,
+                                                setMembershipToRemove(
+                                                    membership,
                                                 )
                                             }
                                         />
@@ -981,6 +986,42 @@ export default function ContactShow({
                             onClick={confirmUnsubscribe}
                         >
                             Unsubscribe
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+            <AlertDialog
+                open={membershipToRemove !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setMembershipToRemove(null);
+                    }
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            Remove from {membershipToRemove?.audience.name}?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This permanently deletes the membership and its
+                            consent record. The contact stays in your other
+                            audiences. To stop sending but keep the record,
+                            unsubscribe instead.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            type="button"
+                            variant="destructive"
+                            onClick={() => {
+                                if (membershipToRemove) {
+                                    removeMembership(membershipToRemove.uuid);
+                                }
+                            }}
+                        >
+                            Remove
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

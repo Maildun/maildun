@@ -50,9 +50,9 @@ test('company contacts include the fields required by the shared hover card', fu
             ->where('company.contacts.data.0.audiences_count', 1)
             ->where('company.contacts.data.0.audiences.0.uuid', $audience->uuid)
             ->where('company.contacts.data.0.audiences.0.name', $audience->name)
-            ->where('companies.0.uuid', $company->uuid)
             ->where('audiences.0.uuid', $audience->uuid)
-            ->where('tags.0.uuid', $tag->uuid));
+            ->where('tags.0.uuid', $tag->uuid)
+            ->reloadOnly('companies', fn (Assert $reload) => $reload->where('companies.0.uuid', $company->uuid)));
 });
 
 test('company pages offer contact Edit only to roles that can edit contacts', function (array $permissions, bool $canManage, bool $canManageContacts) {

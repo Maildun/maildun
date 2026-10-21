@@ -44,7 +44,7 @@ class ContactExportController extends Controller
                 'subscribers.audience:id,name',
             ])
             ->when($filters['search'] !== '', function (Builder $query) use ($filters): void {
-                $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $filters['search']);
+                $this->wherePersonContains($query, $filters['search']);
             })
             ->when($filters['company'] === 'assigned', fn (Builder $query) => $query->whereNotNull('company_id'))
             ->when($filters['company'] === 'unassigned', fn (Builder $query) => $query->whereNull('company_id'))
@@ -55,13 +55,15 @@ class ContactExportController extends Controller
                     fn (Builder $companyQuery) => $companyQuery->where('uuid', $filters['company']),
                 ),
             )
-            ->when($filters['audience'] !== '', fn (Builder $query) => $query->whereHas(
-                'subscribers.audience',
-                fn (Builder $audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
-            ))
-            ->when($filters['language'] !== '', fn (Builder $query) => $query->whereHas(
+            // Audience and language must hold on the same membership.
+            ->when($filters['audience'] !== '' || $filters['language'] !== '', fn (Builder $query) => $query->whereHas(
                 'subscribers',
-                fn (Builder $subscriberQuery) => $subscriberQuery->where('language', $filters['language']),
+                fn (Builder $subscriberQuery) => $subscriberQuery
+                    ->when($filters['audience'] !== '', fn (Builder $membership) => $membership->whereHas(
+                        'audience',
+                        fn (Builder $audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
+                    ))
+                    ->when($filters['language'] !== '', fn (Builder $membership) => $membership->where('language', $filters['language'])),
             ));
 
         // Follow the list's sort. Name order is not unique per row, so it
@@ -105,7 +107,7 @@ class ContactExportController extends Controller
             ->whereBelongsTo($audience)
             ->with('tags:id,name')
             ->when($filters['search'] !== '', function (Builder $query) use ($filters): void {
-                $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $filters['search']);
+                $this->wherePersonContains($query, $filters['search']);
             })
             ->when($filters['status'] !== 'all', fn (Builder $query) => $query->where('status', $filters['status']))
             ->when($filters['source'] !== 'all', fn (Builder $query) => $query->where('source', $filters['source']))

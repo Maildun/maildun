@@ -73,7 +73,7 @@ class CompanyController extends Controller
             ])
             ->withCount('subscribers')
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                $this->whereAnyColumnContains($query, ['email', 'first_name', 'last_name'], $filters['search']);
+                $this->wherePersonContains($query, $filters['search']);
             })
             ->when($filters['audience'] !== '', fn ($query) => $query->whereHas(
                 'subscribers.audience',
@@ -119,7 +119,8 @@ class CompanyController extends Controller
                         'created_at' => $contact->created_at?->toISOString(),
                     ]),
             ],
-            'companies' => $currentTeam->companies()->alphabetical()->get(['uuid', 'name']),
+            // Only the contact dialog needs these; it loads them when it opens.
+            'companies' => Inertia::optional(fn () => $currentTeam->companies()->alphabetical()->get(['uuid', 'name'])),
             'audiences' => $currentTeam->audiences()->orderBy('name')->get(['uuid', 'name']),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'filters' => $filters,

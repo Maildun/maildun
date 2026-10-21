@@ -60,7 +60,7 @@ import type { CompanyOption } from '@/types/contacts';
 
 type Props = {
     company: Company;
-    companies: CompanyOption[];
+    companies?: CompanyOption[];
     audiences: CompanyOption[];
     tags: Tag[];
     filters: CompanyContactFilters;
@@ -349,7 +349,7 @@ function CompanyContactRow({
 }: {
     contact: CompanyContact;
     teamSlug: string;
-    companies: CompanyOption[];
+    companies?: CompanyOption[];
     tags: Tag[];
     canManageContacts: boolean;
 }) {

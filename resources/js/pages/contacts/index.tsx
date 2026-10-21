@@ -53,6 +53,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { toast } from '@/components/ui/toast';
 import { useListFilters } from '@/hooks/use-list-filters';
 import { formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
@@ -82,12 +83,13 @@ export default function ContactsIndex({
     const [createOpen, setCreateOpen] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-    const { visit, clear, clearAll, searchKey } = useListFilters({
-        url: currentTeam ? index.url(currentTeam.slug) : '',
-        filters,
-        empty: { search: '', company: '', audience: '', language: '' },
-        searchField: 'search',
-    });
+    const { visit, clear, clearAll, hasActiveFilters, searchKey } =
+        useListFilters({
+            url: currentTeam ? index.url(currentTeam.slug) : '',
+            filters,
+            empty: { search: '', company: '', audience: '', language: '' },
+            searchField: 'search',
+        });
 
     if (!currentTeam) {
         return null;
@@ -97,6 +99,31 @@ export default function ContactsIndex({
     const allSelected =
         pageIds.length > 0 && pageIds.every((id) => selected.has(id));
     const someSelected = pageIds.some((id) => selected.has(id));
+
+    /**
+     * A bulk action fails validation when a selected contact was deleted
+     * meanwhile. Drop those ids so the next try acts on the rest.
+     */
+    const dropMissingSelection = (
+        ids: string[],
+        errors: Record<string, string>,
+    ): void => {
+        const missing = new Set(
+            Object.keys(errors)
+                .filter((key) => key.startsWith('ids.'))
+                .map((key) => ids[Number(key.slice(4))]),
+        );
+
+        setSelected(new Set(ids.filter((id) => !missing.has(id))));
+        toast.add({
+            type: 'error',
+            title: 'Nothing was changed.',
+            description:
+                missing.size > 0
+                    ? 'Some selected contacts no longer exist and were removed from the selection. Try again.'
+                    : Object.values(errors)[0],
+        });
+    };
 
     const toggleSelected = (ids: string[], checked: boolean): void => {
         const next = new Set(selected);
@@ -301,28 +328,21 @@ export default function ContactsIndex({
                     onClearAll={clearAll}
                 />
 
-                {contacts.total === 0 ? (
+                {contacts.data.length === 0 ? (
                     <Empty>
                         <EmptyHeader>
                             <EmptyMedia variant="icon">
                                 <HugeiconsIcon icon={UserIcon} />
                             </EmptyMedia>
-                            <EmptyTitle>No contacts yet</EmptyTitle>
+                            <EmptyTitle>
+                                {hasActiveFilters
+                                    ? 'No matching contacts'
+                                    : 'No contacts yet'}
+                            </EmptyTitle>
                             <EmptyDescription>
-                                Add a person directly, or they will be created
-                                when they join an audience.
-                            </EmptyDescription>
-                        </EmptyHeader>
-                    </Empty>
-                ) : contacts.data.length === 0 ? (
-                    <Empty>
-                        <EmptyHeader>
-                            <EmptyMedia variant="icon">
-                                <HugeiconsIcon icon={UserIcon} />
-                            </EmptyMedia>
-                            <EmptyTitle>No matching contacts</EmptyTitle>
-                            <EmptyDescription>
-                                Try another search or filter.
+                                {hasActiveFilters
+                                    ? 'Try another search or filter.'
+                                    : 'Add a person directly, or they will be created when they join an audience.'}
                             </EmptyDescription>
                         </EmptyHeader>
                     </Empty>
@@ -401,15 +421,22 @@ export default function ContactsIndex({
                                     variant="outline"
                                     size="sm"
                                     onClick={() => {
+                                        const ids = [...selected];
+
                                         router.patch(
                                             bulkUnsubscribe.url(
                                                 currentTeam.slug,
                                             ),
-                                            { ids: [...selected] },
+                                            { ids },
                                             {
                                                 preserveScroll: true,
                                                 onSuccess: () =>
                                                     setSelected(new Set()),
+                                                onError: (errors) =>
+                                                    dropMissingSelection(
+                                                        ids,
+                                                        errors,
+                                                    ),
                                             },
                                         );
                                     }}
@@ -456,17 +483,22 @@ export default function ContactsIndex({
                                     <AlertDialogAction
                                         variant="destructive"
                                         onClick={() => {
+                                            const ids = [...selected];
+
                                             router.delete(
                                                 bulkDestroy.url(
                                                     currentTeam.slug,
                                                 ),
                                                 {
-                                                    data: {
-                                                        ids: [...selected],
-                                                    },
+                                                    data: { ids },
                                                     preserveScroll: true,
                                                     onSuccess: () =>
                                                         setSelected(new Set()),
+                                                    onError: (errors) =>
+                                                        dropMissingSelection(
+                                                            ids,
+                                                            errors,
+                                                        ),
                                                     onFinish: () =>
                                                         setConfirmDeleteOpen(
                                                             false,
