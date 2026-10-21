@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AudienceAttributeType;
 use App\Enums\AutomationTrigger;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberLanguage;
@@ -453,6 +454,8 @@ test('subscriber details redirect to the selected contact membership with activi
             ->where('contact.memberships.0.uuid', $subscriber->uuid)
             ->where('contact.memberships.0.consent_ip', '203.0.113.10')
             ->where('contact.memberships.0.attributes.0.uuid', $attribute->uuid)
+            ->where('contact.memberships.0.attributes.0.key', 'company')
+            ->where('contact.memberships.0.attributes.0.required', false)
             ->where('contact.memberships.0.attributes.0.value', 'Laravel')
             ->where('contact.memberships.0.segments.0.uuid', $segment->uuid)
             ->where('activity.received', 1)
@@ -743,4 +746,86 @@ test('unsubscribing someone already unsubscribed keeps the original opt-out date
     expect($subscriber->unsubscribed_at?->equalTo($unsubscribedAt))->toBeTrue()
         ->and($subscriber->resubscribe_requested_at)->toBeNull();
     Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('managers can edit custom attribute values from the dashboard', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Seats', 'key' => 'seats', 'type' => AudienceAttributeType::Number]);
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Renewal', 'key' => 'renewal', 'type' => AudienceAttributeType::Date]);
+    $subscriber = Subscriber::factory()->for($audience)->create([
+        'attribute_values' => ['company' => 'Old Co', 'seats' => '5', 'retired_field' => 'kept'],
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.attributes.update', [$team, $audience, $subscriber]), [
+            'attributes' => ['company' => 'Acme', 'seats' => '', 'renewal' => '31.12.2026'],
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    expect($subscriber->fresh()->attribute_values)->toEqual([
+        'company' => 'Acme',
+        'renewal' => '2026-12-31',
+        'retired_field' => 'kept',
+    ]);
+});
+
+test('custom attribute edits are validated by type and keep required fields filled', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company', 'required' => true]);
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Seats', 'key' => 'seats', 'type' => AudienceAttributeType::Number]);
+    $subscriber = Subscriber::factory()->for($audience)->create(['attribute_values' => ['company' => 'Acme']]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.attributes.update', [$team, $audience, $subscriber]), [
+            'attributes' => ['company' => '', 'seats' => 'many', 'email' => 'spoof@example.com'],
+        ])
+        ->assertSessionHasErrors([
+            'attributes',
+            'attributes.company' => 'The Company field is required.',
+            'attributes.seats' => 'The Seats field must be a number.',
+        ]);
+
+    expect($subscriber->fresh()->attribute_values)->toBe(['company' => 'Acme']);
+});
+
+test('custom attribute edits respect audience scope and manager permissions', function () {
+    $owner = User::factory()->create();
+    $member = User::factory()->create();
+    $team = Team::factory()->create();
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $viewerRole = WorkspaceRole::create([
+        'team_id' => $team->id,
+        'name' => 'viewer',
+        'label' => 'Viewer',
+        'guard_name' => 'web',
+    ]);
+    $team->memberships()
+        ->where('user_id', $member->id)
+        ->sole()
+        ->update(['role' => $viewerRole->name]);
+    $audience = Audience::factory()->for($team)->create();
+    $otherAudience = Audience::factory()->for($team)->create();
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    $subscriber = Subscriber::factory()->for($audience)->create(['attribute_values' => ['company' => 'Acme']]);
+
+    $this->actingAs($owner)
+        ->patch(route('audiences.subscribers.attributes.update', [$team, $otherAudience, $subscriber]), [
+            'attributes' => ['company' => 'Changed'],
+        ])
+        ->assertNotFound();
+
+    $this->actingAs($member)
+        ->patch(route('audiences.subscribers.attributes.update', [$team, $audience, $subscriber]), [
+            'attributes' => ['company' => 'Changed'],
+        ])
+        ->assertForbidden();
+
+    expect($subscriber->fresh()->attribute_values)->toBe(['company' => 'Acme']);
 });

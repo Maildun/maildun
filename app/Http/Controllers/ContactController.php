@@ -251,7 +251,9 @@ class ContactController extends Controller
                             ->map(fn (AudienceAttribute $attribute): array => [
                                 'uuid' => $attribute->uuid,
                                 'name' => $attribute->name,
+                                'key' => $attribute->key,
                                 'type' => $attribute->type->value,
+                                'required' => $attribute->required,
                                 'value' => ($subscriber->attribute_values ?? [])[$attribute->key] ?? null,
                             ])
                             ->values()

@@ -35,6 +35,7 @@ use App\Http\Controllers\PublicSubscribeFormController;
 use App\Http\Controllers\SavedSectionController;
 use App\Http\Controllers\SegmentController;
 use App\Http\Controllers\SubscribeFormController;
+use App\Http\Controllers\SubscriberAttributeController;
 use App\Http\Controllers\SubscriberController;
 use App\Http\Controllers\SubscriptionConfirmationController;
 use App\Http\Controllers\Teams\TeamInvitationController;
@@ -272,6 +273,8 @@ Route::prefix('{current_team}')
                 ->name('audiences.subscribers.bulk-destroy');
             Route::resource('audiences.subscribers', SubscriberController::class)
                 ->only(['show', 'store', 'update', 'destroy']);
+            Route::patch('audiences/{audience}/subscribers/{subscriber}/attributes', [SubscriberAttributeController::class, 'update'])
+                ->name('audiences.subscribers.attributes.update');
             Route::patch('audiences/{audience}/subscribers/{subscriber}/unsubscribe', [SubscriberController::class, 'unsubscribe'])
                 ->name('audiences.subscribers.unsubscribe');
             Route::patch('audiences/{audience}/subscribers/{subscriber}/resubscribe', [SubscriberController::class, 'resubscribe'])

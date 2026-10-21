@@ -21,6 +21,7 @@ import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ContactDialog } from '@/components/contact-dialog';
+import { SubscriberAttributesDialog } from '@/components/subscriber-attributes-dialog';
 import { SubscriberStatusBadge } from '@/components/subscriber-status-badge';
 import {
     AlertDialog,
@@ -1068,6 +1069,10 @@ function MembershipPanel({
     onResubscribe: () => void;
     onRemove: () => void;
 }) {
+    const [attributesOpen, setAttributesOpen] = useState(false);
+    const canEditAttributes =
+        membership.can_manage && membership.attributes.length > 0;
+
     return (
         <Collapsible
             open={open}
@@ -1145,6 +1150,14 @@ function MembershipPanel({
                                 >
                                     View audience
                                 </DropdownMenuItem>
+                                {canEditAttributes ? (
+                                    <DropdownMenuItem
+                                        onClick={() => setAttributesOpen(true)}
+                                        data-test="edit-membership-attributes"
+                                    >
+                                        Edit attributes
+                                    </DropdownMenuItem>
+                                ) : null}
                                 {membership.can_manage ? (
                                     <DropdownMenuItem
                                         onClick={
@@ -1169,6 +1182,19 @@ function MembershipPanel({
                             </DropdownMenuGroup>
                         </DropdownMenuContent>
                     </DropdownMenu>
+                    {canEditAttributes ? (
+                        <SubscriberAttributesDialog
+                            open={attributesOpen}
+                            onOpenChange={setAttributesOpen}
+                            routeArgs={[
+                                teamSlug,
+                                membership.audience.uuid,
+                                membership.uuid,
+                            ]}
+                            audienceName={membership.audience.name}
+                            attributes={membership.attributes}
+                        />
+                    ) : null}
                 </div>
                 <Separator />
                 <NestedPanel

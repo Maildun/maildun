@@ -76,3 +76,17 @@ test('contact and audience lists link to the dedicated import pages', function (
         ->toContain('createContactImport(teamSlug')
         ->toContain('Import history');
 });
+
+test('managers can open a custom attributes editor from a contact membership', function () {
+    $root = dirname(__DIR__, 2).'/resources/js';
+    $page = file_get_contents($root.'/pages/contacts/show.tsx');
+    $dialog = file_get_contents($root.'/components/subscriber-attributes-dialog.tsx');
+
+    expect($page)
+        ->toContain('data-test="edit-membership-attributes"')
+        ->toContain('<SubscriberAttributesDialog')
+        ->toContain('membership.can_manage && membership.attributes.length > 0');
+    expect($dialog)
+        ->toContain('updateSubscriberAttributes.url(routeArgs)')
+        ->toContain('placeholder={');
+});

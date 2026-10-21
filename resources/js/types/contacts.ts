@@ -122,7 +122,9 @@ export type ContactMembership = {
 export type ContactAttribute = {
     uuid: string;
     name: string;
+    key: string;
     type: string;
+    required: boolean;
     value: string | number | null;
 };
 
