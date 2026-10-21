@@ -2,6 +2,8 @@
 
 namespace App\Mcp\Tools\Contacts;
 
+use App\Actions\Automations\DispatchTaggedTriggers;
+use App\Mcp\Support\ContactCompanyAssignment;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
 use App\Models\Contact;
@@ -23,7 +25,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('Updates selected fields on a contact. Profile changes apply to every audience membership; tags replaces the full tag set.')]
+#[Description('Updates selected fields on a contact. Profile changes apply to every audience membership; tags replaces the full tag set. company_uuid pins a company manually; company_assignment_mode automatic hands the company back to email-domain matching.')]
 #[IsDestructive(false)]
 #[IsIdempotent]
 #[IsOpenWorld(false)]
@@ -35,6 +37,8 @@ class UpdateContactTool extends Tool
         private WorkspaceContext $context,
         private ResourcePayload $payload,
         private ManageContact $manageContact,
+        private DispatchTaggedTriggers $dispatchTaggedTriggers,
+        private ContactCompanyAssignment $companyAssignment,
     ) {}
 
     public function handle(Request $request): ResponseFactory
@@ -58,11 +62,16 @@ class UpdateContactTool extends Tool
             'last_name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'tags' => ['sometimes', 'array', 'max:20'],
             'tags.*' => ['string', 'max:50'],
+            ...$this->companyAssignment->rules($team),
         ], [
             'email.unique' => 'This email is already used by another contact.',
+            ...$this->companyAssignment->messages(),
         ]);
-        $changes = $this->context->changes($validated, ['email', 'first_name', 'last_name', 'tags']);
-        $profile = $this->context->trimStrings(Arr::except($changes, ['tags']), ['first_name', 'last_name']);
+        $changes = $this->context->changes($validated, ['email', 'first_name', 'last_name', 'tags', 'company_assignment_mode', 'company_uuid']);
+        $profile = [
+            ...$this->context->trimStrings(Arr::only($changes, ['email', 'first_name', 'last_name']), ['first_name', 'last_name']),
+            ...$this->companyAssignment->attributes($changes, $team, $contact),
+        ];
 
         $contact = DB::transaction(function () use ($team, $contact, $profile, $changes): Contact {
             if ($profile !== []) {
@@ -70,7 +79,8 @@ class UpdateContactTool extends Tool
             }
 
             if (array_key_exists('tags', $changes)) {
-                $this->manageContact->syncTags($team, $contact, $changes['tags']);
+                $addedTags = $this->manageContact->syncTags($team, $contact, $changes['tags']);
+                $this->dispatchTaggedTriggers->handle($contact, $addedTags);
             }
 
             return $contact;
@@ -98,6 +108,7 @@ class UpdateContactTool extends Tool
             'first_name' => $schema->string()->description('First name.')->max(255)->nullable(),
             'last_name' => $schema->string()->description('Last name.')->max(255)->nullable(),
             'tags' => $schema->array()->description('Complete tag name set; missing tags are created and omitted ones removed. An empty array clears all tags.')->items($schema->string()->max(50))->max(20),
+            ...$this->companyAssignment->schema($schema),
         ];
     }
 }

@@ -4,6 +4,7 @@ namespace App\Mcp\Support;
 
 use App\Actions\Audiences\AddContactToAudiences;
 use App\Actions\Automations\DispatchTaggedTriggers;
+use App\Enums\ContactCompanyAssignmentMode;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
 use App\Models\AudienceOptOut;
@@ -28,7 +29,7 @@ class AudienceMembership
      * tags, and anyone who unsubscribed is refused here: winning them back is
      * an explicit resubscribe, never a side effect of adding them again.
      *
-     * @param  array{email: string, first_name?: string|null, last_name?: string|null}  $profile
+     * @param  array{email: string, first_name?: string|null, last_name?: string|null, company_id?: int|null, company_assignment_mode?: ContactCompanyAssignmentMode}  $profile
      * @param  Collection<int, Audience>  $audiences
      * @param  list<string>  $tags
      * @param  string|null  $language  for new memberships; defaults to each audience's default

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\ContactCompanyAssignmentMode;
 use App\Mcp\Servers\MaildunServer;
 use App\Mcp\Tools\Contacts\CreateContactTool;
 use App\Mcp\Tools\Contacts\DeleteContactTool;
@@ -8,6 +9,8 @@ use App\Mcp\Tools\Contacts\ListContactsTool;
 use App\Mcp\Tools\Contacts\UpdateContactTool;
 use App\Mcp\Tools\Tags\ListTagsTool;
 use App\Models\Audience;
+use App\Models\Company;
+use App\Models\CompanyDomain;
 use App\Models\Contact;
 use App\Models\Subscriber;
 use App\Models\Team;
@@ -156,4 +159,85 @@ test('trims the names contact tools save', function () {
     ])->assertOk();
 
     expect($contact->fresh()->only(['first_name', 'last_name']))->toBe(['first_name' => 'Augusta Ada', 'last_name' => null]);
+});
+
+test('pins, clears and releases a contact company through MCP', function () {
+    $team = Team::factory()->create();
+    $acme = Company::factory()->for($team)->create(['name' => 'Acme']);
+    CompanyDomain::factory()->for($acme)->create(['domain' => 'acme.test']);
+    $globex = Company::factory()->for($team)->create(['name' => 'Globex']);
+
+    MaildunServer::tool(CreateContactTool::class, [
+        'workspace' => $team->slug,
+        'email' => 'ada@acme.test',
+        'company_uuid' => $globex->uuid,
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('contact.company.uuid', $globex->uuid)
+        ->where('contact.company_assignment_mode', 'manual')
+        ->etc());
+
+    $contact = $team->contacts()->sole();
+
+    MaildunServer::tool(UpdateContactTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $contact->uuid,
+        'company_uuid' => null,
+    ])->assertOk();
+
+    expect($contact->fresh()->only(['company_id', 'company_assignment_mode']))
+        ->toBe(['company_id' => null, 'company_assignment_mode' => ContactCompanyAssignmentMode::Manual]);
+
+    MaildunServer::tool(UpdateContactTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $contact->uuid,
+        'company_assignment_mode' => 'automatic',
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('contact.company.uuid', $acme->uuid)
+        ->where('contact.company_assignment_mode', 'automatic')
+        ->etc());
+});
+
+test('rejects a company from another workspace or alongside automatic assignment', function () {
+    $team = Team::factory()->create();
+    $contact = Contact::factory()->for($team)->create();
+    $company = Company::factory()->for($team)->create();
+
+    MaildunServer::tool(UpdateContactTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $contact->uuid,
+        'company_uuid' => Company::factory()->create()->uuid,
+    ])->assertHasErrors(['The selected company was not found in this workspace.']);
+
+    MaildunServer::tool(UpdateContactTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $contact->uuid,
+        'company_assignment_mode' => 'automatic',
+        'company_uuid' => $company->uuid,
+    ])->assertHasErrors(['Leave company_uuid out when company_assignment_mode is automatic']);
+
+    expect($contact->fresh()->company_id)->toBeNull();
+});
+
+test('filters contacts by company', function () {
+    $team = Team::factory()->create();
+    $company = Company::factory()->for($team)->create();
+    $employee = Contact::factory()->for($team)->for($company)->create();
+    $other = Contact::factory()->for($team)->create(['company_id' => null]);
+
+    MaildunServer::tool(ListContactsTool::class, ['workspace' => $team->slug, 'company' => $company->uuid])
+        ->assertOk()
+        ->assertStructuredContent(fn (AssertableJson $json) => $json
+            ->where('count', 1)
+            ->where('contacts.0.uuid', $employee->uuid)
+            ->etc());
+
+    MaildunServer::tool(ListContactsTool::class, ['workspace' => $team->slug, 'company' => 'unassigned'])
+        ->assertOk()
+        ->assertStructuredContent(fn (AssertableJson $json) => $json
+            ->where('count', 1)
+            ->where('contacts.0.uuid', $other->uuid)
+            ->etc());
+
+    MaildunServer::tool(ListContactsTool::class, ['workspace' => $team->slug, 'company' => 'someone'])
+        ->assertHasErrors(['Use assigned, unassigned, or a company UUID from this workspace.']);
 });

@@ -4,6 +4,7 @@ namespace App\Mcp\Support;
 
 use App\Models\Audience;
 use App\Models\Automation;
+use App\Models\Company;
 use App\Models\Contact;
 use App\Models\Email;
 use App\Models\Segment;
@@ -77,6 +78,16 @@ class WorkspaceContext
         $this->authorize($request, 'view', $contact);
 
         return $contact;
+    }
+
+    public function company(Request $request, Team $team): Company
+    {
+        $uuid = $this->scopedUuid($request, Company::class, $team, 'company');
+
+        $company = $team->companies()->where('uuid', $uuid)->firstOrFail();
+        $this->authorize($request, 'view', $company);
+
+        return $company;
     }
 
     public function subscriber(Request $request, Team $team): Subscriber
@@ -222,7 +233,7 @@ class WorkspaceContext
     }
 
     /**
-     * @param  class-string<Audience|Automation|Contact|Email|TransactionalEmail>  $model
+     * @param  class-string<Audience|Automation|Company|Contact|Email|TransactionalEmail>  $model
      */
     private function scopedUuid(
         Request $request,

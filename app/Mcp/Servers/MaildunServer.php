@@ -20,6 +20,8 @@ use App\Mcp\Tools\Campaigns\SendTestCampaignTool;
 use App\Mcp\Tools\Campaigns\StopCampaignTool;
 use App\Mcp\Tools\Campaigns\UnscheduleCampaignTool;
 use App\Mcp\Tools\Campaigns\UpdateCampaignTool;
+use App\Mcp\Tools\Companies\GetCompanyTool;
+use App\Mcp\Tools\Companies\ListCompaniesTool;
 use App\Mcp\Tools\Contacts\CreateContactTool;
 use App\Mcp\Tools\Contacts\DeleteContactTool;
 use App\Mcp\Tools\Contacts\GetContactTool;
@@ -57,7 +59,7 @@ use Laravel\Mcp\Server\Tool;
 
 #[Name('Maildun MCP Server')]
 #[Version('1.0.0')]
-#[Instructions('Provides access to Maildun workspaces, audiences, contacts, subscribers, segments, tags, campaigns, transactional emails, and automations. Remote connections can only use workspaces available to the authenticated user. Start with application-status, then list-workspaces. Every domain tool requires a workspace slug; record identifiers are always scoped to that workspace. For block email design, start with get-email-builder to discover native agent tools and the revision. Apply edits through edit-email-builder, use dry_run to preview and apply_ops for atomic batches, then check-email-builder to validate and preview. Use list-media for workspace image URLs and alt text instead of placeholders. Re-read after a revision conflict. Subscribing people requires consent_confirmed; never resubscribe someone who unsubscribed without renewed consent. To deliver a campaign, use send-test-campaign first, then send-campaign or schedule-campaign with the exact campaign name; stop-campaign halts a send in progress. list-saved-sections returns the workspace saved sections; insert one with edit-email-builder using its blocks.')]
+#[Instructions('Provides access to Maildun workspaces, audiences, contacts, companies, subscribers, segments, tags, campaigns, transactional emails, and automations. Remote connections can only use workspaces available to the authenticated user. Start with application-status, then list-workspaces. Every domain tool requires a workspace slug; record identifiers are always scoped to that workspace. For block email design, start with get-email-builder to discover native agent tools and the revision. Apply edits through edit-email-builder, use dry_run to preview and apply_ops for atomic batches, then check-email-builder to validate and preview. Use list-media for workspace image URLs and alt text instead of placeholders, and list-saved-sections for saved headers, footers and other reusable sections. Re-read after a revision conflict. Subscribing people requires consent_confirmed; never resubscribe someone who unsubscribed without renewed consent. To deliver a campaign, use send-test-campaign first, then send-campaign or schedule-campaign with the exact campaign name; stop-campaign halts a send in progress.')]
 class MaildunServer extends Server
 {
     /**
@@ -76,6 +78,8 @@ class MaildunServer extends Server
         CreateContactTool::class,
         UpdateContactTool::class,
         DeleteContactTool::class,
+        ListCompaniesTool::class,
+        GetCompanyTool::class,
         ListSubscribersTool::class,
         AddSubscriberTool::class,
         UpdateSubscriberTool::class,

@@ -111,11 +111,13 @@ To read it again, call `get-campaign` with `workspace` and the returned campaign
 |  | `create-audience` | Creates an audience in a Maildun workspace. |
 |  | `update-audience` | Updates selected fields on an audience in a Maildun workspace, including double opt-in. Turning double opt-in on needs a published transactional email to send the confirmation link. |
 |  | `delete-audience` | Permanently deletes an audience after its exact name is supplied as confirmation. Refused while a scheduled or sending campaign targets it; active automations it triggers are paused. |
-| Contacts | `list-contacts` | Lists contacts in a Maildun workspace with optional email or name search, tag, and audience filters. |
+| Contacts | `list-contacts` | Lists contacts in a Maildun workspace with optional email or name search, tag, audience, and company filters. |
 |  | `get-contact` | Gets one contact by UUID or email, including tags, company, and every audience membership with its subscription status. |
-|  | `create-contact` | Creates a workspace contact and optionally subscribes it to audiences. An existing contact keeps its profile and tags and is only added to the audiences. Subscribing requires consent_confirmed, and people who unsubscribed are refused. |
-|  | `update-contact` | Updates selected fields on a contact. Profile changes apply to every audience membership; tags replaces the full tag set. |
+|  | `create-contact` | Creates a workspace contact and optionally subscribes it to audiences. An existing contact keeps its profile, company and tags and is only added to the audiences. Subscribing requires consent_confirmed, and people who unsubscribed are refused. |
+|  | `update-contact` | Updates selected fields on a contact. Profile changes apply to every audience membership; tags replaces the full tag set. company_uuid pins a company manually; company_assignment_mode automatic hands the company back to email-domain matching. |
 |  | `delete-contact` | Permanently deletes a contact and all of its audience memberships after its exact email is supplied as confirmation. |
+| Companies | `list-companies` | Lists the companies in a Maildun workspace with their email domains and contact counts. Contacts on a company domain are assigned to it automatically unless their company was set manually. |
+|  | `get-company` | Gets one company by UUID with its email domains and contact count. Use list-contacts with company to see its contacts. |
 | Subscribers | `list-subscribers` | Lists the subscribers of one audience with optional status, search, tag, and segment filters. |
 |  | `add-subscriber` | Subscribes a person to an audience on a team member's confirmed consent, creating the workspace contact if needed. An existing contact keeps its profile and tags. People who unsubscribed are refused; use resubscribe-subscriber for them. |
 |  | `update-subscriber` | Updates an audience membership. Sets or clears the subscriber's language; the shared contact profile is changed with update-contact. |

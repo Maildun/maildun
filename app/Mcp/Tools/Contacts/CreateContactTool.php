@@ -3,6 +3,7 @@
 namespace App\Mcp\Tools\Contacts;
 
 use App\Mcp\Support\AudienceMembership;
+use App\Mcp\Support\ContactCompanyAssignment;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
 use App\Models\Audience;
@@ -23,7 +24,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('Creates a workspace contact and optionally subscribes it to audiences. An existing contact keeps its profile and tags and is only added to the audiences. Subscribing requires consent_confirmed, and people who unsubscribed are refused.')]
+#[Description('Creates a workspace contact and optionally subscribes it to audiences. An existing contact keeps its profile, company and tags and is only added to the audiences. Subscribing requires consent_confirmed, and people who unsubscribed are refused.')]
 #[IsDestructive(false)]
 #[IsOpenWorld(false)]
 #[IsReadOnly(false)]
@@ -34,6 +35,7 @@ class CreateContactTool extends Tool
         private WorkspaceContext $context,
         private ResourcePayload $payload,
         private AudienceMembership $membership,
+        private ContactCompanyAssignment $companyAssignment,
     ) {}
 
     public function handle(Request $request): ResponseFactory
@@ -55,7 +57,9 @@ class CreateContactTool extends Tool
             'audience_uuids' => ['sometimes', 'array', 'max:50'],
             'audience_uuids.*' => ['string', 'distinct', Rule::exists(Audience::class, 'uuid')->where('team_id', $team->id)],
             'consent_confirmed' => $hasAudiences ? ['required', 'accepted'] : ['sometimes', 'accepted'],
+            ...$this->companyAssignment->rules($team),
         ], [
+            ...$this->companyAssignment->messages(),
             'consent_confirmed.required' => 'Confirm the contact consented to marketing email before adding them to audiences.',
             'consent_confirmed.accepted' => 'Confirm the contact consented to marketing email before adding them to audiences.',
         ]);
@@ -74,6 +78,7 @@ class CreateContactTool extends Tool
             'email' => $email,
             'first_name' => $this->context->trimStrings($validated, ['first_name'])['first_name'] ?? null,
             'last_name' => $this->context->trimStrings($validated, ['last_name'])['last_name'] ?? null,
+            ...$this->companyAssignment->attributes($validated, $team),
         ], $audiences, $validated['tags'] ?? []);
 
         $contact->load(['company:id,uuid,name', 'tags:id,uuid,name', 'subscribers.audience:id,uuid,name']);
@@ -101,6 +106,7 @@ class CreateContactTool extends Tool
             'tags' => $schema->array()->description('Tag names for a new contact; missing tags are created. Ignored for an existing contact.')->items($schema->string()->max(50))->max(20),
             'audience_uuids' => $schema->array()->description('Audiences to subscribe the contact to.')->items($schema->string()->format('uuid'))->max(50),
             'consent_confirmed' => $schema->boolean()->description('Required when audience_uuids is set: the person consented to receive marketing email.'),
+            ...$this->companyAssignment->schema($schema),
         ];
     }
 }

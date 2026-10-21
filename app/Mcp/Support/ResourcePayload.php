@@ -5,6 +5,8 @@ namespace App\Mcp\Support;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Automation;
+use App\Models\Company;
+use App\Models\CompanyDomain;
 use App\Models\Contact;
 use App\Models\Email;
 use App\Models\Media;
@@ -206,9 +208,28 @@ class ResourcePayload
                 'uuid' => $contact->company->uuid,
                 'name' => $contact->company->name,
             ],
+            'company_assignment_mode' => $contact->company_assignment_mode->value,
             'tags' => $contact->tags->pluck('name')->sortBy(fn (string $name): string => mb_strtolower($name))->values()->all(),
             'audiences_count' => (int) ($contact->getAttribute('subscribers_count') ?? $contact->subscribers()->count()),
             'created_at' => $contact->created_at?->toISOString(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function company(Company $company): array
+    {
+        return [
+            'uuid' => $company->uuid,
+            'name' => $company->name,
+            'domains' => $company->domains
+                ->map(fn (CompanyDomain $domain): string => $domain->domain)
+                ->sort()
+                ->values()
+                ->all(),
+            'contacts_count' => (int) $company->getAttribute('contacts_count'),
+            'created_at' => $company->created_at?->toISOString(),
         ];
     }
 
