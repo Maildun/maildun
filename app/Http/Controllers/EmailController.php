@@ -1026,9 +1026,9 @@ class EmailController extends Controller
 
         return match (true) {
             $email->status->isActive() => __('Wait until this campaign finishes sending.'),
-            $delivery->subscriber !== null
-                && $delivery->subscriber->status !== SubscriberStatus::Subscribed => __('This recipient has unsubscribed.'),
-            $delivery->subscriber?->isPendingConfirmation() === true => __('This recipient has not confirmed their subscription yet.'),
+            $delivery->subscriber === null => __('This recipient was removed from the audience.'),
+            $delivery->subscriber->status !== SubscriberStatus::Subscribed => __('This recipient has unsubscribed.'),
+            $delivery->subscriber->isPendingConfirmation() => __('This recipient has not confirmed their subscription yet.'),
             in_array($delivery->email_address, $suppressedAddresses, true) => __('This address is suppressed after it bounced or reported a spam complaint.'),
             default => __('This delivery cannot be retried.'),
         };

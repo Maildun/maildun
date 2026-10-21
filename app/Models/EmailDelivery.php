@@ -4,7 +4,6 @@ namespace App\Models;
 
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailFailureCode;
-use App\Enums\SubscriberStatus;
 use Database\Factories\EmailDeliveryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -142,8 +141,10 @@ class EmailDelivery extends Model
 
     /**
      * Deliveries a deliberate retry may queue again: a retryable outcome, a
-     * subscriber who is still subscribed and confirmed (or was deleted), and an address the
-     * workspace has not suppressed after bounces or a complaint.
+     * subscriber who still exists and is opted in, and an address the
+     * workspace has not suppressed after bounces or a complaint. A delivery
+     * whose membership, contact or audience was deleted has no subscriber and
+     * is never retried.
      *
      * @param  Builder<$this>  $query
      */
@@ -151,16 +152,7 @@ class EmailDelivery extends Model
     {
         $query
             ->whereIn('email_deliveries.status', EmailDeliveryStatus::retryable())
-            ->where(function (Builder $deliveries): void {
-                $deliveries
-                    ->whereNull('subscriber_id')
-                    ->orWhereHas(
-                        'subscriber',
-                        fn (Builder $subscriber) => $subscriber
-                            ->where('status', SubscriberStatus::Subscribed)
-                            ->whereNotNull('subscribed_at'),
-                    );
-            })
+            ->whereHas('subscriber', fn (Builder $subscriber) => $subscriber->optedIn())
             ->whereNotExists(
                 EmailAddressHealth::query()
                     ->suppressedFor($team)

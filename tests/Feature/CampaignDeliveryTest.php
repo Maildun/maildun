@@ -686,12 +686,14 @@ test('failed and delayed deliveries can be retried without touching bounces', fu
         'sent_at' => now(),
     ]);
     $failed = $email->deliveries()->create([
+        'subscriber_id' => Subscriber::factory()->create()->id,
         'email_address' => 'fail@example.com',
         'status' => EmailDeliveryStatus::Failed,
         'provider' => 'smtp',
         'failure_reason' => 'Connection timed out',
     ]);
     $delayed = $email->deliveries()->create([
+        'subscriber_id' => Subscriber::factory()->create()->id,
         'email_address' => 'later@example.com',
         'status' => EmailDeliveryStatus::Delayed,
         'provider' => 'ses',
@@ -1190,6 +1192,7 @@ test('a single failed delivery can be retried', function () {
         'sent_at' => now(),
     ]);
     $failed = $email->deliveries()->create([
+        'subscriber_id' => Subscriber::factory()->create()->id,
         'email_address' => 'fail@example.com',
         'status' => EmailDeliveryStatus::Failed,
         'provider' => 'smtp',
@@ -1618,4 +1621,67 @@ test('a recipient cancelled for leaving does not mark the finished campaign as s
     (new FinalizeEmailSend($email->id))(Mockery::mock(Batch::class));
 
     expect($email->fresh()->status)->toBe(EmailStatus::Sent);
+});
+
+test('a retry leaves deliveries to removed members alone', function (string $removal) {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->create();
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create(['email' => 'removed@example.com']);
+    $contact = $subscriber->contact;
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 2,
+    ]);
+    $kept = EmailDelivery::factory()->for($email)->create([
+        'subscriber_id' => Subscriber::factory()->for($audience)->create()->id,
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+    $removed = EmailDelivery::factory()->for($email)->for($subscriber)->create([
+        'email_address' => $subscriber->email,
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+
+    $response = match ($removal) {
+        'membership delete' => $this->actingAs($user)
+            ->delete(route('audiences.subscribers.destroy', [$team, $audience, $subscriber])),
+        'contact delete' => $this->actingAs($user)
+            ->delete(route('contacts.destroy', [$team, $contact]), ['confirmation' => $contact->email]),
+    };
+    $response->assertSessionHasNoErrors();
+    expect($removed->fresh()->subscriber_id)->toBeNull();
+
+    $this->actingAs($user)
+        ->get(route('emails.recipients', [$team, $email, 'status' => 'retryable']))
+        ->assertInertia(fn (Assert $page) => $page->has('recipients.data', 1));
+
+    $this->actingAs($user)
+        ->post(route('emails.retry', [$team, $email]))
+        ->assertSessionHasNoErrors();
+
+    expect($kept->fresh()->status)->toBe(EmailDeliveryStatus::Queued)
+        ->and($removed->fresh()->status)->toBe(EmailDeliveryStatus::Failed);
+})->with(['membership delete', 'contact delete']);
+
+test('a recipient row explains that a removed member cannot be retried', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::PartiallyFailed,
+        'recipient_count' => 1,
+    ]);
+    EmailDelivery::factory()->for($email)->create([
+        'subscriber_id' => null,
+        'status' => EmailDeliveryStatus::Failed,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('emails.recipients', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('recipients.data.0.can_retry', false)
+            ->where('recipients.data.0.retry_blocked_reason', 'This recipient was removed from the audience.'));
 });
