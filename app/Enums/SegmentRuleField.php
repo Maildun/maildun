@@ -14,6 +14,11 @@ enum SegmentRuleField: string
     case Language = 'language';
     /** A tag on the member's contact, by tag UUID. */
     case Tag = 'tag';
+    /**
+     * A custom audience field, named by the rule's `attribute` UUID. Its
+     * operators depend on the field type (AudienceAttributeType).
+     */
+    case Attribute = 'attribute';
 
     /**
      * @return array<SegmentRuleOperator>
@@ -35,6 +40,7 @@ enum SegmentRuleField: string
                 SegmentRuleOperator::Before,
                 SegmentRuleOperator::After,
             ],
+            self::Attribute => SegmentRuleOperator::cases(),
         };
     }
 }

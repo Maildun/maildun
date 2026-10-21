@@ -2,12 +2,14 @@
 
 namespace App\Actions\Audiences;
 
+use App\Enums\AudienceAttributeType;
 use App\Enums\SegmentRuleField;
 use App\Enums\SegmentRuleOperator;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
+use App\Models\AudienceAttribute;
 use DateTimeImmutable;
 use Illuminate\Support\Str;
 
@@ -32,6 +34,12 @@ class ValidateSegmentRules
 
             if (! $field || ! $operator || ! in_array($operator, $field->operators(), true)) {
                 $errors["rules.{$index}.operator"] = 'The selected operator is not valid for this field.';
+
+                continue;
+            }
+
+            if ($field === SegmentRuleField::Attribute) {
+                $this->validateAttributeRule($audience, $rule, $operator, $value, "rules.{$index}", $errors);
 
                 continue;
             }
@@ -71,6 +79,41 @@ class ValidateSegmentRules
     private function text(mixed $value): string
     {
         return is_scalar($value) ? (string) $value : '';
+    }
+
+    /**
+     * A custom field rule needs a field of this audience, an operator its type
+     * accepts and a value of that type.
+     *
+     * @param  array<mixed>  $rule
+     * @param  array<string, string>  $errors
+     */
+    private function validateAttributeRule(Audience $audience, array $rule, SegmentRuleOperator $operator, mixed $value, string $key, array &$errors): void
+    {
+        $attributeUuid = $rule['attribute'] ?? null;
+        $attribute = is_string($attributeUuid) && Str::isUuid($attributeUuid)
+            ? $audience->audienceAttributes()->where('uuid', Str::lower($attributeUuid))->first()
+            : null;
+
+        if (! $attribute instanceof AudienceAttribute) {
+            $errors["{$key}.field"] = 'The selected custom field is invalid.';
+
+            return;
+        }
+
+        if (! in_array($operator, $attribute->type->segmentOperators(), true)) {
+            $errors["{$key}.operator"] = 'The selected operator is not valid for this field.';
+
+            return;
+        }
+
+        if ($attribute->type === AudienceAttributeType::Number && ! is_numeric($value)) {
+            $errors["{$key}.value"] = 'The value must be a number.';
+        }
+
+        if ($attribute->type === AudienceAttributeType::Date && ! $this->isCalendarDate($value)) {
+            $errors["{$key}.value"] = 'The date must be in YYYY-MM-DD format.';
+        }
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Actions\Audiences;
 
 use App\Enums\SubscriberSource;
 use App\Models\Audience;
+use App\Models\AudienceAttribute;
 use App\Models\SubscribeForm;
 use App\Models\Tag;
 
@@ -18,6 +19,7 @@ class BuildSegmentRuleOptions
      *     forms: list<array{uuid: string, name: string, deleted: bool}>,
      *     sources: list<array{value: string, label: string}>,
      *     tags: list<array{uuid: string, name: string}>,
+     *     attributes: list<array{uuid: string, name: string, type: string}>,
      * }
      */
     public function handle(Audience $audience): array
@@ -43,6 +45,16 @@ class BuildSegmentRuleOptions
                 ->orderBy('id')
                 ->get(['uuid', 'name'])
                 ->map(fn (Tag $tag): array => ['uuid' => $tag->uuid, 'name' => $tag->name])
+                ->all()),
+            'attributes' => array_values($audience->audienceAttributes()
+                ->orderBy('position')
+                ->orderBy('id')
+                ->get(['uuid', 'name', 'type'])
+                ->map(fn (AudienceAttribute $attribute): array => [
+                    'uuid' => $attribute->uuid,
+                    'name' => $attribute->name,
+                    'type' => $attribute->type->value,
+                ])
                 ->all()),
         ];
     }

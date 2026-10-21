@@ -52,6 +52,7 @@ class CreateSegmentTool extends Tool
             'rules.*.field' => ['required', Rule::enum(SegmentRuleField::class)],
             'rules.*.operator' => ['required', Rule::enum(SegmentRuleOperator::class)],
             'rules.*.value' => ['required', 'string', 'max:255'],
+            'rules.*.attribute' => ['nullable', 'string', 'max:255'],
         ]);
 
         $errors = $this->validateRules->handle($audience, $validated['rules']);
@@ -100,13 +101,14 @@ class CreateSegmentTool extends Tool
     public static function rulesSchema(JsonSchema $schema): Type
     {
         return $schema->array()
-            ->description('1-10 rules. Text fields (email, first_name, last_name) take equals, not_equals, contains, does_not_contain. status (subscribed|unsubscribed), source, subscribe_form (form UUID), language (ISO 639-1 code such as en or id), and tag (tag UUID; equals means has the tag) take equals or not_equals. not_equals and does_not_contain also match subscribers with no value in that field (no name, no form, no language). subscribed_at takes before or after with a date value written as YYYY-MM-DD, compared as a UTC calendar day.')
+            ->description('1-10 rules. Text fields (email, first_name, last_name) take equals, not_equals, contains, does_not_contain. status (subscribed|unsubscribed), source, subscribe_form (form UUID), language (ISO 639-1 code such as en or id), and tag (tag UUID; equals means has the tag) take equals or not_equals. not_equals and does_not_contain also match subscribers with no value in that field (no name, no form, no language). subscribed_at takes before or after with a date value written as YYYY-MM-DD, compared as a UTC calendar day. attribute targets a custom audience field named by attribute (its UUID): text fields take the text operators, number fields equals, not_equals, greater_than or less_than, and date fields before or after with YYYY-MM-DD.')
             ->min(1)
             ->max(10)
             ->items($schema->object([
                 'field' => $schema->string()->enum(SegmentRuleField::class)->required(),
                 'operator' => $schema->string()->enum(SegmentRuleOperator::class)->required(),
                 'value' => $schema->string()->max(255)->required(),
+                'attribute' => $schema->string()->description('Custom field UUID, only for the attribute field.')->format('uuid'),
             ])->withoutAdditionalProperties());
     }
 }

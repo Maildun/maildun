@@ -49,14 +49,17 @@ export type SegmentRuleField =
     | 'subscribe_form'
     | 'subscribed_at'
     | 'language'
-    | 'tag';
+    | 'tag'
+    | 'attribute';
 export type SegmentRuleOperator =
     | 'equals'
     | 'not_equals'
     | 'contains'
     | 'does_not_contain'
     | 'before'
-    | 'after';
+    | 'after'
+    | 'greater_than'
+    | 'less_than';
 
 export type PaginationLink = {
     url: string | null;
@@ -170,6 +173,7 @@ export type SegmentRuleOptions = {
     forms: { uuid: string; name: string; deleted: boolean }[];
     sources: { value: string; label: string }[];
     tags: { uuid: string; name: string }[];
+    attributes: { uuid: string; name: string; type: AudienceAttributeType }[];
 };
 
 export type AudienceSenderFallbacks = {
@@ -257,6 +261,8 @@ export type SegmentRule = {
     field: SegmentRuleField;
     operator: SegmentRuleOperator;
     value: string;
+    /** The custom field UUID, for `attribute` rules only. */
+    attribute?: string;
 };
 
 export type Segment = {

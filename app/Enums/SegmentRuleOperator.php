@@ -10,4 +10,6 @@ enum SegmentRuleOperator: string
     case DoesNotContain = 'does_not_contain';
     case Before = 'before';
     case After = 'after';
+    case GreaterThan = 'greater_than';
+    case LessThan = 'less_than';
 }

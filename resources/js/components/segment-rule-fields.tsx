@@ -21,12 +21,14 @@ import {
     SelectContent,
     SelectGroup,
     SelectItem,
+    SelectLabel,
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type {
+    AudienceAttributeType,
     SegmentRule,
     SegmentRuleField,
     SegmentRuleOperator,
@@ -37,6 +39,7 @@ import type {
 const RULE_DATE_FORMAT = 'yyyy-MM-dd';
 const MAX_RULES = 10;
 const RULE_SELECT_TRIGGER_CLASSNAME = 'w-full border-none bg-muted';
+const ATTRIBUTE_FIELD_PREFIX = 'attribute:';
 
 type SegmentRuleErrors = {
     field?: string;
@@ -206,7 +209,11 @@ function SegmentRuleRow({
     onChange: (rule: SegmentRule) => void;
     onRemove: () => void;
 }) {
-    const operators = useMemo(() => operatorsFor(rule.field), [rule.field]);
+    const attributeType = attributeTypeFor(rule, options);
+    const operators = useMemo(
+        () => operatorsFor(rule.field, attributeType),
+        [rule.field, attributeType],
+    );
     const ruleErrors = [errors.field, errors.operator, errors.value]
         .filter((message): message is string => Boolean(message))
         .map((message) => ({ message }));
@@ -215,17 +222,43 @@ function SegmentRuleRow({
         <Field data-invalid={ruleErrors.length > 0} className="gap-2">
             <div className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
                 <Select
-                    value={rule.field}
+                    value={
+                        rule.field === 'attribute'
+                            ? `${ATTRIBUTE_FIELD_PREFIX}${rule.attribute ?? ''}`
+                            : rule.field
+                    }
                     disabled={disabled}
                     onValueChange={(value) => {
                         if (!value) {
                             return;
                         }
 
+                        if (value.startsWith(ATTRIBUTE_FIELD_PREFIX)) {
+                            const attribute = options.attributes.find(
+                                (option) =>
+                                    `${ATTRIBUTE_FIELD_PREFIX}${option.uuid}` ===
+                                    value,
+                            );
+
+                            onChange({
+                                field: 'attribute',
+                                attribute: attribute?.uuid,
+                                operator: operatorsFor(
+                                    'attribute',
+                                    attribute?.type,
+                                )[0].value,
+                                value: '',
+                            });
+
+                            return;
+                        }
+
+                        const field = value as SegmentRuleField;
+
                         onChange({
-                            field: value,
-                            operator: operatorsFor(value)[0].value,
-                            value: defaultRuleValue(value, options, languages),
+                            field,
+                            operator: operatorsFor(field)[0].value,
+                            value: defaultRuleValue(field, options, languages),
                         });
                     }}
                 >
@@ -254,6 +287,19 @@ function SegmentRuleRow({
                             <SelectItem value="language">Language</SelectItem>
                             <SelectItem value="tag">Tag</SelectItem>
                         </SelectGroup>
+                        {options.attributes.length > 0 ? (
+                            <SelectGroup>
+                                <SelectLabel>Custom fields</SelectLabel>
+                                {options.attributes.map((attribute) => (
+                                    <SelectItem
+                                        key={attribute.uuid}
+                                        value={`${ATTRIBUTE_FIELD_PREFIX}${attribute.uuid}`}
+                                    >
+                                        {attribute.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectGroup>
+                        ) : null}
                     </SelectContent>
                 </Select>
                 <Select
@@ -408,6 +454,33 @@ function RuleValue({
         );
     }
 
+    if (rule.field === 'attribute') {
+        const type = attributeTypeFor(rule, options);
+
+        if (type === 'date') {
+            return (
+                <RuleDatePicker
+                    value={rule.value}
+                    invalid={invalid}
+                    disabled={disabled}
+                    onChange={onChange}
+                />
+            );
+        }
+
+        return (
+            <Input
+                type={type === 'number' ? 'number' : 'text'}
+                value={rule.value}
+                disabled={disabled}
+                onChange={(event) => onChange(event.target.value)}
+                placeholder={type === 'number' ? '100' : 'Value to match'}
+                aria-label="Rule value"
+                aria-invalid={invalid}
+            />
+        );
+    }
+
     if (rule.field === 'subscribed_at') {
         return (
             <RuleDatePicker
@@ -528,10 +601,40 @@ function RuleSelect({
     );
 }
 
+/**
+ * The type of the custom field an `attribute` rule points at, or undefined
+ * for other rules and for a field that no longer exists.
+ */
+function attributeTypeFor(
+    rule: SegmentRule,
+    options: SegmentRuleOptions,
+): AudienceAttributeType | undefined {
+    if (rule.field !== 'attribute') {
+        return undefined;
+    }
+
+    return options.attributes.find(
+        (attribute) => attribute.uuid === rule.attribute,
+    )?.type;
+}
+
 function operatorsFor(
     field: SegmentRuleField,
+    attributeType?: AudienceAttributeType,
 ): { value: SegmentRuleOperator; label: string }[] {
-    if (field === 'subscribed_at') {
+    if (field === 'attribute' && attributeType === 'number') {
+        return [
+            { value: 'equals', label: 'Equals' },
+            { value: 'not_equals', label: 'Does not equal' },
+            { value: 'greater_than', label: 'Greater than' },
+            { value: 'less_than', label: 'Less than' },
+        ];
+    }
+
+    if (
+        field === 'subscribed_at' ||
+        (field === 'attribute' && attributeType === 'date')
+    ) {
         return [
             { value: 'before', label: 'Before' },
             { value: 'after', label: 'After' },

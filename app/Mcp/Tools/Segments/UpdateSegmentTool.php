@@ -55,6 +55,7 @@ class UpdateSegmentTool extends Tool
             'rules.*.field' => ['required', Rule::enum(SegmentRuleField::class)],
             'rules.*.operator' => ['required', Rule::enum(SegmentRuleOperator::class)],
             'rules.*.value' => ['required', 'string', 'max:255'],
+            'rules.*.attribute' => ['nullable', 'string', 'max:255'],
         ]);
         $changes = $this->context->trimStrings(
             $this->context->changes($validated, ['name', 'description', 'match_type', 'rules']),
