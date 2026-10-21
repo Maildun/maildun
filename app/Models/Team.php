@@ -54,6 +54,7 @@ use Illuminate\Support\Str;
  * @property-read Collection<int, Subscriber> $subscribers
  * @property-read Collection<int, Tag> $tags
  * @property-read Collection<int, Email> $emails
+ * @property-read Collection<int, EmailConversionEvent> $conversionEvents
  * @property-read Collection<int, EmailTemplate> $emailTemplates
  * @property-read Collection<int, TransactionalEmail> $transactionalEmails
  * @property-read TeamEmailIntegration|null $emailIntegration
@@ -307,6 +308,12 @@ class Team extends Model
     public function emails(): HasMany
     {
         return $this->hasMany(Email::class);
+    }
+
+    /** @return HasMany<EmailConversionEvent, $this> */
+    public function conversionEvents(): HasMany
+    {
+        return $this->hasMany(EmailConversionEvent::class);
     }
 
     /** @return HasMany<EmailTemplate, $this> */
