@@ -15,6 +15,7 @@ use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -331,6 +332,25 @@ test('segments sync command materializes matches for every segment', function ()
     $segment->refresh();
     expect($segment->rules_synced_at)->not->toBeNull()
         ->and($segment->subscribers()->pluck('subscribers.id')->all())->toBe([$matching->id]);
+});
+
+test('segments sync command keeps syncing after one segment fails', function () {
+    Exceptions::fake();
+    $audience = Audience::factory()->create();
+    $matching = Subscriber::factory()->for($audience)->create(['status' => SubscriberStatus::Subscribed]);
+    $broken = Segment::factory()->for($audience)->create([
+        'rules' => [['field' => 'retired_field', 'operator' => 'equals', 'value' => 'x']],
+    ]);
+    $healthy = Segment::factory()->for($audience)->create([
+        'rules' => [['field' => 'status', 'operator' => 'equals', 'value' => 'subscribed']],
+    ]);
+
+    $this->artisan('segments:sync')->assertFailed();
+
+    Exceptions::assertReported(ValueError::class);
+    expect($broken->refresh()->rules_synced_at)->toBeNull()
+        ->and($healthy->refresh()->rules_synced_at)->not->toBeNull()
+        ->and($healthy->subscribers()->pluck('subscribers.id')->all())->toBe([$matching->id]);
 });
 
 test('segment rule engine supports every phase one operator', function (string $field, string $operator, string $value, string $expectedEmail) {
