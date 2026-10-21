@@ -46,6 +46,10 @@ class ContactExportController extends Controller
             ->when($filters['search'] !== '', function (Builder $query) use ($filters): void {
                 $this->wherePersonContains($query, $filters['search']);
             })
+            ->when($filters['tag'] !== '', fn (Builder $query) => $query->whereHas(
+                'tags',
+                fn (Builder $tagQuery) => $tagQuery->where('tags.uuid', $filters['tag']),
+            ))
             ->when($filters['company'] === 'assigned', fn (Builder $query) => $query->whereNotNull('company_id'))
             ->when($filters['company'] === 'unassigned', fn (Builder $query) => $query->whereNull('company_id'))
             ->when(
@@ -111,7 +115,11 @@ class ContactExportController extends Controller
             })
             ->when($filters['status'] !== 'all', fn (Builder $query) => $query->where('status', $filters['status']))
             ->when($filters['source'] !== 'all', fn (Builder $query) => $query->where('source', $filters['source']))
-            ->when($filters['language'] !== 'all', fn (Builder $query) => $query->where('language', $filters['language']));
+            ->when($filters['language'] !== 'all', fn (Builder $query) => $query->where('language', $filters['language']))
+            ->when($filters['tag'] !== 'all', fn (Builder $query) => $query->whereHas(
+                'contact.tags',
+                fn (Builder $tagQuery) => $tagQuery->where('tags.uuid', $filters['tag']),
+            ));
 
         // Custom fields are headed by their key, which is what an import maps
         // back to the field, so an exported file can be imported again.
@@ -276,12 +284,13 @@ class ContactExportController extends Controller
         };
     }
 
-    /** @return array{search: string, company: string, audience: string, language: string, sort: string} */
+    /** @return array{search: string, company: string, audience: string, tag: string, language: string, sort: string} */
     private function contactFilters(Request $request, Team $team): array
     {
         $company = $this->queryFilter($request, 'company');
         $company = Str::isUuid($company) && ! $team->companies()->where('uuid', $company)->exists() ? '' : $company;
         $audience = $this->queryFilter($request, 'audience');
+        $tag = $this->queryFilter($request, 'tag');
         $sort = $this->queryFilter($request, 'sort');
 
         return [
@@ -290,22 +299,25 @@ class ContactExportController extends Controller
                 ? $company
                 : '',
             'audience' => Str::isUuid($audience) ? $audience : '',
+            'tag' => Str::isUuid($tag) ? Str::lower($tag) : '',
             'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))->value ?? '',
             'sort' => in_array($sort, ['oldest', 'name'], true) ? $sort : 'newest',
         ];
     }
 
-    /** @return array{search: string, status: string, source: string, language: string} */
+    /** @return array{search: string, status: string, source: string, language: string, tag: string} */
     private function subscriberFilters(Request $request): array
     {
         $status = $this->queryFilter($request, 'status');
         $source = $this->queryFilter($request, 'source');
+        $tag = $this->queryFilter($request, 'tag');
 
         return [
             'search' => $this->queryFilter($request, 'search'),
             'status' => SubscriberStatus::tryFrom($status)->value ?? 'all',
             'source' => SubscriberSource::tryFrom($source)->value ?? 'all',
             'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))->value ?? 'all',
+            'tag' => Str::isUuid($tag) ? Str::lower($tag) : 'all',
         ];
     }
 }

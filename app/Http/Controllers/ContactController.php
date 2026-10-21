@@ -54,6 +54,10 @@ class ContactController extends Controller
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
                 $this->wherePersonContains($query, $filters['search']);
             })
+            ->when($filters['tag'] !== '', fn ($query) => $query->whereHas(
+                'tags',
+                fn ($tagQuery) => $tagQuery->where('tags.uuid', $filters['tag']),
+            ))
             ->when($filters['company'] === 'assigned', fn ($query) => $query->whereNotNull('company_id'))
             ->when($filters['company'] === 'unassigned', fn ($query) => $query->whereNull('company_id'))
             ->when(
@@ -477,18 +481,20 @@ class ContactController extends Controller
             ->all());
     }
 
-    /** @return array{search: string, company: string, audience: string, language: string, sort: string} */
+    /** @return array{search: string, company: string, audience: string, tag: string, language: string, sort: string} */
     private function indexFilters(Request $request, Team $team): array
     {
         $company = $this->queryFilter($request, 'company');
         $company = Str::isUuid($company) && ! $team->companies()->where('uuid', $company)->exists() ? '' : $company;
         $audience = $this->queryFilter($request, 'audience');
+        $tag = $this->queryFilter($request, 'tag');
         $sort = $this->queryFilter($request, 'sort');
 
         return [
             'search' => $this->queryFilter($request, 'search'),
             'company' => $company === 'assigned' || $company === 'unassigned' || Str::isUuid($company) ? $company : '',
             'audience' => Str::isUuid($audience) ? $audience : '',
+            'tag' => Str::isUuid($tag) ? Str::lower($tag) : '',
             'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))?->value ?? '',
             'sort' => in_array($sort, ['oldest', 'name'], true) ? $sort : 'newest',
         ];

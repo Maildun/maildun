@@ -8,6 +8,7 @@ import {
     MailAtSign02Icon,
     MoreHorizontalIcon,
     StatusIcon,
+    Tag01Icon,
     Tick02Icon,
     TranslateIcon,
     UserCheck01Icon,
@@ -214,7 +215,13 @@ export default function AudienceShow(props: Props) {
     } = useListFilters<SubscriberIndexFilters>({
         url: currentTeam ? show.url([currentTeam.slug, audience.uuid]) : '',
         filters,
-        empty: { search: '', status: 'all', source: 'all', language: 'all' },
+        empty: {
+            search: '',
+            status: 'all',
+            source: 'all',
+            language: 'all',
+            tag: 'all',
+        },
         searchField: 'search',
     });
 
@@ -351,6 +358,21 @@ export default function AudienceShow(props: Props) {
                                             visitSubscribers({ language }),
                                         testId: 'subscriber-language-filter',
                                     },
+                                    {
+                                        key: 'tag',
+                                        icon: Tag01Icon,
+                                        label: 'Tag',
+                                        value: filters.tag,
+                                        allValue: 'all',
+                                        allLabel: 'All tags',
+                                        options: tags.map((tag) => ({
+                                            value: tag.uuid,
+                                            label: tag.name,
+                                        })),
+                                        onValueChange: (tag) =>
+                                            visitSubscribers({ tag }),
+                                        testId: 'subscriber-tag-filter',
+                                    },
                                 ]}
                             />
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -462,6 +484,24 @@ export default function AudienceShow(props: Props) {
                                               onClear: () =>
                                                   clearSubscriberFilter({
                                                       language: 'all',
+                                                  }),
+                                          },
+                                      ]
+                                    : []),
+                                ...(filters.tag !== 'all'
+                                    ? [
+                                          {
+                                              key: 'tag',
+                                              field: 'Tag',
+                                              value:
+                                                  tags.find(
+                                                      (tag) =>
+                                                          tag.uuid ===
+                                                          filters.tag,
+                                                  )?.name ?? filters.tag,
+                                              onClear: () =>
+                                                  clearSubscriberFilter({
+                                                      tag: 'all',
                                                   }),
                                           },
                                       ]

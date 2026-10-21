@@ -2,6 +2,7 @@ import {
     ArrowDown01Icon,
     Building06Icon,
     Delete02Icon,
+    Tag01Icon,
     TranslateIcon,
     UserGroupIcon,
     UserIcon,
@@ -87,7 +88,13 @@ export default function ContactsIndex({
         useListFilters({
             url: currentTeam ? index.url(currentTeam.slug) : '',
             filters,
-            empty: { search: '', company: '', audience: '', language: '' },
+            empty: {
+                search: '',
+                company: '',
+                audience: '',
+                tag: '',
+                language: '',
+            },
             searchField: 'search',
         });
 
@@ -207,6 +214,18 @@ export default function ContactsIndex({
                                     visit({ audience }),
                             },
                             {
+                                key: 'tag',
+                                icon: Tag01Icon,
+                                label: 'Tag',
+                                value: filters.tag,
+                                allLabel: 'All tags',
+                                options: tags.map((tag) => ({
+                                    value: tag.uuid,
+                                    label: tag.name,
+                                })),
+                                onValueChange: (tag) => visit({ tag }),
+                            },
+                            {
                                 key: 'language',
                                 icon: TranslateIcon,
                                 label: 'Language',
@@ -306,6 +325,19 @@ export default function ContactsIndex({
                                                   filters.audience,
                                           )?.name ?? filters.audience,
                                       onClear: () => clear({ audience: '' }),
+                                  },
+                              ]
+                            : []),
+                        ...(filters.tag
+                            ? [
+                                  {
+                                      key: 'tag',
+                                      field: 'Tag',
+                                      value:
+                                          tags.find(
+                                              (tag) => tag.uuid === filters.tag,
+                                          )?.name ?? filters.tag,
+                                      onClear: () => clear({ tag: '' }),
                                   },
                               ]
                             : []),

@@ -48,7 +48,8 @@ export type SegmentRuleField =
     | 'source'
     | 'subscribe_form'
     | 'subscribed_at'
-    | 'language';
+    | 'language'
+    | 'tag';
 export type SegmentRuleOperator =
     | 'equals'
     | 'not_equals'
@@ -104,6 +105,7 @@ export type SubscriberIndexFilters = {
     status: string;
     source: string;
     language: string;
+    tag: string;
 };
 
 export type Audience = Pick<
@@ -167,6 +169,7 @@ export type SubscriberLanguageOption = {
 export type SegmentRuleOptions = {
     forms: { uuid: string; name: string; deleted: boolean }[];
     sources: { value: string; label: string }[];
+    tags: { uuid: string; name: string }[];
 };
 
 export type AudienceSenderFallbacks = {

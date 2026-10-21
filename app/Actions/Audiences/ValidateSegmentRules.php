@@ -9,6 +9,7 @@ use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
 use DateTimeImmutable;
+use Illuminate\Support\Str;
 
 class ValidateSegmentRules
 {
@@ -49,6 +50,10 @@ class ValidateSegmentRules
 
             if ($field === SegmentRuleField::SubscribeForm && ! $audience->subscribeForms()->withTrashed()->where('uuid', $value)->exists()) {
                 $errors["rules.{$index}.value"] = 'The selected subscribe form is invalid.';
+            }
+
+            if ($field === SegmentRuleField::Tag && ! (Str::isUuid((string) $value) && $audience->team->tags()->where('uuid', Str::lower((string) $value))->exists())) {
+                $errors["rules.{$index}.value"] = 'The selected tag is invalid.';
             }
 
             if ($field === SegmentRuleField::SubscribedAt && ! $this->isCalendarDate($value)) {

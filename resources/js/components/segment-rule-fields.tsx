@@ -252,6 +252,7 @@ function SegmentRuleRow({
                                 Subscribed date
                             </SelectItem>
                             <SelectItem value="language">Language</SelectItem>
+                            <SelectItem value="tag">Tag</SelectItem>
                         </SelectGroup>
                     </SelectContent>
                 </Select>
@@ -390,6 +391,23 @@ function RuleValue({
         );
     }
 
+    if (rule.field === 'tag') {
+        return (
+            <RuleSelect
+                value={rule.value}
+                invalid={invalid}
+                disabled={disabled}
+                onChange={onChange}
+                options={options.tags.map((tag) => [tag.uuid, tag.name])}
+                placeholder={
+                    options.tags.length > 0
+                        ? 'Select value'
+                        : 'No tags in this workspace'
+                }
+            />
+        );
+    }
+
     if (rule.field === 'subscribed_at') {
         return (
             <RuleDatePicker
@@ -520,6 +538,13 @@ function operatorsFor(
         ];
     }
 
+    if (field === 'tag') {
+        return [
+            { value: 'equals', label: 'Has' },
+            { value: 'not_equals', label: 'Does not have' },
+        ];
+    }
+
     if (['status', 'source', 'subscribe_form', 'language'].includes(field)) {
         return [
             { value: 'equals', label: 'Is' },
@@ -554,6 +579,10 @@ function defaultRuleValue(
 
     if (field === 'language') {
         return languages[0]?.value || '';
+    }
+
+    if (field === 'tag') {
+        return options.tags[0]?.uuid || '';
     }
 
     return '';

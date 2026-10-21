@@ -22,6 +22,7 @@ use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -114,6 +115,10 @@ class AudienceController extends Controller
             ->when($filters['status'] !== 'all', fn ($query) => $query->where('status', $filters['status']))
             ->when($filters['source'] !== 'all', fn ($query) => $query->where('source', $filters['source']))
             ->when($filters['language'] !== 'all', fn ($query) => $query->where('language', $filters['language']))
+            ->when($filters['tag'] !== 'all', fn ($query) => $query->whereHas(
+                'contact.tags',
+                fn ($tagQuery) => $tagQuery->where('tags.uuid', $filters['tag']),
+            ))
             ->latest()
             ->orderByDesc('subscribers.id')
             ->paginate(20)
@@ -248,7 +253,7 @@ class AudienceController extends Controller
     }
 
     /**
-     * @return array{search: string, status: string, source: string, language: string}
+     * @return array{search: string, status: string, source: string, language: string, tag: string}
      */
     private function subscriberFilters(Request $request): array
     {
@@ -260,6 +265,7 @@ class AudienceController extends Controller
             'status' => SubscriberStatus::tryFrom($status)->value ?? 'all',
             'source' => SubscriberSource::tryFrom($source)->value ?? 'all',
             'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())->value ?? 'all',
+            'tag' => Str::isUuid($request->string('tag')->toString()) ? Str::lower($request->string('tag')->toString()) : 'all',
         ];
     }
 

@@ -189,6 +189,7 @@ export type ContactIndexFilters = {
     search: string;
     company: string;
     audience: string;
+    tag: string;
     language: SubscriberLanguage | '';
     sort: 'newest' | 'oldest' | 'name';
 };

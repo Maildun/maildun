@@ -45,6 +45,12 @@ class ApplySegmentRules
                         return;
                     }
 
+                    if ($field === SegmentRuleField::Tag) {
+                        $this->applyTagRule($ruleQuery, $operator, Str::lower((string) $value));
+
+                        return;
+                    }
+
                     $this->applyRule($ruleQuery, $field, $operator, $value);
                 });
             }
@@ -86,6 +92,21 @@ class ApplySegmentRules
             SegmentRuleOperator::After => $query->whereDate($column, '>', $this->calendarDate($value)),
             default => null,
         };
+    }
+
+    /**
+     * Tags belong to the contact, so a member has a tag when their contact
+     * does. A deleted tag is on nobody: "is" matches no one, "is not" everyone.
+     *
+     * @param  Builder<Subscriber>  $query
+     */
+    private function applyTagRule(Builder $query, SegmentRuleOperator $operator, string $tagUuid): void
+    {
+        $hasTag = fn (Builder $tagQuery) => $tagQuery->where('tags.uuid', $tagUuid);
+
+        $operator === SegmentRuleOperator::NotEquals
+            ? $query->whereDoesntHave('contact.tags', $hasTag)
+            : $query->whereHas('contact.tags', $hasTag);
     }
 
     /**

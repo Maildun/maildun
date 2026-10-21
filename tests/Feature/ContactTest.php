@@ -805,13 +805,14 @@ test('list-shaped filters on the contacts list fall back to no filter', function
             'search' => ['ada'],
             'company' => ['assigned'],
             'audience' => ['x'],
+            'tag' => ['x'],
             'language' => ['en'],
             'sort' => ['name'],
         ]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('contacts.data.0.uuid', $contact->uuid)
-            ->where('filters', ['search' => '', 'company' => '', 'audience' => '', 'language' => '', 'sort' => 'newest']));
+            ->where('filters', ['search' => '', 'company' => '', 'audience' => '', 'tag' => '', 'language' => '', 'sort' => 'newest']));
 });
 
 test('a list-shaped contact email is a validation error', function () {

@@ -12,6 +12,8 @@ enum SegmentRuleField: string
     case SubscribeForm = 'subscribe_form';
     case SubscribedAt = 'subscribed_at';
     case Language = 'language';
+    /** A tag on the member's contact, by tag UUID. */
+    case Tag = 'tag';
 
     /**
      * @return array<SegmentRuleOperator>
@@ -25,7 +27,7 @@ enum SegmentRuleField: string
                 SegmentRuleOperator::Contains,
                 SegmentRuleOperator::DoesNotContain,
             ],
-            self::Status, self::Source, self::SubscribeForm, self::Language => [
+            self::Status, self::Source, self::SubscribeForm, self::Language, self::Tag => [
                 SegmentRuleOperator::Equals,
                 SegmentRuleOperator::NotEquals,
             ],

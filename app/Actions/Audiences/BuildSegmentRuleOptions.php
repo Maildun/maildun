@@ -5,6 +5,7 @@ namespace App\Actions\Audiences;
 use App\Enums\SubscriberSource;
 use App\Models\Audience;
 use App\Models\SubscribeForm;
+use App\Models\Tag;
 
 class BuildSegmentRuleOptions
 {
@@ -16,6 +17,7 @@ class BuildSegmentRuleOptions
      * @return array{
      *     forms: list<array{uuid: string, name: string, deleted: bool}>,
      *     sources: list<array{value: string, label: string}>,
+     *     tags: list<array{uuid: string, name: string}>,
      * }
      */
     public function handle(Audience $audience): array
@@ -36,6 +38,12 @@ class BuildSegmentRuleOptions
                 'value' => $source->value,
                 'label' => $source->label(),
             ], SubscriberSource::cases()),
+            'tags' => array_values($audience->team->tags()
+                ->orderBy('name')
+                ->orderBy('id')
+                ->get(['uuid', 'name'])
+                ->map(fn (Tag $tag): array => ['uuid' => $tag->uuid, 'name' => $tag->name])
+                ->all()),
         ];
     }
 }
