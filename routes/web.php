@@ -146,9 +146,11 @@ Route::post('unsubscribe/{delivery}', [UnsubscribeController::class, 'store'])
 // routes above. unsubscribe/* is already CSRF exempt in bootstrap/app.php.
 Route::get('unsubscribe/s/{subscriber}', [UnsubscribeController::class, 'showForSubscriber'])
     ->middleware('inbox-signed')
+    ->whereUuid('subscriber')
     ->name('public.unsubscribe.subscriber.show');
 Route::post('unsubscribe/s/{subscriber}', [UnsubscribeController::class, 'storeForSubscriber'])
     ->middleware(['inbox-signed', 'throttle:public-unsubscribe'])
+    ->whereUuid('subscriber')
     ->name('public.unsubscribe.subscriber.store');
 
 // The hosted copy behind {{ web_view_url }}. Campaign deliveries take one

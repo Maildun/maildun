@@ -64,7 +64,7 @@ class EmailWebViewController extends Controller
     ): Response {
         $delivery->loadMissing(['run', 'subscriber', 'transactionalEmail']);
 
-        abort_if($delivery->subscriber === null || $delivery->transactionalEmail === null, 404);
+        abort_if($delivery->subscriber === null || $delivery->transactionalEmail === null || $delivery->run === null, 404);
 
         $merge = $mergeData->handle($delivery->subscriber, $delivery->run->context, $delivery);
 

@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Actions\Audiences\NotifyAudienceOfSubscriptionChange;
 use App\Actions\Audiences\UnsubscribeSubscriber;
 use App\Enums\SubscriberStatus;
+use App\Models\Audience;
+use App\Models\AutomationEmailDelivery;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use Illuminate\Http\Request;
@@ -87,16 +89,15 @@ class UnsubscribeController extends Controller
     }
 
     /**
-     * Show the opt-out confirmation for mail that has no delivery row.
+     * Show the opt-out confirmation for automation mail.
      *
-     * Automation sends are not recorded as an EmailDelivery, so their opt-out is
-     * keyed to the subscriber and the audience comes off the subscriber.
+     * Automation links are keyed to the subscriber, not a campaign delivery, so
+     * the audience comes off the subscriber, or off the automation delivery
+     * once that member is gone.
      */
-    public function showForSubscriber(Subscriber $subscriber): Response
+    public function showForSubscriber(string $subscriber): Response
     {
-        $subscriber->loadMissing('audience');
-
-        return Inertia::render('unsubscribe/show', $this->subscriberProps($subscriber));
+        return Inertia::render('unsubscribe/show', $this->subscriberProps($subscriber, $this->automationRecipient($subscriber)));
     }
 
     /**
@@ -105,17 +106,17 @@ class UnsubscribeController extends Controller
      * Signed rather than authenticated and CSRF exempt for the same RFC 8058
      * one-click reason as the campaign route above.
      */
-    public function storeForSubscriber(Request $request, Subscriber $subscriber): SymfonyResponse
+    public function storeForSubscriber(Request $request, string $subscriber): SymfonyResponse
     {
-        $subscriber->loadMissing('audience');
+        $recipient = $this->automationRecipient($subscriber);
 
-        $this->optOut($subscriber);
+        $this->optOut($recipient['membership']);
 
         if (! $request->header('X-Inertia')) {
             return response()->noContent();
         }
 
-        $landingPage = $subscriber->audience->unsubscribed_url;
+        $landingPage = $recipient['audience']->unsubscribed_url;
 
         // An Inertia visit cannot follow a cross-origin redirect, so the
         // browser is told to load the landing page itself.
@@ -145,6 +146,7 @@ class UnsubscribeController extends Controller
     }
 
     /**
+     * @param  array{audience: Audience, email: string, membership: Subscriber|null}  $recipient
      * @return array{
      *     email: string,
      *     audience: string|null,
@@ -152,24 +154,61 @@ class UnsubscribeController extends Controller
      *     action: string
      * }
      */
-    private function subscriberProps(Subscriber $subscriber): array
+    private function subscriberProps(string $subscriberUuid, array $recipient): array
     {
         return [
-            'email' => $subscriber->email,
-            'audience' => $subscriber->audience->name,
-            'unsubscribed' => $subscriber->status === SubscriberStatus::Unsubscribed,
+            'email' => $recipient['email'],
+            'audience' => $recipient['audience']->name,
+            'unsubscribed' => $recipient['membership'] === null
+                || $recipient['membership']->status === SubscriberStatus::Unsubscribed,
             'action' => URL::signedRoute(
                 'public.unsubscribe.subscriber.store',
-                ['subscriber' => $subscriber],
+                ['subscriber' => $subscriberUuid],
             ),
         ];
     }
 
-    private function subscriberShowUrl(Subscriber $subscriber): string
+    /**
+     * Who an automation link opts out. Removing the member nulls the
+     * delivery's subscriber_id but keeps its subscriber_uuid, so when the
+     * person was later added back the link falls back to their current
+     * membership in the same audience, by contact and then by address. With
+     * no membership left, the link shows them as unsubscribed. A uuid no
+     * automation was ever sent to is a 404.
+     *
+     * @return array{audience: Audience, email: string, membership: Subscriber|null}
+     */
+    private function automationRecipient(string $subscriberUuid): array
+    {
+        $subscriber = Subscriber::query()->with('audience')->where('uuid', $subscriberUuid)->first();
+
+        if ($subscriber instanceof Subscriber) {
+            return ['audience' => $subscriber->audience, 'email' => $subscriber->email, 'membership' => $subscriber];
+        }
+
+        $delivery = AutomationEmailDelivery::query()
+            ->with('audience')
+            ->where('subscriber_uuid', $subscriberUuid)
+            ->whereNotNull('audience_id')
+            ->latest('id')
+            ->first();
+
+        abort_if($delivery?->audience === null, 404);
+
+        $membership = $this->membershipIn($delivery->audience, $delivery->contact_id, $delivery->to_address);
+
+        return [
+            'audience' => $delivery->audience,
+            'email' => $membership->email ?? $delivery->to_address,
+            'membership' => $membership,
+        ];
+    }
+
+    private function subscriberShowUrl(string $subscriberUuid): string
     {
         return URL::signedRoute(
             'public.unsubscribe.subscriber.show',
-            ['subscriber' => $subscriber],
+            ['subscriber' => $subscriberUuid],
         );
     }
 
@@ -209,10 +248,18 @@ class UnsubscribeController extends Controller
             return null;
         }
 
-        return ($delivery->contact_id !== null
-            ? $audience->subscribers()->where('contact_id', $delivery->contact_id)->first()
+        return $this->membershipIn($audience, $delivery->contact_id, $delivery->email_address);
+    }
+
+    /**
+     * The person's membership in one audience, by contact and then by address.
+     */
+    private function membershipIn(Audience $audience, ?int $contactId, string $address): ?Subscriber
+    {
+        return ($contactId !== null
+            ? $audience->subscribers()->where('contact_id', $contactId)->first()
             : null)
-            ?? $audience->subscribers()->where('email', Str::lower($delivery->email_address))->first();
+            ?? $audience->subscribers()->where('email', Str::lower($address))->first();
     }
 
     private function showUrl(EmailDelivery $delivery): string
