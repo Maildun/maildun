@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Support\Str;
+
 test('subscriber list supports selecting every row', function () {
     $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/audiences/show.tsx');
 
@@ -36,6 +38,20 @@ test('subscriber list supports selecting every row', function () {
         ->toContain('setLifecycleOpen(false)')
         ->toContain('setConsentConfirmed(false)')
         ->toContain('footer={<Paginator paginator={pagination} showSummary />}');
+});
+
+test('bulk deleting subscribers asks for confirmation first', function () {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/audiences/show.tsx');
+    $selectionBar = Str::between($source, '<SelectionActionBar', '</SelectionActionBar>');
+    $confirmDialog = Str::between($source, 'open={confirmBulkDeleteOpen}', '</AlertDialog>');
+
+    expect($selectionBar)
+        ->toContain('setConfirmBulkDeleteOpen(true)')
+        ->not->toContain('bulkDestroy.url(');
+    expect($confirmDialog)
+        ->toContain('<AlertDialogAction')
+        ->toContain('bulkDestroy.url(routeArgs)')
+        ->toContain('cannot be undone.');
 });
 
 test('subscriber stats chart uses the primary color', function () {

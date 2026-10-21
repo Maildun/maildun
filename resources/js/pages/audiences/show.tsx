@@ -189,6 +189,7 @@ export default function AudienceShow(props: Props) {
     const [formOpen, setFormOpen] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [bulkTagsOpen, setBulkTagsOpen] = useState(false);
+    const [confirmBulkDeleteOpen, setConfirmBulkDeleteOpen] = useState(false);
     const [copiedText, copy] = useClipboard();
     const {
         visit: visitSubscribers,
@@ -561,19 +562,10 @@ export default function AudienceShow(props: Props) {
                                 <Button
                                     variant="destructive"
                                     size="sm"
-                                    onClick={() => {
-                                        router.delete(
-                                            bulkDestroy.url(routeArgs),
-                                            {
-                                                data: {
-                                                    ids: [...selected],
-                                                },
-                                                preserveScroll: true,
-                                                onSuccess: () =>
-                                                    setSelected(new Set()),
-                                            },
-                                        );
-                                    }}
+                                    onClick={() =>
+                                        setConfirmBulkDeleteOpen(true)
+                                    }
+                                    data-test="bulk-delete-subscribers"
                                 >
                                     <HugeiconsIcon
                                         icon={Delete02Icon}
@@ -582,6 +574,60 @@ export default function AudienceShow(props: Props) {
                                     Delete
                                 </Button>
                             </SelectionActionBar>
+                        )}
+                        {canManage && (
+                            <AlertDialog
+                                open={confirmBulkDeleteOpen}
+                                onOpenChange={setConfirmBulkDeleteOpen}
+                            >
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>
+                                            Delete {selected.size}{' '}
+                                            {selected.size === 1
+                                                ? 'subscriber'
+                                                : 'subscribers'}
+                                            ?
+                                        </AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            Their membership in this audience,
+                                            consent record, segment links and
+                                            automation history are removed. This
+                                            cannot be undone.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>
+                                            Cancel
+                                        </AlertDialogCancel>
+                                        <AlertDialogAction
+                                            variant="destructive"
+                                            data-test="confirm-bulk-delete-subscribers"
+                                            onClick={() => {
+                                                router.delete(
+                                                    bulkDestroy.url(routeArgs),
+                                                    {
+                                                        data: {
+                                                            ids: [...selected],
+                                                        },
+                                                        preserveScroll: true,
+                                                        onSuccess: () =>
+                                                            setSelected(
+                                                                new Set(),
+                                                            ),
+                                                        onFinish: () =>
+                                                            setConfirmBulkDeleteOpen(
+                                                                false,
+                                                            ),
+                                                    },
+                                                );
+                                            }}
+                                        >
+                                            Delete
+                                        </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
                         )}
                         {canManage && (
                             <BulkSubscriberTagsDialog
