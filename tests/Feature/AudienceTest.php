@@ -465,6 +465,43 @@ test('audience subscriber stats compare this week with the previous week', funct
             ->where('subscriberStats.series.27.previous_total', 2));
 });
 
+test('deleting or resubscribing a member does not change earlier days in the subscriber chart', function () {
+    $this->travelTo('2026-08-10 12:00:00');
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->joinedAt(now()->subDays(9))->create();
+    $leaving = Subscriber::factory()->for($audience)->joinedAt(now()->subDays(9))->create();
+    $returning = Subscriber::factory()->for($audience)->joinedAt(now()->subDays(9))
+        ->unsubscribed(now()->subDays(5))
+        ->create();
+
+    $this->travelTo('2026-08-12 00:00:00');
+    $this->artisan('audiences:snapshot-subscribers')->assertSuccessful();
+
+    $this->travelTo('2026-08-12 09:00:00');
+    $this->actingAs($user)
+        ->delete(route('audiences.subscribers.destroy', [$team, $audience, $leaving]))
+        ->assertRedirect();
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.resubscribe', [$team, $audience, $returning]), ['consent_confirmed' => true])
+        ->assertRedirect();
+
+    $this->actingAs($user)
+        ->get(route('audiences.show', [$team, $audience]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('subscriberStats.series.25.date', '2026-08-10')
+            ->where('subscriberStats.series.25.total', 3)
+            ->where('subscriberStats.series.25.subscribed', 2)
+            ->where('subscriberStats.series.25.unsubscribed', 1)
+            ->where('subscriberStats.series.27.date', '2026-08-12')
+            ->where('subscriberStats.series.27.total', 2)
+            ->where('subscriberStats.series.27.subscribed', 2)
+            ->where('subscriberStats.series.27.unsubscribed', 0));
+});
+
 test('audiences are isolated between teams', function () {
     $user = User::factory()->create();
     $otherOwner = User::factory()->create();

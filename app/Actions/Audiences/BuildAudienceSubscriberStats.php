@@ -4,6 +4,7 @@ namespace App\Actions\Audiences;
 
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
+use App\Models\AudienceSubscriberSnapshot;
 use Carbon\CarbonInterface;
 use Carbon\CarbonPeriod;
 use Illuminate\Support\Carbon;
@@ -41,33 +42,27 @@ class BuildAudienceSubscriberStats
     public function handle(Audience $audience): array
     {
         $today = now()->startOfDay();
-        $periodStart = $today->copy()->subDays(self::PERIOD_DAYS - 1);
-        $lookbackStart = $periodStart->copy()->subDays(self::PERIOD_DAYS);
+        $lookbackStart = self::historyStart();
         $weekStart = $today->copy()->subDays(self::WEEK_DAYS - 1);
         $previousWeekStart = $weekStart->copy()->subDays(self::WEEK_DAYS);
 
-        $createdByDay = $this->countsByDay($audience, 'created_at', $lookbackStart);
-        $unsubscribedByDay = $this->countsByDay($audience, 'unsubscribed_at', $lookbackStart);
-        $pendingByDay = $this->countsByDay($audience, 'created_at', $lookbackStart, pendingOnly: true);
+        $recordedDays = AudienceSubscriberSnapshot::query()
+            ->where('audience_id', $audience->id)
+            ->where('day', '>=', $lookbackStart->toDateString())
+            ->where('day', '<', $today->toDateString())
+            ->get()
+            ->mapWithKeys(fn (AudienceSubscriberSnapshot $snapshot): array => [
+                $snapshot->day->toDateString() => $this->day(
+                    $snapshot->day->toDateString(),
+                    $snapshot->total,
+                    $snapshot->unsubscribed,
+                    $snapshot->pending,
+                    $snapshot->new,
+                ),
+            ]);
 
-        $baseline = $audience->subscribers()
-            ->toBase()
-            ->selectRaw('count(*) as total')
-            ->selectRaw('count(case when unsubscribed_at is not null and unsubscribed_at < ? then 1 end) as unsubscribed', [$lookbackStart])
-            ->selectRaw('count(case when status = ? and subscribed_at is null then 1 end) as pending', [SubscriberStatus::Subscribed->value])
-            ->where('created_at', '<', $lookbackStart)
-            ->first();
-
-        $daily = $this->dailySnapshots(
-            $lookbackStart,
-            $today,
-            $createdByDay,
-            $unsubscribedByDay,
-            $pendingByDay,
-            (int) ($baseline->total ?? 0),
-            (int) ($baseline->unsubscribed ?? 0),
-            (int) ($baseline->pending ?? 0),
-        );
+        $daily = $this->reconstructDays($audience, $lookbackStart, $today)
+            ->map(fn (array $day): array => $recordedDays->get($day['date']) ?? $day);
 
         $currentDays = $daily->slice(-self::PERIOD_DAYS)->values();
         $previousDays = $daily->slice(0, self::PERIOD_DAYS)->values();
@@ -123,6 +118,54 @@ class BuildAudienceSubscriberStats
     }
 
     /**
+     * The first day the stats read: the current period plus the previous one
+     * it is compared with.
+     */
+    public static function historyStart(): CarbonInterface
+    {
+        return now()->startOfDay()->subDays(self::PERIOD_DAYS * 2 - 1);
+    }
+
+    /**
+     * Rebuild each day's counts from the audience's current members. Exact for
+     * today, but an earlier day shifts once a member who existed then is
+     * deleted or resubscribed, so the stats prefer the recorded snapshots for
+     * finished days and only fall back to this for days not yet recorded.
+     *
+     * @return Collection<int, array{date: string, total: int, subscribed: int, unsubscribed: int, pending: int, new: int, subscribe_rate: float}>
+     */
+    public function reconstructDays(Audience $audience, CarbonInterface $from, CarbonInterface $to): Collection
+    {
+        $createdByDay = $this->countsByDay($audience, 'created_at', $from);
+        $unsubscribedByDay = $this->countsByDay($audience, 'unsubscribed_at', $from);
+        $pendingByDay = $this->countsByDay($audience, 'created_at', $from, pendingOnly: true);
+
+        $baseline = $audience->subscribers()
+            ->toBase()
+            ->selectRaw('count(*) as total')
+            ->selectRaw('count(case when unsubscribed_at is not null and unsubscribed_at < ? then 1 end) as unsubscribed', [$from])
+            ->selectRaw('count(case when status = ? and subscribed_at is null then 1 end) as pending', [SubscriberStatus::Subscribed->value])
+            ->where('created_at', '<', $from)
+            ->first();
+
+        $total = (int) ($baseline->total ?? 0);
+        $unsubscribed = (int) ($baseline->unsubscribed ?? 0);
+        $pending = (int) ($baseline->pending ?? 0);
+        $days = collect();
+
+        foreach (CarbonPeriod::create($from, $to) as $date) {
+            $key = $date->toDateString();
+            $total += $createdByDay->get($key, 0);
+            $unsubscribed += $unsubscribedByDay->get($key, 0);
+            $pending += $pendingByDay->get($key, 0);
+
+            $days->push($this->day($key, $total, $unsubscribed, $pending, $createdByDay->get($key, 0)));
+        }
+
+        return $days;
+    }
+
+    /**
      * Pass pendingOnly to count just the members still awaiting double opt-in
      * confirmation. They are counted as pending from the day they joined.
      *
@@ -147,44 +190,23 @@ class BuildAudienceSubscriberStats
     }
 
     /**
-     * @param  Collection<string, int>  $createdByDay
-     * @param  Collection<string, int>  $unsubscribedByDay
-     * @param  Collection<string, int>  $pendingByDay
-     * @return Collection<int, array{date: string, total: int, subscribed: int, unsubscribed: int, pending: int, new: int, subscribe_rate: float}>
+     * @return array{date: string, total: int, subscribed: int, unsubscribed: int, pending: int, new: int, subscribe_rate: float}
      */
-    private function dailySnapshots(
-        CarbonInterface $from,
-        CarbonInterface $to,
-        Collection $createdByDay,
-        Collection $unsubscribedByDay,
-        Collection $pendingByDay,
-        int $total,
-        int $unsubscribed,
-        int $pending,
-    ): Collection {
-        $days = collect();
+    private function day(string $date, int $total, int $unsubscribed, int $pending, int $new): array
+    {
+        $subscribed = max($total - $unsubscribed - $pending, 0);
 
-        foreach (CarbonPeriod::create($from, $to) as $date) {
-            $key = $date->toDateString();
-            $total += $createdByDay->get($key, 0);
-            $unsubscribed += $unsubscribedByDay->get($key, 0);
-            $pending += $pendingByDay->get($key, 0);
-            $subscribed = max($total - $unsubscribed - $pending, 0);
-
-            $days->push([
-                'date' => $key,
-                'total' => $total,
-                'subscribed' => $subscribed,
-                'unsubscribed' => $unsubscribed,
-                'pending' => $pending,
-                'new' => $createdByDay->get($key, 0),
-                'subscribe_rate' => $total === 0
-                    ? 0.0
-                    : round(($subscribed / $total) * 100, 1),
-            ]);
-        }
-
-        return $days;
+        return [
+            'date' => $date,
+            'total' => $total,
+            'subscribed' => $subscribed,
+            'unsubscribed' => $unsubscribed,
+            'pending' => $pending,
+            'new' => $new,
+            'subscribe_rate' => $total === 0
+                ? 0.0
+                : round(($subscribed / $total) * 100, 1),
+        ];
     }
 
     /**

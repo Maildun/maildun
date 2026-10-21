@@ -53,3 +53,8 @@ Schedule::command('contacts:resume-imports')->everyFiveMinutes()->withoutOverlap
 // Starts campaigns whose scheduled time has come. withoutOverlapping plus the
 // per-campaign claim in ScheduleEmailSend::claimDue mean each starts once.
 Schedule::command('emails:send-scheduled')->everyMinute()->withoutOverlapping(10);
+
+// Freezes each audience's member counts for the subscriber chart. Hourly so
+// the run at midnight captures the day that just ended and a missed run is
+// caught up within the hour; days already recorded are never rewritten.
+Schedule::command('audiences:snapshot-subscribers')->hourly()->withoutOverlapping()->onOneServer();
