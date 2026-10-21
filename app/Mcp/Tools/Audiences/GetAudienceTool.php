@@ -15,7 +15,7 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('Gets one audience from a Maildun workspace by UUID.')]
+#[Description('Gets one audience from a Maildun workspace by UUID, including its double opt-in setting and custom subscriber attributes.')]
 #[IsOpenWorld(false)]
 #[IsReadOnly]
 #[Name('get-audience')]
@@ -30,6 +30,7 @@ class GetAudienceTool extends Tool
     {
         $team = $this->context->team($request);
         $audience = $this->context->audience($request, $team);
+        $audience->load(['doubleOptInEmail:id,uuid,name', 'audienceAttributes']);
         $audience->loadCount([
             'subscribers',
             'subscribers as subscribed_count' => fn ($query) => $query->optedIn(),

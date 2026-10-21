@@ -4,9 +4,11 @@ namespace App\Mcp\Tools\Audiences;
 
 use App\Enums\SubscribeFormFieldMode;
 use App\Enums\SubscriberLanguage;
+use App\Enums\TransactionalEmailStatus;
 use App\Mcp\Support\AudienceLanguageSettings;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
+use App\Models\TransactionalEmail;
 use App\Rules\AuthorizedSenderAddress;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -23,7 +25,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsIdempotent;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('Updates selected fields on an audience in a Maildun workspace.')]
+#[Description('Updates selected fields on an audience in a Maildun workspace, including double opt-in. Turning double opt-in on needs a published transactional email to send the confirmation link.')]
 #[IsDestructive(false)]
 #[IsIdempotent]
 #[IsOpenWorld(false)]
@@ -54,6 +56,8 @@ class UpdateAudienceTool extends Tool
         $team = $this->context->team($request);
         $audience = $this->context->audience($request, $team);
         $this->context->authorize($request, 'update', $audience);
+        $doubleOptIn = $request->get('double_opt_in');
+        $keepsDoubleOptIn = is_bool($doubleOptIn) ? $doubleOptIn : $audience->double_opt_in;
         $validated = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
@@ -65,9 +69,25 @@ class UpdateAudienceTool extends Tool
             'reply_to' => ['sometimes', 'nullable', 'email:rfc', 'max:255'],
             'notification_email' => ['sometimes', 'nullable', 'email:rfc', 'max:255'],
             'unsubscribed_url' => ['sometimes', 'nullable', 'url:http,https', 'max:2048'],
+            'double_opt_in' => ['sometimes', 'boolean'],
+            'double_opt_in_email_uuid' => [
+                Rule::requiredIf($keepsDoubleOptIn && (
+                    $audience->double_opt_in_email_id === null
+                    || array_key_exists('double_opt_in_email_uuid', $request->all())
+                )),
+                'nullable',
+                'string',
+                Rule::exists(TransactionalEmail::class, 'uuid')->where(fn ($query) => $query
+                    ->where('team_id', $team->id)
+                    ->where('status', TransactionalEmailStatus::Published->value)
+                    ->whereNull('deleted_at')),
+            ],
+        ], [
+            'double_opt_in_email_uuid.required' => 'Double opt-in needs a published transactional email for the confirmation link.',
+            'double_opt_in_email_uuid.exists' => 'Choose a published transactional email from this workspace.',
         ]);
 
-        $changes = $this->context->changes($validated, [...self::FIELDS, ...AudienceLanguageSettings::FIELDS]);
+        $changes = $this->context->changes($validated, [...self::FIELDS, ...AudienceLanguageSettings::FIELDS, 'double_opt_in', 'double_opt_in_email_uuid']);
         $changes = $this->context->trimStrings($changes, [
             'name',
             'description',
@@ -78,11 +98,21 @@ class UpdateAudienceTool extends Tool
             'unsubscribed_url',
         ]);
 
+        if (array_key_exists('double_opt_in_email_uuid', $changes)) {
+            $changes['double_opt_in_email_id'] = $changes['double_opt_in_email_uuid'] === null
+                ? null
+                : $team->transactionalEmails()->where('uuid', $changes['double_opt_in_email_uuid'])->value('id');
+        }
+
+        if (! $keepsDoubleOptIn) {
+            $changes['double_opt_in_email_id'] = null;
+        }
+
         $audience->update([
-            ...Arr::except($changes, AudienceLanguageSettings::FIELDS),
+            ...Arr::except($changes, [...AudienceLanguageSettings::FIELDS, 'double_opt_in_email_uuid']),
             ...$this->languageSettings->resolve($validated, $audience),
         ]);
-        $audience->refresh();
+        $audience->refresh()->load(['doubleOptInEmail:id,uuid,name', 'audienceAttributes']);
         $audience->loadCount([
             'subscribers',
             'subscribers as subscribed_count' => fn ($query) => $query->optedIn(),
@@ -117,6 +147,8 @@ class UpdateAudienceTool extends Tool
             'reply_to' => $schema->string()->description('Default reply-to email.')->format('email')->max(255)->nullable(),
             'notification_email' => $schema->string()->description('Subscription notification email.')->format('email')->max(255)->nullable(),
             'unsubscribed_url' => $schema->string()->description('Redirect after unsubscribing.')->format('uri')->max(2048)->nullable(),
+            'double_opt_in' => $schema->boolean()->description('Require new subscribers to confirm by email before they receive campaigns.'),
+            'double_opt_in_email_uuid' => $schema->string()->description('UUID of the published transactional email that sends the confirmation link. Required when turning double opt-in on.')->format('uuid')->nullable(),
         ];
     }
 }

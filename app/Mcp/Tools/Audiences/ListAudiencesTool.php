@@ -42,6 +42,7 @@ class ListAudiencesTool extends Tool
         $limit = (int) ($validated['limit'] ?? 20);
 
         $audiences = $team->audiences()
+            ->with(['doubleOptInEmail:id,uuid,name', 'audienceAttributes'])
             ->withCount([
                 'subscribers',
                 'subscribers as subscribed_count' => fn ($query) => $query->optedIn(),

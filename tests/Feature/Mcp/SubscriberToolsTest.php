@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AutomationTrigger;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Mcp\Servers\MaildunServer;
@@ -9,6 +10,7 @@ use App\Mcp\Tools\Subscribers\ListSubscribersTool;
 use App\Mcp\Tools\Subscribers\RemoveSubscriberTool;
 use App\Mcp\Tools\Subscribers\ResubscribeSubscriberTool;
 use App\Mcp\Tools\Subscribers\UnsubscribeSubscriberTool;
+use App\Mcp\Tools\Subscribers\UpdateSubscriberTool;
 use App\Models\Audience;
 use App\Models\Subscriber;
 use App\Models\Team;
@@ -145,4 +147,46 @@ test('the chosen language is set before welcome automations start', function () 
     ])->assertOk();
 
     expect($languagesSeen)->toBe(['id']);
+});
+
+test('changes a subscriber language to one the audience allows', function () {
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create([
+        'allowed_languages' => [SubscriberLanguage::English->value, SubscriberLanguage::Indonesian->value],
+        'default_language' => SubscriberLanguage::English,
+    ]);
+    $subscriber = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+
+    MaildunServer::tool(UpdateSubscriberTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $subscriber->uuid,
+        'language' => 'fr',
+    ])->assertHasErrors(["The language must be one of this audience's allowed languages."]);
+
+    MaildunServer::tool(UpdateSubscriberTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $subscriber->uuid,
+        'language' => SubscriberLanguage::Indonesian->value,
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('subscriber.language', 'id')
+        ->etc());
+
+    MaildunServer::tool(UpdateSubscriberTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $subscriber->uuid,
+        'language' => null,
+    ])->assertOk();
+
+    expect($subscriber->fresh()->language)->toBeNull();
+});
+
+test('does not update a subscriber from another workspace', function () {
+    $team = Team::factory()->create();
+    $subscriber = Subscriber::factory()->create();
+
+    MaildunServer::tool(UpdateSubscriberTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $subscriber->uuid,
+        'language' => null,
+    ])->assertHasErrors();
 });

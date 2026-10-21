@@ -3,6 +3,7 @@
 namespace App\Mcp\Support;
 
 use App\Models\Audience;
+use App\Models\AudienceAttribute;
 use App\Models\Automation;
 use App\Models\Contact;
 use App\Models\Email;
@@ -43,6 +44,22 @@ class ResourcePayload
             'language_mode' => $audience->language_mode->value,
             'allowed_languages' => $audience->allowed_languages ?? [],
             'default_language' => $audience->default_language?->value,
+            'double_opt_in' => $audience->double_opt_in,
+            'double_opt_in_email' => $audience->doubleOptInEmail === null ? null : [
+                'uuid' => $audience->doubleOptInEmail->uuid,
+                'name' => $audience->doubleOptInEmail->name,
+            ],
+            'attributes' => $audience->audienceAttributes
+                ->sortBy('position')
+                ->map(fn (AudienceAttribute $attribute): array => [
+                    'uuid' => $attribute->uuid,
+                    'name' => $attribute->name,
+                    'key' => $attribute->key,
+                    'type' => $attribute->type->value,
+                    'required' => $attribute->required,
+                ])
+                ->values()
+                ->all(),
             'from_name' => $audience->from_name,
             'from_address' => $audience->from_address,
             'reply_to' => $audience->reply_to,

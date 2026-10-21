@@ -107,10 +107,10 @@ To read it again, call `get-campaign` with `workspace` and the returned campaign
 | Connection | `application-status` | Reports whether Maildun's MCP integration is ready and identifies the current application environment. |
 | Workspaces | `list-workspaces` | Lists the authenticated user's workspaces remotely; the trusted local server lists all workspaces. |
 | Audiences | `list-audiences` | Lists audiences in a Maildun workspace, including subscriber and segment counts. |
-|  | `get-audience` | Gets one audience from a Maildun workspace by UUID. |
+|  | `get-audience` | Gets one audience from a Maildun workspace by UUID, including its double opt-in setting and custom subscriber attributes. |
 |  | `create-audience` | Creates an audience in a Maildun workspace. |
-|  | `update-audience` | Updates selected fields on an audience in a Maildun workspace. |
-|  | `delete-audience` | Permanently deletes an audience after its exact name is supplied as confirmation. |
+|  | `update-audience` | Updates selected fields on an audience in a Maildun workspace, including double opt-in. Turning double opt-in on needs a published transactional email to send the confirmation link. |
+|  | `delete-audience` | Permanently deletes an audience after its exact name is supplied as confirmation. Refused while a scheduled or sending campaign targets it; active automations it triggers are paused. |
 | Contacts | `list-contacts` | Lists contacts in a Maildun workspace with optional email or name search, tag, and audience filters. |
 |  | `get-contact` | Gets one contact by UUID or email, including tags, company, and every audience membership with its subscription status. |
 |  | `create-contact` | Creates a workspace contact and optionally subscribes it to audiences. An existing contact keeps its profile and tags and is only added to the audiences. Subscribing requires consent_confirmed, and people who unsubscribed are refused. |
@@ -118,6 +118,7 @@ To read it again, call `get-campaign` with `workspace` and the returned campaign
 |  | `delete-contact` | Permanently deletes a contact and all of its audience memberships after its exact email is supplied as confirmation. |
 | Subscribers | `list-subscribers` | Lists the subscribers of one audience with optional status, search, tag, and segment filters. |
 |  | `add-subscriber` | Subscribes a person to an audience on a team member's confirmed consent, creating the workspace contact if needed. An existing contact keeps its profile and tags. People who unsubscribed are refused; use resubscribe-subscriber for them. |
+|  | `update-subscriber` | Updates an audience membership. Sets or clears the subscriber's language; the shared contact profile is changed with update-contact. |
 |  | `unsubscribe-subscriber` | Unsubscribes a subscriber from its audience. The membership and history are kept; it can only be restored with resubscribe-subscriber on renewed consent. |
 |  | `resubscribe-subscriber` | Resubscribes an unsubscribed subscriber. Only use this when the person has consented again; consent_confirmed is required. |
 |  | `remove-subscriber` | Permanently deletes one audience membership after its exact email is supplied as confirmation. The workspace contact is kept. Prefer unsubscribe-subscriber to honor an opt-out. |

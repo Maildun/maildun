@@ -40,6 +40,7 @@ use App\Mcp\Tools\Subscribers\ListSubscribersTool;
 use App\Mcp\Tools\Subscribers\RemoveSubscriberTool;
 use App\Mcp\Tools\Subscribers\ResubscribeSubscriberTool;
 use App\Mcp\Tools\Subscribers\UnsubscribeSubscriberTool;
+use App\Mcp\Tools\Subscribers\UpdateSubscriberTool;
 use App\Mcp\Tools\Tags\ListTagsTool;
 use App\Mcp\Tools\TransactionalEmails\CreateTransactionalEmailTool;
 use App\Mcp\Tools\TransactionalEmails\DeleteTransactionalEmailTool;
@@ -77,6 +78,7 @@ class MaildunServer extends Server
         DeleteContactTool::class,
         ListSubscribersTool::class,
         AddSubscriberTool::class,
+        UpdateSubscriberTool::class,
         UnsubscribeSubscriberTool::class,
         ResubscribeSubscriberTool::class,
         RemoveSubscriberTool::class,

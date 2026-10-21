@@ -9,8 +9,10 @@ use App\Mcp\Tools\Audiences\GetAudienceTool;
 use App\Mcp\Tools\Audiences\ListAudiencesTool;
 use App\Mcp\Tools\Audiences\UpdateAudienceTool;
 use App\Models\Audience;
+use App\Models\AudienceAttribute;
 use App\Models\Email;
 use App\Models\Team;
+use App\Models\TransactionalEmail;
 use App\Models\User;
 use Illuminate\Testing\Fluent\AssertableJson;
 
@@ -172,4 +174,71 @@ test('trims audience names so the web delete confirmation matches them', functio
         ->assertRedirect(route('audiences.index', $team));
 
     $this->assertModelMissing($audience);
+});
+
+test('shows double opt-in and custom attributes on an audience', function () {
+    $team = Team::factory()->create();
+    $confirmation = TransactionalEmail::factory()->for($team)->published()->create(['name' => 'Confirm signup']);
+    $audience = Audience::factory()->for($team)->create([
+        'double_opt_in' => true,
+        'double_opt_in_email_id' => $confirmation->id,
+    ]);
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Plan', 'key' => 'plan', 'required' => true, 'position' => 2]);
+    AudienceAttribute::factory()->for($audience)->number()->create(['name' => 'Seats', 'key' => 'seats', 'required' => false, 'position' => 1]);
+
+    MaildunServer::tool(GetAudienceTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $audience->uuid,
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('audience.double_opt_in', true)
+        ->where('audience.double_opt_in_email', ['uuid' => $confirmation->uuid, 'name' => 'Confirm signup'])
+        ->where('audience.attributes.0.key', 'seats')
+        ->where('audience.attributes.0.type', 'number')
+        ->where('audience.attributes.0.required', false)
+        ->where('audience.attributes.1.key', 'plan')
+        ->where('audience.attributes.1.required', true)
+        ->etc());
+});
+
+test('turns double opt-in on and off through MCP', function () {
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => false]);
+    $confirmation = TransactionalEmail::factory()->for($team)->published()->create();
+    $draft = TransactionalEmail::factory()->for($team)->create();
+
+    MaildunServer::tool(UpdateAudienceTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $audience->uuid,
+        'double_opt_in' => true,
+    ])->assertHasErrors(['Double opt-in needs a published transactional email for the confirmation link.']);
+
+    MaildunServer::tool(UpdateAudienceTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $audience->uuid,
+        'double_opt_in' => true,
+        'double_opt_in_email_uuid' => $draft->uuid,
+    ])->assertHasErrors(['Choose a published transactional email from this workspace.']);
+
+    expect($audience->fresh()->double_opt_in)->toBeFalse();
+
+    MaildunServer::tool(UpdateAudienceTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $audience->uuid,
+        'double_opt_in' => true,
+        'double_opt_in_email_uuid' => $confirmation->uuid,
+    ])->assertOk()->assertStructuredContent(fn (AssertableJson $json) => $json
+        ->where('audience.double_opt_in', true)
+        ->where('audience.double_opt_in_email.uuid', $confirmation->uuid)
+        ->etc());
+
+    expect($audience->fresh()->double_opt_in_email_id)->toBe($confirmation->id);
+
+    MaildunServer::tool(UpdateAudienceTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $audience->uuid,
+        'double_opt_in' => false,
+    ])->assertOk();
+
+    expect($audience->fresh()->only(['double_opt_in', 'double_opt_in_email_id']))
+        ->toBe(['double_opt_in' => false, 'double_opt_in_email_id' => null]);
 });
