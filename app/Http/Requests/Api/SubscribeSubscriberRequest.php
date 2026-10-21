@@ -47,7 +47,7 @@ class SubscribeSubscriberRequest extends FormRequest
         ];
 
         if ($attributes->isEmpty()) {
-            $rules['attributes'] = ['nullable', 'array'];
+            $rules['attributes'] = ['nullable', 'array:'];
 
             return $rules;
         }

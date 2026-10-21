@@ -79,7 +79,7 @@ class PublicSubscribeRequest extends FormRequest
                 ];
             }
         } else {
-            $rules['attributes'] = ['nullable', 'array'];
+            $rules['attributes'] = ['nullable', 'array:'];
         }
 
         return $rules;

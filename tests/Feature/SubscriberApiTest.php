@@ -314,6 +314,21 @@ test('the api unsubscribe operation is opaque and idempotent', function () {
     Event::assertDispatchedTimes(SubscriberLifecycleOccurred::class, 1);
 });
 
+test('the api returns 422 for attributes on an audience without custom fields', function () {
+    $audience = Audience::factory()->create();
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'ada@example.com',
+            'attributes' => ['first_name' => 'Mallory', 'nested' => ['x' => 1]],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['attributes']);
+
+    expect($audience->subscribers()->count())->toBe(0);
+});
+
 test('subscriber endpoints enforce key team scope and configured attributes', function () {
     $audience = Audience::factory()->create();
     $audience->audienceAttributes()->create([

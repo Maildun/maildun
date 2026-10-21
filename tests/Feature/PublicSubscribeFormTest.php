@@ -682,6 +682,19 @@ test('published forms reject unknown audience attributes', function () {
     ])->assertInvalid('attributes');
 });
 
+test('published forms reject attributes when the audience has no custom fields', function () {
+    $subscribeForm = SubscribeForm::factory()->published()->create();
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+        'website' => '',
+        'attributes' => ['email' => 'spoof@example.com', 'nested' => ['x' => 1]],
+    ])->assertInvalid('attributes');
+
+    expect($subscribeForm->audience->subscribers()->count())->toBe(0);
+});
+
 test('duplicate public subscriptions are idempotent and do not disclose existence', function () {
     $audience = Audience::factory()->create();
     $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();

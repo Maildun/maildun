@@ -24,10 +24,11 @@ class BuildAutomationMergeData
         $payload = is_array($context['data'] ?? null) ? $context['data'] : [];
 
         return [
+            // First, so a stored attribute can never replace a built-in field.
+            ...($subscriber->attribute_values ?? []),
             'email' => $subscriber->email,
             'first_name' => $subscriber->first_name ?? '',
             'last_name' => $subscriber->last_name ?? '',
-            ...($subscriber->attribute_values ?? []),
             'language' => $subscriber->language->value ?? '',
             'language_name' => $subscriber->language?->label() ?? '',
             ...$payload,
