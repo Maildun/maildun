@@ -118,3 +118,15 @@ test('configures audience languages through MCP', function () {
         ->allowed_languages->toBe(['id'])
         ->default_language->toBe(SubscriberLanguage::Indonesian);
 });
+
+test('rejects a null name field mode when creating an audience', function () {
+    $team = Team::factory()->create();
+
+    MaildunServer::tool(CreateAudienceTool::class, [
+        'workspace' => $team->slug,
+        'name' => 'Product Updates',
+        'first_name_mode' => null,
+    ])->assertHasErrors(['first name mode']);
+
+    expect($team->audiences()->exists())->toBeFalse();
+});

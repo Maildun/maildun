@@ -793,3 +793,36 @@ test('resubscribing from the contact dialog keeps the membership source and form
         ->source->toBe(SubscriberSource::Form)
         ->subscribe_form_id->toBe($form->id);
 });
+
+test('list-shaped filters on the contacts list fall back to no filter', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $contact = Contact::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->get(route('contacts.index', [
+            'current_team' => $team,
+            'search' => ['ada'],
+            'company' => ['assigned'],
+            'audience' => ['x'],
+            'language' => ['en'],
+            'sort' => ['name'],
+        ]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('contacts.data.0.uuid', $contact->uuid)
+            ->where('filters', ['search' => '', 'company' => '', 'audience' => '', 'language' => '', 'sort' => 'newest']));
+});
+
+test('a list-shaped contact email is a validation error', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $user->currentTeam), [
+            'email' => ['ada@example.com'],
+            'company_assignment_mode' => 'automatic',
+        ])
+        ->assertSessionHasErrors(['email' => 'The email field must be a string.']);
+
+    expect(Contact::query()->where('team_id', $user->currentTeam->id)->exists())->toBeFalse();
+});

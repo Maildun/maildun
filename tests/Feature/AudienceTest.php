@@ -736,3 +736,19 @@ test('audience deletion requires its exact name and cascades owned data', functi
     $this->assertModelMissing($segment);
     $this->assertModelMissing($subscribeForm);
 });
+
+test('a malformed allowed language list is a validation error', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('audiences.store', $team), [
+            'name' => 'Newsletter',
+            'language_mode' => 'optional',
+            'allowed_languages' => [['en']],
+            'default_language' => 'en',
+        ])
+        ->assertSessionHasErrors(['allowed_languages.0', 'default_language']);
+
+    expect($team->audiences()->exists())->toBeFalse();
+});

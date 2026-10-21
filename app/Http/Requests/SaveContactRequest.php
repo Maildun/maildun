@@ -26,8 +26,10 @@ class SaveContactRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $email = $this->input('email');
+
         $this->merge([
-            'email' => Str::lower($this->string('email')->trim()->toString()),
+            'email' => is_string($email) ? Str::lower(trim($email)) : $email,
             'first_name' => $this->blankToNull('first_name'),
             'last_name' => $this->blankToNull('last_name'),
             'company_uuid' => $this->blankToNull('company_uuid'),

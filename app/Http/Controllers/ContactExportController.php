@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Concerns\FiltersCampaignRecipients;
+use App\Concerns\ReadsQueryFilters;
 use App\Concerns\SanitizesSpreadsheetCells;
 use App\Concerns\SearchesText;
 use App\Enums\EmailStatus;
@@ -25,6 +26,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class ContactExportController extends Controller
 {
     use FiltersCampaignRecipients;
+    use ReadsQueryFilters;
     use SanitizesSpreadsheetCells;
     use SearchesText;
 
@@ -266,31 +268,31 @@ class ContactExportController extends Controller
     /** @return array{search: string, company: string, audience: string, language: string} */
     private function contactFilters(Request $request, Team $team): array
     {
-        $company = $request->string('company')->toString();
+        $company = $this->queryFilter($request, 'company');
         $company = Str::isUuid($company) && ! $team->companies()->where('uuid', $company)->exists() ? '' : $company;
-        $audience = $request->string('audience')->toString();
+        $audience = $this->queryFilter($request, 'audience');
 
         return [
-            'search' => $request->string('search')->trim()->toString(),
+            'search' => $this->queryFilter($request, 'search'),
             'company' => in_array($company, ['assigned', 'unassigned'], true) || Str::isUuid($company)
                 ? $company
                 : '',
             'audience' => Str::isUuid($audience) ? $audience : '',
-            'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())->value ?? '',
+            'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))->value ?? '',
         ];
     }
 
     /** @return array{search: string, status: string, source: string, language: string} */
     private function subscriberFilters(Request $request): array
     {
-        $status = $request->string('status')->toString();
-        $source = $request->string('source')->toString();
+        $status = $this->queryFilter($request, 'status');
+        $source = $this->queryFilter($request, 'source');
 
         return [
-            'search' => $request->string('search')->trim()->toString(),
+            'search' => $this->queryFilter($request, 'search'),
             'status' => SubscriberStatus::tryFrom($status)->value ?? 'all',
             'source' => SubscriberSource::tryFrom($source)->value ?? 'all',
-            'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())->value ?? 'all',
+            'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))->value ?? 'all',
         ];
     }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Audiences\AddContactToAudiences;
 use App\Actions\Automations\DispatchTaggedTriggers;
+use App\Concerns\ReadsQueryFilters;
 use App\Concerns\SearchesText;
 use App\Enums\AutomationTrigger;
 use App\Enums\ContactCompanyAssignmentMode;
@@ -39,6 +40,7 @@ use Inertia\Response;
 
 class ContactController extends Controller
 {
+    use ReadsQueryFilters;
     use SearchesText;
 
     public function index(Request $request, Team $currentTeam): Response
@@ -208,7 +210,7 @@ class ContactController extends Controller
             ->sortByDesc('created_at')
             ->values();
         $activity = $this->activity($contact);
-        $selectedAudienceUuid = $request->string('audience')->toString();
+        $selectedAudienceUuid = $this->queryFilter($request, 'audience');
 
         if (! $memberships->contains(
             fn (Subscriber $subscriber): bool => $subscriber->audience->uuid === $selectedAudienceUuid,
@@ -460,17 +462,16 @@ class ContactController extends Controller
     /** @return array{search: string, company: string, audience: string, language: string, sort: string} */
     private function indexFilters(Request $request, Team $team): array
     {
-        $company = $request->string('company')->toString();
+        $company = $this->queryFilter($request, 'company');
         $company = Str::isUuid($company) && ! $team->companies()->where('uuid', $company)->exists() ? '' : $company;
-        $sort = $request->string('sort')->toString();
+        $audience = $this->queryFilter($request, 'audience');
+        $sort = $this->queryFilter($request, 'sort');
 
         return [
-            'search' => $request->string('search')->trim()->toString(),
+            'search' => $this->queryFilter($request, 'search'),
             'company' => $company === 'assigned' || $company === 'unassigned' || Str::isUuid($company) ? $company : '',
-            'audience' => Str::isUuid($request->string('audience')->toString())
-                ? $request->string('audience')->toString()
-                : '',
-            'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())?->value ?? '',
+            'audience' => Str::isUuid($audience) ? $audience : '',
+            'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))?->value ?? '',
             'sort' => in_array($sort, ['oldest', 'name'], true) ? $sort : 'newest',
         ];
     }

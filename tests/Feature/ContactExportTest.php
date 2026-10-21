@@ -257,3 +257,27 @@ test('contacts and audience exports are limited to ten downloads a minute', func
 
     $this->actingAs($user)->get($url)->assertTooManyRequests();
 })->with(['contacts.exports.show', 'audiences.exports.show']);
+
+test('list-shaped export filters fall back to exporting all contacts', function (string $routeName) {
+    $user = User::factory()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'ada@example.com']);
+    $parameters = [
+        'current_team' => $user->currentTeam,
+        'format' => 'csv',
+        'search' => ['ada'],
+        'company' => ['assigned'],
+        'audience' => ['x'],
+        'language' => ['en'],
+        'status' => ['subscribed'],
+        'source' => ['api'],
+    ];
+
+    $response = $this->actingAs($user)->get(route($routeName, $routeName === 'audiences.exports.show'
+        ? [...$parameters, 'audience' => $audience]
+        : $parameters));
+
+    $response->assertOk();
+
+    expect($response->streamedContent())->toContain('ada@example.com');
+})->with(['contacts.exports.show', 'audiences.exports.show']);

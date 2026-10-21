@@ -26,8 +26,10 @@ class SaveCompanyRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $name = $this->input('name');
+
         $this->merge([
-            'name' => Str::squish($this->string('name')->toString()),
+            'name' => is_string($name) ? Str::squish($name) : $name,
             'domains' => collect($this->array('domains'))
                 ->filter(fn (mixed $domain): bool => is_string($domain))
                 ->map(fn (string $domain): string => CompanyDomain::normalize($domain))

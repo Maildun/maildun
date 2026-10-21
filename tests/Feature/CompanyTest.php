@@ -716,3 +716,46 @@ test('deleting a company re-links its former contacts to another matching compan
         ->and($manual->fresh()->company_id)->toBe($other->id)
         ->and($manual->fresh()->company_assignment_mode)->toBe(ContactCompanyAssignmentMode::Automatic);
 });
+
+test('list-shaped company filters fall back to no filter', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $company = Company::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->get(route('companies.index', ['current_team' => $team, 'search' => ['x'], 'sort' => ['name']]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('filters', ['search' => '', 'sort' => 'newest']));
+
+    $this->actingAs($user)
+        ->get(route('companies.show', ['current_team' => $team, 'company' => $company, 'search' => ['x'], 'audience' => ['x']]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('filters', ['search' => '', 'audience' => '']));
+});
+
+test('a company audience filter that is not an audience id is ignored', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $company = Company::factory()->for($team)->create();
+    $contact = Contact::factory()->for($team)->for($company)->create();
+
+    $this->actingAs($user)
+        ->get(route('companies.show', ['current_team' => $team, 'company' => $company, 'audience' => 'not-an-id']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.audience', '')
+            ->where('company.contacts.data.0.uuid', $contact->uuid));
+});
+
+test('a list-shaped company name is a validation error', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->post(route('companies.store', $user->currentTeam), [
+            'name' => ['Acme'],
+            'domains' => ['acme.com'],
+        ])
+        ->assertSessionHasErrors(['name' => 'The name field must be a string.']);
+
+    expect(Company::query()->where('team_id', $user->currentTeam->id)->exists())->toBeFalse();
+});

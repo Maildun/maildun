@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Concerns\ReadsQueryFilters;
 use App\Concerns\SearchesText;
 use App\Enums\ContactCompanyAssignmentMode;
 use App\Http\Requests\SaveCompanyRequest;
@@ -26,6 +27,7 @@ use Inertia\Response;
 
 class CompanyController extends Controller
 {
+    use ReadsQueryFilters;
     use SearchesText;
 
     public function index(Request $request, Team $currentTeam): Response
@@ -193,10 +195,10 @@ class CompanyController extends Controller
     /** @return array{search: string, sort: string} */
     private function indexFilters(Request $request): array
     {
-        $sort = $request->string('sort')->toString();
+        $sort = $this->queryFilter($request, 'sort');
 
         return [
-            'search' => $request->string('search')->trim()->toString(),
+            'search' => $this->queryFilter($request, 'search'),
             'sort' => in_array($sort, ['oldest', 'name', 'contacts'], true) ? $sort : 'newest',
         ];
     }
@@ -204,9 +206,11 @@ class CompanyController extends Controller
     /** @return array{search: string, audience: string} */
     private function showFilters(Request $request): array
     {
+        $audience = $this->queryFilter($request, 'audience');
+
         return [
-            'search' => $request->string('search')->trim()->toString(),
-            'audience' => $request->string('audience')->toString(),
+            'search' => $this->queryFilter($request, 'search'),
+            'audience' => Str::isUuid($audience) ? $audience : '',
         ];
     }
 

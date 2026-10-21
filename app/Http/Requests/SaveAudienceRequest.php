@@ -72,7 +72,7 @@ class SaveAudienceRequest extends FormRequest
                 'default_language' => [
                     $languageIsVisible ? 'required' : 'nullable',
                     Rule::enum(SubscriberLanguage::class),
-                    Rule::in($this->input('allowed_languages', [])),
+                    Rule::in(array_values(array_filter((array) $this->input('allowed_languages', []), is_string(...)))),
                 ],
             ];
         }
