@@ -144,6 +144,7 @@ type Props = {
     tags: Tag[];
     filters: SubscriberIndexFilters;
     canManage: boolean;
+    canManageContacts: boolean;
 };
 
 const SOURCE_FILTER_OPTIONS = [
@@ -175,6 +176,7 @@ export default function AudienceShow(props: Props) {
         tags,
         filters,
         canManage,
+        canManageContacts,
     } = props;
     const { currentTeam } = usePage().props;
     const [subscriberOpen, setSubscriberOpen] = useState(false);
@@ -462,6 +464,7 @@ export default function AudienceShow(props: Props) {
                                 pagination={subscribers}
                                 routeArgs={routeArgs}
                                 canManage={canManage}
+                                canManageContacts={canManageContacts}
                                 tags={tags}
                                 languages={subscriberLanguages}
                                 selected={selected}
@@ -777,6 +780,7 @@ function SubscriberTable({
     pagination,
     routeArgs,
     canManage,
+    canManageContacts,
     tags,
     languages,
     selected,
@@ -786,6 +790,7 @@ function SubscriberTable({
     pagination: Paginated<Subscriber>;
     routeArgs: [string, string];
     canManage: boolean;
+    canManageContacts: boolean;
     tags: Tag[];
     languages: SubscriberLanguageOption[];
     selected: Set<string>;
@@ -853,6 +858,7 @@ function SubscriberTable({
                         subscriber={subscriber}
                         routeArgs={routeArgs}
                         canManage={canManage}
+                        canManageContacts={canManageContacts}
                         tags={tags}
                         languages={languages}
                         selected={selected}
@@ -868,6 +874,7 @@ function SubscriberRow({
     subscriber,
     routeArgs,
     canManage,
+    canManageContacts,
     tags,
     languages,
     selected,
@@ -876,6 +883,7 @@ function SubscriberRow({
     subscriber: Subscriber;
     routeArgs: [string, string];
     canManage: boolean;
+    canManageContacts: boolean;
     tags: Tag[];
     languages: SubscriberLanguageOption[];
     selected: Set<string>;
@@ -997,6 +1005,7 @@ function SubscriberRow({
                     <SubscriberActions
                         subscriber={subscriber}
                         routeArgs={routeArgs}
+                        canManageContacts={canManageContacts}
                         tags={tags}
                         languages={languages}
                         editOpen={editOpen}
@@ -1231,6 +1240,7 @@ function SubscribeFormTable({
 function SubscriberActions({
     subscriber,
     routeArgs,
+    canManageContacts,
     tags,
     languages,
     editOpen,
@@ -1240,6 +1250,7 @@ function SubscriberActions({
 }: {
     subscriber: Subscriber;
     routeArgs: [string, string];
+    canManageContacts: boolean;
     tags: Tag[];
     languages: SubscriberLanguageOption[];
     editOpen: boolean;
@@ -1261,6 +1272,7 @@ function SubscriberActions({
                 onOpenChange={onEditOpenChange}
                 routeArgs={routeArgs}
                 subscriber={subscriber}
+                canEditProfile={canManageContacts}
                 tags={tags}
                 languages={languages}
             />

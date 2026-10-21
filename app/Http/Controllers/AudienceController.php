@@ -12,6 +12,7 @@ use App\Enums\TransactionalEmailStatus;
 use App\Http\Requests\DeleteAudienceRequest;
 use App\Http\Requests\SaveAudienceRequest;
 use App\Models\Audience;
+use App\Models\Contact;
 use App\Models\Segment;
 use App\Models\SubscribeForm;
 use App\Models\Subscriber;
@@ -170,6 +171,7 @@ class AudienceController extends Controller
             'subscriberLanguages' => $audience->languageOptions(),
             'filters' => $filters,
             'canManage' => Gate::allows('update', $audience),
+            'canManageContacts' => Gate::allows('create', [Contact::class, $currentTeam]),
         ]);
     }
 

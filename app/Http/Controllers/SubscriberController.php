@@ -14,6 +14,7 @@ use App\Http\Requests\BulkSubscriberTagsRequest;
 use App\Http\Requests\ResubscribeSubscriberRequest;
 use App\Http\Requests\SaveSubscriberRequest;
 use App\Models\Audience;
+use App\Models\Contact;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Services\ManageContact;
@@ -73,8 +74,10 @@ class SubscriberController extends Controller
     public function update(SaveSubscriberRequest $request, Team $currentTeam, Audience $audience, Subscriber $subscriber, ManageContact $manageContact, DispatchTaggedTriggers $dispatchTaggedTriggers): RedirectResponse
     {
         Gate::authorize('update', $subscriber);
+        $profile = Arr::only($request->validated(), ['email', 'first_name', 'last_name']);
+        $this->authorizeContactProfileChange($currentTeam, $subscriber->contact, $profile);
         $contact = $subscriber->contact ?? $manageContact->findOrCreate($currentTeam, $this->contactProfile($request));
-        $contact = $manageContact->update($contact, Arr::only($request->validated(), ['email', 'first_name', 'last_name']));
+        $contact = $manageContact->update($contact, $profile);
         $subscriber->update([
             'contact_id' => $contact->id,
             ...($request->has('language') ? ['language' => $request->validated('language')] : []),
@@ -111,6 +114,29 @@ class SubscriberController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber resubscribed.')]);
 
         return back();
+    }
+
+    /**
+     * The email and name belong to the shared contact, so changing them from an
+     * audience edits every membership and needs the contact permission too.
+     *
+     * @param  array<string, mixed>  $profile
+     */
+    private function authorizeContactProfileChange(Team $team, ?Contact $contact, array $profile): void
+    {
+        if (! $contact instanceof Contact) {
+            Gate::authorize('create', [Contact::class, $team]);
+
+            return;
+        }
+
+        $changed = collect($profile)->contains(
+            fn (mixed $value, string $key): bool => (string) $value !== (string) $contact->getAttribute($key),
+        );
+
+        if ($changed) {
+            Gate::authorize('update', $contact);
+        }
     }
 
     /** @return array{email: string, first_name: string|null, last_name: string|null} */

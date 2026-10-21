@@ -5,6 +5,7 @@ use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
+use App\Enums\TeamPermission;
 use App\Enums\TeamRole;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Models\Audience;
@@ -654,4 +655,53 @@ test('the audience page offers only its available languages to the subscriber di
                 ['value' => 'en', 'label' => 'English'],
                 ['value' => 'id', 'label' => 'Indonesian'],
             ]));
+});
+
+test('an audience-only role cannot change a shared contact email or name from the subscriber dialog', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignCustomRole($team, $member, [TeamPermission::ManageAudience]);
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create(['email' => 'ada@example.com', 'first_name' => 'Ada', 'last_name' => null]);
+
+    $this->actingAs($member)
+        ->put(route('audiences.subscribers.update', [$team, $audience, $subscriber]), [
+            'email' => 'attacker@example.com',
+            'first_name' => 'Ada',
+        ])
+        ->assertForbidden();
+    $this->actingAs($member)
+        ->put(route('audiences.subscribers.update', [$team, $audience, $subscriber]), [
+            'email' => 'ada@example.com',
+            'first_name' => 'Grace',
+        ])
+        ->assertForbidden();
+
+    expect($subscriber->refresh()->contact->only(['email', 'first_name']))->toBe(['email' => 'ada@example.com', 'first_name' => 'Ada']);
+});
+
+test('an audience-only role can still change a member language when the contact profile is unchanged', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignCustomRole($team, $member, [TeamPermission::ManageAudience]);
+    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en', 'fr']]);
+    $subscriber = Subscriber::factory()->for($audience)->create(['email' => 'ada@example.com', 'first_name' => 'Ada', 'last_name' => null]);
+
+    $this->actingAs($member)
+        ->put(route('audiences.subscribers.update', [$team, $audience, $subscriber]), [
+            'email' => 'ada@example.com',
+            'first_name' => 'Ada',
+            'last_name' => '',
+            'language' => SubscriberLanguage::French->value,
+        ])
+        ->assertRedirect();
+
+    expect($subscriber->refresh()->language)->toBe(SubscriberLanguage::French);
+    $this->actingAs($member)
+        ->get(route('audiences.show', [$team, $audience]))
+        ->assertInertia(fn (Assert $page) => $page->where('canManageContacts', false));
 });
