@@ -112,7 +112,7 @@ class AudienceController extends Controller
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
                 $this->wherePersonContains($query, $filters['search']);
             })
-            ->when($filters['status'] !== 'all', fn ($query) => $query->where('status', $filters['status']))
+            ->when($filters['status'] !== 'all', fn ($query) => $query->withMembershipStatus($filters['status']))
             ->when($filters['source'] !== 'all', fn ($query) => $query->where('source', $filters['source']))
             ->when($filters['language'] !== 'all', fn ($query) => $query->where('language', $filters['language']))
             ->when($filters['tag'] !== 'all', fn ($query) => $query->whereHas(
@@ -262,7 +262,7 @@ class AudienceController extends Controller
 
         return [
             'search' => $request->string('search')->trim()->toString(),
-            'status' => SubscriberStatus::tryFrom($status)->value ?? 'all',
+            'status' => in_array($status, Subscriber::MEMBERSHIP_STATUSES, true) ? $status : 'all',
             'source' => SubscriberSource::tryFrom($source)->value ?? 'all',
             'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())->value ?? 'all',
             'tag' => Str::isUuid($request->string('tag')->toString()) ? Str::lower($request->string('tag')->toString()) : 'all',

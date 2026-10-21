@@ -61,6 +61,12 @@ class ApplySegmentRules
                         return;
                     }
 
+                    if ($field === SegmentRuleField::Status) {
+                        $this->applyStatusRule($ruleQuery, $operator, (string) $value);
+
+                        return;
+                    }
+
                     if ($field === SegmentRuleField::Tag) {
                         $this->applyTagRule($ruleQuery, $operator, Str::lower((string) $value));
 
@@ -96,6 +102,20 @@ class ApplySegmentRules
             SegmentRuleOperator::After => $query->whereDate($column, '>', $this->calendarDate($value)),
             default => null,
         };
+    }
+
+    /**
+     * Status rules use the same membership states as the audience filter, so
+     * pending members are neither "subscribed" nor left out of "is not
+     * subscribed".
+     *
+     * @param  Builder<Subscriber>  $query
+     */
+    private function applyStatusRule(Builder $query, SegmentRuleOperator $operator, string $status): void
+    {
+        $operator === SegmentRuleOperator::NotEquals
+            ? $query->whereNot(fn (Builder $statusQuery) => $statusQuery->withMembershipStatus($status))
+            : $query->withMembershipStatus($status);
     }
 
     /**

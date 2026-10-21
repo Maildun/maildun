@@ -381,6 +381,7 @@ function RuleValue({
                 onChange={onChange}
                 options={[
                     ['subscribed', 'Subscribed'],
+                    ['pending', 'Pending confirmation'],
                     ['unsubscribed', 'Unsubscribed'],
                 ]}
             />

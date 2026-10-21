@@ -157,6 +157,7 @@ const SOURCE_FILTER_OPTIONS = [
 
 const STATUS_FILTER_LABELS: Record<string, string> = {
     subscribed: 'Subscribed',
+    pending: 'Pending confirmation',
     unsubscribed: 'Unsubscribed',
 };
 
@@ -324,6 +325,10 @@ export default function AudienceShow(props: Props) {
                                             {
                                                 value: 'subscribed',
                                                 label: 'Subscribed',
+                                            },
+                                            {
+                                                value: 'pending',
+                                                label: 'Pending confirmation',
                                             },
                                             {
                                                 value: 'unsubscribed',

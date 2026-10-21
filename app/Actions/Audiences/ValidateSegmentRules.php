@@ -7,9 +7,9 @@ use App\Enums\SegmentRuleField;
 use App\Enums\SegmentRuleOperator;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
-use App\Enums\SubscriberStatus;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
+use App\Models\Subscriber;
 use DateTimeImmutable;
 use Illuminate\Support\Str;
 
@@ -44,7 +44,7 @@ class ValidateSegmentRules
                 continue;
             }
 
-            if ($field === SegmentRuleField::Status && ! SubscriberStatus::tryFrom($value)) {
+            if ($field === SegmentRuleField::Status && ! in_array($value, Subscriber::MEMBERSHIP_STATUSES, true)) {
                 $errors["rules.{$index}.value"] = 'The selected subscriber status is invalid.';
             }
 

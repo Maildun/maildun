@@ -79,6 +79,15 @@ class Subscriber extends Model
     /** @use HasFactory<SubscriberFactory> */
     use HasFactory;
 
+    public const MEMBERSHIP_SUBSCRIBED = 'subscribed';
+
+    public const MEMBERSHIP_PENDING = 'pending';
+
+    public const MEMBERSHIP_UNSUBSCRIBED = 'unsubscribed';
+
+    /** @var list<string> */
+    public const MEMBERSHIP_STATUSES = [self::MEMBERSHIP_SUBSCRIBED, self::MEMBERSHIP_PENDING, self::MEMBERSHIP_UNSUBSCRIBED];
+
     protected $attributes = [
         'status' => SubscriberStatus::Subscribed->value,
         'source' => SubscriberSource::Manual->value,
@@ -203,6 +212,41 @@ class Subscriber extends Model
                     ->whereColumn('audience_opt_outs.audience_id', 'subscribers.audience_id')
                     ->whereColumn('audience_opt_outs.email', 'subscribers.email'),
             );
+    }
+
+    /**
+     * Members waiting on a confirmation link: double opt-in signups who have
+     * not confirmed (isPendingConfirmation) and opted-out people who asked to
+     * rejoin (isPendingResubscription).
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopePendingConfirmation(Builder $query): void
+    {
+        $query->where(fn (Builder $pending) => $pending
+            ->where(fn (Builder $signup) => $signup
+                ->where('subscribers.status', SubscriberStatus::Subscribed)
+                ->whereNull('subscribers.subscribed_at'))
+            ->orWhere(fn (Builder $rejoin) => $rejoin
+                ->where('subscribers.status', SubscriberStatus::Unsubscribed)
+                ->whereNotNull('subscribers.resubscribe_requested_at')));
+    }
+
+    /**
+     * The membership states lists and segment rules filter on. "subscribed"
+     * means opted in, so pending members are not counted with them;
+     * "unsubscribed" keeps everyone who opted out, including those waiting
+     * to confirm a rejoin.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeWithMembershipStatus(Builder $query, string $status): void
+    {
+        match ($status) {
+            self::MEMBERSHIP_SUBSCRIBED => $query->optedIn(),
+            self::MEMBERSHIP_PENDING => $query->pendingConfirmation(),
+            default => $query->where('subscribers.status', SubscriberStatus::Unsubscribed),
+        };
     }
 
     /**

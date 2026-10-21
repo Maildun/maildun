@@ -9,7 +9,6 @@ use App\Concerns\SearchesText;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
-use App\Enums\SubscriberStatus;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Contact;
@@ -113,7 +112,7 @@ class ContactExportController extends Controller
             ->when($filters['search'] !== '', function (Builder $query) use ($filters): void {
                 $this->wherePersonContains($query, $filters['search']);
             })
-            ->when($filters['status'] !== 'all', fn (Builder $query) => $query->where('status', $filters['status']))
+            ->when($filters['status'] !== 'all', fn (Builder $query) => $query->withMembershipStatus($filters['status']))
             ->when($filters['source'] !== 'all', fn (Builder $query) => $query->where('source', $filters['source']))
             ->when($filters['language'] !== 'all', fn (Builder $query) => $query->where('language', $filters['language']))
             ->when($filters['tag'] !== 'all', fn (Builder $query) => $query->whereHas(
@@ -314,7 +313,7 @@ class ContactExportController extends Controller
 
         return [
             'search' => $this->queryFilter($request, 'search'),
-            'status' => SubscriberStatus::tryFrom($status)->value ?? 'all',
+            'status' => in_array($status, Subscriber::MEMBERSHIP_STATUSES, true) ? $status : 'all',
             'source' => SubscriberSource::tryFrom($source)->value ?? 'all',
             'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))->value ?? 'all',
             'tag' => Str::isUuid($tag) ? Str::lower($tag) : 'all',
