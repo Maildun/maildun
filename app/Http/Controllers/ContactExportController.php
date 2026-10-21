@@ -9,6 +9,7 @@ use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
+use App\Models\AudienceAttribute;
 use App\Models\Contact;
 use App\Models\Email;
 use App\Models\EmailDelivery;
@@ -102,10 +103,21 @@ class ContactExportController extends Controller
             ->when($filters['source'] !== 'all', fn (Builder $query) => $query->where('source', $filters['source']))
             ->when($filters['language'] !== 'all', fn (Builder $query) => $query->where('language', $filters['language']));
 
+        // Custom fields are headed by their key, which is what an import maps
+        // back to the field, so an exported file can be imported again.
+        $attributeKeys = $audience->audienceAttributes()->orderBy('position')->get(['key'])
+            ->map(fn (AudienceAttribute $attribute): string => $attribute->key)
+            ->values()
+            ->all();
+
         return $this->download(
             $format,
             (Str::slug($audience->name) ?: 'audience').'-contacts-'.now()->format('Y-m-d'),
-            ['Email', 'First name', 'Last name', 'Status', 'Source', 'Language', 'Tags', 'Subscribed at'],
+            [
+                'Email', 'First name', 'Last name', 'Status', 'Source', 'Language', 'Tags', 'Subscribed at',
+                'Unsubscribed at', 'Consent text', 'Consented at', 'Consent IP',
+                ...$attributeKeys,
+            ],
             $query,
             fn (Subscriber $subscriber): array => [
                 $subscriber->email,
@@ -116,6 +128,14 @@ class ContactExportController extends Controller
                 $subscriber->language?->value,
                 $subscriber->tags->pluck('name')->implode(', '),
                 $subscriber->subscribed_at?->toIso8601String(),
+                $subscriber->unsubscribed_at?->toIso8601String(),
+                $subscriber->consent_text,
+                $subscriber->consented_at?->toIso8601String(),
+                $subscriber->consent_ip,
+                ...array_map(
+                    fn (string $key): ?string => $this->attributeCell($subscriber->attribute_values[$key] ?? null),
+                    $attributeKeys,
+                ),
             ],
         );
     }
@@ -221,6 +241,19 @@ class ContactExportController extends Controller
         }
 
         echo '</Row>';
+    }
+
+    /**
+     * Attribute values are usually text, but the API can store numbers or
+     * nested JSON.
+     */
+    private function attributeCell(mixed $value): ?string
+    {
+        return match (true) {
+            $value === null => null,
+            is_scalar($value) => (string) $value,
+            default => (string) json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        };
     }
 
     /** @return array{search: string, company: string, audience: string, language: string} */

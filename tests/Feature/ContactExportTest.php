@@ -4,6 +4,7 @@ use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\TeamRole;
 use App\Models\Audience;
+use App\Models\AudienceAttribute;
 use App\Models\Contact;
 use App\Models\Subscriber;
 use App\Models\Team;
@@ -73,6 +74,27 @@ test('audience contacts can be exported with the active subscriber filters', fun
         ->toContain('included@example.com')
         ->not->toContain('unsubscribed@example.com')
         ->not->toContain('manual@example.com');
+});
+
+test('audience exports include custom fields, consent and the opt-out date', function () {
+    $user = User::factory()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Plan', 'key' => 'plan', 'position' => 1]);
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Seats', 'key' => 'seats', 'position' => 2]);
+    Subscriber::factory()->for($audience)->unsubscribed(now()->parse('2026-10-05 08:00:00'))->create([
+        'email' => 'ada@example.com',
+        'consent_text' => 'Yes, send me the newsletter.',
+        'consented_at' => '2026-09-01 10:00:00',
+        'consent_ip' => '203.0.113.9',
+        'attribute_values' => ['plan' => 'pro', 'seats' => 5],
+    ]);
+
+    $lines = explode("\n", trim($this->actingAs($user)
+        ->get(route('audiences.exports.show', ['current_team' => $user->currentTeam, 'audience' => $audience, 'format' => 'csv']))
+        ->streamedContent()));
+
+    expect($lines[0])->toEndWith('"Subscribed at","Unsubscribed at","Consent text","Consented at","Consent IP",plan,seats')
+        ->and($lines[1])->toEndWith(',2026-10-05T08:00:00+00:00,"Yes, send me the newsletter.",2026-09-01T10:00:00+00:00,203.0.113.9,pro,5');
 });
 
 test('invalid audience filters fall back to exporting all contacts', function () {
