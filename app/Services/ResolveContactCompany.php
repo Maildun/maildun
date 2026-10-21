@@ -10,19 +10,13 @@ use Illuminate\Support\Str;
 
 class ResolveContactCompany
 {
-    /** @var list<string> */
-    public const array PERSONAL_EMAIL_DOMAINS = [
-        'aol.com',
-        'gmail.com',
-        'hotmail.com',
-        'icloud.com',
-        'live.com',
-        'msn.com',
-        'outlook.com',
-        'proton.me',
-        'protonmail.com',
-        'yahoo.com',
-    ];
+    /**
+     * Consumer mailbox providers never identify a company. Shares the provider list the
+     * import review already maintains so both stay in step.
+     *
+     * @var list<string>
+     */
+    public const array PERSONAL_EMAIL_DOMAINS = ImportEmailReview::KNOWN_DOMAINS;
 
     public function handle(Contact $contact): Contact
     {
@@ -54,7 +48,7 @@ class ResolveContactCompany
 
     private function companyIdFor(int $teamId, string $email): ?int
     {
-        $domain = Str::afterLast($email, '@');
+        $domain = CompanyDomain::toAscii(Str::lower(Str::afterLast($email, '@')));
 
         if ($domain === '' || self::isPersonalEmailDomain($domain)) {
             return null;

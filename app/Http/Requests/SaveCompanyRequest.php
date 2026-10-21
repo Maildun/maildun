@@ -30,7 +30,7 @@ class SaveCompanyRequest extends FormRequest
             'name' => Str::squish($this->string('name')->toString()),
             'domains' => collect($this->array('domains'))
                 ->filter(fn (mixed $domain): bool => is_string($domain))
-                ->map(fn (string $domain): string => Str::lower(Str::of($domain)->trim()->toString()))
+                ->map(fn (string $domain): string => CompanyDomain::normalize($domain))
                 ->values()
                 ->all(),
         ]);
@@ -42,7 +42,24 @@ class SaveCompanyRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'domains' => ['required', 'array', 'min:1', 'max:20'],
-            'domains.*' => ['required', 'string', 'max:253', 'regex:/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/'],
+            'domains.*' => ['required', 'string', 'max:253', 'regex:/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/'],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'domains.*.regex' => __(':input is not a valid domain. Enter an email domain such as acme.com.'),
+            'domains.*.max' => __(':input is too long to be a domain.'),
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function attributes(): array
+    {
+        return [
+            'domains.*' => __('domain'),
         ];
     }
 
@@ -77,7 +94,7 @@ class SaveCompanyRequest extends FormRequest
                     }
 
                     if (ResolveContactCompany::isPersonalEmailDomain($domain)) {
-                        $validator->errors()->add("domains.{$index}", __('Use a company domain instead of a personal email provider.'));
+                        $validator->errors()->add("domains.{$index}", __(':domain is a personal email provider. Use a company domain instead.', ['domain' => $domain]));
                     }
                 }
 
@@ -93,8 +110,14 @@ class SaveCompanyRequest extends FormRequest
                     $domainQuery->where('company_id', '!=', $company->id);
                 }
 
-                if ($domainQuery->exists()) {
-                    $validator->errors()->add('domains', __('A domain is already assigned to another company.'));
+                $takenDomains = $domainQuery->orderBy('domain')->pluck('domain');
+
+                if ($takenDomains->isNotEmpty()) {
+                    $validator->errors()->add('domains', trans_choice(
+                        ':domains is already assigned to another company.|:domains are already assigned to other companies.',
+                        $takenDomains->count(),
+                        ['domains' => $takenDomains->implode(', ')],
+                    ));
                 }
             },
         ];

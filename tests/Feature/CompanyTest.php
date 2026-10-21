@@ -244,3 +244,104 @@ test('company routes return 404 for missing or malformed company UUIDs', functio
     'missing UUID' => '00000000-0000-0000-0000-000000000000',
     'malformed UUID' => '60e1ce6a-7e40-43be-abbb-',
 ]);
+
+test('company domains are normalized so they match contact email domains', function (string $enteredDomain) {
+    Queue::fake([ResolveCompanyFavicon::class]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $contact = Contact::factory()->for($team)->create(['email' => 'jane@acme.test']);
+
+    $this->actingAs($user)
+        ->post(route('companies.store', $team), [
+            'name' => 'Acme Inc.',
+            'domains' => [$enteredDomain],
+        ])
+        ->assertSessionHasNoErrors();
+
+    $company = $team->companies()->sole();
+
+    expect($company->domains()->pluck('domain')->all())->toBe(['acme.test'])
+        ->and($contact->fresh()->company_id)->toBe($company->id);
+})->with([
+    'www prefix' => 'www.acme.test',
+    'scheme and trailing slash' => 'https://www.ACME.test/',
+]);
+
+test('company domains with international characters match contacts in either form', function (string $enteredDomain, string $contactEmail) {
+    Queue::fake([ResolveCompanyFavicon::class]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $contact = Contact::factory()->for($team)->create(['email' => $contactEmail]);
+
+    $this->actingAs($user)
+        ->post(route('companies.store', $team), [
+            'name' => 'München GmbH',
+            'domains' => [$enteredDomain],
+        ])
+        ->assertSessionHasNoErrors();
+
+    $company = $team->companies()->sole();
+
+    expect($company->domains()->pluck('domain')->all())->toBe(['xn--mnchen-3ya.de'])
+        ->and($contact->fresh()->company_id)->toBe($company->id);
+})->with([
+    'unicode domain, unicode email' => ['münchen.de', 'anna@münchen.de'],
+    'punycode domain, unicode email' => ['xn--mnchen-3ya.de', 'anna@münchen.de'],
+    'unicode domain, punycode email' => ['münchen.de', 'anna@xn--mnchen-3ya.de'],
+]);
+
+test('company domains accept international top-level domains', function () {
+    Queue::fake([ResolveCompanyFavicon::class]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('companies.store', $team), [
+            'name' => 'Example RF',
+            'domains' => ['example.xn--p1ai'],
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($team->companies()->sole()->domains()->pluck('domain')->all())->toBe(['example.xn--p1ai']);
+});
+
+test('company domains reject every known consumer email provider', function (string $domain) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('companies.store', $team), [
+            'name' => 'Not a company',
+            'domains' => [$domain],
+        ])
+        ->assertInvalid(['domains.0' => $domain]);
+
+    expect($team->companies()->count())->toBe(0);
+})->with(['googlemail.com', 'me.com', 'yahoo.co.uk', 'gmx.de']);
+
+test('company domain errors name the domain that failed', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $existing = Company::factory()->for($team)->create(['name' => 'Existing']);
+    $existing->domains()->create([
+        'team_id' => $team->id,
+        'domain' => 'taken.test',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('companies.store', $team), [
+            'name' => 'Acme',
+            'domains' => ['acme.test', 'not a domain'],
+        ])
+        ->assertInvalid(['domains.1' => 'not a domain is not a valid domain.']);
+
+    $this->actingAs($user)
+        ->post(route('companies.store', $team), [
+            'name' => 'Acme',
+            'domains' => ['acme.test', 'taken.test'],
+        ])
+        ->assertInvalid(['domains' => 'taken.test is already assigned to another company.']);
+});
