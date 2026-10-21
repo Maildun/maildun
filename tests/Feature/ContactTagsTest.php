@@ -4,7 +4,10 @@ use App\Models\Audience;
 use App\Models\Contact;
 use App\Models\Subscriber;
 use App\Models\Tag;
+use App\Models\Team;
 use App\Models\User;
+use App\Services\ManageContact;
+use App\Services\ResolveContactCompany;
 
 test('adding an existing contact to another audience keeps its tags and adds the new ones', function () {
     $user = User::factory()->create();
@@ -100,4 +103,29 @@ test('a subscriber past the tag limit can still be edited', function () {
             'tags' => $tags->pluck('name')->all(),
         ])
         ->assertSessionHasNoErrors();
+});
+
+test('a contact edit that fails while saving tags changes nothing', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->create(['email' => 'ada@example.com']);
+    $contact = $subscriber->contact;
+    app()->instance(ManageContact::class, new class(app(ResolveContactCompany::class)) extends ManageContact
+    {
+        public function syncTags(Team $team, Contact $contact, array $names): array
+        {
+            throw new RuntimeException('Tag storage is unavailable.');
+        }
+    });
+
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->actingAs($user)->patch(route('contacts.update', [$team, $contact]), [
+        'email' => 'grace@example.com',
+        'company_assignment_mode' => 'automatic',
+        'tags' => ['VIP'],
+    ]))->toThrow(RuntimeException::class);
+
+    expect($contact->fresh()->email)->toBe('ada@example.com')
+        ->and($subscriber->fresh()->email)->toBe('ada@example.com');
 });

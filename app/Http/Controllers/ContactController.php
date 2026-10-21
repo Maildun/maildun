@@ -372,8 +372,12 @@ class ContactController extends Controller
     public function update(SaveContactRequest $request, Team $currentTeam, Contact $contact, ManageContact $manageContact, DispatchTaggedTriggers $dispatchTaggedTriggers): RedirectResponse
     {
         Gate::authorize('update', $contact);
-        [$contact, $addedTags] = $this->saveContact($request, $currentTeam, $manageContact, $contact);
-        $dispatchTaggedTriggers->handle($contact, $addedTags);
+        // The profile, its subscriber copies, tags and triggers save together,
+        // as they do on create, so a failure never leaves half an edit.
+        DB::transaction(function () use ($request, $currentTeam, $manageContact, $contact, $dispatchTaggedTriggers): void {
+            [$contact, $addedTags] = $this->saveContact($request, $currentTeam, $manageContact, $contact);
+            $dispatchTaggedTriggers->handle($contact, $addedTags);
+        });
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Contact updated.')]);
 
