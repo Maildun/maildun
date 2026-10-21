@@ -62,6 +62,14 @@ test('the subscriber selection only keeps rows that are still on screen', functi
         ->toContain('new Set([...current].filter((id) => visibleIds.has(id)))');
 });
 
+test('bulk language offers no language to clear it', function () {
+    $source = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/audiences/show.tsx');
+
+    expect($source)
+        ->toContain('data-test="bulk-language-clear"')
+        ->toContain('setBulkLanguage(null)');
+});
+
 test('failed bulk subscriber actions tell the manager why', function () {
     $page = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/audiences/show.tsx');
     $tagsDialog = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/bulk-subscriber-tags-dialog.tsx');

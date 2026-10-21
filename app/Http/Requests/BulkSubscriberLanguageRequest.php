@@ -18,7 +18,7 @@ class BulkSubscriberLanguageRequest extends BulkSubscriberRequest
 
         return [
             ...parent::rules(),
-            'language' => ['required', Rule::enum(SubscriberLanguage::class), Rule::in($audience->allowed_languages ?? [])],
+            'language' => ['present', 'nullable', Rule::enum(SubscriberLanguage::class), Rule::in($audience->allowed_languages ?? [])],
         ];
     }
 }

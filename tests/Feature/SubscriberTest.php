@@ -829,3 +829,30 @@ test('custom attribute edits respect audience scope and manager permissions', fu
 
     expect($subscriber->fresh()->attribute_values)->toBe(['company' => 'Acme']);
 });
+
+test('owners can bulk clear the language of selected subscribers', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $selected = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+    $keep = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-language', [$team, $audience]), [
+            'ids' => [$selected->uuid],
+            'language' => null,
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    expect($selected->fresh()->language)->toBeNull()
+        ->and($keep->fresh()->language)->toBe(SubscriberLanguage::English);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-language', [$team, $audience]), [
+            'ids' => [$keep->uuid],
+        ])
+        ->assertInvalid('language');
+
+    expect($keep->fresh()->language)->toBe(SubscriberLanguage::English);
+});

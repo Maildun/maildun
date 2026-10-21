@@ -230,6 +230,16 @@ export default function AudienceShow(props: Props) {
                 title,
                 description: errors.ids ?? Object.values(errors)[0],
             });
+    const setBulkLanguage = (language: string | null) =>
+        router.patch(
+            bulkLanguage.url(routeArgs),
+            { ids: [...selected], language },
+            {
+                preserveScroll: true,
+                onSuccess: () => setSelected(new Set()),
+                onError: bulkActionFailed('Language not changed.'),
+            },
+        );
 
     return (
         <>
@@ -545,32 +555,23 @@ export default function AudienceShow(props: Props) {
                                         className="max-h-72 w-44"
                                     >
                                         <DropdownMenuGroup>
+                                            <DropdownMenuItem
+                                                onClick={() =>
+                                                    setBulkLanguage(null)
+                                                }
+                                                data-test="bulk-language-clear"
+                                            >
+                                                No language
+                                            </DropdownMenuItem>
+                                        </DropdownMenuGroup>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuGroup>
                                             {languages.map((language) => (
                                                 <DropdownMenuItem
                                                     key={language.value}
                                                     onClick={() =>
-                                                        router.patch(
-                                                            bulkLanguage.url(
-                                                                routeArgs,
-                                                            ),
-                                                            {
-                                                                ids: [
-                                                                    ...selected,
-                                                                ],
-                                                                language:
-                                                                    language.value,
-                                                            },
-                                                            {
-                                                                preserveScroll: true,
-                                                                onSuccess: () =>
-                                                                    setSelected(
-                                                                        new Set(),
-                                                                    ),
-                                                                onError:
-                                                                    bulkActionFailed(
-                                                                        'Language not changed.',
-                                                                    ),
-                                                            },
+                                                        setBulkLanguage(
+                                                            language.value,
                                                         )
                                                     }
                                                 >
