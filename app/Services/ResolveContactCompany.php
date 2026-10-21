@@ -5,7 +5,8 @@ namespace App\Services;
 use App\Enums\ContactCompanyAssignmentMode;
 use App\Models\CompanyDomain;
 use App\Models\Contact;
-use App\Models\Team;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Str;
 
 class ResolveContactCompany
@@ -44,17 +45,66 @@ class ResolveContactCompany
         return $contact;
     }
 
-    public function refreshTeam(Team $team): void
+    /**
+     * Re-resolve the automatic contacts whose email is on one of the given domains.
+     * Works in set-based chunks, so a company save never walks every contact.
+     *
+     * @param  list<string>  $domains
+     */
+    public function relinkDomains(int $teamId, array $domains): void
     {
-        $team->contacts()
-            ->where('company_assignment_mode', ContactCompanyAssignmentMode::Automatic)
-            ->lazyById()
-            ->each(fn (Contact $contact) => $this->handle($contact));
+        $domains = array_unique(array_map(
+            fn (string $domain): string => CompanyDomain::toAscii(Str::lower($domain)),
+            $domains,
+        ));
+
+        foreach ($domains as $domain) {
+            if ($domain === '' || self::isPersonalEmailDomain($domain)) {
+                continue;
+            }
+
+            $companyId = CompanyDomain::query()
+                ->where('team_id', $teamId)
+                ->where('domain', $domain)
+                ->value('company_id');
+
+            $this->automaticContactsOn($teamId, $domain)
+                ->where(fn (Builder $query) => $companyId === null
+                    ? $query->whereNotNull('company_id')
+                    : $query->whereNull('company_id')->orWhere('company_id', '!=', $companyId))
+                ->chunkById(1000, function (Collection $contacts) use ($companyId): void {
+                    Contact::query()
+                        ->whereKey($contacts->modelKeys())
+                        ->where('company_assignment_mode', ContactCompanyAssignmentMode::Automatic)
+                        ->update(['company_id' => $companyId]);
+                });
+        }
     }
 
     public static function isPersonalEmailDomain(string $domain): bool
     {
         return in_array(Str::lower($domain), self::PERSONAL_EMAIL_DOMAINS, true);
+    }
+
+    /**
+     * Automatic contacts with an email on the domain, in its punycode or Unicode form.
+     *
+     * @return Builder<Contact>
+     */
+    private function automaticContactsOn(int $teamId, string $domain): Builder
+    {
+        $unicodeDomain = idn_to_utf8($domain, IDNA_NONTRANSITIONAL_TO_UNICODE, INTL_IDNA_VARIANT_UTS46);
+        $forms = array_unique(array_filter([$domain, $unicodeDomain === false ? null : $unicodeDomain]));
+
+        return Contact::query()
+            ->select('id')
+            ->where('team_id', $teamId)
+            ->where('company_assignment_mode', ContactCompanyAssignmentMode::Automatic)
+            ->where(function (Builder $query) use ($forms): void {
+                foreach ($forms as $form) {
+                    $query->orWhere('email', 'like', '%@'.$form);
+                }
+            });
     }
 
     private function companyIdFor(int $teamId, string $email): ?int

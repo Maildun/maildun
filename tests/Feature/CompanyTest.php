@@ -2,6 +2,7 @@
 
 use App\Enums\ContactCompanyAssignmentMode;
 use App\Http\Requests\SaveCompanyRequest;
+use App\Jobs\RelinkCompanyContacts;
 use App\Jobs\ResolveCompanyFavicon;
 use App\Models\Audience;
 use App\Models\Company;
@@ -13,6 +14,7 @@ use App\Models\User;
 use App\Services\DiceBearAvatarGenerator;
 use App\Services\ResolveContactCompany;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\URL;
@@ -572,4 +574,90 @@ test('company names keep their length when lowercased', function () {
             'domains' => ['other.test'],
         ])
         ->assertInvalid(['name' => 'A company with this name already exists.']);
+});
+
+test('renaming a company does not re-resolve every contact in the workspace', function () {
+    Queue::fake([ResolveCompanyFavicon::class]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $company = Company::factory()->for($team)->create(['name' => 'Acme']);
+    $company->domains()->create(['team_id' => $team->id, 'domain' => 'acme.test']);
+    Contact::factory()->for($team)->count(60)->create();
+
+    $queries = 0;
+    DB::listen(function () use (&$queries): void {
+        $queries++;
+    });
+
+    $this->actingAs($user)
+        ->patch(route('companies.update', [$team, $company]), [
+            'name' => 'Acme Renamed',
+            'domains' => ['acme.test'],
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($queries)->toBeLessThan(40);
+});
+
+test('company domain changes re-link only contacts on the added and removed domains in a queued job', function () {
+    Queue::fake([RelinkCompanyContacts::class, ResolveCompanyFavicon::class]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $company = Company::factory()->for($team)->create(['name' => 'Acme']);
+    $company->domains()->create(['team_id' => $team->id, 'domain' => 'keep.test']);
+    $company->domains()->create(['team_id' => $team->id, 'domain' => 'old.test']);
+    $leaving = Contact::factory()->for($team)->for($company)->create(['email' => 'leaving@old.test']);
+    $staying = Contact::factory()->for($team)->for($company)->create(['email' => 'staying@keep.test']);
+    $joining = Contact::factory()->for($team)->create(['email' => 'joining@new.test']);
+    $manual = Contact::factory()->for($team)->create([
+        'email' => 'manual@new.test',
+        'company_assignment_mode' => ContactCompanyAssignmentMode::Manual,
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('companies.update', [$team, $company]), [
+            'name' => 'Acme',
+            'domains' => ['keep.test', 'new.test'],
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($joining->fresh()->company_id)->toBeNull();
+
+    $relink = Queue::pushed(RelinkCompanyContacts::class)->sole();
+
+    expect($relink->teamId)->toBe($team->id)
+        ->and($relink->domains)->toBe(['new.test', 'old.test']);
+
+    $relink->handle(app(ResolveContactCompany::class));
+
+    expect($leaving->fresh()->company_id)->toBeNull()
+        ->and($staying->fresh()->company_id)->toBe($company->id)
+        ->and($joining->fresh()->company_id)->toBe($company->id)
+        ->and($manual->fresh()->company_id)->toBeNull();
+});
+
+test('deleting a company re-links its former contacts to another matching company', function () {
+    Queue::fake([ResolveCompanyFavicon::class]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $deleted = Company::factory()->for($team)->create();
+    $deleted->domains()->create(['team_id' => $team->id, 'domain' => 'acme.test']);
+    $other = Company::factory()->for($team)->create();
+    $other->domains()->create(['team_id' => $team->id, 'domain' => 'other.test']);
+    $automatic = Contact::factory()->for($team)->for($deleted)->create(['email' => 'auto@acme.test']);
+    $manual = Contact::factory()->for($team)->for($deleted)->create([
+        'email' => 'manual@other.test',
+        'company_assignment_mode' => ContactCompanyAssignmentMode::Manual,
+    ]);
+
+    $this->actingAs($user)
+        ->delete(route('companies.destroy', [$team, $deleted]))
+        ->assertRedirect(route('companies.index', $team));
+
+    expect($automatic->fresh()->company_id)->toBeNull()
+        ->and($manual->fresh()->company_id)->toBe($other->id)
+        ->and($manual->fresh()->company_assignment_mode)->toBe(ContactCompanyAssignmentMode::Automatic);
 });
