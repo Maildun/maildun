@@ -122,6 +122,8 @@ export default function ContactShow({
     const { currentTeam } = usePage().props;
     const [editOpen, setEditOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
+    const [membershipToUnsubscribe, setMembershipToUnsubscribe] =
+        useState<ContactMembership | null>(null);
     const [membershipToResubscribe, setMembershipToResubscribe] =
         useState<ContactMembership | null>(null);
     const [openMemberships, setOpenMemberships] = useState<string[]>(() =>
@@ -191,12 +193,17 @@ export default function ContactShow({
         );
     };
 
-    const unsubscribeMembership = (membership: ContactMembership): void => {
+    const confirmUnsubscribe = (): void => {
+        if (!membershipToUnsubscribe) {
+            return;
+        }
+
         router.patch(
-            unsubscribe.url(membershipRouteArgs(membership)),
+            unsubscribe.url(membershipRouteArgs(membershipToUnsubscribe)),
             {},
             {
                 preserveScroll: true,
+                onSuccess: () => setMembershipToUnsubscribe(null),
             },
         );
     };
@@ -673,7 +680,7 @@ export default function ContactShow({
                                             }
                                             canManage={canManage}
                                             onUnsubscribe={() =>
-                                                unsubscribeMembership(
+                                                setMembershipToUnsubscribe(
                                                     membership,
                                                 )
                                             }
@@ -941,6 +948,38 @@ export default function ContactShow({
                                 <Spinner data-icon="inline-start" />
                             ) : null}
                             Delete contact
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+            <AlertDialog
+                open={membershipToUnsubscribe !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setMembershipToUnsubscribe(null);
+                    }
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            Unsubscribe from{' '}
+                            {membershipToUnsubscribe?.audience.name}?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {contact.email} will stop receiving future marketing
+                            email from this audience. Bringing them back needs
+                            their renewed consent.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            type="button"
+                            variant="destructive"
+                            onClick={confirmUnsubscribe}
+                        >
+                            Unsubscribe
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
