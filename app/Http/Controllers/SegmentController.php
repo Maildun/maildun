@@ -9,6 +9,7 @@ use App\Actions\Audiences\SyncSegmentSubscribers;
 use App\Enums\SubscriberLanguage;
 use App\Http\Requests\SaveSegmentRequest;
 use App\Models\Audience;
+use App\Models\Contact;
 use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Tag;
@@ -87,7 +88,10 @@ class SegmentController extends Controller
             'subscribers' => $subscribers,
             'segmentRuleOptions' => $buildSegmentRuleOptions->handle($audience),
             'languages' => SubscriberLanguage::options(),
+            'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'canManage' => Gate::allows('update', $segment),
+            'canManageSubscribers' => Gate::allows('update', $audience),
+            'canManageContacts' => Gate::allows('create', [Contact::class, $currentTeam]),
         ]);
     }
 

@@ -12,12 +12,26 @@ use App\Rules\AuthorizedSenderAddress;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class SaveAudienceRequest extends FormRequest
 {
     public const string WORKSPACE_DEFAULT_SENDER = 'workspace-default';
+
+    /**
+     * Authorize before validating, so a view-only member gets a 403 rather
+     * than validation errors for a form they could never save.
+     */
+    public function authorize(): bool
+    {
+        $audience = $this->route('audience');
+
+        return $audience instanceof Audience
+            ? Gate::allows('update', $audience)
+            : Gate::allows('create', [Audience::class, $this->route('current_team')]);
+    }
 
     protected function prepareForValidation(): void
     {

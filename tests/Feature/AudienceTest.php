@@ -339,6 +339,25 @@ test('unconfirmed double opt-in members count as pending, not subscribed', funct
         ->assertInertia(fn (Assert $page) => $page->where('stats.subscribed', 1));
 });
 
+test('view-only members are refused before validation when saving an audience', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignViewerRole($team, $member);
+    $audience = Audience::factory()->for($team)->create(['name' => 'Newsletter']);
+
+    $this->actingAs($member)
+        ->patch(route('audiences.update', [$team, $audience]), ['name' => ''])
+        ->assertForbidden();
+    $this->actingAs($member)
+        ->post(route('audiences.store', $team), ['name' => ''])
+        ->assertForbidden();
+
+    expect($audience->fresh()->name)->toBe('Newsletter')
+        ->and($team->audiences()->count())->toBe(1);
+});
+
 test('empty audience subscriber stats are zeroed for the chart', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;

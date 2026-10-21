@@ -139,7 +139,11 @@ test('segment page shows the materialized subscriber list', function () {
             ->has('subscribers.data.0.avatar')
             // SubscriberHoverCard reads subscriber.tags on this page too.
             ->has('subscribers.data.0.tags')
-            ->has('subscribers.data.1.tags'));
+            ->has('subscribers.data.1.tags')
+            // The hover card Edit opens the subscriber dialog, which needs the team tags.
+            ->where('tags.0.name', 'VIP')
+            ->where('canManageSubscribers', true)
+            ->where('canManageContacts', true));
 });
 
 test('owners can delete a segment no active campaign targets', function () {

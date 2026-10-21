@@ -8,6 +8,7 @@ import { Head, router, useForm } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { Paginator } from '@/components/paginator';
 import { SegmentRuleFields } from '@/components/segment-rule-fields';
+import { SubscriberDialog } from '@/components/subscriber-dialog';
 import {
     SubscriberHoverCard,
     subscriberSourceLabel,
@@ -63,6 +64,7 @@ import type {
     SegmentRuleOptions,
     Subscriber,
     SubscriberLanguageOption,
+    Tag,
 } from '@/types/audiences';
 
 type Props = {
@@ -71,7 +73,10 @@ type Props = {
     subscribers: Paginated<Subscriber>;
     segmentRuleOptions: SegmentRuleOptions;
     languages: SubscriberLanguageOption[];
+    tags: Tag[];
     canManage: boolean;
+    canManageSubscribers: boolean;
+    canManageContacts: boolean;
     currentTeam: { slug: string };
 };
 
@@ -81,7 +86,10 @@ export default function SegmentShow({
     subscribers,
     segmentRuleOptions,
     languages,
+    tags,
     canManage,
+    canManageSubscribers,
+    canManageContacts,
     currentTeam,
 }: Props) {
     const [editOpen, setEditOpen] = useState(false);
@@ -210,32 +218,18 @@ export default function SegmentShow({
                         </TableHeader>
                         <TableBody>
                             {subscribers.data.map((subscriber) => (
-                                <TableRow
+                                <SegmentSubscriberRow
                                     key={subscriber.uuid}
-                                    data-test="subscriber-row"
-                                >
-                                    <TableCell className="max-w-0">
-                                        <SubscriberHoverCard
-                                            subscriber={subscriber}
-                                            href={showSubscriber.url([
-                                                currentTeam.slug,
-                                                audience.uuid,
-                                                subscriber.uuid,
-                                            ])}
-                                        />
-                                    </TableCell>
-                                    <TableCell>
-                                        <SubscriberStatusBadge
-                                            status={subscriber.status}
-                                            pendingConfirmation={
-                                                subscriber.pending_confirmation
-                                            }
-                                        />
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {subscriberSourceLabel(subscriber)}
-                                    </TableCell>
-                                </TableRow>
+                                    subscriber={subscriber}
+                                    routeArgs={[
+                                        currentTeam.slug,
+                                        audience.uuid,
+                                    ]}
+                                    canManage={canManageSubscribers}
+                                    canManageContacts={canManageContacts}
+                                    tags={tags}
+                                    languages={languages}
+                                />
                             ))}
                         </TableBody>
                     </Table>
@@ -255,6 +249,78 @@ export default function SegmentShow({
                 canManage={canManage}
             />
         </>
+    );
+}
+
+function SegmentSubscriberRow({
+    subscriber,
+    routeArgs,
+    canManage,
+    canManageContacts,
+    tags,
+    languages,
+}: {
+    subscriber: Subscriber;
+    routeArgs: [string, string];
+    canManage: boolean;
+    canManageContacts: boolean;
+    tags: Tag[];
+    languages: SubscriberLanguageOption[];
+}) {
+    const [hoverOpen, setHoverOpen] = useState(false);
+    const [editOpen, setEditOpen] = useState(false);
+    const [editGeneration, setEditGeneration] = useState(0);
+
+    const openEdit = (): void => {
+        setHoverOpen(false);
+        setTimeout(() => {
+            setEditGeneration((count) => count + 1);
+            setEditOpen(true);
+        }, 0);
+    };
+
+    return (
+        <TableRow data-test="subscriber-row">
+            <TableCell className="max-w-0">
+                <SubscriberHoverCard
+                    subscriber={subscriber}
+                    href={showSubscriber.url([...routeArgs, subscriber.uuid])}
+                    canManage={canManage}
+                    onEdit={canManage ? openEdit : undefined}
+                    open={hoverOpen}
+                    onOpenChange={(next) => {
+                        if (editOpen) {
+                            setHoverOpen(false);
+
+                            return;
+                        }
+
+                        setHoverOpen(next);
+                    }}
+                />
+                {canManage && (
+                    <SubscriberDialog
+                        key={`edit-${subscriber.uuid}-${editGeneration}`}
+                        open={editOpen}
+                        onOpenChange={setEditOpen}
+                        routeArgs={routeArgs}
+                        subscriber={subscriber}
+                        canEditProfile={canManageContacts}
+                        tags={tags}
+                        languages={languages}
+                    />
+                )}
+            </TableCell>
+            <TableCell>
+                <SubscriberStatusBadge
+                    status={subscriber.status}
+                    pendingConfirmation={subscriber.pending_confirmation}
+                />
+            </TableCell>
+            <TableCell className="text-muted-foreground">
+                {subscriberSourceLabel(subscriber)}
+            </TableCell>
+        </TableRow>
     );
 }
 

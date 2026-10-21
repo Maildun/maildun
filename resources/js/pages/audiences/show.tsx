@@ -345,23 +345,25 @@ export default function AudienceShow(props: Props) {
                                                 { query: filters },
                                             )}
                                         />
-                                        <ContactDialog
-                                            open={subscriberOpen}
-                                            onOpenChange={setSubscriberOpen}
-                                            teamSlug={currentTeam.slug}
-                                            companies={companies}
-                                            tags={tags}
-                                            audiences={[
-                                                {
+                                        {canManageContacts && (
+                                            <ContactDialog
+                                                open={subscriberOpen}
+                                                onOpenChange={setSubscriberOpen}
+                                                teamSlug={currentTeam.slug}
+                                                companies={companies}
+                                                tags={tags}
+                                                audiences={[
+                                                    {
+                                                        uuid: audience.uuid,
+                                                        name: audience.name,
+                                                    },
+                                                ]}
+                                                defaultAudience={{
                                                     uuid: audience.uuid,
                                                     name: audience.name,
-                                                },
-                                            ]}
-                                            defaultAudience={{
-                                                uuid: audience.uuid,
-                                                name: audience.name,
-                                            }}
-                                        />
+                                                }}
+                                            />
+                                        )}
                                     </>
                                 )}
                             </div>
@@ -447,7 +449,7 @@ export default function AudienceShow(props: Props) {
                                         filters.
                                     </EmptyDescription>
                                 </EmptyHeader>
-                                {canManage && (
+                                {canManage && canManageContacts && (
                                     <EmptyContent>
                                         <Button
                                             onClick={() =>
