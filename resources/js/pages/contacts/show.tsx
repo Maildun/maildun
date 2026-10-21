@@ -895,6 +895,8 @@ export default function ContactShow({
                         <AlertDialogDescription>
                             This permanently removes the contact and every
                             audience membership. Past delivery snapshots remain.
+                            Opt-outs are kept, so if this person is added back
+                            they stay unsubscribed wherever they left.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <Field

@@ -5,6 +5,7 @@ namespace App\Mcp\Support;
 use App\Actions\Audiences\AddContactToAudiences;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
+use App\Models\AudienceOptOut;
 use App\Models\Contact;
 use App\Models\Team;
 use App\Services\ManageContact;
@@ -32,10 +33,11 @@ class AudienceMembership
      */
     public function join(Team $team, array $profile, Collection $audiences, array $tags = []): array
     {
-        $unsubscribedFrom = $audiences->filter(fn (Audience $audience): bool => $audience->subscribers()
-            ->where('email', $profile['email'])
-            ->where('status', SubscriberStatus::Unsubscribed)
-            ->exists());
+        $unsubscribedFrom = $audiences->filter(fn (Audience $audience): bool => AudienceOptOut::existsFor($audience->id, $profile['email'])
+            || $audience->subscribers()
+                ->where('email', $profile['email'])
+                ->where('status', SubscriberStatus::Unsubscribed)
+                ->exists());
 
         if ($unsubscribedFrom->isNotEmpty()) {
             throw ValidationException::withMessages([

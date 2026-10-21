@@ -1402,7 +1402,8 @@ function SubscriberActions({
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                             This permanently removes {subscriber.email} from
-                            this audience and its consent record.
+                            this audience and its consent record. An opt-out is
+                            kept, so they stay unsubscribed if added back.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

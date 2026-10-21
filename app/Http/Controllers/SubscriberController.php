@@ -63,6 +63,12 @@ class SubscriberController extends Controller
 
         $addedTags = $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []));
 
+        if ($subscriber->status === SubscriberStatus::Unsubscribed) {
+            Inertia::flash('toast', ['type' => 'warning', 'message' => __('This person unsubscribed from this audience before, so they were added back as unsubscribed. Resubscribe them only if they consented again.')]);
+
+            return back();
+        }
+
         event(new SubscriberLifecycleOccurred(AutomationTrigger::Subscribed, $subscriber));
         $dispatchTaggedTriggers->handle($contact, $addedTags);
 

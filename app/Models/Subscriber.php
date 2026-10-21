@@ -5,9 +5,11 @@ namespace App\Models;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
+use App\Models\Builders\SubscriberBuilder;
 use App\Services\DiceBearAvatarGenerator;
 use Database\Factories\SubscriberFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\UseEloquentBuilder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
@@ -68,6 +70,7 @@ use Illuminate\Support\Str;
     'unsubscribed_at',
     'resubscribe_requested_at',
 ])]
+#[UseEloquentBuilder(SubscriberBuilder::class)]
 class Subscriber extends Model
 {
     /** @var list<string> */
@@ -85,6 +88,33 @@ class Subscriber extends Model
     {
         static::creating(function (Subscriber $subscriber): void {
             $subscriber->uuid ??= (string) Str::uuid();
+
+            $optOut = AudienceOptOut::query()
+                ->where('audience_id', $subscriber->audience_id)
+                ->where('email', $subscriber->email)
+                ->first();
+
+            // An address whose membership was deleted after it opted out comes
+            // back unsubscribed, whatever path re-adds it, and with no consent
+            // record of its own.
+            if ($optOut instanceof AudienceOptOut) {
+                $subscriber->forceFill([
+                    'status' => SubscriberStatus::Unsubscribed,
+                    'unsubscribed_at' => $optOut->unsubscribed_at ?? now(),
+                    'subscribed_at' => null,
+                    'resubscribe_requested_at' => null,
+                    'consent_text' => null,
+                    'consented_at' => null,
+                    'consent_ip' => null,
+                ]);
+            }
+        });
+
+        static::created(function (Subscriber $subscriber): void {
+            AudienceOptOut::query()
+                ->where('audience_id', $subscriber->audience_id)
+                ->where('email', $subscriber->email)
+                ->delete();
         });
     }
 
@@ -157,7 +187,8 @@ class Subscriber extends Model
 
     /**
      * The one definition of a member who may be mailed: subscribed and, for
-     * double opt-in, confirmed. Campaign claims, retries and automations all
+     * double opt-in, confirmed, with no opt-out kept from a deleted membership
+     * of the same address. Campaign claims, retries and automations all
      * use it (or isOptedIn() in memory) so they can never disagree.
      *
      * @param  Builder<$this>  $query
@@ -166,7 +197,12 @@ class Subscriber extends Model
     {
         $query
             ->where('subscribers.status', SubscriberStatus::Subscribed)
-            ->whereNotNull('subscribers.subscribed_at');
+            ->whereNotNull('subscribers.subscribed_at')
+            ->whereNotExists(
+                AudienceOptOut::query()
+                    ->whereColumn('audience_opt_outs.audience_id', 'subscribers.audience_id')
+                    ->whereColumn('audience_opt_outs.email', 'subscribers.email'),
+            );
     }
 
     /**

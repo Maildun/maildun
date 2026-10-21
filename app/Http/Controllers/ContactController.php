@@ -17,6 +17,7 @@ use App\Http\Requests\LookupContactRequest;
 use App\Http\Requests\SaveContactRequest;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
+use App\Models\AudienceOptOut;
 use App\Models\AutomationRun;
 use App\Models\Company;
 use App\Models\Contact;
@@ -147,7 +148,7 @@ class ContactController extends Controller
             Gate::authorize('create', [Subscriber::class, $audience]);
         }
 
-        [$contact, $changedMemberships] = DB::transaction(function () use (
+        [$contact, $changedMemberships, $keptOptOuts] = DB::transaction(function () use (
             $request,
             $currentTeam,
             $manageContact,
@@ -164,11 +165,20 @@ class ContactController extends Controller
                 ]);
             }
 
+            $keptOptOuts = $audiences
+                ->filter(fn (Audience $audience): bool => AudienceOptOut::existsFor($audience->id, $contact->email))
+                ->count();
             $changedMemberships = $addContactToAudiences->handle($contact, $audiences, $request->ip());
             $dispatchTaggedTriggers->handle($contact, $addedTags);
 
-            return [$contact, $changedMemberships];
+            return [$contact, $changedMemberships, $keptOptOuts];
         });
+
+        if ($keptOptOuts > 0) {
+            Inertia::flash('toast', ['type' => 'warning', 'message' => __('This person unsubscribed from :count of the selected audiences before, so they stay unsubscribed there. Resubscribe them only if they consented again.', ['count' => $keptOptOuts])]);
+
+            return back();
+        }
 
         $message = match (true) {
             $contact->wasRecentlyCreated && $changedMemberships > 0 => __('Contact created and added to the selected audiences.'),

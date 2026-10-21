@@ -20,6 +20,7 @@ class SubscribeToAudience
         private ManageContact $manageContact,
         private NotifyAudienceOfSubscriptionChange $notifyAudience,
         private RequestResubscription $requestResubscription,
+        private RestoreOptedOutMember $restoreOptedOutMember,
     ) {}
 
     /**
@@ -35,7 +36,12 @@ class SubscribeToAudience
 
         $subscriber = DB::transaction(function () use ($subscribeForm, $data, $ipAddress, &$trigger): Subscriber {
             $audience = Audience::query()->whereKey($subscribeForm->audience_id)->lockForUpdate()->firstOrFail();
-            $subscriber = $audience->subscribers()->where('email', $data['email'])->first();
+            $subscriber = $this->restoreOptedOutMember->handle($audience, [
+                'email' => $data['email'],
+                'first_name' => $data['first_name'] ?? null,
+                'last_name' => $data['last_name'] ?? null,
+            ])
+                ?? $audience->subscribers()->where('email', $data['email'])->first();
 
             if ($subscriber?->status === SubscriberStatus::Subscribed && ! $subscriber->isPendingConfirmation()) {
                 return $subscriber;

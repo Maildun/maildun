@@ -7,6 +7,7 @@ use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Models\Audience;
+use App\Models\AudienceOptOut;
 use App\Models\Contact;
 use App\Models\Subscriber;
 use Carbon\CarbonInterface;
@@ -30,6 +31,21 @@ class AddContactToAudiences
 
         foreach ($audiences as $audience) {
             $subscriber = $audience->subscribers()->firstOrNew(['email' => $contact->email]);
+
+            // A deleted membership that had opted out comes back unsubscribed
+            // (the model restores it on create). Re-adding is never consent to
+            // resubscribe; that takes an explicit resubscribe.
+            if (! $subscriber->exists && AudienceOptOut::existsFor($audience->id, $contact->email)) {
+                $subscriber->fill([
+                    'contact_id' => $contact->id,
+                    'first_name' => $contact->first_name,
+                    'last_name' => $contact->last_name,
+                    'language' => $audience->default_language,
+                ])->save();
+
+                continue;
+            }
+
             $trigger = $this->lifecycleTrigger($subscriber);
 
             if ($trigger === null) {

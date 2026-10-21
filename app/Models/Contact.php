@@ -59,6 +59,12 @@ class Contact extends Model
         static::creating(function (Contact $contact): void {
             $contact->uuid ??= (string) Str::uuid();
         });
+
+        // Memberships would go with the database cascade, which skips the
+        // subscriber builder, so delete them here to keep their opt-outs.
+        static::deleting(function (Contact $contact): void {
+            $contact->subscribers()->delete();
+        });
     }
 
     /** @return BelongsTo<Team, $this> */

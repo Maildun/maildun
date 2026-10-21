@@ -19,6 +19,7 @@ class SubscribeViaApi
         private ManageContact $manageContact,
         private NotifyAudienceOfSubscriptionChange $notifyAudience,
         private RequestResubscription $requestResubscription,
+        private RestoreOptedOutMember $restoreOptedOutMember,
     ) {}
 
     /**
@@ -35,7 +36,12 @@ class SubscribeViaApi
 
         $subscriber = DB::transaction(function () use ($audience, $data, $ipAddress, &$trigger): Subscriber {
             $lockedAudience = Audience::query()->whereKey($audience->id)->lockForUpdate()->firstOrFail();
-            $subscriber = $lockedAudience->subscribers()->where('email', $data['email'])->first();
+            $subscriber = $this->restoreOptedOutMember->handle($lockedAudience, [
+                'email' => $data['email'],
+                'first_name' => $data['first_name'] ?? null,
+                'last_name' => $data['last_name'] ?? null,
+            ])
+                ?? $lockedAudience->subscribers()->where('email', $data['email'])->first();
 
             if ($subscriber?->status === SubscriberStatus::Unsubscribed) {
                 return $this->requestResubscription->handle(

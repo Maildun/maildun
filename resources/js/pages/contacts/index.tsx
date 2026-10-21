@@ -445,6 +445,8 @@ export default function ContactsIndex({
                                     <AlertDialogDescription>
                                         They are removed from every audience
                                         they belong to. This cannot be undone.
+                                        Anyone who unsubscribed stays
+                                        unsubscribed if added back.
                                     </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
