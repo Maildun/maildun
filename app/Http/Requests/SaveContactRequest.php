@@ -56,6 +56,7 @@ class SaveContactRequest extends FormRequest
             'last_name' => ['nullable', 'string', 'max:255'],
             'company_assignment_mode' => ['required', Rule::enum(ContactCompanyAssignmentMode::class)],
             'company_uuid' => [
+                'exclude_unless:company_assignment_mode,manual',
                 'nullable',
                 'string',
                 Rule::exists(Company::class, 'uuid')->where('team_id', $team->id),
@@ -87,6 +88,7 @@ class SaveContactRequest extends FormRequest
     {
         return [
             'email.unique' => __('This email is already used by another contact.'),
+            'company_uuid.exists' => __('That company no longer exists. Choose another company.'),
         ];
     }
 

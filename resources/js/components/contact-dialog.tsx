@@ -191,6 +191,11 @@ export function ContactDialog({
             handleOpenChange(false);
         };
 
+        form.transform((data) => ({
+            ...data,
+            company_uuid: knownCompanyUuid(companies, data.company_uuid),
+        }));
+
         if (contact) {
             form.put(update.url([teamSlug, contact.uuid]), { onSuccess });
 
@@ -573,6 +578,14 @@ export function ContactDialog({
     );
 }
 
+/**
+ * A company that was deleted since the page loaded is no longer offered, so treat
+ * it as "No company" instead of submitting a UUID the server will reject.
+ */
+function knownCompanyUuid(companies: CompanyOption[], uuid: string): string {
+    return companies.some((company) => company.uuid === uuid) ? uuid : '';
+}
+
 function NewContactFields({
     form,
     companies,
@@ -682,7 +695,12 @@ function NewContactFields({
                         Company
                     </FieldLabel>
                     <Select
-                        value={form.data.company_uuid || null}
+                        value={
+                            knownCompanyUuid(
+                                companies,
+                                form.data.company_uuid,
+                            ) || null
+                        }
                         onValueChange={(value) =>
                             form.setData(
                                 'company_uuid',

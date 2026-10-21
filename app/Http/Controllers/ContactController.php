@@ -40,7 +40,7 @@ class ContactController extends Controller
     public function index(Request $request, Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [Contact::class, $currentTeam]);
-        $filters = $this->indexFilters($request);
+        $filters = $this->indexFilters($request, $currentTeam);
 
         $contacts = $currentTeam->contacts()
             ->with(['company:id,uuid,name', 'tags:id,uuid,name,color'])
@@ -443,9 +443,10 @@ class ContactController extends Controller
     }
 
     /** @return array{search: string, company: string, audience: string, language: string, sort: string} */
-    private function indexFilters(Request $request): array
+    private function indexFilters(Request $request, Team $team): array
     {
         $company = $request->string('company')->toString();
+        $company = Str::isUuid($company) && ! $team->companies()->where('uuid', $company)->exists() ? '' : $company;
         $sort = $request->string('sort')->toString();
 
         return [
@@ -464,9 +465,14 @@ class ContactController extends Controller
     {
         $attributes = $request->validated();
         $mode = ContactCompanyAssignmentMode::from($attributes['company_assignment_mode']);
-        $companyId = $mode === ContactCompanyAssignmentMode::Manual && $attributes['company_uuid'] !== null
-            ? $team->companies()->where('uuid', $attributes['company_uuid'])->value('id')
-            : null;
+        $companyUuid = $mode === ContactCompanyAssignmentMode::Manual ? ($attributes['company_uuid'] ?? null) : null;
+        $companyId = $companyUuid !== null ? $team->companies()->where('uuid', $companyUuid)->value('id') : null;
+
+        if ($companyUuid !== null && $companyId === null) {
+            throw ValidationException::withMessages([
+                'company_uuid' => __('That company no longer exists. Choose another company.'),
+            ]);
+        }
 
         $profile = [
             'email' => $request->string('email')->toString(),

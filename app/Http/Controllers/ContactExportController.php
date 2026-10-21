@@ -29,7 +29,7 @@ class ContactExportController extends Controller
     {
         Gate::authorize('create', [Contact::class, $currentTeam]);
 
-        $filters = $this->contactFilters($request);
+        $filters = $this->contactFilters($request, $currentTeam);
         $query = Contact::query()
             ->whereBelongsTo($currentTeam)
             ->with([
@@ -224,9 +224,10 @@ class ContactExportController extends Controller
     }
 
     /** @return array{search: string, company: string, audience: string, language: string} */
-    private function contactFilters(Request $request): array
+    private function contactFilters(Request $request, Team $team): array
     {
         $company = $request->string('company')->toString();
+        $company = Str::isUuid($company) && ! $team->companies()->where('uuid', $company)->exists() ? '' : $company;
         $audience = $request->string('audience')->toString();
 
         return [
