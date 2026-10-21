@@ -827,3 +827,59 @@ test('a list-shaped contact email is a validation error', function () {
 
     expect(Contact::query()->where('team_id', $user->currentTeam->id)->exists())->toBeFalse();
 });
+
+test('owners can bulk add and remove tags on selected contacts', function () {
+    Event::fake([SubscriberLifecycleOccurred::class]);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $selected = Subscriber::factory()->for(Audience::factory()->for($team))->create();
+    $contact = $selected->contact;
+    $kept = Contact::factory()->for($team)->create();
+    $vip = Tag::factory()->for($team)->create(['name' => 'VIP']);
+
+    $this->actingAs($user)
+        ->patch(route('contacts.bulk-tags', $team), [
+            'ids' => [$contact->uuid],
+            'action' => 'add',
+            'tags' => ['vip', 'Donor'],
+        ])
+        ->assertRedirect();
+
+    expect($contact->tags()->orderBy('name')->pluck('name')->all())->toBe(['Donor', 'VIP'])
+        ->and($kept->tags()->count())->toBe(0);
+    Event::assertDispatched(SubscriberLifecycleOccurred::class, fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Tagged
+        && $event->subscriber->is($selected)
+        && $event->context === ['tag_uuid' => $vip->uuid]);
+
+    $this->actingAs($user)
+        ->patch(route('contacts.bulk-tags', $team), [
+            'ids' => [$contact->uuid],
+            'action' => 'remove',
+            'tags' => ['VIP'],
+        ])
+        ->assertRedirect();
+
+    expect($contact->tags()->pluck('name')->all())->toBe(['Donor'])
+        ->and($team->tags()->where('name', 'VIP')->exists())->toBeTrue();
+});
+
+test('bulk contact tags stay in the current team and need contact management', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $foreign = Contact::factory()->create();
+    $contact = Contact::factory()->for($team)->create();
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignViewerRole($team, $member);
+
+    $this->actingAs($owner)
+        ->patch(route('contacts.bulk-tags', $team), ['ids' => [$foreign->uuid], 'action' => 'add', 'tags' => ['VIP']])
+        ->assertSessionHasErrors('ids.0');
+
+    $this->actingAs($member)
+        ->patch(route('contacts.bulk-tags', $team), ['ids' => [$contact->uuid], 'action' => 'add', 'tags' => ['VIP']])
+        ->assertForbidden();
+
+    expect($foreign->tags()->count())->toBe(0)
+        ->and($contact->tags()->count())->toBe(0);
+});

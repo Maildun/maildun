@@ -227,6 +227,8 @@ Route::prefix('{current_team}')
                 ->name('contacts.lookup');
             Route::patch('contacts/bulk-unsubscribe', [ContactController::class, 'bulkUnsubscribe'])
                 ->name('contacts.bulk-unsubscribe');
+            Route::patch('contacts/bulk-tags', [ContactController::class, 'bulkTags'])
+                ->name('contacts.bulk-tags');
             Route::delete('contacts/bulk-destroy', [ContactController::class, 'bulkDestroy'])
                 ->name('contacts.bulk-destroy');
             Route::resource('contacts', ContactController::class)

@@ -11,6 +11,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
+import { BulkSubscriberTagsDialog } from '@/components/bulk-subscriber-tags-dialog';
 import { ContactDialog } from '@/components/contact-dialog';
 import { ContactHoverCard } from '@/components/contact-hover-card';
 import { ContactImportMenu } from '@/components/contact-import-menu';
@@ -59,7 +60,13 @@ import { useListFilters } from '@/hooks/use-list-filters';
 import { formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
 import { show as showCompany } from '@/routes/companies';
-import { bulkDestroy, bulkUnsubscribe, index, show } from '@/routes/contacts';
+import {
+    bulkDestroy,
+    bulkTags,
+    bulkUnsubscribe,
+    index,
+    show,
+} from '@/routes/contacts';
 import { show as showContactExport } from '@/routes/contacts/exports';
 import type { ContactIndexProps, ContactSummary } from '@/types/contacts';
 
@@ -84,6 +91,7 @@ export default function ContactsIndex({
     const [createOpen, setCreateOpen] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+    const [bulkTagsOpen, setBulkTagsOpen] = useState(false);
     const { visit, clear, clearAll, hasActiveFilters, searchKey } =
         useListFilters({
             url: currentTeam ? index.url(currentTeam.slug) : '',
@@ -477,6 +485,14 @@ export default function ContactsIndex({
                                 </Button>
                             ) : null}
                             <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setBulkTagsOpen(true)}
+                                data-test="contact-bulk-tags"
+                            >
+                                Tags
+                            </Button>
+                            <Button
                                 variant="destructive"
                                 size="sm"
                                 onClick={() => setConfirmDeleteOpen(true)}
@@ -488,6 +504,15 @@ export default function ContactsIndex({
                                 Delete
                             </Button>
                         </SelectionActionBar>
+                        <BulkSubscriberTagsDialog
+                            url={bulkTags.url(currentTeam.slug)}
+                            ids={[...selected]}
+                            noun={['contact', 'contacts']}
+                            tags={tags}
+                            open={bulkTagsOpen}
+                            onOpenChange={setBulkTagsOpen}
+                            onSuccess={() => setSelected(new Set())}
+                        />
                         <AlertDialog
                             open={confirmDeleteOpen}
                             onOpenChange={setConfirmDeleteOpen}

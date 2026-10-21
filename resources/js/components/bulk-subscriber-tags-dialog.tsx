@@ -12,14 +12,16 @@ import {
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
 import { tagsError } from '@/lib/tags';
-import { bulkTags } from '@/routes/audiences/subscribers';
 import type { Tag } from '@/types/audiences';
 
 type BulkTagAction = 'add' | 'remove';
 
 type Props = {
-    routeArgs: [string, string];
+    /** The bulk-tags endpoint: an audience's subscribers or the contacts. */
+    url: string;
     ids: string[];
+    /** Singular and plural names for the selected rows. */
+    noun?: [string, string];
     tags: Tag[];
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -27,8 +29,9 @@ type Props = {
 };
 
 export function BulkSubscriberTagsDialog({
-    routeArgs,
+    url,
     ids,
+    noun = ['subscriber', 'subscribers'],
     tags,
     open,
     onOpenChange,
@@ -52,7 +55,7 @@ export function BulkSubscriberTagsDialog({
     const submit = (action: BulkTagAction) => {
         form.transform((data) => ({ ...data, ids, action }));
         form.setData('action', action);
-        form.patch(bulkTags.url(routeArgs), {
+        form.patch(url, {
             preserveScroll: true,
             onSuccess: () => {
                 handleOpenChange(false);
@@ -76,8 +79,8 @@ export function BulkSubscriberTagsDialog({
                     <DialogTitle>Edit tags</DialogTitle>
                     <DialogDescription>
                         Add or remove tags for {ids.length.toLocaleString()}{' '}
-                        {ids.length === 1 ? 'subscriber' : 'subscribers'}. Tags
-                        belong to the contact, so they apply in every audience.
+                        {ids.length === 1 ? noun[0] : noun[1]}. Tags belong to
+                        the contact, so they apply in every audience.
                     </DialogDescription>
                 </DialogHeader>
 

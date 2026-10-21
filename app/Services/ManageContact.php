@@ -85,6 +85,23 @@ class ManageContact
     }
 
     /**
+     * Detach the team tags with these names, matched ignoring case. Names
+     * that are not tags are ignored, and no tag is created.
+     *
+     * @param  list<string>  $names
+     */
+    public function removeTags(Team $team, Contact $contact, array $names): void
+    {
+        $lowerNames = array_map(fn (string $name): string => Str::lower(trim($name)), $names);
+        $tagIds = $team->tags()
+            ->get(['id', 'name'])
+            ->filter(fn (Tag $tag): bool => in_array(Str::lower($tag->name), $lowerNames, true))
+            ->modelKeys();
+
+        $contact->tags()->detach($tagIds);
+    }
+
+    /**
      * The team's tag ids for these names, creating the missing ones. A name
      * that differs only in capitals reuses the existing tag.
      *

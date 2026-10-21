@@ -13,6 +13,7 @@ use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
 use App\Http\Requests\BulkContactRequest;
+use App\Http\Requests\BulkContactTagsRequest;
 use App\Http\Requests\DeleteContactRequest;
 use App\Http\Requests\LookupContactRequest;
 use App\Http\Requests\SaveContactRequest;
@@ -424,6 +425,37 @@ class ContactController extends Controller
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Selected contacts unsubscribed from every audience.')]);
+
+        return back();
+    }
+
+    /**
+     * Tags belong to the contact, so adding or removing one applies in every
+     * audience the contact is subscribed to.
+     */
+    public function bulkTags(BulkContactTagsRequest $request, Team $currentTeam, ManageContact $manageContact, DispatchTaggedTriggers $dispatchTaggedTriggers): RedirectResponse
+    {
+        /** @var list<string> $names */
+        $names = $request->validated('tags');
+        $contacts = $currentTeam->contacts()
+            ->whereIn('uuid', $request->validated('ids'))
+            ->get();
+
+        if ($request->validated('action') === 'add') {
+            foreach ($contacts as $contact) {
+                $dispatchTaggedTriggers->handle($contact, $manageContact->addTags($currentTeam, $contact, $names));
+            }
+
+            Inertia::flash('toast', ['type' => 'success', 'message' => __('Tags added to selected contacts.')]);
+
+            return back();
+        }
+
+        foreach ($contacts as $contact) {
+            $manageContact->removeTags($currentTeam, $contact, $names);
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Tags removed from selected contacts.')]);
 
         return back();
     }

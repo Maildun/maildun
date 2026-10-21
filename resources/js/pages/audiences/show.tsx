@@ -110,6 +110,7 @@ import {
 import {
     bulkDestroy,
     bulkLanguage,
+    bulkTags,
     bulkUnsubscribe,
     destroy as destroySubscriber,
     resubscribe,
@@ -710,7 +711,7 @@ export default function AudienceShow(props: Props) {
                         )}
                         {canManage && (
                             <BulkSubscriberTagsDialog
-                                routeArgs={routeArgs}
+                                url={bulkTags.url(routeArgs)}
                                 ids={[...selected]}
                                 tags={tags}
                                 open={bulkTagsOpen}

@@ -22,7 +22,6 @@ use App\Services\ManageContact;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 
 class SubscriberController extends Controller
@@ -246,14 +245,8 @@ class SubscriberController extends Controller
             return back();
         }
 
-        $lowerNames = array_map(fn (string $name): string => Str::lower(trim($name)), $names);
-        $tagIds = $currentTeam->tags()
-            ->get(['id', 'name'])
-            ->filter(fn ($tag): bool => in_array(Str::lower($tag->name), $lowerNames, true))
-            ->modelKeys();
-
         foreach ($contacts as $contact) {
-            $contact->tags()->detach($tagIds);
+            $manageContact->removeTags($currentTeam, $contact, $names);
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Tags removed from selected subscribers.')]);
