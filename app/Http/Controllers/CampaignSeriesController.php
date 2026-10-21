@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Emails\BuildCampaignSeriesReport;
 use App\Concerns\SearchesText;
+use App\Enums\CampaignSeriesContactGroup;
 use App\Enums\CampaignSeriesGoal;
 use App\Enums\EmailStatus;
 use App\Http\Requests\StoreCampaignSeriesRequest;
@@ -49,6 +50,7 @@ class CampaignSeriesController extends Controller
             'series' => $series,
             'filters' => ['q' => $search],
             'goals' => CampaignSeriesGoal::options(),
+            'conversionEvents' => CampaignSeriesGoal::conversionEventOptions(),
             'canManage' => Gate::allows('create', [CampaignSeries::class, $currentTeam]),
         ]);
     }
@@ -82,11 +84,14 @@ class CampaignSeriesController extends Controller
     }
 
     public function show(
+        Request $request,
         Team $currentTeam,
         CampaignSeries $campaignSeries,
         BuildCampaignSeriesReport $report,
     ): Response {
         Gate::authorize('view', $campaignSeries);
+
+        $contactGroup = CampaignSeriesContactGroup::tryFrom($request->string('contacts')->toString());
 
         return Inertia::render('campaign-series/show', [
             'series' => [
@@ -97,9 +102,16 @@ class CampaignSeriesController extends Controller
                 'goal_label' => $campaignSeries->goal->label(),
                 'objective' => $campaignSeries->objective,
                 'primary_cta_url' => $campaignSeries->primary_cta_url,
+                'conversion_event_key' => $campaignSeries->conversion_event_key,
+                'attribution_window_days' => $campaignSeries->attribution_window_days,
+                'conversion_target' => $campaignSeries->conversion_target,
+                'value_currency' => $campaignSeries->value_currency,
                 'updated_at' => $campaignSeries->updated_at?->toISOString(),
             ],
             'report' => $report->handle($campaignSeries),
+            'contactGroup' => fn (): ?array => $contactGroup instanceof CampaignSeriesContactGroup
+                ? $report->contactGroup($campaignSeries, $contactGroup)
+                : null,
             'availableCampaigns' => $currentTeam->emails()
                 ->whereNull('campaign_series_id')
                 ->select(['uuid', 'name', 'subject', 'status', 'sent_at', 'updated_at'])
@@ -117,6 +129,7 @@ class CampaignSeriesController extends Controller
             'templates' => $this->templatesFor($currentTeam),
             'defaultEditor' => $currentTeam->email_editor->value,
             'goals' => CampaignSeriesGoal::options(),
+            'conversionEvents' => CampaignSeriesGoal::conversionEventOptions(),
             'canManage' => Gate::allows('update', $campaignSeries),
         ]);
     }
@@ -152,10 +165,12 @@ class CampaignSeriesController extends Controller
      */
     private function attributes(array $validated): array
     {
-        foreach (['description', 'objective', 'primary_cta_url'] as $key) {
+        foreach (['description', 'objective', 'primary_cta_url', 'conversion_event_key', 'value_currency'] as $key) {
             $value = Str::of((string) ($validated[$key] ?? ''))->trim()->toString();
             $validated[$key] = $value !== '' ? $value : null;
         }
+
+        $validated['attribution_window_days'] ??= CampaignSeries::DEFAULT_ATTRIBUTION_WINDOW_DAYS;
 
         return $validated;
     }

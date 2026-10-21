@@ -30,13 +30,18 @@ import {
 import { useListFilters } from '@/hooks/use-list-filters';
 import { formatRelativeTime } from '@/lib/format';
 import { index as seriesIndex, show } from '@/routes/campaign_series';
-import type { CampaignSeriesGoalOption, CampaignSeriesSummary } from '@/types';
+import type {
+    CampaignSeriesGoalOption,
+    CampaignSeriesSummary,
+    ConversionEventOption,
+} from '@/types';
 import type { Paginated } from '@/types/audiences';
 
 type Props = {
     series: Paginated<CampaignSeriesSummary>;
     filters: { q: string };
     goals: CampaignSeriesGoalOption[];
+    conversionEvents: ConversionEventOption[];
     canManage: boolean;
 };
 
@@ -44,6 +49,7 @@ export default function CampaignSeriesIndex({
     series,
     filters,
     goals,
+    conversionEvents,
     canManage,
 }: Props) {
     const { currentTeam } = usePage().props;
@@ -198,6 +204,7 @@ export default function CampaignSeriesIndex({
                 <CampaignSeriesDialog
                     teamSlug={currentTeam.slug}
                     goals={goals}
+                    conversionEvents={conversionEvents}
                     open={createOpen}
                     onOpenChange={setCreateOpen}
                 />

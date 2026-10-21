@@ -17,6 +17,38 @@ export type CampaignSeriesGoalOption = {
     label: string;
 };
 
+export type ConversionEventOption = {
+    value: string;
+    label: string;
+    goal: CampaignSeriesGoal;
+};
+
+export type ConversionValue = {
+    currency: string;
+    value_minor: number;
+};
+
+export type CampaignSeriesContactGroupKey =
+    | 'converted'
+    | 'clicked_not_converted'
+    | 'opened_not_clicked'
+    | 'not_engaged';
+
+export type CampaignSeriesContact = {
+    email: string;
+    name: string | null;
+    conversions: number;
+    last_activity_at: string | null;
+};
+
+export type CampaignSeriesContactGroup = {
+    group: CampaignSeriesContactGroupKey;
+    label: string;
+    total: number;
+    limit: number;
+    contacts: CampaignSeriesContact[];
+};
+
 export type CampaignSeriesSummary = {
     uuid: string;
     name: string;
@@ -33,7 +65,12 @@ export type CampaignSeriesSummary = {
 export type CampaignSeriesDetail = Omit<
     CampaignSeriesSummary,
     'campaigns_count' | 'sent_campaigns_count'
->;
+> & {
+    conversion_event_key: string | null;
+    attribution_window_days: number;
+    conversion_target: number | null;
+    value_currency: string | null;
+};
 
 export type CampaignSeriesReportSummary = {
     campaigns: number;
@@ -53,6 +90,16 @@ export type CampaignSeriesReportSummary = {
     open_rate: number;
     click_rate: number;
     click_to_open_rate: number;
+    conversion_tracking: boolean;
+    conversions: number;
+    attributed_conversions: number;
+    assisted_conversions: number;
+    explicit_conversions: number;
+    conversion_rate: number;
+    conversion_value: ConversionValue[];
+    conversion_target: number | null;
+    target_progress: number | null;
+    contact_groups: Record<CampaignSeriesContactGroupKey, number>;
 };
 
 export type CampaignSeriesCampaign = {
@@ -76,6 +123,10 @@ export type CampaignSeriesCampaign = {
     open_rate: number;
     click_rate: number;
     click_to_open_rate: number;
+    conversions: number;
+    conversion_rate: number;
+    conversion_value: ConversionValue[];
+    is_conversion_leader: boolean;
     sent_at: string | null;
     updated_at: string | null;
 };
@@ -98,5 +149,7 @@ export type CampaignSeriesShowProps = {
     templates: EmailTemplateSummary[];
     defaultEditor: EmailEditorMode;
     goals: CampaignSeriesGoalOption[];
+    conversionEvents: ConversionEventOption[];
+    contactGroup: CampaignSeriesContactGroup | null;
     canManage: boolean;
 };
