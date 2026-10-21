@@ -8,8 +8,7 @@ use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
-use Illuminate\Support\Carbon;
-use Throwable;
+use DateTimeImmutable;
 
 class ValidateSegmentRules
 {
@@ -52,15 +51,27 @@ class ValidateSegmentRules
                 $errors["rules.{$index}.value"] = 'The selected subscribe form is invalid.';
             }
 
-            if ($field === SegmentRuleField::SubscribedAt) {
-                try {
-                    Carbon::parse((string) $value);
-                } catch (Throwable) {
-                    $errors["rules.{$index}.value"] = 'The value must be a valid date.';
-                }
+            if ($field === SegmentRuleField::SubscribedAt && ! $this->isCalendarDate($value)) {
+                $errors["rules.{$index}.value"] = 'The date must be in YYYY-MM-DD format.';
             }
         }
 
         return $errors;
+    }
+
+    /**
+     * Whether the value is a real date written exactly as YYYY-MM-DD. Looser
+     * inputs such as "1 month ago" or "04/20/2026" parse, but compare as text
+     * against stored timestamps and drift or match the wrong subscribers.
+     */
+    private function isCalendarDate(mixed $value): bool
+    {
+        if (! is_string($value)) {
+            return false;
+        }
+
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+
+        return $date !== false && $date->format('Y-m-d') === $value;
     }
 }

@@ -100,7 +100,7 @@ class CreateSegmentTool extends Tool
     public static function rulesSchema(JsonSchema $schema): Type
     {
         return $schema->array()
-            ->description('1-10 rules. Text fields (email, first_name, last_name) take equals, not_equals, contains, does_not_contain. status (subscribed|unsubscribed), source, subscribe_form (form UUID), and language (ISO 639-1 code such as en or id) take equals or not_equals. not_equals and does_not_contain also match subscribers with no value in that field (no name, no form, no language). subscribed_at takes before or after with a date value.')
+            ->description('1-10 rules. Text fields (email, first_name, last_name) take equals, not_equals, contains, does_not_contain. status (subscribed|unsubscribed), source, subscribe_form (form UUID), and language (ISO 639-1 code such as en or id) take equals or not_equals. not_equals and does_not_contain also match subscribers with no value in that field (no name, no form, no language). subscribed_at takes before or after with a date value written as YYYY-MM-DD.')
             ->min(1)
             ->max(10)
             ->items($schema->object([

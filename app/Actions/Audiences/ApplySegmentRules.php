@@ -8,6 +8,7 @@ use App\Enums\SegmentRuleOperator;
 use App\Models\Audience;
 use App\Models\Subscriber;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 class ApplySegmentRules
@@ -73,9 +74,19 @@ class ApplySegmentRules
             SegmentRuleOperator::NotEquals => $query->where(fn (Builder $valueQuery) => $valueQuery
                 ->where($column, '!=', $value)
                 ->orWhereNull($column)),
-            SegmentRuleOperator::Before => $query->whereDate($column, '<', $value),
-            SegmentRuleOperator::After => $query->whereDate($column, '>', $value),
+            SegmentRuleOperator::Before => $query->whereDate($column, '<', $this->calendarDate($value)),
+            SegmentRuleOperator::After => $query->whereDate($column, '>', $this->calendarDate($value)),
             default => null,
         };
+    }
+
+    /**
+     * Normalize a date rule value to YYYY-MM-DD. New rules are validated to that
+     * format already; this keeps rules saved before that check comparing as
+     * dates instead of as text.
+     */
+    private function calendarDate(mixed $value): string
+    {
+        return Carbon::parse((string) $value)->toDateString();
     }
 }

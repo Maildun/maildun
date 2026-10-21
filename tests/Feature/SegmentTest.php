@@ -480,6 +480,37 @@ test('text rules match wildcard characters literally', function (string $operato
     'does not contain an underscore' => ['does_not_contain', '_', 'plain@example.com'],
 ]);
 
+test('segment date rules accept only YYYY-MM-DD dates', function (string $value) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('audiences.segments.store', [$team, $audience]), [
+            'name' => 'Recent',
+            'match_type' => 'all',
+            'rules' => [['field' => 'subscribed_at', 'operator' => 'after', 'value' => $value]],
+        ])
+        ->assertInvalid(['rules.0.value' => 'The date must be in YYYY-MM-DD format.']);
+
+    expect($audience->segments()->exists())->toBeFalse();
+})->with(['1 month ago', '04/20/2026', '2026-4-20', '2026-02-30', '2026-04-20 10:00']);
+
+test('a stored date rule in an older format still matches by its calendar day', function () {
+    $audience = Audience::factory()->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'old@example.com', 'subscribed_at' => '2026-01-15 12:00:00']);
+    Subscriber::factory()->for($audience)->create(['email' => 'new@example.com', 'subscribed_at' => '2026-05-15 12:00:00']);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [
+            ['field' => 'subscribed_at', 'operator' => 'before', 'value' => '04/20/2026'],
+        ], SegmentMatchType::All)
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe(['old@example.com']);
+});
+
 test('segment validation rejects unknown languages and text operators on language', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
