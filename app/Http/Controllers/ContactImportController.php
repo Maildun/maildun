@@ -7,6 +7,7 @@ use App\Enums\ContactImportIssue;
 use App\Enums\ContactImportStatus;
 use App\Enums\StorageBackend;
 use App\Enums\SubscriberLanguage;
+use App\Exceptions\ContactImportFailed;
 use App\Http\Requests\StartContactImportRequest;
 use App\Http\Requests\StoreContactImportRequest;
 use App\Jobs\ProcessContactImport;
@@ -27,7 +28,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
-use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ContactImportController extends Controller
@@ -76,7 +76,7 @@ class ContactImportController extends Controller
 
         try {
             $analysis = $csv->analyze((string) $file->getRealPath());
-        } catch (RuntimeException $exception) {
+        } catch (ContactImportFailed $exception) {
             throw ValidationException::withMessages(['file' => $exception->getMessage()]);
         }
 
@@ -115,6 +115,8 @@ class ContactImportController extends Controller
         Gate::authorize('view', $contactImport);
         $contactImport->loadMissing(['audience:id,uuid,name,team_id', 'uploadedBy:id,name']);
         $isDraft = $contactImport->status === ContactImportStatus::Draft;
+        $fields = $isDraft ? $csv->fieldOptions($contactImport->audience) : [];
+        $fieldValues = array_column($fields, 'value');
 
         return Inertia::render('contacts/imports/show', [
             'contactImport' => fn (): array => $contactImport->fresh(['audience:id,uuid,name,team_id', 'uploadedBy:id,name'])?->toInertia() ?? $contactImport->toInertia(),
@@ -128,8 +130,13 @@ class ContactImportController extends Controller
             'mapping' => $isDraft ? [
                 'headers' => $contactImport->headers ?? [],
                 'sampleRows' => $contactImport->sample_rows ?? [],
-                'columnMap' => $contactImport->column_map ?? [],
-                'fields' => $csv->fieldOptions($contactImport->audience),
+                // A suggested field can disappear after upload (a deleted audience
+                // attribute), so offer it unmapped rather than as a value Start rejects.
+                'columnMap' => array_map(
+                    fn (?string $field): ?string => in_array($field, $fieldValues, true) ? $field : null,
+                    $contactImport->column_map ?? [],
+                ),
+                'fields' => $fields,
                 'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
                 'languages' => SubscriberLanguage::options(),
             ] : null,
@@ -232,22 +239,55 @@ class ContactImportController extends Controller
 
             fputcsv($stream, ['row', 'email', 'outcome', 'detail'], escape: '');
 
-            foreach ($contactImport->rowErrors() as $error) {
-                fputcsv($stream, $this->sanitizeCsvRow([$error['row'], $error['email'], 'failed', $error['message']]), escape: '');
-            }
-
-            foreach ($contactImport->review_flags ?? [] as $flag) {
-                $issue = ContactImportIssue::tryFrom($flag['issue']);
-                fputcsv($stream, $this->sanitizeCsvRow([
-                    $flag['row'],
-                    $flag['email'],
-                    $flag['action'],
-                    trim(($issue?->label() ?? $flag['issue']).' '.($flag['detail'] ?? '')),
-                ]), escape: '');
+            foreach ($this->reportRows($contactImport) as $row) {
+                fputcsv($stream, $this->sanitizeCsvRow($row), escape: '');
             }
 
             fclose($stream);
         }, $fileName, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    /**
+     * Every failed row, then every flagged row. Imports that ran before issues
+     * were stored row by row fall back to the preview kept on the import.
+     *
+     * @return iterable<int, array{0: int|null, 1: string|null, 2: string, 3: string}>
+     */
+    private function reportRows(ContactImport $contactImport): iterable
+    {
+        $issues = DB::table('contact_import_issues')->where('contact_import_id', $contactImport->id);
+
+        if (! $issues->exists()) {
+            foreach ($contactImport->rowErrors() as $error) {
+                yield [$error['row'], $error['email'], 'failed', $error['message']];
+            }
+
+            foreach ($contactImport->review_flags ?? [] as $flag) {
+                yield [$flag['row'], $flag['email'], $flag['action'], $this->flagDetail($flag['issue'], $flag['detail'])];
+            }
+
+            return;
+        }
+
+        foreach ([true, false] as $failed) {
+            $rows = $failed
+                ? (clone $issues)->whereNull('issue')->lazyById(1000)
+                : (clone $issues)->whereNotNull('issue')->lazyById(1000);
+
+            foreach ($rows as $row) {
+                yield [
+                    $row->row_number === null ? null : (int) $row->row_number,
+                    $row->email,
+                    $row->outcome,
+                    $failed ? (string) $row->detail : $this->flagDetail((string) $row->issue, $row->detail),
+                ];
+            }
+        }
+    }
+
+    private function flagDetail(string $issue, ?string $detail): string
+    {
+        return trim((ContactImportIssue::tryFrom($issue)?->label() ?? $issue).' '.($detail ?? ''));
     }
 
     /** @return Collection<int, Audience> */

@@ -19,7 +19,9 @@ use App\Models\User;
 use App\Services\ContactImportCsv;
 use App\Services\ImportEmailReview;
 use App\Services\ManageContact;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -303,6 +305,24 @@ test('imports fail with a useful error and keep the file for retry when the emai
         ->and($contactImport->failure_message)->toBe('The CSV must include an email column.')
         ->and($team->contacts()->count())->toBe(0);
     Storage::disk('local')->assertExists($contactImport->path);
+});
+
+test('imports that fail on an unexpected error show a generic message instead of the raw error', function () {
+    Storage::fake('local');
+    $team = Team::factory()->create();
+    $contactImport = ContactImport::factory()->for($team)->create(['column_map' => ['email']]);
+    Storage::disk('local')->put($contactImport->path, "email\nsecret.person@example.com\n");
+    Contact::creating(fn () => DB::select('select * from contacts where missing_column = 1'));
+    $job = new ProcessContactImport($contactImport->id);
+
+    try {
+        $job->handle(app(ManageContact::class), app(AddContactToAudiences::class), app(ContactImportCsv::class), app(ImportEmailReview::class));
+    } catch (QueryException $exception) {
+        $job->failed($exception);
+    }
+
+    expect($contactImport->refresh()->status)->toBe(ContactImportStatus::Failed)
+        ->and($contactImport->failure_message)->toBe('The import could not be completed.');
 });
 
 test('imports reject files that are not CSV data', function () {

@@ -65,6 +65,12 @@ class StartContactImportRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
+                if (collect($validator->errors()->keys())->contains(fn (string $key): bool => str_starts_with($key, 'column_map.'))) {
+                    $validator->errors()->add('column_map', __('A mapped field no longer exists. Choose what each column holds again.'));
+
+                    return;
+                }
+
                 $mapped = array_values(array_filter((array) $this->input('column_map', []), fn (mixed $field): bool => is_string($field) && $field !== ''));
 
                 if (! in_array('email', $mapped, true)) {

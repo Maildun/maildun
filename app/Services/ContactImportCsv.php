@@ -3,14 +3,22 @@
 namespace App\Services;
 
 use App\Enums\SubscriberLanguage;
+use App\Exceptions\ContactImportFailed;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use Illuminate\Support\Str;
-use RuntimeException;
 
 class ContactImportCsv
 {
     public const int SAMPLE_ROWS = 5;
+
+    private const string UTF8_BOM = "\xEF\xBB\xBF";
+
+    /** Bytes read from the start of the file to detect its delimiter. */
+    private const int DETECTION_BYTES = 65536;
+
+    /** Data rows compared with the header to break delimiter ties. */
+    private const int DETECTION_ROWS = 20;
 
     /** @var list<string> */
     private const array DELIMITERS = [',', ';', "\t", '|'];
@@ -38,27 +46,27 @@ class ContactImportCsv
         $stream = fopen($path, 'rb');
 
         if (! is_resource($stream)) {
-            throw new RuntimeException('The uploaded CSV file could not be read.');
+            throw new ContactImportFailed(__('The uploaded CSV file could not be read.'));
         }
 
         try {
-            $firstLine = fgets($stream);
+            $this->skipByteOrderMark($stream);
+            $sample = (string) fread($stream, self::DETECTION_BYTES);
 
-            if ($firstLine === false || trim($firstLine) === '') {
-                throw new RuntimeException('The CSV is empty.');
+            if (trim($sample) === '') {
+                throw new ContactImportFailed(__('The CSV is empty.'));
             }
 
-            $delimiter = $this->detectDelimiter($firstLine);
+            $delimiter = $this->detectDelimiter($sample, strlen($sample) === self::DETECTION_BYTES);
             rewind($stream);
+            $this->skipByteOrderMark($stream);
             $headers = $this->readRow($stream, $delimiter);
 
             if ($headers === false) {
-                throw new RuntimeException('The CSV is empty.');
+                throw new ContactImportFailed(__('The CSV is empty.'));
             }
 
-            $headers = array_map(fn (string $header, int $index): string => trim(
-                $index === 0 ? ltrim($header, "\xEF\xBB\xBF") : $header,
-            ), $headers, array_keys($headers));
+            $headers = array_map(fn (string $header): string => trim($header), $headers);
             $sampleRows = [];
             $totalRows = 0;
 
@@ -86,6 +94,22 @@ class ContactImportCsv
     }
 
     /**
+     * Move past a UTF-8 byte order mark so it never becomes part of the first
+     * header, which would stop a quoted first header from being unquoted.
+     *
+     * @param  resource  $stream
+     */
+    public function skipByteOrderMark($stream): void
+    {
+        $start = ftell($stream);
+        $bytes = fread($stream, 3);
+
+        if ($bytes !== self::UTF8_BOM && $start !== false) {
+            fseek($stream, $start);
+        }
+    }
+
+    /**
      * Read a CSV language cell as an ISO 639-1 code ("en", "EN", "en-US") or an
      * English name ("English").
      */
@@ -100,12 +124,71 @@ class ContactImportCsv
             );
     }
 
-    public function detectDelimiter(string $line): string
+    /**
+     * Pick the delimiter that splits the header into the most columns, parsing
+     * quotes so a comma inside a quoted "Name, Vorname" header does not count.
+     * A delimiter that leaves stray quotes inside cells cut a quoted cell apart,
+     * so it loses to one that parses cleanly. Ties go to the delimiter whose
+     * data rows match the header width most often.
+     */
+    public function detectDelimiter(string $sample, bool $truncated = false): string
     {
-        $counts = array_map(fn (string $delimiter): int => substr_count($line, $delimiter), self::DELIMITERS);
-        $best = array_search(max($counts), $counts, true);
+        $best = ',';
+        $bestScore = [0, 1, 0];
 
-        return $counts[$best] > 0 ? self::DELIMITERS[$best] : ',';
+        foreach (self::DELIMITERS as $delimiter) {
+            $rows = $this->parseSample($sample, $delimiter, $truncated);
+
+            if ($rows === []) {
+                continue;
+            }
+
+            $columns = count($rows[0]);
+            $splitsQuotedCells = collect($rows)->flatten()->contains(fn (?string $cell): bool => str_contains((string) $cell, '"'));
+            $score = [
+                $splitsQuotedCells ? 0 : 1,
+                $columns,
+                count(array_filter(array_slice($rows, 1), fn (array $row): bool => count($row) === $columns)),
+            ];
+
+            if ($columns > 1 && $score > $bestScore) {
+                $best = $delimiter;
+                $bestScore = $score;
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * @return list<list<string|null>>
+     */
+    private function parseSample(string $sample, string $delimiter, bool $truncated): array
+    {
+        $stream = fopen('php://memory', 'w+b');
+
+        if ($stream === false) {
+            return [];
+        }
+
+        fwrite($stream, $sample);
+        rewind($stream);
+        $rows = [];
+
+        while (count($rows) <= self::DETECTION_ROWS && ($row = fgetcsv($stream, null, $delimiter, '"', '')) !== false) {
+            if ($row !== [null]) {
+                $rows[] = $row;
+            }
+        }
+
+        fclose($stream);
+
+        // The last row of a cut-off sample is usually incomplete.
+        if ($truncated && count($rows) > 1) {
+            array_pop($rows);
+        }
+
+        return $rows;
     }
 
     /**

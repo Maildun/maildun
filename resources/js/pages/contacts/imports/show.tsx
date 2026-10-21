@@ -1050,8 +1050,8 @@ function RowErrorsPanel({
             variant="inset"
             title="Rows that could not be imported"
             description={
-                contactImport.error_count > rowErrors.length
-                    ? `Showing ${rowErrors.length} of ${contactImport.error_count.toLocaleString()} recorded errors.`
+                contactImport.failed_rows > rowErrors.length
+                    ? `Showing ${rowErrors.length} of ${contactImport.failed_rows.toLocaleString()} rows. Download the report for the rest.`
                     : 'Fix these rows in your spreadsheet and import them again.'
             }
         >

@@ -11,6 +11,7 @@ use App\Enums\ContactImportStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
+use App\Exceptions\ContactImportFailed;
 use App\Models\AudienceAttribute;
 use App\Models\Contact;
 use App\Models\ContactImport;
@@ -28,7 +29,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use RuntimeException;
 use Throwable;
 
 class ProcessContactImport implements ShouldQueue
@@ -80,27 +80,26 @@ class ProcessContactImport implements ShouldQueue
         $stream = Storage::disk($contactImport->disk)->readStream($contactImport->path);
 
         if (! is_resource($stream)) {
-            throw new RuntimeException('The uploaded CSV file could not be read.');
+            throw new ContactImportFailed(__('The uploaded CSV file could not be read.'));
         }
 
         $completed = false;
         $stopped = false;
 
         try {
+            $csv->skipByteOrderMark($stream);
             $headers = $csv->readRow($stream, $contactImport->delimiter);
 
             if ($headers === false) {
-                throw new RuntimeException('The CSV is empty.');
+                throw new ContactImportFailed(__('The CSV is empty.'));
             }
 
-            $fields = $this->fieldIndexes($contactImport->column_map ?? $csv->suggestMapping(array_map(
-                fn (string $header, int $index): string => $index === 0 ? ltrim($header, "\xEF\xBB\xBF") : $header,
-                $headers,
-                array_keys($headers),
-            )));
+            $fields = $this->fieldIndexes($contactImport->column_map ?? $csv->suggestMapping(
+                array_map(fn (string $header): string => trim($header), $headers),
+            ));
 
             if (! array_key_exists('email', $fields)) {
-                throw new RuntimeException('The CSV must include an email column.');
+                throw new ContactImportFailed(__('The CSV must include an email column.'));
             }
 
             $this->resume($stream, $contactImport->file_offset);
@@ -122,7 +121,7 @@ class ProcessContactImport implements ShouldQueue
                 $offset = ftell($stream);
 
                 if ($offset === false) {
-                    throw new RuntimeException('The uploaded CSV position could not be recorded.');
+                    throw new ContactImportFailed(__('The uploaded CSV position could not be recorded.'));
                 }
 
                 DB::transaction(function () use ($contactImport, $row, $offset, $fields, $csv, $manageContact, $addContactToAudiences, $emailReview): void {
@@ -173,9 +172,9 @@ class ProcessContactImport implements ShouldQueue
 
         $contactImport->update([
             'status' => ContactImportStatus::Failed,
-            'failure_message' => $exception instanceof RuntimeException
+            'failure_message' => $exception instanceof ContactImportFailed
                 ? $exception->getMessage()
-                : 'The import could not be completed.',
+                : __('The import could not be completed.'),
             'completed_at' => now(),
         ]);
     }
@@ -397,6 +396,7 @@ class ProcessContactImport implements ShouldQueue
         $counts = $contactImport->review_counts ?? [];
         $counts[$issue->value] = ($counts[$issue->value] ?? 0) + 1;
         $contactImport->review_counts = $counts;
+        $this->recordIssue($contactImport, $email, $action, $issue, $detail);
         $flags = $contactImport->review_flags ?? [];
 
         if (count($flags) < self::MAX_ERRORS) {
@@ -486,8 +486,14 @@ class ProcessContactImport implements ShouldQueue
 
         $subscriber = $audience->subscribers()->where('email', $contact->email)->first();
         $current = $subscriber->attribute_values ?? [];
-        $merged = [...$attributes, ...array_filter($current, fn (string|int|float $value): bool => $value !== '')];
-        $changes = $merged === $current ? [] : ['attribute_values' => $merged];
+        // Only blank values are filled. Stored values may be any JSON the API
+        // accepted, so test for blanks instead of assuming scalars.
+        $blanks = array_filter(
+            $attributes,
+            fn (string $value, int|string $key): bool => ($current[$key] ?? null) === null || $current[$key] === '',
+            ARRAY_FILTER_USE_BOTH,
+        );
+        $changes = $blanks === [] ? [] : ['attribute_values' => [...$current, ...$blanks]];
 
         // A new membership takes the CSV language over the audience default; an
         // existing one, even when resubscribed, only gains a language it was missing.
@@ -585,7 +591,7 @@ class ProcessContactImport implements ShouldQueue
 
         if ($metadata['seekable']) {
             if (fseek($stream, $offset) !== 0) {
-                throw new RuntimeException('The uploaded CSV file could not be resumed.');
+                throw new ContactImportFailed(__('The uploaded CSV file could not be resumed.'));
             }
 
             return;
@@ -597,7 +603,7 @@ class ProcessContactImport implements ShouldQueue
             $skipped = fread($stream, min($remainingBytes, 1024 * 1024));
 
             if ($skipped === false || $skipped === '') {
-                throw new RuntimeException('The uploaded CSV file could not be resumed.');
+                throw new ContactImportFailed(__('The uploaded CSV file could not be resumed.'));
             }
 
             $remainingBytes -= strlen($skipped);
@@ -618,11 +624,28 @@ class ProcessContactImport implements ShouldQueue
 
     private function addError(ContactImport $contactImport, ?string $email, string $message): void
     {
+        $this->recordIssue($contactImport, $email, 'failed', null, $message);
         $errors = $contactImport->errors ?? [];
 
         if (count($errors) < self::MAX_ERRORS) {
             $errors[] = ['row' => $contactImport->last_row_number + 1, 'email' => $email, 'message' => $message];
             $contactImport->errors = $errors;
         }
+    }
+
+    /**
+     * Keep every problem row for the downloadable report; the JSON columns on
+     * the import only hold the first MAX_ERRORS for the page.
+     */
+    private function recordIssue(ContactImport $contactImport, ?string $email, string $outcome, ?ContactImportIssue $issue, ?string $detail): void
+    {
+        DB::table('contact_import_issues')->insert([
+            'contact_import_id' => $contactImport->id,
+            'row_number' => $contactImport->last_row_number + 1,
+            'email' => $email === null ? null : mb_substr($email, 0, 255),
+            'outcome' => $outcome,
+            'issue' => $issue?->value,
+            'detail' => $detail,
+        ]);
     }
 }

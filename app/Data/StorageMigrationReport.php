@@ -16,6 +16,7 @@ readonly class StorageMigrationReport
         public int $repointedAttachments = 0,
         public int $repointedMedia = 0,
         public int $repointedSubscribeForms = 0,
+        public int $repointedContactImports = 0,
     ) {
         //
     }
