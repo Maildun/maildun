@@ -1,13 +1,10 @@
-import {
-    Building06Icon,
-    UserGroupIcon,
-    UserIcon,
-} from '@hugeicons/core-free-icons';
+import { UserGroupIcon, UserIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
 import { CompanyDialog } from '@/components/company-dialog';
+import { CompanyFavicon } from '@/components/company-favicon';
 import { ContactDialog } from '@/components/contact-dialog';
 import { ContactHoverCard } from '@/components/contact-hover-card';
 import { FilterMenu } from '@/components/filter-menu';
@@ -100,18 +97,11 @@ export default function CompanyShow({
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                     <div className="flex items-center gap-3">
                         <div className="grid size-12 place-items-center rounded-lg bg-muted">
-                            {company.favicon ? (
-                                <img
-                                    src={company.favicon}
-                                    alt=""
-                                    className="size-12 rounded-lg bg-white object-contain p-1.5"
-                                />
-                            ) : (
-                                <HugeiconsIcon
-                                    icon={Building06Icon}
-                                    className="size-6"
-                                />
-                            )}
+                            <CompanyFavicon
+                                src={company.favicon}
+                                className="size-12 rounded-lg bg-white object-contain p-1.5"
+                                iconClassName="size-6"
+                            />
                         </div>
                         <div>
                             <h1 className="text-2xl font-semibold tracking-tight">

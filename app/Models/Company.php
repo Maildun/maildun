@@ -80,6 +80,24 @@ class Company extends Model
         return 'https://www.google.com/s2/favicons?domain='.rawurlencode($domain).'&sz=64';
     }
 
+    /**
+     * The domain whose favicon represents the company: the oldest stored domain, so
+     * reordering or re-saving the domain list never switches the icon on its own.
+     */
+    public function faviconDomain(): ?string
+    {
+        return $this->domains()->orderBy('id')->value('domain');
+    }
+
+    /**
+     * The resolved Google favicon, or the placeholder signed at read time so it keeps
+     * loading after the app key changes.
+     */
+    public function faviconOrFallbackUrl(): string
+    {
+        return $this->favicon ?? $this->fallbackFaviconUrl();
+    }
+
     public function fallbackFaviconUrl(): string
     {
         return URL::signedRoute('avatars.show', [

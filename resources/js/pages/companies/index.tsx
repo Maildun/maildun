@@ -7,6 +7,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { CompanyDialog } from '@/components/company-dialog';
+import { CompanyFavicon } from '@/components/company-favicon';
 import { ListSearch } from '@/components/list-search';
 import { Paginator } from '@/components/paginator';
 import { Badge } from '@/components/ui/badge';
@@ -186,18 +187,11 @@ export default function CompaniesIndex({
                                                 ])}
                                                 className="flex items-center gap-2 font-medium hover:underline"
                                             >
-                                                {company.favicon ? (
-                                                    <img
-                                                        src={company.favicon}
-                                                        alt=""
-                                                        className="size-4 rounded-sm bg-white object-contain p-0.5"
-                                                    />
-                                                ) : (
-                                                    <HugeiconsIcon
-                                                        icon={Building06Icon}
-                                                        className="size-4 text-muted-foreground"
-                                                    />
-                                                )}
+                                                <CompanyFavicon
+                                                    src={company.favicon}
+                                                    className="size-4 rounded-sm bg-white object-contain p-0.5"
+                                                    iconClassName="size-4 text-muted-foreground"
+                                                />
                                                 {company.name}
                                             </Link>
                                         </TableCell>

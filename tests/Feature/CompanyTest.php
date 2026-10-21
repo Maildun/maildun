@@ -95,7 +95,7 @@ test('company domains automatically associate matching business contacts', funct
         'seed' => $company->uuid,
     ], absolute: false);
 
-    expect($company->favicon)->toBe($fallbackFavicon);
+    expect($company->favicon)->toBeNull();
     Queue::assertPushed(ResolveCompanyFavicon::class, function (ResolveCompanyFavicon $job) use ($company): bool {
         return $job->companyId === $company->id && $job->domain === 'acme.test';
     });
@@ -159,10 +159,7 @@ test('company favicon follows its first submitted domain', function () {
 
     $company->refresh();
 
-    expect($company->favicon)->toBe(URL::signedRoute('avatars.show', [
-        'style' => DiceBearAvatarGenerator::LOOPS,
-        'seed' => $company->uuid,
-    ], absolute: false));
+    expect($company->favicon)->toBeNull();
     Queue::assertPushed(ResolveCompanyFavicon::class, function (ResolveCompanyFavicon $job) use ($company): bool {
         return $job->companyId === $company->id && $job->domain === 'new-acme.test';
     });
@@ -176,13 +173,12 @@ test('background company favicon lookup persists Google favicon', function () {
         'team_id' => $company->team_id,
         'domain' => 'acme.test',
     ]);
-    $updatedAt = $company->updated_at->toISOString();
     $faviconUrl = 'https://www.google.com/s2/favicons?domain=acme.test&sz=64';
     Http::fake([
         $faviconUrl => Http::response('favicon', 200, ['Content-Type' => 'image/png']),
     ]);
 
-    (new ResolveCompanyFavicon($company->id, 'acme.test', $updatedAt))->handle();
+    (new ResolveCompanyFavicon($company->id, 'acme.test'))->handle();
 
     expect($company->fresh()->favicon)->toBe($faviconUrl);
     Http::assertSent(fn (Request $request): bool => $request->method() === 'GET' && $request->url() === $faviconUrl);
@@ -196,18 +192,20 @@ test('background company favicon lookup falls back to local DiceBear when Google
         'team_id' => $company->team_id,
         'domain' => 'missing.test',
     ]);
-    $updatedAt = $company->updated_at->toISOString();
     $faviconUrl = 'https://www.google.com/s2/favicons?domain=missing.test&sz=64';
     Http::fake([
         $faviconUrl => Http::response('', 404),
     ]);
 
-    (new ResolveCompanyFavicon($company->id, 'missing.test', $updatedAt))->handle();
+    $company->forceFill(['favicon' => Company::faviconUrlFor('stale.test')])->save();
 
-    expect($company->fresh()->favicon)->toBe(URL::signedRoute('avatars.show', [
-        'style' => DiceBearAvatarGenerator::LOOPS,
-        'seed' => $company->uuid,
-    ], absolute: false));
+    (new ResolveCompanyFavicon($company->id, 'missing.test'))->handle();
+
+    expect($company->fresh()->favicon)->toBeNull()
+        ->and($company->fresh()->faviconOrFallbackUrl())->toBe(URL::signedRoute('avatars.show', [
+            'style' => DiceBearAvatarGenerator::LOOPS,
+            'seed' => $company->uuid,
+        ], absolute: false));
 });
 
 test('company domains reject personal providers and other companies domain collisions', function () {
@@ -344,4 +342,137 @@ test('company domain errors name the domain that failed', function () {
             'domains' => ['acme.test', 'taken.test'],
         ])
         ->assertInvalid(['domains' => 'taken.test is already assigned to another company.']);
+});
+
+/**
+ * Create a company through the store route and return the favicon lookup it queued.
+ */
+function createCompanyAndQueuedFaviconLookup(User $user, string $domain): ResolveCompanyFavicon
+{
+    Queue::fake([ResolveCompanyFavicon::class]);
+
+    test()->actingAs($user)
+        ->post(route('companies.store', $user->currentTeam), [
+            'name' => 'Acme Inc.',
+            'domains' => [$domain],
+        ])
+        ->assertSessionHasNoErrors();
+
+    return Queue::pushed(ResolveCompanyFavicon::class)->sole();
+}
+
+test('renaming a company keeps its resolved favicon without a new lookup', function () {
+    Queue::fake([ResolveCompanyFavicon::class]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $company = Company::factory()->for($team)->create(['name' => 'Acme Inc.']);
+    $company->domains()->create(['team_id' => $team->id, 'domain' => 'acme.test']);
+    $company->forceFill(['favicon' => Company::faviconUrlFor('acme.test')])->save();
+
+    $this->actingAs($user)
+        ->patch(route('companies.update', [$team, $company]), [
+            'name' => 'Acme Incorporated',
+            'domains' => ['acme.test', 'brand.test'],
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($company->fresh()->favicon)->toBe(Company::faviconUrlFor('acme.test'));
+    Queue::assertNotPushed(ResolveCompanyFavicon::class);
+});
+
+test('company favicon follows the first stored domain rather than the submitted order', function () {
+    Queue::fake([ResolveCompanyFavicon::class]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $company = Company::factory()->for($team)->create(['name' => 'Acme Inc.']);
+    $company->domains()->create(['team_id' => $team->id, 'domain' => 'acme.test']);
+    $company->forceFill(['favicon' => Company::faviconUrlFor('acme.test')])->save();
+
+    $this->actingAs($user)
+        ->patch(route('companies.update', [$team, $company]), [
+            'name' => 'Acme Inc.',
+            'domains' => ['brand.test', 'acme.test'],
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($company->fresh()->favicon)->toBe(Company::faviconUrlFor('acme.test'));
+    Queue::assertNotPushed(ResolveCompanyFavicon::class);
+
+    $this->actingAs($user)
+        ->get(route('companies.show', [$team, $company]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('company.domains', ['acme.test', 'brand.test'])
+            ->where('company.favicon', Company::faviconUrlFor('acme.test')));
+});
+
+test('an outdated favicon lookup does not overwrite the favicon of the current first domain', function () {
+    Http::preventStrayRequests();
+    Http::fake([
+        'www.google.com/s2/favicons*' => Http::response('png', 200, ['Content-Type' => 'image/png']),
+    ]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $outdatedLookup = createCompanyAndQueuedFaviconLookup($user, 'old-acme.test');
+    $company = $team->companies()->sole();
+
+    $this->travel(5)->seconds();
+
+    $this->actingAs($user)
+        ->patch(route('companies.update', [$team, $company]), [
+            'name' => 'Acme Inc.',
+            'domains' => ['new-acme.test'],
+        ])
+        ->assertSessionHasNoErrors();
+
+    $currentLookup = Queue::pushed(ResolveCompanyFavicon::class)->last();
+
+    $this->travel(1)->seconds();
+    $outdatedLookup->handle();
+    $currentLookup->handle();
+
+    expect($company->fresh()->favicon)->toBe(Company::faviconUrlFor('new-acme.test'));
+});
+
+test('favicon lookup falls back to the placeholder on a redirect without a location', function () {
+    Http::preventStrayRequests();
+    Http::fake([
+        'www.google.com/s2/favicons*' => Http::response('', 302),
+    ]);
+
+    $user = User::factory()->create();
+    $lookup = createCompanyAndQueuedFaviconLookup($user, 'acme.test');
+    $company = $user->currentTeam->companies()->sole();
+
+    $lookup->handle();
+
+    $this->actingAs($user)
+        ->get(route('companies.show', [$user->currentTeam, $company]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('company.favicon', $company->fallbackFaviconUrl()));
+});
+
+test('company placeholder icons keep loading after the app key changes', function () {
+    Http::preventStrayRequests();
+    Http::fake([
+        'www.google.com/s2/favicons*' => Http::response('', 404),
+    ]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    createCompanyAndQueuedFaviconLookup($user, 'acme.test')->handle();
+    $company = $team->companies()->sole();
+
+    config(['app.key' => 'base64:'.base64_encode(random_bytes(32)), 'app.previous_keys' => []]);
+
+    $favicon = null;
+    $this->actingAs($user)
+        ->get(route('companies.show', [$team, $company]))
+        ->assertInertia(function (Assert $page) use (&$favicon): void {
+            $favicon = $page->toArray()['props']['company']['favicon'];
+        });
+
+    $this->get($favicon)->assertOk();
 });

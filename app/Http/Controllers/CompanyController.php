@@ -152,14 +152,14 @@ class CompanyController extends Controller
         return to_route('companies.index', $currentTeam);
     }
 
-    /** @return array{uuid: string, name: string, favicon: string|null, domains: list<string>, contacts_count: int, created_at: string|null} */
+    /** @return array{uuid: string, name: string, favicon: string, domains: list<string>, contacts_count: int, created_at: string|null} */
     private function payload(Company $company): array
     {
         return [
             'uuid' => $company->uuid,
             'name' => $company->name,
-            'favicon' => $company->favicon,
-            'domains' => array_values($company->domains->pluck('domain')->all()),
+            'favicon' => $company->faviconOrFallbackUrl(),
+            'domains' => array_values($company->domains->sortBy('id')->pluck('domain')->all()),
             'contacts_count' => $company->contacts_count ?? $company->contacts()->count(),
             'created_at' => $company->created_at?->toISOString(),
         ];
@@ -188,6 +188,8 @@ class CompanyController extends Controller
     /** @param list<string> $domains */
     private function syncDomains(Company $company, Team $team, array $domains): void
     {
+        $previousFaviconDomain = $company->wasRecentlyCreated ? null : $company->faviconDomain();
+
         $company->domains()->whereNotIn('domain', $domains)->delete();
 
         foreach ($domains as $domain) {
@@ -197,13 +199,18 @@ class CompanyController extends Controller
             ]);
         }
 
-        $company->favicon = $company->fallbackFaviconUrl();
-        $company->save();
+        $faviconDomain = $company->faviconDomain();
 
-        ResolveCompanyFavicon::dispatch(
-            $company->id,
-            $domains[0],
-            $company->updated_at?->toISOString() ?? '',
-        );
+        if ($faviconDomain === null) {
+            return;
+        }
+
+        if ($faviconDomain !== $previousFaviconDomain) {
+            $company->forceFill(['favicon' => null])->save();
+        } elseif ($company->favicon !== null) {
+            return;
+        }
+
+        ResolveCompanyFavicon::dispatch($company->id, $faviconDomain);
     }
 }

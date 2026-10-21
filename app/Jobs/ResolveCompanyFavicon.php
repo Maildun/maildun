@@ -21,7 +21,6 @@ class ResolveCompanyFavicon implements ShouldQueue
     public function __construct(
         public int $companyId,
         public string $domain,
-        public string $companyUpdatedAt,
     ) {}
 
     public function handle(): void
@@ -36,7 +35,8 @@ class ResolveCompanyFavicon implements ShouldQueue
             $response = Http::accept('image/*')
                 ->connectTimeout(3)
                 ->timeout(8)
-                ->retry([100, 500], 0, function (Throwable $exception): bool {
+                // Laravel passes null for unsuccessful non-error responses such as a 3xx.
+                ->retry([100, 500], 0, function (?Throwable $exception): bool {
                     return $exception instanceof ConnectionException
                         || ($exception instanceof RequestException
                             && ($exception->response->serverError() || $exception->response->status() === 429));
@@ -58,11 +58,15 @@ class ResolveCompanyFavicon implements ShouldQueue
         $company->save();
     }
 
+    /**
+     * The company, unless it was deleted or its favicon domain changed since this
+     * lookup was queued; a newer lookup for the current domain owns the favicon then.
+     */
     private function currentCompany(): ?Company
     {
         $company = Company::query()->find($this->companyId);
 
-        if ($company === null || $company->updated_at?->toISOString() !== $this->companyUpdatedAt) {
+        if ($company === null || $company->faviconDomain() !== $this->domain) {
             return null;
         }
 
@@ -71,7 +75,7 @@ class ResolveCompanyFavicon implements ShouldQueue
 
     private function storeFallback(Company $company): void
     {
-        $company->favicon = $company->fallbackFaviconUrl();
+        $company->favicon = null;
         $company->save();
     }
 }
