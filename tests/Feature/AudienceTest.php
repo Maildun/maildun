@@ -1,7 +1,11 @@
 <?php
 
+use App\Enums\AutomationStatus;
+use App\Enums\EmailStatus;
 use App\Enums\TeamRole;
 use App\Models\Audience;
+use App\Models\Automation;
+use App\Models\Email;
 use App\Models\Segment;
 use App\Models\SubscribeForm;
 use App\Models\Subscriber;
@@ -735,6 +739,48 @@ test('audience deletion requires its exact name and cascades owned data', functi
     $this->assertModelMissing($subscriber);
     $this->assertModelMissing($segment);
     $this->assertModelMissing($subscribeForm);
+});
+
+test('an audience cannot be deleted while a campaign is sending or scheduled to it', function (array $campaign) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['name' => 'Customers']);
+    Email::factory()->for($team)->create(['audience_id' => $audience->id, 'name' => 'Launch', ...$campaign]);
+
+    $this->actingAs($user)
+        ->delete(route('audiences.destroy', [$team, $audience]), ['name' => 'Customers'])
+        ->assertInvalid(['name' => 'This audience is used by scheduled or sending campaigns: Launch.']);
+
+    $this->assertModelExists($audience);
+})->with([
+    'sending' => [['status' => EmailStatus::Sending]],
+    'queued' => [['status' => EmailStatus::Queued]],
+    'scheduled' => [['status' => EmailStatus::Draft, 'scheduled_at' => now()->addDay()]],
+]);
+
+test('deleting an audience pauses the active automations it triggers', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['name' => 'Customers']);
+    $graphFor = function (Audience $trigger): array {
+        $graph = Automation::defaultGraph();
+        $graph['nodes'][0]['data']['audience_uuid'] = $trigger->uuid;
+
+        return $graph;
+    };
+    $triggered = Automation::factory()->for($team)->active()->create(['name' => 'Welcome', 'graph' => $graphFor($audience)]);
+    $unrelated = Automation::factory()->for($team)->active()->create([
+        'graph' => $graphFor(Audience::factory()->for($team)->create()),
+    ]);
+
+    $this->actingAs($user)
+        ->delete(route('audiences.destroy', [$team, $audience]), ['name' => 'Customers'])
+        ->assertRedirect(route('audiences.index', $team))
+        ->assertInertiaFlash('toast.message', 'Audience deleted. Paused the automations it triggered: Welcome.');
+
+    $this->assertModelMissing($audience);
+    expect($triggered->fresh()->status)->toBe(AutomationStatus::Paused)
+        ->and($unrelated->fresh()->status)->toBe(AutomationStatus::Active);
 });
 
 test('a malformed allowed language list is a validation error', function () {

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Audiences\BuildAudienceSubscriberStats;
 use App\Actions\Audiences\BuildSegmentRuleOptions;
+use App\Actions\Audiences\DeleteAudience;
 use App\Concerns\SearchesText;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
@@ -190,12 +191,14 @@ class AudienceController extends Controller
         return back();
     }
 
-    public function destroy(DeleteAudienceRequest $request, Team $currentTeam, Audience $audience): RedirectResponse
+    public function destroy(DeleteAudienceRequest $request, Team $currentTeam, Audience $audience, DeleteAudience $deleteAudience): RedirectResponse
     {
         $team = $audience->team;
-        $audience->delete();
+        $pausedAutomations = $deleteAudience->handle($audience);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Audience deleted.')]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => $pausedAutomations === []
+            ? __('Audience deleted.')
+            : __('Audience deleted. Paused the automations it triggered: :automations.', ['automations' => implode(', ', $pausedAutomations)])]);
 
         return to_route('audiences.index', ['current_team' => $team]);
     }

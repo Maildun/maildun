@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Audiences;
 
+use App\Actions\Audiences\DeleteAudience;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -17,7 +18,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('Permanently deletes an audience after its exact name is supplied as confirmation.')]
+#[Description('Permanently deletes an audience after its exact name is supplied as confirmation. Refused while a scheduled or sending campaign targets it; active automations it triggers are paused.')]
 #[IsDestructive]
 #[IsOpenWorld(false)]
 #[IsReadOnly(false)]
@@ -27,6 +28,7 @@ class DeleteAudienceTool extends Tool
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
+        private DeleteAudience $deleteAudience,
     ) {}
 
     public function handle(Request $request): ResponseFactory
@@ -41,12 +43,13 @@ class DeleteAudienceTool extends Tool
         ]);
 
         $deleted = ['uuid' => $audience->uuid, 'name' => $audience->name];
-        $audience->delete();
+        $pausedAutomations = $this->deleteAudience->handle($audience, 'uuid');
 
         return Response::structured([
             'workspace' => $this->payload->workspace($team),
             'deleted' => true,
             'audience' => $deleted,
+            'paused_automations' => $pausedAutomations,
         ]);
     }
 

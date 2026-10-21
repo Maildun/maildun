@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\EmailStatus;
 use App\Enums\SubscriberLanguage;
 use App\Mcp\Servers\MaildunServer;
 use App\Mcp\Tools\Audiences\CreateAudienceTool;
@@ -8,6 +9,7 @@ use App\Mcp\Tools\Audiences\GetAudienceTool;
 use App\Mcp\Tools\Audiences\ListAudiencesTool;
 use App\Mcp\Tools\Audiences\UpdateAudienceTool;
 use App\Models\Audience;
+use App\Models\Email;
 use App\Models\Team;
 use Illuminate\Testing\Fluent\AssertableJson;
 
@@ -129,4 +131,18 @@ test('rejects a null name field mode when creating an audience', function () {
     ])->assertHasErrors(['first name mode']);
 
     expect($team->audiences()->exists())->toBeFalse();
+});
+
+test('refuses to delete an audience a sending campaign targets', function () {
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create(['name' => 'Customers']);
+    Email::factory()->for($team)->create(['audience_id' => $audience->id, 'name' => 'Launch', 'status' => EmailStatus::Sending]);
+
+    MaildunServer::tool(DeleteAudienceTool::class, [
+        'workspace' => $team->slug,
+        'uuid' => $audience->uuid,
+        'confirm_name' => 'Customers',
+    ])->assertHasErrors(['This audience is used by scheduled or sending campaigns: Launch.']);
+
+    $this->assertModelExists($audience);
 });
