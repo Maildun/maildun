@@ -66,7 +66,9 @@ class UnsubscribeController extends Controller
 
         $this->optOut($this->currentMembership($delivery));
 
-        // One-click providers only need a 2xx; they never render a page.
+        // One-click providers only need a 2xx; they never render a page. The
+        // page posts over XHR, so an external landing page needs an Inertia
+        // location visit: a plain redirect would be followed silently.
         if (! $request->header('X-Inertia')) {
             return response()->noContent();
         }
