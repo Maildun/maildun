@@ -60,7 +60,7 @@ import {
     DELIVERY_STATUS_LABELS,
     deliveryStatusVariant,
 } from '@/lib/email-status';
-import { formatRelativeTime } from '@/lib/format';
+import { formatAttributeDate, formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
 import { cn } from '@/lib/utils';
 import {
@@ -1026,11 +1026,7 @@ function formatAttributeValue(
     }
 
     if (attribute.type === 'date') {
-        const parsed = new Date(String(attribute.value));
-
-        if (!Number.isNaN(parsed.getTime())) {
-            return parsed.toLocaleDateString();
-        }
+        return formatAttributeDate(attribute.value);
     }
 
     return String(attribute.value);
