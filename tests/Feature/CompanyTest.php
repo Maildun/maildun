@@ -1,13 +1,17 @@
 <?php
 
+use App\Enums\ContactCompanyAssignmentMode;
+use App\Http\Requests\SaveCompanyRequest;
 use App\Jobs\ResolveCompanyFavicon;
 use App\Models\Audience;
 use App\Models\Company;
 use App\Models\Contact;
 use App\Models\Subscriber;
 use App\Models\Tag;
+use App\Models\Team;
 use App\Models\User;
 use App\Services\DiceBearAvatarGenerator;
+use App\Services\ResolveContactCompany;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -475,4 +479,97 @@ test('company placeholder icons keep loading after the app key changes', functio
         });
 
     $this->get($favicon)->assertOk();
+});
+
+test('a domain claimed by another company during a save is a validation error and saves nothing', function () {
+    Queue::fake([ResolveCompanyFavicon::class]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $rival = Company::factory()->for($team)->create(['name' => 'Rival']);
+    $acme = Company::factory()->for($team)->create(['name' => 'Acme']);
+    $acme->domains()->create(['team_id' => $team->id, 'domain' => 'old.test']);
+
+    $this->app->afterResolving(SaveCompanyRequest::class, function () use ($rival, $team): void {
+        $rival->domains()->create(['team_id' => $team->id, 'domain' => 'new.test']);
+    });
+
+    $this->actingAs($user)
+        ->post(route('companies.store', $team), [
+            'name' => 'Newco',
+            'domains' => ['new.test'],
+        ])
+        ->assertInvalid(['domains' => 'new.test is already assigned to another company.']);
+
+    $this->actingAs($user)
+        ->patch(route('companies.update', [$team, $acme]), [
+            'name' => 'Acme Renamed',
+            'domains' => ['new.test'],
+        ])
+        ->assertInvalid(['domains' => 'new.test is already assigned to another company.']);
+
+    expect($team->companies()->where('name', 'Newco')->exists())->toBeFalse()
+        ->and($acme->fresh()->name)->toBe('Acme')
+        ->and($acme->domains()->pluck('domain')->all())->toBe(['old.test']);
+});
+
+test('a company name claimed during a save is a validation error', function () {
+    Queue::fake([ResolveCompanyFavicon::class]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->app->afterResolving(SaveCompanyRequest::class, function () use ($team): void {
+        $team->companies()->create(['name' => 'acme']);
+    });
+
+    $this->actingAs($user)
+        ->post(route('companies.store', $team), [
+            'name' => 'Acme',
+            'domains' => ['acme.test'],
+        ])
+        ->assertInvalid(['name' => 'A company with this name already exists.']);
+
+    expect($team->companies()->count())->toBe(1);
+});
+
+test('re-resolving a contact does not overwrite a manual company chosen meanwhile', function () {
+    $team = Team::factory()->create();
+    $acme = Company::factory()->for($team)->create();
+    $acme->domains()->create(['team_id' => $team->id, 'domain' => 'acme.test']);
+    $chosen = Company::factory()->for($team)->create();
+    $contact = Contact::factory()->for($team)->create(['email' => 'pat@acme.test']);
+
+    Contact::query()->whereKey($contact->id)->update([
+        'company_assignment_mode' => ContactCompanyAssignmentMode::Manual,
+        'company_id' => $chosen->id,
+    ]);
+
+    app(ResolveContactCompany::class)->handle($contact);
+
+    expect($contact->fresh()->company_id)->toBe($chosen->id);
+});
+
+test('company names keep their length when lowercased', function () {
+    Queue::fake([ResolveCompanyFavicon::class]);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $name = str_repeat('İ', 255);
+
+    $this->actingAs($user)
+        ->post(route('companies.store', $team), [
+            'name' => $name,
+            'domains' => ['acme.test'],
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect(mb_strlen($team->companies()->sole()->normalized_name))->toBe(255);
+
+    $this->actingAs($user)
+        ->post(route('companies.store', $team), [
+            'name' => $name,
+            'domains' => ['other.test'],
+        ])
+        ->assertInvalid(['name' => 'A company with this name already exists.']);
 });

@@ -72,22 +72,6 @@ class SaveCompanyRequest extends FormRequest
                     return;
                 }
 
-                $team = $this->route('current_team');
-                $company = $this->route('company');
-
-                abort_unless($team instanceof Team, 404);
-
-                $normalizedName = Str::lower($this->string('name')->toString());
-                $nameQuery = $team->companies()->where('normalized_name', $normalizedName);
-
-                if ($company instanceof Company) {
-                    $nameQuery->whereKeyNot($company);
-                }
-
-                if ($nameQuery->exists()) {
-                    $validator->errors()->add('name', __('A company with this name already exists.'));
-                }
-
                 foreach ($this->array('domains') as $index => $domain) {
                     if (! is_string($domain)) {
                         continue;
@@ -102,24 +86,55 @@ class SaveCompanyRequest extends FormRequest
                     $validator->errors()->add('domains', __('Each domain may only be added once.'));
                 }
 
-                $domainQuery = CompanyDomain::query()
-                    ->where('team_id', $team->id)
-                    ->whereIn('domain', $this->array('domains'));
-
-                if ($company instanceof Company) {
-                    $domainQuery->where('company_id', '!=', $company->id);
-                }
-
-                $takenDomains = $domainQuery->orderBy('domain')->pluck('domain');
-
-                if ($takenDomains->isNotEmpty()) {
-                    $validator->errors()->add('domains', trans_choice(
-                        ':domains is already assigned to another company.|:domains are already assigned to other companies.',
-                        $takenDomains->count(),
-                        ['domains' => $takenDomains->implode(', ')],
-                    ));
+                foreach ($this->conflictErrors() as $key => $message) {
+                    $validator->errors()->add($key, $message);
                 }
             },
         ];
+    }
+
+    /**
+     * Errors for a name or domains another company in the workspace already owns.
+     * Also used after a save loses a unique-key race with a concurrent request.
+     *
+     * @return array<string, string>
+     */
+    public function conflictErrors(): array
+    {
+        $team = $this->route('current_team');
+        $company = $this->route('company');
+
+        abort_unless($team instanceof Team, 404);
+
+        $errors = [];
+        $nameQuery = $team->companies()->where('normalized_name', Company::normalizeName($this->string('name')->toString()));
+
+        if ($company instanceof Company) {
+            $nameQuery->whereKeyNot($company);
+        }
+
+        if ($nameQuery->exists()) {
+            $errors['name'] = __('A company with this name already exists.');
+        }
+
+        $domainQuery = CompanyDomain::query()
+            ->where('team_id', $team->id)
+            ->whereIn('domain', $this->array('domains'));
+
+        if ($company instanceof Company) {
+            $domainQuery->where('company_id', '!=', $company->id);
+        }
+
+        $takenDomains = $domainQuery->orderBy('domain')->pluck('domain');
+
+        if ($takenDomains->isNotEmpty()) {
+            $errors['domains'] = trans_choice(
+                ':domains is already assigned to another company.|:domains are already assigned to other companies.',
+                $takenDomains->count(),
+                ['domains' => $takenDomains->implode(', ')],
+            );
+        }
+
+        return $errors;
     }
 }

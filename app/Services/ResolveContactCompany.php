@@ -26,8 +26,19 @@ class ResolveContactCompany
 
         $companyId = $this->companyIdFor($contact->team_id, $contact->email);
 
-        if ($contact->company_id !== $companyId) {
-            $contact->update(['company_id' => $companyId]);
+        if ($contact->company_id === $companyId) {
+            return $contact;
+        }
+
+        // Only write while the contact is still automatic, so a concurrent switch
+        // to a manual company is never overwritten by this re-resolution.
+        $updated = Contact::query()
+            ->whereKey($contact->getKey())
+            ->where('company_assignment_mode', ContactCompanyAssignmentMode::Automatic)
+            ->update(['company_id' => $companyId]);
+
+        if ($updated > 0) {
+            $contact->forceFill(['company_id' => $companyId])->syncOriginalAttribute('company_id');
         }
 
         return $contact;

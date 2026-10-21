@@ -65,9 +65,19 @@ class Company extends Model
         return Attribute::make(
             set: fn (string $value): array => [
                 'name' => Str::squish($value),
-                'normalized_name' => Str::lower(Str::squish($value)),
+                'normalized_name' => self::normalizeName($value),
             ],
         );
+    }
+
+    /**
+     * Case-insensitive form of a company name. Uses simple case mapping so the
+     * length never grows (Str::lower turns "İ" into two characters), keeping it
+     * within the varchar(255) column.
+     */
+    public static function normalizeName(string $name): string
+    {
+        return mb_convert_case(Str::squish($name), MB_CASE_LOWER_SIMPLE, 'UTF-8');
     }
 
     public function getRouteKeyName(): string

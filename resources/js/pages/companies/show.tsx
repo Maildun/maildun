@@ -36,6 +36,7 @@ import {
     EmptyMedia,
     EmptyTitle,
 } from '@/components/ui/empty';
+import { Spinner } from '@/components/ui/spinner';
 import {
     Table,
     TableBody,
@@ -76,7 +77,14 @@ export default function CompanyShow({
 }: Props) {
     const { currentTeam } = usePage().props;
     const [editOpen, setEditOpen] = useState(false);
+    const [editGeneration, setEditGeneration] = useState(0);
     const [deleteOpen, setDeleteOpen] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+
+    const openEdit = (): void => {
+        setEditGeneration((count) => count + 1);
+        setEditOpen(true);
+    };
     const { visit, clear, clearAll, searchKey } = useListFilters({
         url: currentTeam ? show.url([currentTeam.slug, company.uuid]) : '',
         filters,
@@ -89,6 +97,13 @@ export default function CompanyShow({
     }
 
     const routeArgs: [string, string] = [currentTeam.slug, company.uuid];
+
+    const deleteCompany = (): void => {
+        router.delete(destroy.url(routeArgs), {
+            onStart: () => setDeleting(true),
+            onFinish: () => setDeleting(false),
+        });
+    };
 
     return (
         <>
@@ -114,10 +129,7 @@ export default function CompanyShow({
                     </div>
                     {canManage ? (
                         <div className="flex gap-2">
-                            <Button
-                                variant="outline"
-                                onClick={() => setEditOpen(true)}
-                            >
+                            <Button variant="outline" onClick={openEdit}>
                                 Edit
                             </Button>
                             <Button
@@ -264,6 +276,7 @@ export default function CompanyShow({
             </div>
             {canManage ? (
                 <CompanyDialog
+                    key={editGeneration}
                     teamSlug={currentTeam.slug}
                     company={company}
                     open={editOpen}
@@ -287,10 +300,12 @@ export default function CompanyShow({
                         <AlertDialogAction
                             type="button"
                             variant="destructive"
-                            onClick={() =>
-                                router.delete(destroy.url(routeArgs))
-                            }
+                            disabled={deleting}
+                            onClick={deleteCompany}
                         >
+                            {deleting ? (
+                                <Spinner data-icon="inline-start" />
+                            ) : null}
                             Delete company
                         </AlertDialogAction>
                     </AlertDialogFooter>

@@ -6,9 +6,9 @@ test('company actions use text labels without icons', function () {
     );
 
     expect($page)->toBeString()
-        ->toContain('onClick={() => setEditOpen(true)}')
+        ->toContain('onClick={openEdit}')
         ->toContain('onClick={() => setDeleteOpen(true)}')
-        ->toMatch('/onClick=\{\(\) => setEditOpen\(true\)\}\s*>\s*Edit\s*<\/Button>/')
+        ->toMatch('/onClick=\{openEdit\}\s*>\s*Edit\s*<\/Button>/')
         ->toMatch('/onClick=\{\(\) => setDeleteOpen\(true\)\}\s*>\s*Delete\s*<\/Button>/')
         ->not->toContain('Edit03Icon')
         ->not->toContain('Delete02Icon');
@@ -77,4 +77,25 @@ test('company contacts use the shared filter toolbar without a card wrapper', fu
         ->toContain('<ActiveFilters')
         ->toContain('clearTestId="clear-company-contact-filters"')
         ->not->toContain('<CardTitle>Contacts</CardTitle>');
+});
+
+test('the company edit dialog starts from the saved company each time it opens', function () {
+    $page = file_get_contents(
+        dirname(__DIR__, 2).'/resources/js/pages/companies/show.tsx',
+    );
+
+    expect($page)->toBeString()
+        ->toContain('setEditGeneration((count) => count + 1)')
+        ->toMatch('/<CompanyDialog\s+key=\{editGeneration\}/');
+});
+
+test('the company delete action is disabled while the delete runs', function () {
+    $page = file_get_contents(
+        dirname(__DIR__, 2).'/resources/js/pages/companies/show.tsx',
+    );
+
+    expect($page)->toBeString()
+        ->toContain('onStart: () => setDeleting(true)')
+        ->toContain('onFinish: () => setDeleting(false)')
+        ->toMatch('/disabled=\{deleting\}\s*onClick=\{deleteCompany\}/');
 });

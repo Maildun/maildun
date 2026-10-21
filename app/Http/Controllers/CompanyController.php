@@ -11,10 +11,14 @@ use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\Team;
 use App\Services\ResolveContactCompany;
+use Closure;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -52,9 +56,13 @@ class CompanyController extends Controller
     public function store(SaveCompanyRequest $request, Team $currentTeam, ResolveContactCompany $resolveCompany): RedirectResponse
     {
         Gate::authorize('create', [Company::class, $currentTeam]);
-        $company = $currentTeam->companies()->create(Arr::only($request->validated(), ['name']));
-        $this->syncDomains($company, $currentTeam, $request->validated('domains'));
-        $resolveCompany->refreshTeam($currentTeam);
+        $company = $this->saveAtomically($request, function () use ($request, $currentTeam, $resolveCompany): Company {
+            $company = $currentTeam->companies()->create(Arr::only($request->validated(), ['name']));
+            $this->syncDomains($company, $currentTeam, $request->validated('domains'));
+            $resolveCompany->refreshTeam($currentTeam);
+
+            return $company;
+        });
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Company created.')]);
 
@@ -128,9 +136,13 @@ class CompanyController extends Controller
     public function update(SaveCompanyRequest $request, Team $currentTeam, Company $company, ResolveContactCompany $resolveCompany): RedirectResponse
     {
         Gate::authorize('update', $company);
-        $company->update(Arr::only($request->validated(), ['name']));
-        $this->syncDomains($company, $currentTeam, $request->validated('domains'));
-        $resolveCompany->refreshTeam($currentTeam);
+        $this->saveAtomically($request, function () use ($request, $currentTeam, $company, $resolveCompany): Company {
+            $company->update(Arr::only($request->validated(), ['name']));
+            $this->syncDomains($company, $currentTeam, $request->validated('domains'));
+            $resolveCompany->refreshTeam($currentTeam);
+
+            return $company;
+        });
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Company updated.')]);
 
@@ -185,6 +197,28 @@ class CompanyController extends Controller
         ];
     }
 
+    /**
+     * Save a company in one transaction. Validation checks names and domains without
+     * locking, so a concurrent request can still claim one first; report that as the
+     * same validation error instead of a server error and a half-saved company.
+     *
+     * @param  Closure(): Company  $save
+     */
+    private function saveAtomically(SaveCompanyRequest $request, Closure $save): Company
+    {
+        try {
+            return DB::transaction($save);
+        } catch (UniqueConstraintViolationException $exception) {
+            $errors = $request->conflictErrors();
+
+            if ($errors === []) {
+                throw $exception;
+            }
+
+            throw ValidationException::withMessages($errors);
+        }
+    }
+
     /** @param list<string> $domains */
     private function syncDomains(Company $company, Team $team, array $domains): void
     {
@@ -211,6 +245,6 @@ class CompanyController extends Controller
             return;
         }
 
-        ResolveCompanyFavicon::dispatch($company->id, $faviconDomain);
+        ResolveCompanyFavicon::dispatch($company->id, $faviconDomain)->afterCommit();
     }
 }
