@@ -259,6 +259,8 @@ Route::prefix('{current_team}')
             Route::get('audiences/{audience}/settings/danger', [AudienceSettingsController::class, 'danger'])
                 ->name('audiences.settings.danger');
 
+            Route::patch('audiences/{audience}/attributes/order', [AudienceAttributeController::class, 'reorder'])
+                ->name('audiences.attributes.reorder');
             Route::resource('audiences.attributes', AudienceAttributeController::class)
                 ->only(['store', 'update', 'destroy'])
                 ->parameters(['attributes' => 'audience_attribute']);
