@@ -2,26 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Companies\DeleteCompany;
+use App\Actions\Companies\SaveCompany;
 use App\Concerns\ReadsQueryFilters;
 use App\Concerns\SearchesText;
-use App\Enums\ContactCompanyAssignmentMode;
 use App\Http\Requests\SaveCompanyRequest;
-use App\Jobs\RelinkCompanyContacts;
-use App\Jobs\ResolveCompanyFavicon;
 use App\Models\Company;
 use App\Models\Contact;
 use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\Team;
-use Closure;
-use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -57,15 +51,10 @@ class CompanyController extends Controller
         ]);
     }
 
-    public function store(SaveCompanyRequest $request, Team $currentTeam): RedirectResponse
+    public function store(SaveCompanyRequest $request, Team $currentTeam, SaveCompany $saveCompany): RedirectResponse
     {
         Gate::authorize('create', [Company::class, $currentTeam]);
-        $company = $this->saveAtomically($request, function () use ($request, $currentTeam): Company {
-            $company = $currentTeam->companies()->create(Arr::only($request->validated(), ['name']));
-            $this->syncDomains($company, $currentTeam, $request->validated('domains'));
-
-            return $company;
-        });
+        $company = $saveCompany->handle($currentTeam, null, $request->validated('name'), $request->validated('domains'));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Company created.')]);
 
@@ -133,46 +122,20 @@ class CompanyController extends Controller
         ]);
     }
 
-    public function update(SaveCompanyRequest $request, Team $currentTeam, Company $company): RedirectResponse
+    public function update(SaveCompanyRequest $request, Team $currentTeam, Company $company, SaveCompany $saveCompany): RedirectResponse
     {
         Gate::authorize('update', $company);
-        $this->saveAtomically($request, function () use ($request, $currentTeam, $company): Company {
-            $company->update(Arr::only($request->validated(), ['name']));
-            $this->syncDomains($company, $currentTeam, $request->validated('domains'));
-
-            return $company;
-        });
+        $saveCompany->handle($currentTeam, $company, $request->validated('name'), $request->validated('domains'));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Company updated.')]);
 
         return back();
     }
 
-    public function destroy(Team $currentTeam, Company $company): RedirectResponse
+    public function destroy(Team $currentTeam, Company $company, DeleteCompany $deleteCompany): RedirectResponse
     {
         Gate::authorize('delete', $company);
-
-        DB::transaction(function () use ($currentTeam, $company): void {
-            // Automatic contacts are on this company's domains, which no other company
-            // owns, so they simply lose the company. Manually assigned contacts turn
-            // automatic and may match another company by their own email domain.
-            $manualContactDomains = array_values($company->contacts()
-                ->where('company_assignment_mode', ContactCompanyAssignmentMode::Manual)
-                ->pluck('email')
-                ->map(fn (string $email): string => Str::afterLast($email, '@'))
-                ->unique()
-                ->all());
-
-            $company->contacts()->update([
-                'company_id' => null,
-                'company_assignment_mode' => ContactCompanyAssignmentMode::Automatic,
-            ]);
-            $company->delete();
-
-            if ($manualContactDomains !== []) {
-                RelinkCompanyContacts::dispatch($currentTeam->id, $manualContactDomains)->afterCommit();
-            }
-        });
+        $deleteCompany->handle($currentTeam, $company);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Company deleted.')]);
 
@@ -212,75 +175,5 @@ class CompanyController extends Controller
             'search' => $this->queryFilter($request, 'search'),
             'audience' => Str::isUuid($audience) ? $audience : '',
         ];
-    }
-
-    /**
-     * Save a company in one transaction. Validation checks names and domains without
-     * locking, so a concurrent request can still claim one first; report that as the
-     * same validation error instead of a server error and a half-saved company.
-     *
-     * @param  Closure(): Company  $save
-     */
-    private function saveAtomically(SaveCompanyRequest $request, Closure $save): Company
-    {
-        try {
-            return DB::transaction($save);
-        } catch (UniqueConstraintViolationException) {
-            // The winning row may itself have been rolled back by now; still answer
-            // with a validation error rather than a server error.
-            throw ValidationException::withMessages($request->conflictErrors() ?: [
-                'domains' => __('Someone else changed these companies at the same time. Try again.'),
-            ]);
-        }
-    }
-
-    /**
-     * Store the submitted domains, then queue a contact re-link for only the domains
-     * that were added or removed, and a favicon lookup if the favicon domain changed.
-     *
-     * @param  list<string>  $domains
-     */
-    private function syncDomains(Company $company, Team $team, array $domains): void
-    {
-        $previousDomains = $company->wasRecentlyCreated ? [] : $company->domains()->pluck('domain')->all();
-        $previousFaviconDomain = $company->wasRecentlyCreated ? null : $company->faviconDomain();
-
-        $company->domains()->whereNotIn('domain', $domains)->delete();
-
-        foreach ($domains as $domain) {
-            $company->domains()->firstOrCreate([
-                'team_id' => $team->id,
-                'domain' => $domain,
-            ]);
-        }
-
-        $changedDomains = array_values(array_unique([
-            ...array_diff($domains, $previousDomains),
-            ...array_diff($previousDomains, $domains),
-        ]));
-        sort($changedDomains);
-
-        if ($changedDomains !== []) {
-            RelinkCompanyContacts::dispatch($team->id, $changedDomains)->afterCommit();
-        }
-
-        $this->refreshFavicon($company, $previousFaviconDomain);
-    }
-
-    private function refreshFavicon(Company $company, ?string $previousFaviconDomain): void
-    {
-        $faviconDomain = $company->faviconDomain();
-
-        if ($faviconDomain === null) {
-            return;
-        }
-
-        if ($faviconDomain !== $previousFaviconDomain) {
-            $company->forceFill(['favicon' => null])->save();
-        } elseif ($company->favicon !== null) {
-            return;
-        }
-
-        ResolveCompanyFavicon::dispatch($company->id, $faviconDomain)->afterCommit();
     }
 }

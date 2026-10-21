@@ -20,8 +20,11 @@ use App\Mcp\Tools\Campaigns\SendTestCampaignTool;
 use App\Mcp\Tools\Campaigns\StopCampaignTool;
 use App\Mcp\Tools\Campaigns\UnscheduleCampaignTool;
 use App\Mcp\Tools\Campaigns\UpdateCampaignTool;
+use App\Mcp\Tools\Companies\CreateCompanyTool;
+use App\Mcp\Tools\Companies\DeleteCompanyTool;
 use App\Mcp\Tools\Companies\GetCompanyTool;
 use App\Mcp\Tools\Companies\ListCompaniesTool;
+use App\Mcp\Tools\Companies\UpdateCompanyTool;
 use App\Mcp\Tools\Contacts\CreateContactTool;
 use App\Mcp\Tools\Contacts\DeleteContactTool;
 use App\Mcp\Tools\Contacts\GetContactTool;
@@ -80,6 +83,9 @@ class MaildunServer extends Server
         DeleteContactTool::class,
         ListCompaniesTool::class,
         GetCompanyTool::class,
+        CreateCompanyTool::class,
+        UpdateCompanyTool::class,
+        DeleteCompanyTool::class,
         ListSubscribersTool::class,
         AddSubscriberTool::class,
         UpdateSubscriberTool::class,
