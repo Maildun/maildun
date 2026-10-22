@@ -68,7 +68,7 @@ class UnsubscribeController extends Controller
     {
         $delivery->loadMissing(['subscriber', 'email' => fn ($query) => $query->withTrashed()->with('audience')]);
 
-        $this->optOut($this->currentMembership($delivery));
+        $this->optOutThroughDelivery($delivery, $this->currentMembership($delivery));
 
         // One-click providers only need a 2xx; they never render a page. The
         // page posts over XHR, so an external landing page needs an Inertia
@@ -125,6 +125,28 @@ class UnsubscribeController extends Controller
         }
 
         return redirect()->to($this->subscriberShowUrl($subscriber));
+    }
+
+    /**
+     * Opt out through a campaign link and record it on the delivery, so the
+     * campaign report can count it. Only a real opt-out is recorded, and only
+     * the first one: a member who was already unsubscribed, or who follows
+     * the link again, leaves the delivery as it was.
+     */
+    private function optOutThroughDelivery(EmailDelivery $delivery, ?Subscriber $subscriber): void
+    {
+        $wasSubscribed = $subscriber?->status === SubscriberStatus::Subscribed;
+
+        $this->optOut($subscriber);
+
+        if (! $wasSubscribed) {
+            return;
+        }
+
+        EmailDelivery::query()
+            ->whereKey($delivery->id)
+            ->whereNull('unsubscribed_at')
+            ->update(['unsubscribed_at' => now()]);
     }
 
     /**

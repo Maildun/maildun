@@ -1685,3 +1685,57 @@ test('a recipient row explains that a removed member cannot be retried', functio
             ->where('recipients.data.0.can_retry', false)
             ->where('recipients.data.0.retry_blocked_reason', 'This recipient was removed from the audience.'));
 });
+
+test('the campaign report counts a recipient who unsubscribes twice once', function () {
+    $user = User::factory()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'audience_id' => $audience->id,
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 1,
+        'send_started_at' => now()->subMinute(),
+        'sent_at' => now(),
+    ]);
+    $delivery = EmailDelivery::factory()->for($email)->create([
+        'subscriber_id' => $subscriber->id,
+        'email_address' => $subscriber->email,
+        'status' => EmailDeliveryStatus::Sent,
+    ]);
+    $unsubscribeUrl = URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]);
+    $this->travelTo('2026-10-01 09:00:00');
+    $this->post($unsubscribeUrl, [], ['X-Inertia' => 'true']);
+    $this->travelTo('2026-10-02 09:00:00');
+
+    $this->post($unsubscribeUrl)->assertNoContent();
+
+    expect($delivery->fresh()->unsubscribed_at->toDateTimeString())->toBe('2026-10-01 09:00:00');
+    $this->actingAs($user)
+        ->get(route('emails.show', [$user->currentTeam, $email]))
+        ->assertInertia(fn (Assert $page) => $page->where('metrics.unsubscribed', 1));
+});
+
+test('the campaign report does not count a recipient who was already unsubscribed', function () {
+    $user = User::factory()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'audience_id' => $audience->id,
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 1,
+        'send_started_at' => now()->subMinute(),
+        'sent_at' => now(),
+    ]);
+    $delivery = EmailDelivery::factory()->for($email)->create([
+        'subscriber_id' => $subscriber->id,
+        'email_address' => $subscriber->email,
+        'status' => EmailDeliveryStatus::Sent,
+    ]);
+
+    $this->post(URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]))->assertNoContent();
+
+    expect($delivery->fresh()->unsubscribed_at)->toBeNull();
+    $this->actingAs($user)
+        ->get(route('emails.show', [$user->currentTeam, $email]))
+        ->assertInertia(fn (Assert $page) => $page->where('metrics.unsubscribed', 0));
+});

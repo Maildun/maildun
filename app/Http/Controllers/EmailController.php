@@ -770,6 +770,7 @@ class EmailController extends Controller
         };
         $bouncedCount = (clone $deliveries)->where('status', EmailDeliveryStatus::Bounced)->count();
         $complainedCount = (clone $deliveries)->where('status', EmailDeliveryStatus::Complained)->count();
+        $unsubscribedCount = (clone $deliveries)->whereNotNull('unsubscribed_at')->count();
         $failedCount = (clone $deliveries)->whereIn('status', [
             EmailDeliveryStatus::Failed,
             EmailDeliveryStatus::Rejected,
@@ -815,6 +816,7 @@ class EmailController extends Controller
                 'clicked' => $clickedCount,
                 'bounced' => $bouncedCount,
                 'complained' => $complainedCount,
+                'unsubscribed' => $unsubscribedCount,
                 'failed' => $failedCount,
                 'retrying' => $retryingCount,
                 'cancelled' => (clone $deliveries)->where('status', EmailDeliveryStatus::Cancelled)->count(),

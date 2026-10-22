@@ -41,6 +41,7 @@ use Illuminate\Support\Str;
  * @property Carbon|null $delayed_at
  * @property Carbon|null $bounced_at
  * @property Carbon|null $complained_at
+ * @property Carbon|null $unsubscribed_at
  * @property Carbon|null $first_opened_at
  * @property Carbon|null $last_opened_at
  * @property Carbon|null $first_clicked_at
@@ -55,7 +56,7 @@ use Illuminate\Support\Str;
 #[Fillable([
     'email_id', 'email_send_run_id', 'subscriber_id', 'contact_id', 'email_address', 'first_name', 'last_name', 'merge_data',
     'status', 'provider', 'uses_team_email_integration', 'provider_message_id', 'failure_reason', 'failure_code', 'send_attempted_at', 'sent_at',
-    'delivered_at', 'delayed_at', 'bounced_at', 'complained_at',
+    'delivered_at', 'delayed_at', 'bounced_at', 'complained_at', 'unsubscribed_at',
     'first_opened_at', 'last_opened_at', 'first_clicked_at', 'last_clicked_at',
     'opens_count', 'clicks_count',
 ])]
@@ -129,6 +130,7 @@ class EmailDelivery extends Model
             'send_attempted_at' => 'datetime', 'sent_at' => 'datetime',
             'delivered_at' => 'datetime', 'delayed_at' => 'datetime',
             'bounced_at' => 'datetime', 'complained_at' => 'datetime',
+            'unsubscribed_at' => 'datetime',
             'first_opened_at' => 'datetime', 'last_opened_at' => 'datetime',
             'first_clicked_at' => 'datetime', 'last_clicked_at' => 'datetime',
         ];
