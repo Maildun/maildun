@@ -142,6 +142,17 @@ test('a resumed run walks on from the step it was parked at', function () {
         ->and($run->steps()->where('node_id', 'wait')->value('status'))->toBe('completed');
 });
 
+test('a paused automation holds its parked runs instead of resuming them', function () {
+    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
+    $run->automation->update(['status' => AutomationStatus::Paused]);
+
+    $this->artisan('automations:resume')->assertSuccessful();
+    app(AdvanceAutomationRun::class)->handle($run);
+
+    expect($run->refresh()->current_node_id)->toBe('wait')
+        ->and($run->steps()->where('node_id', 'after')->exists())->toBeFalse();
+})->todo(note: 'Bug (MAIL-167 QA): pausing does not hold open runs; automations:resume and AdvanceAutomationRun ignore the automation status.');
+
 test('a duplicate sweep cannot double-advance the same run', function () {
     $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
 
