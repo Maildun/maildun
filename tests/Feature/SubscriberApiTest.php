@@ -529,4 +529,4 @@ test('the subscriber api allows each key 120 requests a minute', function () {
         ->assertOk();
 
     expect($audience->subscribers()->count())->toBe(1);
-})->skip('BUG: throttle:team-api runs before AuthenticateTeamApiKey, so the limit is keyed by IP and shared by every key.');
+});

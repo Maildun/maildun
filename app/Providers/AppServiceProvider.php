@@ -9,7 +9,6 @@ use App\Models\Automation;
 use App\Models\EmailDelivery;
 use App\Models\SubscribeForm;
 use App\Models\Subscriber;
-use App\Models\TeamApiKey;
 use App\Services\SystemDnsRecordLookup;
 use App\Services\SystemDnsResolver;
 use App\Services\SystemMailDomainLookup;
@@ -136,20 +135,17 @@ class AppServiceProvider extends ServiceProvider
             ];
         });
 
+        // Keyed by the token, not the authenticated key: the framework's middleware
+        // priority runs every throttle before AuthenticateTeamApiKey, so the
+        // teamApiKey attribute is never set here and each key needs its own bucket.
         RateLimiter::for('team-api', function (Request $request): Limit {
-            $apiKey = $request->attributes->get('teamApiKey');
-            $key = $apiKey instanceof TeamApiKey ? $apiKey->uuid : $request->ip();
-
-            return Limit::perMinute(120)->by('team-api:'.$key);
+            return Limit::perMinute(120)->by('team-api:'.$this->apiTokenFingerprint($request));
         });
 
         // A cap on top of team-api, so a burst of conversion webhooks cannot
         // use up the key's whole allowance for subscribes and sends.
         RateLimiter::for('conversion-api', function (Request $request): Limit {
-            $apiKey = $request->attributes->get('teamApiKey');
-            $key = $apiKey instanceof TeamApiKey ? $apiKey->uuid : $request->ip();
-
-            return Limit::perMinute(60)->by('conversion-api:'.$key);
+            return Limit::perMinute(60)->by('conversion-api:'.$this->apiTokenFingerprint($request));
         });
 
         RateLimiter::for('mcp-oauth', function (Request $request): array {
@@ -167,6 +163,16 @@ class AppServiceProvider extends ServiceProvider
                 Limit::perMinute(240)->by('mcp-auth:ip:'.$request->ip()),
             ];
         });
+    }
+
+    /**
+     * Identify the API key behind a request by its bearer token, falling back to the IP when none is sent.
+     */
+    protected function apiTokenFingerprint(Request $request): string
+    {
+        $token = $request->bearerToken();
+
+        return is_string($token) && $token !== '' ? 'token:'.hash('sha256', $token) : 'ip:'.$request->ip();
     }
 
     protected function configurePassport(): void

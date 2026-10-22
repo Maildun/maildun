@@ -379,7 +379,9 @@ test('conversions require a valid workspace api key', function () {
 });
 
 test('conversions have their own rate limit per api key', function () {
-    $issued = TeamApiKey::issue(Team::factory()->create(), 'Production');
+    $team = Team::factory()->create();
+    $issued = TeamApiKey::issue($team, 'Production');
+    $other = TeamApiKey::issue($team, 'Other');
 
     foreach (range(1, 60) as $attempt) {
         $this->withToken($issued['token'])
@@ -393,6 +395,10 @@ test('conversions have their own rate limit per api key', function () {
     $this->withToken($issued['token'])
         ->postJson(route('api.v1.conversions.store'), conversionPayload(['occurred_at' => null]))
         ->assertTooManyRequests();
+
+    $this->withToken($other['token'])
+        ->postJson(route('api.v1.conversions.store'), conversionPayload(['occurred_at' => null]))
+        ->assertCreated();
 });
 
 test('conversion payloads are validated', function (array $overrides, string $field, string $message) {
