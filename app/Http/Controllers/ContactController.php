@@ -531,7 +531,7 @@ class ContactController extends Controller
             'company' => $company === 'assigned' || $company === 'unassigned' || Str::isUuid($company) ? $company : '',
             'audience' => Str::isUuid($audience) ? $audience : '',
             'tag' => Str::isUuid($tag) ? Str::lower($tag) : '',
-            'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))?->value ?? '',
+            'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))->value ?? '',
             'sort' => in_array($sort, ['oldest', 'name'], true) ? $sort : 'newest',
         ];
     }
