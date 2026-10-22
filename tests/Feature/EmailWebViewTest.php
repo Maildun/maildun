@@ -218,3 +218,11 @@ test('an automation web view is gone once its recipient or template is', functio
     $this->get(URL::signedRoute('public.web_view.automation.show', ['delivery' => $orphaned]))->assertNotFound();
     $this->get(URL::signedRoute('public.web_view.automation.show', ['delivery' => $templateless]))->assertNotFound();
 });
+
+test('the test web view link opens a placeholder page without signing', function () {
+    $this->get(route('public.web_view.test'))
+        ->assertOk()
+        ->assertSee('This is a test email.')
+        ->assertHeader('X-Robots-Tag', 'noindex, nofollow')
+        ->assertHeader('Content-Security-Policy', "default-src 'none'; img-src * data:; style-src * 'unsafe-inline'; font-src * data:; media-src *; base-uri 'none'");
+});

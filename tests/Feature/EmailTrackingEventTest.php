@@ -1,7 +1,9 @@
 <?php
 
+use App\Actions\Emails\BuildCampaignInsights;
 use App\Actions\Emails\LookupEmailTrackingLocation;
 use App\Actions\Emails\ReadMaxMindDatabase;
+use App\Enums\EmailTrackingClassification;
 use App\Enums\EmailTrackingEventType;
 use App\Jobs\ProcessEmailTrackingEvent;
 use App\Models\Email;
@@ -240,4 +242,37 @@ test('missing MMDB files leave enrichment empty without blocking tracking', func
     $location = (new LookupEmailTrackingLocation(new ReadMaxMindDatabase))->handle('8.8.8.8');
 
     expect($location)->toBe([]);
+});
+
+test('tracking requests classify scanners and image proxies apart from people', function () {
+    Queue::fake();
+
+    $email = Email::factory()->create(['recipient_count' => 1]);
+    $delivery = EmailDelivery::factory()->for($email)->create();
+    $link = $email->links()->create([
+        'url' => 'https://example.com/story',
+        'url_hash' => hash('sha256', 'https://example.com/story'),
+        'position' => 0,
+    ]);
+
+    $this->withHeader('User-Agent', 'Mozilla/5.0 (compatible) GoogleImageProxy')
+        ->get(URL::signedRoute('emails.track.open', ['delivery' => $delivery]))
+        ->assertOk();
+
+    $this->withHeader('User-Agent', 'Proofpoint URL Defense Link Scanner')
+        ->get(URL::signedRoute('emails.track.click', ['delivery' => $delivery, 'link' => $link]))
+        ->assertRedirect('https://example.com/story');
+
+    [$open, $click] = EmailTrackingEvent::query()->orderBy('id')->get()->all();
+
+    expect($open->classification)->toBe(EmailTrackingClassification::PrivacyProxy)
+        ->and($open->is_proxy)->toBeTrue()
+        ->and($click->classification)->toBe(EmailTrackingClassification::Bot)
+        ->and($click->is_bot)->toBeTrue();
+
+    app()->call([(new ProcessEmailTrackingEvent($open->id)), 'handle']);
+    app()->call([(new ProcessEmailTrackingEvent($click->id)), 'handle']);
+
+    expect(app(BuildCampaignInsights::class)->handle($email)['human'])
+        ->toMatchArray(['opened' => 0, 'clicked' => 0]);
 });
