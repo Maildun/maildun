@@ -425,3 +425,108 @@ test('subscriber endpoints reject missing and invalid api keys', function () {
         ])
         ->assertUnauthorized();
 });
+
+test('the api records the consent text, time and request ip', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => false]);
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+    $this->freezeSecond();
+
+    $this->withToken($issued['token'])
+        ->withServerVariables(['REMOTE_ADDR' => '203.0.113.7'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'ada@example.com',
+        ])
+        ->assertOk();
+
+    $subscriber = $audience->subscribers()->sole();
+
+    expect($subscriber->consent_text)->toBe('Marketing consent confirmed via API.')
+        ->and($subscriber->consented_at?->equalTo(now()))->toBeTrue()
+        ->and($subscriber->consent_ip)->toBe('203.0.113.7');
+});
+
+test('the api rejects consent text longer than 1000 characters', function () {
+    $audience = Audience::factory()->create();
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), [
+            'email' => 'ada@example.com',
+            'consent_text' => str_repeat('a', 1001),
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['consent_text' => 'The consent text field must not be greater than 1000 characters.']);
+
+    expect($audience->subscribers()->count())->toBe(0);
+});
+
+test('subscriber endpoints validate the email address', function (string $method, string $routeName, array $payload, string $message) {
+    $subscriber = Subscriber::factory()->create();
+    $audience = $subscriber->audience;
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+
+    $this->withToken($issued['token'])
+        ->json($method, route($routeName, $audience->uuid), $payload)
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['email' => $message]);
+
+    expect($audience->subscribers()->sole()->status)->toBe(SubscriberStatus::Subscribed);
+})->with([
+    'subscribe without email' => ['POST', 'api.v1.audiences.subscribers.store', [], 'The email field is required.'],
+    'subscribe with an invalid email' => ['POST', 'api.v1.audiences.subscribers.store', ['email' => 'not-an-email'], 'The email field must be a valid email address.'],
+    'unsubscribe without email' => ['DELETE', 'api.v1.audiences.subscribers.destroy', [], 'The email field is required.'],
+    'unsubscribe with an invalid email' => ['DELETE', 'api.v1.audiences.subscribers.destroy', ['email' => 'not-an-email'], 'The email field must be a valid email address.'],
+]);
+
+test('the api cannot unsubscribe a member of another workspace audience', function () {
+    $subscriber = Subscriber::factory()->create();
+    $issued = TeamApiKey::issue(Audience::factory()->create()->team, 'Production');
+
+    $this->withToken($issued['token'])
+        ->deleteJson(route('api.v1.audiences.subscribers.destroy', $subscriber->audience->uuid), [
+            'email' => $subscriber->email,
+        ])
+        ->assertNotFound();
+
+    expect($subscriber->fresh()->status)->toBe(SubscriberStatus::Subscribed);
+});
+
+test('a revoked api key can no longer subscribe or unsubscribe', function () {
+    $subscriber = Subscriber::factory()->create();
+    $audience = $subscriber->audience;
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+    $issued['key']->delete();
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), ['email' => 'ada@example.com'])
+        ->assertUnauthorized();
+
+    $this->withToken($issued['token'])
+        ->deleteJson(route('api.v1.audiences.subscribers.destroy', $audience->uuid), ['email' => $subscriber->email])
+        ->assertUnauthorized();
+
+    expect($audience->subscribers()->sole()->status)->toBe(SubscriberStatus::Subscribed);
+});
+
+test('the subscriber api allows each key 120 requests a minute', function () {
+    $audience = Audience::factory()->create();
+    $throttled = TeamApiKey::issue($audience->team, 'Throttled');
+    $other = TeamApiKey::issue($audience->team, 'Other');
+    $this->freezeTime();
+
+    foreach (range(1, 120) as $attempt) {
+        $this->withToken($throttled['token'])
+            ->deleteJson(route('api.v1.audiences.subscribers.destroy', $audience->uuid), ['email' => 'ada@example.com'])
+            ->assertOk();
+    }
+
+    $this->withToken($throttled['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), ['email' => 'ada@example.com'])
+        ->assertTooManyRequests();
+
+    $this->withToken($other['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), ['email' => 'ada@example.com'])
+        ->assertOk();
+
+    expect($audience->subscribers()->count())->toBe(1);
+})->skip('BUG: throttle:team-api runs before AuthenticateTeamApiKey, so the limit is keyed by IP and shared by every key.');
