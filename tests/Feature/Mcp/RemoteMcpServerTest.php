@@ -385,3 +385,63 @@ test('remote MCP still rejects mutations by a member without audience permission
 
     $this->assertDatabaseMissing('audiences', ['team_id' => $team->id, 'name' => 'Unauthorized audience']);
 });
+
+test('an MCP client completes the OAuth flow and calls the server with its token', function () {
+    $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+    openssl_pkey_export($key, $privateKey);
+    config()->set('passport.private_key', $privateKey);
+    config()->set('passport.public_key', openssl_pkey_get_details($key)['key']);
+    config()->set('mcp.redirect_domains', ['https://chatgpt.com']);
+
+    $redirectUri = 'https://chatgpt.com/connector/oauth/test-callback';
+    $clientId = $this->postJson('/oauth/register', [
+        'client_name' => 'ChatGPT',
+        'redirect_uris' => [$redirectUri],
+    ])->assertCreated()->json('client_id');
+
+    $verifier = str_repeat('v', 64);
+    $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get('/oauth/authorize?'.http_build_query([
+            'client_id' => $clientId,
+            'redirect_uri' => $redirectUri,
+            'response_type' => 'code',
+            'scope' => 'mcp:use',
+            'state' => 'state-value',
+            'code_challenge' => $challenge,
+            'code_challenge_method' => 'S256',
+        ]))
+        ->assertOk()
+        ->assertSee('ChatGPT');
+
+    $location = $this->actingAs($user)
+        ->post('/oauth/authorize', [
+            'state' => 'state-value',
+            'client_id' => $clientId,
+            'auth_token' => session('authToken'),
+        ])
+        ->assertRedirect()
+        ->headers->get('Location');
+
+    parse_str((string) parse_url($location, PHP_URL_QUERY), $query);
+
+    expect($location)->toStartWith($redirectUri)
+        ->and($query['state'])->toBe('state-value');
+
+    $accessToken = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $clientId,
+        'redirect_uri' => $redirectUri,
+        'code_verifier' => $verifier,
+        'code' => $query['code'],
+    ])->assertOk()->json('access_token');
+
+    app('auth')->forgetGuards();
+
+    $this->withToken($accessToken)
+        ->postJson('/mcp/maildun', initializeMcpPayload())
+        ->assertOk()
+        ->assertJsonPath('result.serverInfo.name', 'Maildun MCP Server');
+});
