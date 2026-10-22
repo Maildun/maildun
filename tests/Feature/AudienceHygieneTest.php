@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\EmailAddressHealthReason;
+use App\Enums\EmailAddressHealthStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\TeamRole;
 use App\Models\Audience;
@@ -277,6 +278,86 @@ test('workspace cleanup rechecks that selected subscribers match the hygiene rul
         ->assertRedirect();
 
     $this->assertModelExists($confirmed);
+});
+
+test('workspace undeliverable cleanup keeps subscribers whose address is not suppressed', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $risky = Subscriber::factory()->for($audience)->create(['email' => 'risky@example.com']);
+    EmailAddressHealth::factory()->for($team)->create([
+        'email' => $risky->email,
+        'status' => EmailAddressHealthStatus::Risky,
+    ]);
+    $suppressedElsewhere = Subscriber::factory()->for($audience)->create(['email' => 'elsewhere@example.com']);
+    EmailAddressHealth::factory()->suppressed()->create(['email' => $suppressedElsewhere->email]);
+
+    $this->actingAs($user)
+        ->delete(route('list_hygiene.undeliverable.destroy', $team), [
+            'subscribers' => [$risky->uuid, $suppressedElsewhere->uuid],
+        ])
+        ->assertRedirect()
+        ->assertInertiaFlash('toast.message', 'Removed 0 undeliverable subscriber(s). The address remains suppressed.');
+
+    $this->assertModelExists($risky);
+    $this->assertModelExists($suppressedElsewhere);
+});
+
+test('workspace list hygiene counts drop by what each cleanup removed', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $unconfirmed = Subscriber::factory()->for($audience)->count(2)->create(['subscribed_at' => null]);
+    $inactive = Subscriber::factory()->for($audience)->count(2)->create()
+        ->each(fn (Subscriber $subscriber): EmailDelivery => sentDelivery($subscriber));
+    $undeliverable = Subscriber::factory()->for($audience)->unsubscribed()->create(['email' => 'bounced@example.com']);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => $undeliverable->email]);
+    $engaged = Subscriber::factory()->for($audience)->create();
+    sentDelivery($engaged, ['opens_count' => 1, 'first_opened_at' => now()]);
+
+    $this->actingAs($user)
+        ->get(route('list_hygiene.index', $team))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('audiences.0.subscribers_count', 6)
+            ->where('audiences.0.unconfirmed_count', 2)
+            ->where('audiences.0.inactive_count', 2)
+            ->where('audiences.0.undeliverable_count', 1)
+            ->where('subscribers.total', 2));
+
+    $this->actingAs($user)
+        ->delete(route('list_hygiene.unconfirmed.destroy', $team), [
+            'subscribers' => [$unconfirmed[0]->uuid, $engaged->uuid],
+        ])
+        ->assertInertiaFlash('toast.message', 'Removed 1 unconfirmed subscriber(s).');
+
+    $this->actingAs($user)
+        ->delete(route('list_hygiene.inactive.destroy', $team), [
+            'subscribers' => $inactive->pluck('uuid')->all(),
+        ])
+        ->assertInertiaFlash('toast.message', 'Removed 2 inactive subscriber(s).');
+
+    $this->actingAs($user)
+        ->delete(route('list_hygiene.undeliverable.destroy', $team), [
+            'subscribers' => [$undeliverable->uuid],
+        ])
+        ->assertInertiaFlash('toast.message', 'Removed 1 undeliverable subscriber(s). The address remains suppressed.');
+
+    $this->actingAs($user)
+        ->get(route('list_hygiene.index', $team))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('audiences.0.subscribers_count', 2)
+            ->where('audiences.0.unconfirmed_count', 1)
+            ->where('audiences.0.inactive_count', 0)
+            ->where('audiences.0.undeliverable_count', 0)
+            ->where('subscribers.total', 1)
+            ->where('subscribers.data.0.uuid', $unconfirmed[1]->uuid));
+
+    $this->actingAs($user)
+        ->get(route('audiences.settings.hygiene', [$team, $audience]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('counts.unconfirmed', 1)
+            ->where('counts.inactive', 0));
 });
 
 test('unconfirmed cleanup only removes subscribed records without a confirmation timestamp', function () {
