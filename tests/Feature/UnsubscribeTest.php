@@ -17,6 +17,7 @@ use App\Models\Subscriber;
 use App\Models\TeamApiKey;
 use App\Models\TeamEmailIntegration;
 use App\Models\TransactionalEmail;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
@@ -38,6 +39,7 @@ function unsubscribeDelivery(array $audienceAttributes = []): EmailDelivery
 test('a test unsubscribe link explains that nobody is opted out', function () {
     $this->get(route('public.unsubscribe.test'))
         ->assertOk()
+        ->assertHeader('X-Robots-Tag', 'noindex, nofollow')
         ->assertSee('This is a test email', false)
         ->assertSee('does not unsubscribe anyone', false)
         ->assertSee('Powered by', false);
@@ -136,6 +138,31 @@ test('a one click request from a mail provider succeeds without a session', func
     )->assertNoContent();
 
     expect($delivery->subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+});
+
+test('one click requests pass csrf protection without a token', function () {
+    // The framework skips CSRF checks under unit tests, which would hide a
+    // missing unsubscribe/* exemption from every other one-click test here.
+    $this->app->bind(PreventRequestForgery::class, fn ($app) => new class($app, $app['encrypter']) extends PreventRequestForgery
+    {
+        protected function runningUnitTests(): bool
+        {
+            return false;
+        }
+    });
+
+    $delivery = unsubscribeDelivery();
+    $subscriber = Subscriber::factory()->for(Audience::factory()->create())->create();
+
+    $this->post(route('logout'))->assertStatus(419);
+
+    $this->post(URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]), ['List-Unsubscribe' => 'One-Click'])
+        ->assertNoContent();
+    $this->post(URL::signedRoute('public.unsubscribe.subscriber.store', ['subscriber' => $subscriber]), ['List-Unsubscribe' => 'One-Click'])
+        ->assertNoContent();
+
+    expect($delivery->subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed)
+        ->and($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
 });
 
 test('unsubscribing twice is not an error', function () {
