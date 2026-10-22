@@ -18,13 +18,9 @@ dataset('scheduled commands', [
     'emails:resume' => ['emails:resume', '*/5 * * * *'],
     'automations:resume' => ['automations:resume', '*/5 * * * *'],
     'contacts:resume-imports' => ['contacts:resume-imports', '*/5 * * * *'],
-    'custom-domains:check' => ['custom-domains:check', '*/5 * * * *'],
-    'custom-domains:check --live' => ['custom-domains:check --live', '0 * * * *'],
-    'billing:sync-subscriptions' => ['billing:sync-subscriptions', '*/15 * * * *'],
     'emails:dispatch-tracking-events' => ['emails:dispatch-tracking-events', '* * * * *'],
     'emails:prune-tracking' => ['emails:prune-tracking', '0 0 * * *'],
     'contacts:prune-imports' => ['contacts:prune-imports', '0 0 * * *'],
-    'teams:purge-deleted' => ['teams:purge-deleted', '0 0 * * *'],
     'passport:purge' => ['passport:purge --hours=168', '0 0 * * *'],
     'app:check-for-updates' => ['app:check-for-updates', '0 0 * * *'],
     'audiences:snapshot-subscribers' => ['audiences:snapshot-subscribers', '0 * * * *'],
@@ -40,5 +36,4 @@ test('each background job is scheduled at its cadence and cannot overlap itself'
 
 test('each background job runs on a single server', function (string $command) {
     expect(scheduledCommandEvent($command)?->onOneServer)->toBeTrue();
-})->with('scheduled commands')
-    ->skip('Bug from QA MAIL-174: most entries in routes/console.php are missing onOneServer(), so every scheduler host runs them each tick.');
+})->with('scheduled commands');

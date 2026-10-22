@@ -16,20 +16,20 @@ Schedule::command('segments:sync')->everyFiveMinutes()->withoutOverlapping()->on
 
 Schedule::command('horizon:snapshot')->everyFiveMinutes();
 
-Schedule::command('passport:purge --hours=168')->daily()->withoutOverlapping();
+Schedule::command('passport:purge --hours=168')->daily()->withoutOverlapping()->onOneServer();
 
 // Reads Maildun's public release manifest and only writes the cached result.
 Schedule::command('app:check-for-updates')->daily()->withoutOverlapping()->onOneServer();
 
 // The database event is durable even if Redis is flushed or unavailable.
-Schedule::command('emails:dispatch-tracking-events')->everyMinute()->withoutOverlapping();
+Schedule::command('emails:dispatch-tracking-events')->everyMinute()->withoutOverlapping()->onOneServer();
 
 // Detailed events expire; durable campaign aggregates remain available.
-Schedule::command('emails:prune-tracking')->daily()->withoutOverlapping();
+Schedule::command('emails:prune-tracking')->daily()->withoutOverlapping()->onOneServer();
 
 // Uploaded contact lists are personal data: drop abandoned drafts after a week
 // and the files of failed imports nobody retried after a month.
-Schedule::command('contacts:prune-imports')->daily()->withoutOverlapping();
+Schedule::command('contacts:prune-imports')->daily()->withoutOverlapping()->onOneServer();
 
 // DB-IP Lite publishes monthly. Daily checks are cheap because current local
 // MMDB metadata skips the download, while a missed release retries next day.
@@ -40,19 +40,19 @@ Schedule::command('emails:update-geolocation-databases')
 
 // Recovers delayed runs whose queued job was lost. withoutOverlapping so a slow
 // sweep cannot stack a second copy on top of itself.
-Schedule::command('automations:resume')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('automations:resume')->everyFiveMinutes()->withoutOverlapping()->onOneServer();
 
 // Same problem on the send side: re-queues deliveries whose job was lost and
 // closes campaigns whose batch disappeared mid-send.
-Schedule::command('emails:resume')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('emails:resume')->everyFiveMinutes()->withoutOverlapping()->onOneServer();
 
 // And for contact imports: re-queues imports whose job was lost so they
 // continue from their checkpoint instead of staying Queued or Importing.
-Schedule::command('contacts:resume-imports')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('contacts:resume-imports')->everyFiveMinutes()->withoutOverlapping()->onOneServer();
 
 // Starts campaigns whose scheduled time has come. withoutOverlapping plus the
 // per-campaign claim in ScheduleEmailSend::claimDue mean each starts once.
-Schedule::command('emails:send-scheduled')->everyMinute()->withoutOverlapping(10);
+Schedule::command('emails:send-scheduled')->everyMinute()->withoutOverlapping(10)->onOneServer();
 
 // Freezes each audience's member counts for the subscriber chart. Hourly so
 // the run at midnight captures the day that just ended and a missed run is
