@@ -83,7 +83,6 @@ export type DashboardInvitation = {
 export type TeamPermissions = {
     canUpdateTeam: boolean;
     canDeleteTeam: boolean;
-    canAddMember: boolean;
     canUpdateMember: boolean;
     canRemoveMember: boolean;
     canCreateInvitation: boolean;
