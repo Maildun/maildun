@@ -149,9 +149,26 @@ test('a paused automation holds its parked runs instead of resuming them', funct
     $this->artisan('automations:resume')->assertSuccessful();
     app(AdvanceAutomationRun::class)->handle($run);
 
+    Queue::assertNothingPushed();
     expect($run->refresh()->current_node_id)->toBe('wait')
+        ->and($run->steps()->where('node_id', 'wait')->value('status'))->toBe('waiting')
         ->and($run->steps()->where('node_id', 'after')->exists())->toBeFalse();
-})->todo(note: 'Bug (MAIL-167 QA): pausing does not hold open runs; automations:resume and AdvanceAutomationRun ignore the automation status.');
+});
+
+test('reactivating a paused automation resumes the runs it held', function () {
+    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
+    $run->automation->update(['status' => AutomationStatus::Paused]);
+    app(AdvanceAutomationRun::class)->handle($run);
+
+    $run->automation->update(['status' => AutomationStatus::Active]);
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertPushed(ProcessAutomationRun::class, 1);
+
+    app(AdvanceAutomationRun::class)->handle($run);
+
+    expect($run->refresh()->current_node_id)->toBe('after');
+});
 
 test('a duplicate sweep cannot double-advance the same run', function () {
     $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
