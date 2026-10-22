@@ -116,6 +116,57 @@ test('connecting google refuses a google account connected to another user', fun
     expect($user->fresh()->google_id)->toBeNull();
 });
 
+test('connecting google again while one is connected stays on security settings', function () {
+    $user = User::factory()->withGoogle('109876543210')->create();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('google.connect'))
+        ->assertRedirect(route('security.edit'))
+        ->assertInertiaFlash('toast', ['type' => 'info', 'message' => 'A Google account is already connected.']);
+
+    expect($user->fresh()->google_id)->toBe('109876543210');
+});
+
+test('a cancelled google connection leaves the account unconnected', function () {
+    $user = User::factory()->create();
+    fakeChosenGoogleAccount();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('google.connect'));
+    $response = $this->get(route('google.callback', ['error' => 'access_denied']));
+
+    $response->assertRedirect(route('security.edit'))
+        ->assertInertiaFlash('toast', ['type' => 'error', 'message' => 'Google sign-in was cancelled.']);
+    expect($user->fresh()->google_id)->toBeNull();
+});
+
+test('a connection round trip finished after signing out does not connect or sign in anyone', function () {
+    $user = User::factory()->create();
+    fakeChosenGoogleAccount();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->get(route('google.connect'));
+    auth()->logout();
+
+    $this->get(route('google.callback'))->assertRedirect(route('login'));
+
+    $this->assertGuest();
+    expect($user->fresh()->google_id)->toBeNull();
+});
+
+test('disconnecting google requires a recent password confirmation', function () {
+    $user = User::factory()->withGoogle('109876543210')->create();
+
+    $this->actingAs($user)
+        ->delete(route('google.disconnect'))
+        ->assertRedirect(route('password.confirm'));
+
+    expect($user->fresh()->google_id)->toBe('109876543210');
+});
+
 test('disconnecting google clears the connected google account', function () {
     $user = User::factory()->withGoogle()->create();
 

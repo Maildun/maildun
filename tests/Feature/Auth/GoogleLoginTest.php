@@ -111,6 +111,19 @@ test('google login returns to the page intended before login', function () {
     $this->assertAuthenticated();
 });
 
+test('a login round trip finished while already signed in keeps the signed-in account', function () {
+    $signedIn = User::factory()->create();
+    User::factory()->withGoogle('109876543210')->create();
+    fakeGoogleAccount();
+
+    $this->get(route('google.redirect'));
+    $this->actingAs($signedIn);
+    $response = $this->get(route('google.callback'));
+
+    $response->assertRedirect(route('home'));
+    $this->assertAuthenticatedAs($signedIn);
+});
+
 test('google links the existing account that has the same verified address', function () {
     $user = User::factory()->create(['email' => 'ada@example.com']);
     fakeGoogleAccount(['email' => ' ADA@Example.com ']);
