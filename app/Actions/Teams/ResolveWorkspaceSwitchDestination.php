@@ -6,6 +6,7 @@ use App\Models\Team;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Uri;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
@@ -13,6 +14,24 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class ResolveWorkspaceSwitchDestination
 {
+    /**
+     * The team ability each permission-gated workspace settings page authorizes
+     * before it renders, keyed by route name. Keep in step with the controllers.
+     *
+     * @var array<string, string>
+     */
+    protected const GATED_PAGE_ABILITIES = [
+        'teams.edit' => 'update',
+        'teams.roles.index' => 'manageRoles',
+        'teams.email.edit' => 'update',
+        'teams.sender.edit' => 'update',
+        'teams.email-provider.edit' => 'update',
+        'teams.email-provider.create' => 'update',
+        'teams.email-provider.show' => 'update',
+        'teams.theme.edit' => 'update',
+        'teams.api.index' => 'update',
+    ];
+
     /**
      * Resolve the URL to send the user to after switching workspaces.
      *
@@ -44,7 +63,7 @@ class ResolveWorkspaceSwitchDestination
         $query = parse_url($previousUrl, PHP_URL_QUERY);
         $candidate = $rewrittenPath.(is_string($query) && $query !== '' ? '?'.$query : '');
 
-        return $this->urlIsAvailable($candidate) ? $candidate : $dashboard;
+        return $this->urlIsAvailable($candidate, $request) ? $candidate : $dashboard;
     }
 
     /**
@@ -74,9 +93,10 @@ class ResolveWorkspaceSwitchDestination
     }
 
     /**
-     * Determine whether the rewritten URL can be resolved for the destination workspace.
+     * Determine whether the rewritten URL resolves in the destination workspace
+     * and the user may open it.
      */
-    protected function urlIsAvailable(string $url): bool
+    protected function urlIsAvailable(string $url, Request $originalRequest): bool
     {
         try {
             $request = Request::create($url, 'GET');
@@ -84,10 +104,17 @@ class ResolveWorkspaceSwitchDestination
             $request->setRouteResolver(fn () => $route);
 
             app(SubstituteBindings::class)->handle($request, fn () => null);
-
-            return true;
         } catch (NotFoundHttpException|MethodNotAllowedHttpException|ModelNotFoundException) {
             return false;
         }
+
+        $ability = self::GATED_PAGE_ABILITIES[$route->getName()] ?? null;
+        $team = $route->parameter('team');
+
+        if ($ability === null || ! $team instanceof Team) {
+            return true;
+        }
+
+        return Gate::forUser($originalRequest->user())->allows($ability, $team);
     }
 }

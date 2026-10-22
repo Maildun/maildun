@@ -641,7 +641,7 @@ test('switching workspaces rewrites workspace settings to the destination worksp
     $personalTeam = $user->currentTeam;
     $team = Team::factory()->create();
 
-    $team->members()->attach($user, ['role' => TeamRole::Member->value]);
+    $team->members()->attach($user, ['role' => TeamRole::Admin->value]);
 
     $this
         ->actingAs($user)
@@ -667,4 +667,34 @@ test('guests cannot access teams', function () {
     $response = $this->get(route('teams.index'));
 
     $response->assertRedirect(route('login'));
+});
+
+test('switching workspaces from settings sends a member to a page they can open', function () {
+    $user = User::factory()->create();
+    $personalTeam = $user->currentTeam;
+    $team = Team::factory()->create();
+
+    $team->members()->attach($user, ['role' => TeamRole::Member->value]);
+
+    $response = $this
+        ->actingAs($user)
+        ->from(route('teams.edit', $personalTeam))
+        ->post(route('teams.switch', $team));
+
+    $response->assertRedirect(route('dashboard', ['current_team' => $team]));
+    $this->get($response->headers->get('Location'))->assertOk();
+});
+
+test('switching workspaces from the roles page sends an admin to the dashboard', function () {
+    $user = User::factory()->create();
+    $personalTeam = $user->currentTeam;
+    $team = Team::factory()->create();
+
+    $team->members()->attach($user, ['role' => TeamRole::Admin->value]);
+
+    $this
+        ->actingAs($user)
+        ->from(route('teams.roles.index', $personalTeam))
+        ->post(route('teams.switch', $team))
+        ->assertRedirect(route('dashboard', ['current_team' => $team]));
 });
