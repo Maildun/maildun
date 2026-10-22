@@ -11,8 +11,10 @@ use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamApiKey;
+use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+use Inertia\Testing\AssertableInertia as Assert;
 
 /**
  * A sent delivery of a campaign inside the given series.
@@ -212,6 +214,70 @@ test('an explicit series restricts attribution to that series', function () {
         ->assertJsonPath('data.attribution.campaign', null);
 
     expect($team->conversionEvents()->sole()->requested_campaign_series_id)->toBe($explicitSeries->id);
+});
+
+test('an explicit series still credits the campaign clicked inside it', function () {
+    $this->freezeSecond();
+    $team = Team::factory()->create();
+    $explicitSeries = CampaignSeries::factory()->for($team)->create();
+    $otherSeries = CampaignSeries::factory()->for($team)->tracksConversions()->create();
+    $explicitClick = conversionSeriesDelivery($explicitSeries, [
+        'sent_at' => now()->subDays(2),
+        'first_clicked_at' => now()->subDays(2),
+        'last_clicked_at' => now()->subDays(2),
+    ]);
+    conversionSeriesDelivery($otherSeries, [
+        'first_clicked_at' => now()->subHour(),
+        'last_clicked_at' => now()->subHour(),
+    ]);
+    $issued = TeamApiKey::issue($team, 'Production');
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.conversions.store'), conversionPayload([
+            'campaign_series' => $explicitSeries->uuid,
+        ]))
+        ->assertCreated()
+        ->assertJsonPath('data.attribution.type', 'click')
+        ->assertJsonPath('data.attribution.campaign_series', $explicitSeries->uuid)
+        ->assertJsonPath('data.attribution.campaign', $explicitClick->email->uuid)
+        ->assertJsonPath('data.attribution.delivery', $explicitClick->uuid);
+});
+
+test('conversions recorded through the api show up in the series report by attribution type', function () {
+    $this->freezeSecond();
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $campaignSeries = CampaignSeries::factory()->for($team)->tracksConversions()->create(['value_currency' => 'USD']);
+    $clicked = conversionSeriesDelivery($campaignSeries, [
+        'email_address' => 'clicker@example.com',
+        'first_clicked_at' => now()->subHours(20),
+        'last_clicked_at' => now()->subHours(20),
+    ]);
+    conversionSeriesDelivery($campaignSeries, ['email_address' => 'reader@example.com']);
+    $issued = TeamApiKey::issue($team, 'Production');
+
+    foreach ([
+        ['event_id' => 'click_1', 'email' => 'clicker@example.com', 'value_minor' => 5000, 'currency' => 'USD'],
+        ['event_id' => 'assisted_1', 'email' => 'reader@example.com'],
+        ['event_id' => 'explicit_1', 'email' => 'walkin@example.com', 'campaign_series' => $campaignSeries->uuid],
+        ['event_id' => 'unattributed_1', 'email' => 'stranger@example.com'],
+    ] as $overrides) {
+        $this->withToken($issued['token'])
+            ->postJson(route('api.v1.conversions.store'), conversionPayload($overrides))
+            ->assertCreated();
+    }
+
+    $this->actingAs($user)
+        ->get(route('campaign_series.show', [$team, $campaignSeries]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('report.summary.conversions', 3)
+            ->where('report.summary.attributed_conversions', 1)
+            ->where('report.summary.assisted_conversions', 1)
+            ->where('report.summary.explicit_conversions', 1)
+            ->where('report.summary.conversion_value', [['currency' => 'USD', 'value_minor' => 5000]])
+            ->where('report.campaigns', fn ($campaigns) => collect($campaigns)->firstWhere('uuid', $clicked->email->uuid)['conversions'] === 1
+                && collect($campaigns)->sum('conversions') === 1));
 });
 
 test('an identical retry returns the stored event and a changed retry conflicts', function () {
