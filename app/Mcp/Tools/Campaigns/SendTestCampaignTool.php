@@ -19,7 +19,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsDestructive;
 use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
-#[Description('Queues one test copy of a draft campaign to a single email address, rendered with sample merge data. Counts against the workspace send allowance.')]
+#[Description('Queues one test copy of a draft campaign to a single email address, rendered with sample merge data.')]
 #[IsDestructive(false)]
 #[IsOpenWorld]
 #[IsReadOnly(false)]
