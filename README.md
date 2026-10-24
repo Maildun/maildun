@@ -32,7 +32,7 @@ It is built for teams that have outgrown a hosted newsletter tool, or that canno
 - **Automations** — event-based flows with timers, driven by durable jobs that resume after a restart
 - **Delivery** — Amazon SES or SMTP, configured and verified per workspace, with bounce and complaint processing for SES
 - **Tracking** — first-party open and click tracking with optional local geolocation databases; no third-party pixels
-- **Teams** — workspaces, invitations, roles, two-factor authentication, and passkeys
+- **Teams** — workspaces, invitations, roles, two-factor authentication, passkeys, and optional "Continue with Google" sign-in
 - **Operations** — local or S3-compatible media storage, Redis-backed queues with Laravel Horizon, and a local and OAuth-protected remote [MCP server](docs/mcp.md) for AI-assisted workspace operations
 
 ## Technology

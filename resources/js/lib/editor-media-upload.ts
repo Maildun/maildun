@@ -1,7 +1,7 @@
 import { router } from '@inertiajs/react';
 import type { ImageResult } from '@maildun/email-builder/editor';
 import { MEDIA_MAX_BYTES } from '@/hooks/use-media-upload';
-import { xsrfToken } from '@/lib/xsrf-token';
+import { xsrfToken } from '@/lib/design-assistant-stream';
 import { show, store } from '@/routes/media/editor_uploads';
 import type { MediaItem } from '@/types/media';
 

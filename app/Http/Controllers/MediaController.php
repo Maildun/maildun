@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\Media\DeleteTeamMedia;
 use App\Actions\Media\StoreTeamMedia;
 use App\Actions\Media\UpdateTeamMedia;
+use App\Concerns\SearchesText;
 use App\Http\Requests\StoreMediaRequest;
 use App\Http\Requests\UpdateMediaRequest;
 use App\Models\Media;
@@ -19,6 +20,8 @@ use Inertia\Response;
 
 class MediaController extends Controller
 {
+    use SearchesText;
+
     public function index(Request $request, Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [Media::class, $currentTeam]);
@@ -30,11 +33,7 @@ class MediaController extends Controller
         $media = $currentTeam->media()
             ->with(['category', 'tags'])
             ->latest()
-            ->when($search !== '', function ($query) use ($search) {
-                $escaped = addcslashes($search, '%_\\');
-
-                return $query->whereLike('name', '%'.$escaped.'%');
-            })
+            ->when($search !== '', fn ($query) => $this->whereAnyColumnContains($query, ['name'], $search))
             ->when($category === 'uncategorized', fn ($query) => $query->whereNull('media_category_id'))
             ->when($category !== '' && $category !== 'uncategorized', function ($query) use ($category) {
                 return $query->whereHas(

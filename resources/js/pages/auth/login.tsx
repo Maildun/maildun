@@ -2,6 +2,10 @@ import { Form, Head, usePage } from '@inertiajs/react';
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
+import {
+    ContinueWithGoogle,
+    ContinueWithGoogleDivider,
+} from '@/components/continue-with-google';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import TeamInvitationAlert from '@/components/team-invitation-alert';
@@ -12,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { register } from '@/routes';
+import { redirect as googleRedirect } from '@/routes/google';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
 import type { TeamInvitationContext } from '@/types';
@@ -19,15 +24,17 @@ import type { TeamInvitationContext } from '@/types';
 type Props = {
     status?: string;
     canResetPassword: boolean;
+    canLoginWithGoogle: boolean;
     teamInvitation?: TeamInvitationContext | null;
 };
 
 export default function Login({
     status,
     canResetPassword,
+    canLoginWithGoogle,
     teamInvitation,
 }: Props) {
-    const { registrationOpen } = usePage().props;
+    const { registrationOpen, errors: pageErrors } = usePage().props;
     const [showPasswordStep, setShowPasswordStep] = useState(false);
     const emailInputRef = useRef<HTMLInputElement>(null);
     const passwordInputRef = useRef<HTMLInputElement>(null);
@@ -74,6 +81,29 @@ export default function Login({
             >
                 {({ processing, errors }) => (
                     <>
+                        {canLoginWithGoogle && (
+                            <>
+                                <div className="grid gap-2">
+                                    {/* Same tabIndex as the email field; DOM order keeps it first. */}
+                                    <ContinueWithGoogle
+                                        href={googleRedirect.url({
+                                            query: {
+                                                invitation:
+                                                    teamInvitation?.code,
+                                            },
+                                        })}
+                                        tabIndex={1}
+                                    />
+                                    <InputError
+                                        message={pageErrors.google}
+                                        data-test="google-error"
+                                    />
+                                </div>
+
+                                <ContinueWithGoogleDivider />
+                            </>
+                        )}
+
                         <div className="grid gap-6">
                             <div className="grid gap-2">
                                 <Label htmlFor="email">Email address</Label>

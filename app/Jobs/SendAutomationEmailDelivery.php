@@ -55,7 +55,7 @@ class SendAutomationEmailDelivery implements ShouldQueue
             'run.automation.team',
         ])->find($this->deliveryId);
 
-        if ($delivery === null || $delivery->step === null) {
+        if ($delivery === null || $delivery->step === null || $delivery->run === null) {
             return;
         }
 

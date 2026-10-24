@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\Emails\InsertPreheader;
 use App\Actions\Media\BuildMediaLibrary;
 use App\Actions\Transactional\RenderTransactionalContent;
+use App\Concerns\SearchesText;
 use App\Enums\EmailEditor;
 use App\Enums\TestSendStatus;
 use App\Enums\TransactionalEmailStatus;
@@ -18,6 +19,7 @@ use App\Models\EmailTemplate;
 use App\Models\SavedSection;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
+use App\Services\AssistantModels;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -27,6 +29,8 @@ use Inertia\Response;
 
 class TransactionalEmailController extends Controller
 {
+    use SearchesText;
+
     public function index(Request $request, Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [TransactionalEmail::class, $currentTeam]);
@@ -47,8 +51,7 @@ class TransactionalEmailController extends Controller
                 'updated_at',
             ])
             ->when($filters['q'] !== '', function ($query) use ($filters): void {
-                $search = '%'.addcslashes($filters['q'], '%_\\').'%';
-                $query->whereAny(['name', 'slug', 'subject'], 'like', $search);
+                $this->whereAnyColumnContains($query, ['name', 'slug', 'subject'], $filters['q']);
             })
             ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']))
             ->when($filters['editor'] !== '', fn ($query) => $query->where('editor', $filters['editor']))
@@ -107,7 +110,7 @@ class TransactionalEmailController extends Controller
         return to_route('transactional_emails.edit', ['current_team' => $currentTeam, 'transactionalEmail' => $email]);
     }
 
-    public function edit(Team $currentTeam, TransactionalEmail $transactionalEmail, BuildMediaLibrary $mediaLibrary): Response
+    public function edit(Team $currentTeam, TransactionalEmail $transactionalEmail, BuildMediaLibrary $mediaLibrary, AssistantModels $assistantModels): Response
     {
         Gate::authorize('view', $transactionalEmail);
 
@@ -153,6 +156,7 @@ class TransactionalEmailController extends Controller
                 ])
                 ->all(),
             'canManage' => Gate::allows('update', $transactionalEmail),
+            'assistantModels' => Gate::allows('update', $transactionalEmail) ? $assistantModels->options() : [],
             'mediaLibrary' => fn (): ?array => $transactionalEmail->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)
                 : null,

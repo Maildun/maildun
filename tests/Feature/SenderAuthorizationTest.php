@@ -140,6 +140,7 @@ test('a delivery job refuses a sender proof from an older connection version', f
     $email = campaignSendingFrom($team, 'hello@acme.test');
     $email->forceFill(['status' => EmailStatus::Sending])->save();
     $delivery = $email->deliveries()->create([
+        'subscriber_id' => Subscriber::factory()->create()->id,
         'email_address' => 'reader@example.com',
         'status' => EmailDeliveryStatus::Queued,
         'provider' => 'ses',

@@ -6,7 +6,9 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { useState } from 'react';
+import { ActiveFilters } from '@/components/active-filters';
 import { CompanyDialog } from '@/components/company-dialog';
+import { CompanyFavicon } from '@/components/company-favicon';
 import { ListSearch } from '@/components/list-search';
 import { Paginator } from '@/components/paginator';
 import { Badge } from '@/components/ui/badge';
@@ -60,12 +62,13 @@ export default function CompaniesIndex({
 }: Props) {
     const { currentTeam } = usePage().props;
     const [createOpen, setCreateOpen] = useState(false);
-    const { visit, searchKey } = useListFilters({
-        url: currentTeam ? index.url(currentTeam.slug) : '',
-        filters,
-        empty: { search: '' },
-        searchField: 'search',
-    });
+    const { visit, clear, clearAll, hasActiveFilters, searchKey } =
+        useListFilters({
+            url: currentTeam ? index.url(currentTeam.slug) : '',
+            filters,
+            empty: { search: '' },
+            searchField: 'search',
+        });
 
     if (!currentTeam) {
         return null;
@@ -135,28 +138,37 @@ export default function CompaniesIndex({
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </div>
-                {companies.total === 0 ? (
+                <ActiveFilters
+                    filters={
+                        filters.search
+                            ? [
+                                  {
+                                      key: 'search',
+                                      field: 'Search',
+                                      value: filters.search,
+                                      onClear: () => clear({ search: '' }),
+                                  },
+                              ]
+                            : []
+                    }
+                    onClearAll={clearAll}
+                    clearTestId="clear-company-filters"
+                />
+                {companies.data.length === 0 ? (
                     <Empty>
                         <EmptyHeader>
                             <EmptyMedia variant="icon">
                                 <HugeiconsIcon icon={Building06Icon} />
                             </EmptyMedia>
-                            <EmptyTitle>No companies yet</EmptyTitle>
+                            <EmptyTitle>
+                                {hasActiveFilters
+                                    ? 'No matching companies'
+                                    : 'No companies yet'}
+                            </EmptyTitle>
                             <EmptyDescription>
-                                Add a company domain to start associating
-                                contacts automatically.
-                            </EmptyDescription>
-                        </EmptyHeader>
-                    </Empty>
-                ) : companies.data.length === 0 ? (
-                    <Empty>
-                        <EmptyHeader>
-                            <EmptyMedia variant="icon">
-                                <HugeiconsIcon icon={Building06Icon} />
-                            </EmptyMedia>
-                            <EmptyTitle>No matching companies</EmptyTitle>
-                            <EmptyDescription>
-                                Try another search.
+                                {hasActiveFilters
+                                    ? 'Try another search.'
+                                    : 'Add a company domain to start associating contacts automatically.'}
                             </EmptyDescription>
                         </EmptyHeader>
                     </Empty>
@@ -186,18 +198,11 @@ export default function CompaniesIndex({
                                                 ])}
                                                 className="flex items-center gap-2 font-medium hover:underline"
                                             >
-                                                {company.favicon ? (
-                                                    <img
-                                                        src={company.favicon}
-                                                        alt=""
-                                                        className="size-4 rounded-sm bg-white object-contain p-0.5"
-                                                    />
-                                                ) : (
-                                                    <HugeiconsIcon
-                                                        icon={Building06Icon}
-                                                        className="size-4 text-muted-foreground"
-                                                    />
-                                                )}
+                                                <CompanyFavicon
+                                                    src={company.favicon}
+                                                    className="size-4 rounded-sm bg-white object-contain p-0.5"
+                                                    iconClassName="size-4 text-muted-foreground"
+                                                />
                                                 {company.name}
                                             </Link>
                                         </TableCell>

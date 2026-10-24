@@ -5,6 +5,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Link } from '@inertiajs/react';
+import { SubscriberStatusBadge } from '@/components/subscriber-status-badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -111,11 +112,12 @@ export function SubscriberHoverCard({
                     <div className="flex items-center justify-between gap-3">
                         <dt className="text-muted-foreground">Status</dt>
                         <dd>
-                            {subscriber.status === 'subscribed' ? (
-                                <Badge variant="success">Subscribed</Badge>
-                            ) : (
-                                <Badge variant="secondary">Unsubscribed</Badge>
-                            )}
+                            <SubscriberStatusBadge
+                                status={subscriber.status}
+                                pendingConfirmation={
+                                    subscriber.pending_confirmation
+                                }
+                            />
                         </dd>
                     </div>
                     <div className="flex items-center justify-between gap-3">

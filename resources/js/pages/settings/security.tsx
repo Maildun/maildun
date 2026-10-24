@@ -3,6 +3,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { Form, Head } from '@inertiajs/react';
 import { useRef } from 'react';
 import SecurityController from '@/actions/App/Http/Controllers/Settings/SecurityController';
+import ManageGoogleAccount from '@/components/manage-google-account';
 import type { Props as ManagePasskeysProps } from '@/components/manage-passkeys';
 import ManagePasskeys from '@/components/manage-passkeys';
 import type { Props as ManageTwoFactorProps } from '@/components/manage-two-factor';
@@ -23,6 +24,9 @@ import { UnsavedChangesGuard } from '@/hooks/use-unsaved-changes';
 
 type Props = {
     passwordRules: string;
+    hasPassword: boolean;
+    canManageGoogle: boolean;
+    googleConnected: boolean;
 } & ManagePasskeysProps &
     ManageTwoFactorProps;
 
@@ -38,8 +42,14 @@ export default function Security(props: Props) {
                 <SettingsPageHeader title="Password & security" />
                 <SettingsPanel
                     variant="inset"
-                    title="Change password"
-                    description="Use a unique password you do not reuse on other sites."
+                    title={
+                        props.hasPassword ? 'Change password' : 'Set password'
+                    }
+                    description={
+                        props.hasPassword
+                            ? 'Use a unique password you do not reuse on other sites.'
+                            : 'You log in with Google. Add a password to also log in with your email address.'
+                    }
                 >
                     <Form
                         {...SecurityController.update.form()}
@@ -71,28 +81,30 @@ export default function Security(props: Props) {
                         {({ errors, processing, isDirty }) => (
                             <FieldGroup className="p-6 sm:p-7">
                                 <UnsavedChangesGuard isDirty={isDirty} />
-                                <Field
-                                    data-invalid={Boolean(
-                                        errors.current_password,
-                                    )}
-                                >
-                                    <FieldLabel htmlFor="current_password">
-                                        Current password
-                                    </FieldLabel>
-                                    <PasswordInput
-                                        id="current_password"
-                                        ref={currentPasswordInput}
-                                        name="current_password"
-                                        autoComplete="current-password"
-                                        placeholder="Enter your current password"
-                                        aria-invalid={Boolean(
+                                {props.hasPassword && (
+                                    <Field
+                                        data-invalid={Boolean(
                                             errors.current_password,
                                         )}
-                                    />
-                                    <FieldError>
-                                        {errors.current_password}
-                                    </FieldError>
-                                </Field>
+                                    >
+                                        <FieldLabel htmlFor="current_password">
+                                            Current password
+                                        </FieldLabel>
+                                        <PasswordInput
+                                            id="current_password"
+                                            ref={currentPasswordInput}
+                                            name="current_password"
+                                            autoComplete="current-password"
+                                            placeholder="Enter your current password"
+                                            aria-invalid={Boolean(
+                                                errors.current_password,
+                                            )}
+                                        />
+                                        <FieldError>
+                                            {errors.current_password}
+                                        </FieldError>
+                                    </Field>
+                                )}
 
                                 <div className="grid gap-4 sm:grid-cols-2">
                                     <Field
@@ -151,13 +163,30 @@ export default function Security(props: Props) {
                                         {processing && (
                                             <Spinner data-icon="inline-start" />
                                         )}
-                                        Update password
+                                        {props.hasPassword
+                                            ? 'Update password'
+                                            : 'Set password'}
                                     </Button>
                                 </div>
                             </FieldGroup>
                         )}
                     </Form>
                 </SettingsPanel>
+
+                {props.canManageGoogle ? (
+                    <SettingsPanel
+                        variant="inset"
+                        title="Connected accounts"
+                        description="Log in with an account you already use, without typing your password."
+                    >
+                        <div className="p-6 sm:p-7">
+                            <ManageGoogleAccount
+                                googleConnected={props.googleConnected}
+                                hasPassword={props.hasPassword}
+                            />
+                        </div>
+                    </SettingsPanel>
+                ) : null}
 
                 {props.canManageTwoFactor ? (
                     <SettingsPanel

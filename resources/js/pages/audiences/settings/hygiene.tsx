@@ -21,6 +21,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { toast } from '@/components/ui/toast';
 import AudienceSettingsLayout from '@/layouts/audiences/settings-layout';
 import type { Audience } from '@/types/audiences';
 
@@ -29,6 +30,8 @@ type HygieneKind = 'unconfirmed' | 'inactive';
 type Props = {
     audience: Pick<Audience, 'uuid' | 'name' | 'avatar'>;
     counts: Record<HygieneKind, number>;
+    /** When the counts were taken; a cleanup removes only that set. */
+    countedAt: string;
 };
 
 const hygieneCopy: Record<
@@ -57,9 +60,9 @@ const hygieneCopy: Record<
     inactive: {
         title: 'Inactive subscribers',
         description:
-            'Remove people who have never opened or clicked a campaign sent to them.',
+            'Remove people who have never opened or clicked a campaign sent to them. Only campaigns with open tracking on count.',
         criteria:
-            'Currently subscribed, received at least one sent campaign, and has no opens or clicks.',
+            'Currently subscribed, received at least one sent campaign with open tracking on, and has no opens or clicks.',
         action: 'Remove inactive',
         confirmTitle: 'Remove inactive subscribers?',
         confirmDescription: (count) =>
@@ -68,7 +71,11 @@ const hygieneCopy: Record<
     },
 };
 
-export default function AudienceHygieneSettings({ audience, counts }: Props) {
+export default function AudienceHygieneSettings({
+    audience,
+    counts,
+    countedAt,
+}: Props) {
     const { currentTeam } = usePage().props;
     const [confirmation, setConfirmation] = useState<HygieneKind | null>(null);
     const [processing, setProcessing] = useState(false);
@@ -86,9 +93,19 @@ export default function AudienceHygieneSettings({ audience, counts }: Props) {
                 : destroyInactive(routeArgs);
 
         router.delete(action.url, {
+            data: { counted_at: countedAt, count: counts[kind] },
             preserveScroll: true,
             onStart: () => setProcessing(true),
             onSuccess: () => setConfirmation(null),
+            onError: (errors) => {
+                setConfirmation(null);
+                toast.add({
+                    type: 'error',
+                    title: 'Nothing was removed.',
+                    description: errors.count ?? Object.values(errors)[0],
+                });
+                router.reload({ only: ['counts', 'countedAt'] });
+            },
             onFinish: () => setProcessing(false),
         });
     };

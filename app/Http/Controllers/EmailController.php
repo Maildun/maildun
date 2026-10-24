@@ -15,6 +15,7 @@ use App\Actions\Emails\StartEmailSend;
 use App\Actions\Emails\StopEmailSend;
 use App\Actions\Media\BuildMediaLibrary;
 use App\Concerns\FiltersCampaignRecipients;
+use App\Concerns\SearchesText;
 use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
@@ -44,6 +45,7 @@ use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
+use App\Services\AssistantModels;
 use App\Services\InstallationState;
 use App\Services\SesAccountLimits;
 use Illuminate\Database\Eloquent\Builder;
@@ -64,7 +66,7 @@ use Inertia\Response;
 
 class EmailController extends Controller
 {
-    use FiltersCampaignRecipients;
+    use FiltersCampaignRecipients, SearchesText;
 
     public function index(Request $request, Team $currentTeam): Response
     {
@@ -112,8 +114,7 @@ class EmailController extends Controller
                 },
             ])
             ->when($filters['q'] !== '', function ($query) use ($filters): void {
-                $search = '%'.addcslashes($filters['q'], '%_\\').'%';
-                $query->whereAny(['name', 'subject'], 'like', $search);
+                $this->whereAnyColumnContains($query, ['name', 'subject'], $filters['q']);
             })
             ->when($filters['status'] !== '', function ($query) use ($filters): void {
                 $this->applyCampaignStatusFilter($query, $filters['status']);
@@ -227,7 +228,7 @@ class EmailController extends Controller
         return to_route('emails.edit', ['current_team' => $currentTeam, 'email' => $email]);
     }
 
-    public function edit(Team $currentTeam, Email $email, BuildSendReadiness $sendReadiness, BuildMediaLibrary $mediaLibrary): Response|RedirectResponse
+    public function edit(Team $currentTeam, Email $email, BuildSendReadiness $sendReadiness, BuildMediaLibrary $mediaLibrary, AssistantModels $assistantModels): Response|RedirectResponse
     {
         Gate::authorize('view', $email);
 
@@ -344,6 +345,7 @@ class EmailController extends Controller
                 'reply_to' => $currentTeam->email_reply_to,
             ],
             'canManage' => Gate::allows('update', $email),
+            'assistantModels' => Gate::allows('update', $email) ? $assistantModels->options() : [],
             'mediaLibrary' => fn (): ?array => $email->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)
                 : null,
@@ -768,6 +770,7 @@ class EmailController extends Controller
         };
         $bouncedCount = (clone $deliveries)->where('status', EmailDeliveryStatus::Bounced)->count();
         $complainedCount = (clone $deliveries)->where('status', EmailDeliveryStatus::Complained)->count();
+        $unsubscribedCount = (clone $deliveries)->whereNotNull('unsubscribed_at')->count();
         $failedCount = (clone $deliveries)->whereIn('status', [
             EmailDeliveryStatus::Failed,
             EmailDeliveryStatus::Rejected,
@@ -813,6 +816,7 @@ class EmailController extends Controller
                 'clicked' => $clickedCount,
                 'bounced' => $bouncedCount,
                 'complained' => $complainedCount,
+                'unsubscribed' => $unsubscribedCount,
                 'failed' => $failedCount,
                 'retrying' => $retryingCount,
                 'cancelled' => (clone $deliveries)->where('status', EmailDeliveryStatus::Cancelled)->count(),
@@ -1022,9 +1026,9 @@ class EmailController extends Controller
 
         return match (true) {
             $email->status->isActive() => __('Wait until this campaign finishes sending.'),
-            $delivery->subscriber !== null
-                && $delivery->subscriber->status !== SubscriberStatus::Subscribed => __('This recipient has unsubscribed.'),
-            $delivery->subscriber?->isPendingConfirmation() === true => __('This recipient has not confirmed their subscription yet.'),
+            $delivery->subscriber === null => __('This recipient was removed from the audience.'),
+            $delivery->subscriber->status !== SubscriberStatus::Subscribed => __('This recipient has unsubscribed.'),
+            $delivery->subscriber->isPendingConfirmation() => __('This recipient has not confirmed their subscription yet.'),
             in_array($delivery->email_address, $suppressedAddresses, true) => __('This address is suppressed after it bounced or reported a spam complaint.'),
             default => __('This delivery cannot be retried.'),
         };
@@ -1240,9 +1244,7 @@ class EmailController extends Controller
             (clone $recipientQuery)
                 ->select(['subscribers.id', 'subscribers.uuid', 'subscribers.email', 'subscribers.first_name', 'subscribers.last_name'])
                 ->when($search !== '', function (Builder $query) use ($search): void {
-                    $term = '%'.addcslashes($search, '%_\\').'%';
-
-                    $query->whereAny(['subscribers.first_name', 'subscribers.last_name', 'subscribers.email'], 'like', $term);
+                    $this->whereAnyColumnContains($query, ['subscribers.first_name', 'subscribers.last_name', 'subscribers.email'], $search);
                 })
                 ->orderBy('subscribers.email')
                 ->orderBy('subscribers.id')

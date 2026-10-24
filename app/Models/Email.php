@@ -189,28 +189,55 @@ class Email extends Model
      */
     public function resolvedFromAddress(): string
     {
-        return $this->from_address
-            ?? $this->audience->from_address
-            ?? $this->team->email_from_address
-            ?? (string) config('mail.from.address');
+        return $this->resolvedSender()['from_address'];
     }
 
     /**
-     * The display name the email is sent from, falling back the same way.
+     * The display name of the sender that owns the resolved From address.
      */
     public function resolvedFromName(): string
     {
-        return $this->from_name
-            ?? $this->audience->from_name
-            ?? $this->team->email_from_name
-            ?? (string) config('mail.from.name');
+        return $this->resolvedSender()['from_name'];
     }
 
+    /**
+     * The reply-to of the sender that owns the resolved From address.
+     */
     public function resolvedReplyTo(): ?string
     {
-        return $this->reply_to
-            ?? $this->audience->reply_to
-            ?? $this->team->email_reply_to;
+        return $this->resolvedSender()['reply_to'];
+    }
+
+    /**
+     * Resolve the sender as one unit. The name and reply-to come from the
+     * first level (email, audience, team) that sets a From address, even when
+     * they are empty, so a campaign never mixes two senders' identities.
+     *
+     * @return array{from_name: string, from_address: string, reply_to: ?string}
+     */
+    private function resolvedSender(): array
+    {
+        $levels = [
+            [$this->from_name, $this->from_address, $this->reply_to],
+            [$this->audience?->from_name, $this->audience?->from_address, $this->audience?->reply_to],
+            [$this->team->email_from_name, $this->team->email_from_address, $this->team->email_reply_to],
+        ];
+
+        foreach ($levels as [$fromName, $fromAddress, $replyTo]) {
+            if (filled($fromAddress)) {
+                return [
+                    'from_name' => (string) $fromName,
+                    'from_address' => (string) $fromAddress,
+                    'reply_to' => filled($replyTo) ? (string) $replyTo : null,
+                ];
+            }
+        }
+
+        return [
+            'from_name' => (string) config('mail.from.name'),
+            'from_address' => (string) config('mail.from.address'),
+            'reply_to' => null,
+        ];
     }
 
     /** @return array<string, string> */

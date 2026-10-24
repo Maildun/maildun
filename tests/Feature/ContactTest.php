@@ -3,6 +3,7 @@
 use App\Enums\AutomationTrigger;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberLanguage;
+use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamPermission;
 use App\Enums\TeamRole;
@@ -12,6 +13,7 @@ use App\Models\Company;
 use App\Models\Contact;
 use App\Models\Email;
 use App\Models\EmailDelivery;
+use App\Models\SubscribeForm;
 use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\Team;
@@ -215,6 +217,35 @@ test('adding an existing contact to another audience preserves its shared profil
         ->and($subscriber->last_name)->toBe('Person');
 });
 
+test('adding a contact to an audience from its profile does not confirm a pending double opt-in membership', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    $form = SubscribeForm::factory()->for($audience)->create();
+    $pending = Subscriber::factory()->for($audience)->fromForm($form)->pendingConfirmation()->create([
+        'email' => 'pending@example.com',
+        'consent_text' => 'Yes, send me the newsletter.',
+        'consent_ip' => '203.0.113.9',
+    ]);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->actingAs($user)
+        ->post(route('contacts.audiences.store', [$team, $pending->contact]), [
+            'audience_uuid' => $audience->uuid,
+            'consent_confirmed' => true,
+        ])
+        ->assertValid()
+        ->assertRedirect();
+
+    $pending->refresh();
+
+    expect($pending->isPendingConfirmation())->toBeTrue()
+        ->and($pending->source)->toBe(SubscriberSource::Form)
+        ->and($pending->consent_text)->toBe('Yes, send me the newsletter.')
+        ->and($pending->consent_ip)->toBe('203.0.113.9');
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
 test('creating a contact fires tagged automations once its audience memberships exist', function () {
     Event::fake([SubscriberLifecycleOccurred::class]);
     $user = User::factory()->create();
@@ -269,6 +300,47 @@ test('editing a contact fires tagged automations on every membership for newly a
             && $event->subscriber->is($membership)
             && $event->context === ['tag_uuid' => $customer->uuid]);
     }
+});
+
+test('a new contact can be added without an audience while the dialog sends unchecked consent', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $team), [
+            'email' => 'workspace-only@example.com',
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'tags' => [],
+            'audience_uuids' => [],
+            'consent_confirmed' => false,
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    $contact = $team->contacts()->sole();
+
+    expect($contact->email)->toBe('workspace-only@example.com')
+        ->and(Subscriber::query()->where('contact_id', $contact->id)->exists())->toBeFalse();
+});
+
+test('adding a new contact to an audience still requires consent confirmation', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $team), [
+            'email' => 'needs-consent@example.com',
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'tags' => [],
+            'audience_uuids' => [$audience->uuid],
+            'consent_confirmed' => false,
+        ])
+        ->assertInvalid(['consent_confirmed']);
+
+    expect($team->contacts()->exists())->toBeFalse();
 });
 
 test('an existing contact requires an audience when reused from the add dialog', function () {
@@ -547,4 +619,298 @@ test('the contact profile offers delete to members with audience access for a co
         ->assertInertia(fn (Assert $page) => $page
             ->component('contacts/show')
             ->where('canDelete', true));
+});
+
+test('contacts can be filtered by the language of any of their memberships', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $english = Subscriber::factory()->for($audience)->for(Contact::factory()->for($team)->state(['email' => 'en@example.com']))->create([
+        'email' => 'en@example.com',
+        'language' => SubscriberLanguage::English,
+    ]);
+    Subscriber::factory()->for($audience)->for(Contact::factory()->for($team)->state(['email' => 'id@example.com']))->create([
+        'email' => 'id@example.com',
+        'language' => SubscriberLanguage::Indonesian,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('contacts.index', [$team, 'language' => 'en']))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('filters.language', 'en')
+            ->has('contacts.data', 1)
+            ->where('contacts.data.0.uuid', $english->contact->uuid));
+});
+
+test('selected contacts can be unsubscribed from every audience at once', function () {
+    Event::fake([SubscriberLifecycleOccurred::class]);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $contact = Contact::factory()->for($team)->create(['email' => 'ada@example.com']);
+    $memberships = Audience::factory()->for($team)->count(2)->create()->map(
+        fn (Audience $audience): Subscriber => Subscriber::factory()->for($audience)->for($contact)->create(['email' => $contact->email]),
+    );
+    $other = Subscriber::factory()->for(Audience::factory()->for($team))->for(Contact::factory()->for($team)->state(['email' => 'grace@example.com']))->create(['email' => 'grace@example.com']);
+
+    $this->actingAs($user)
+        ->patch(route('contacts.bulk-unsubscribe', $team), ['ids' => [$contact->uuid]])
+        ->assertRedirect();
+
+    $memberships->each(fn (Subscriber $subscriber) => expect($subscriber->refresh()->status)->toBe(SubscriberStatus::Unsubscribed));
+    expect($other->refresh()->status)->toBe(SubscriberStatus::Subscribed);
+    Event::assertDispatchedTimes(SubscriberLifecycleOccurred::class, 2);
+});
+
+test('selected contacts can be deleted together but only within the current team', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $selected = Contact::factory()->for($team)->count(2)->create();
+    $kept = Contact::factory()->for($team)->create();
+    $foreign = Contact::factory()->create();
+
+    $this->actingAs($user)
+        ->delete(route('contacts.bulk-destroy', $team), ['ids' => [$foreign->uuid]])
+        ->assertSessionHasErrors('ids.0');
+
+    $this->actingAs($user)
+        ->delete(route('contacts.bulk-destroy', $team), ['ids' => $selected->pluck('uuid')->all()])
+        ->assertRedirect();
+
+    expect(Contact::query()->whereKey($selected->modelKeys())->exists())->toBeFalse()
+        ->and($kept->fresh())->not->toBeNull()
+        ->and($foreign->fresh())->not->toBeNull();
+});
+
+test('viewers cannot bulk delete contacts', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignViewerRole($team, $member);
+    $contact = Contact::factory()->for($team)->create();
+
+    $this->actingAs($member)
+        ->delete(route('contacts.bulk-destroy', $team), ['ids' => [$contact->uuid]])
+        ->assertForbidden();
+
+    expect($contact->fresh())->not->toBeNull();
+});
+
+test('a contact-only role cannot add, remove or resubscribe audience memberships from the contact side', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignCustomRole($team, $member, [TeamPermission::ManageContact]);
+    $audience = Audience::factory()->for($team)->create();
+    $contact = Contact::factory()->for($team)->create(['email' => 'ada@example.com']);
+    $unsubscribed = Subscriber::factory()->for(Audience::factory()->for($team))->for($contact)->unsubscribed()->create(['email' => 'ada@example.com']);
+
+    $this->actingAs($member)
+        ->post(route('contacts.audiences.store', [$team, $contact]), [
+            'audience_uuid' => $audience->uuid,
+            'consent_confirmed' => true,
+        ])
+        ->assertForbidden();
+    $this->actingAs($member)
+        ->post(route('contacts.store', $team), [
+            'email' => 'ada@example.com',
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'audience_uuids' => [$unsubscribed->audience->uuid],
+            'consent_confirmed' => true,
+        ])
+        ->assertForbidden();
+    $this->actingAs($member)
+        ->delete(route('contacts.audiences.destroy', [$team, $contact, $unsubscribed]))
+        ->assertForbidden();
+
+    expect($audience->subscribers()->exists())->toBeFalse()
+        ->and($unsubscribed->refresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+});
+
+test('a contact-only role cannot bulk unsubscribe audience memberships', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignCustomRole($team, $member, [TeamPermission::ManageContact]);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->create(['email' => 'ada@example.com']);
+
+    $this->actingAs($member)
+        ->patch(route('contacts.bulk-unsubscribe', $team), ['ids' => [$subscriber->refresh()->contact->uuid]])
+        ->assertForbidden();
+
+    expect($subscriber->refresh()->status)->toBe(SubscriberStatus::Subscribed);
+});
+
+test('the contact pages only offer membership actions to roles that can manage audiences', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignCustomRole($team, $member, [TeamPermission::ManageContact]);
+    $contact = Contact::factory()->for($team)->create();
+
+    Audience::factory()->for($team)->create();
+
+    $this->actingAs($member)
+        ->get(route('contacts.show', [$team, $contact]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('canManage', true)
+            ->where('audiences', []));
+    $this->actingAs($member)
+        ->get(route('contacts.index', $team))
+        ->assertInertia(fn (Assert $page) => $page->where('canAddToAudiences', false));
+    $this->actingAs($owner)
+        ->get(route('contacts.index', $team))
+        ->assertInertia(fn (Assert $page) => $page->where('canAddToAudiences', true));
+});
+
+test('resubscribing from the contact dialog keeps the membership source and form', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $form = SubscribeForm::factory()->for($audience)->create();
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create([
+        'email' => 'ada@example.com',
+        'source' => SubscriberSource::Form,
+        'subscribe_form_id' => $form->id,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $team), [
+            'email' => 'ada@example.com',
+            'company_assignment_mode' => 'automatic',
+            'company_uuid' => '',
+            'audience_uuids' => [$audience->uuid],
+            'consent_confirmed' => true,
+        ])
+        ->assertRedirect();
+
+    expect($subscriber->refresh())
+        ->status->toBe(SubscriberStatus::Subscribed)
+        ->source->toBe(SubscriberSource::Form)
+        ->subscribe_form_id->toBe($form->id);
+});
+
+test('list-shaped filters on the contacts list fall back to no filter', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $contact = Contact::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->get(route('contacts.index', [
+            'current_team' => $team,
+            'search' => ['ada'],
+            'company' => ['assigned'],
+            'audience' => ['x'],
+            'tag' => ['x'],
+            'language' => ['en'],
+            'sort' => ['name'],
+        ]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('contacts.data.0.uuid', $contact->uuid)
+            ->where('filters', ['search' => '', 'company' => '', 'audience' => '', 'tag' => '', 'language' => '', 'sort' => 'newest']));
+});
+
+test('a list-shaped contact email is a validation error', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $user->currentTeam), [
+            'email' => ['ada@example.com'],
+            'company_assignment_mode' => 'automatic',
+        ])
+        ->assertSessionHasErrors(['email' => 'The email field must be a string.']);
+
+    expect(Contact::query()->where('team_id', $user->currentTeam->id)->exists())->toBeFalse();
+});
+
+test('owners can bulk add and remove tags on selected contacts', function () {
+    Event::fake([SubscriberLifecycleOccurred::class]);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $selected = Subscriber::factory()->for(Audience::factory()->for($team))->create();
+    $contact = $selected->contact;
+    $kept = Contact::factory()->for($team)->create();
+    $vip = Tag::factory()->for($team)->create(['name' => 'VIP']);
+
+    $this->actingAs($user)
+        ->patch(route('contacts.bulk-tags', $team), [
+            'ids' => [$contact->uuid],
+            'action' => 'add',
+            'tags' => ['vip', 'Donor'],
+        ])
+        ->assertRedirect();
+
+    expect($contact->tags()->orderBy('name')->pluck('name')->all())->toBe(['Donor', 'VIP'])
+        ->and($kept->tags()->count())->toBe(0);
+    Event::assertDispatched(SubscriberLifecycleOccurred::class, fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Tagged
+        && $event->subscriber->is($selected)
+        && $event->context === ['tag_uuid' => $vip->uuid]);
+
+    $this->actingAs($user)
+        ->patch(route('contacts.bulk-tags', $team), [
+            'ids' => [$contact->uuid],
+            'action' => 'remove',
+            'tags' => ['VIP'],
+        ])
+        ->assertRedirect();
+
+    expect($contact->tags()->pluck('name')->all())->toBe(['Donor'])
+        ->and($team->tags()->where('name', 'VIP')->exists())->toBeTrue();
+});
+
+test('bulk contact tags stay in the current team and need contact management', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $foreign = Contact::factory()->create();
+    $contact = Contact::factory()->for($team)->create();
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignViewerRole($team, $member);
+
+    $this->actingAs($owner)
+        ->patch(route('contacts.bulk-tags', $team), ['ids' => [$foreign->uuid], 'action' => 'add', 'tags' => ['VIP']])
+        ->assertSessionHasErrors('ids.0');
+
+    $this->actingAs($member)
+        ->patch(route('contacts.bulk-tags', $team), ['ids' => [$contact->uuid], 'action' => 'add', 'tags' => ['VIP']])
+        ->assertForbidden();
+
+    expect($foreign->tags()->count())->toBe(0)
+        ->and($contact->tags()->count())->toBe(0);
+});
+
+test('blank contact names are saved as null', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('contacts.store', $team), [
+            'email' => 'nameless@example.com',
+            'first_name' => '',
+            'last_name' => '   ',
+            'company_assignment_mode' => 'automatic',
+        ])
+        ->assertValid();
+
+    $contact = $team->contacts()->sole();
+
+    expect($contact->only(['first_name', 'last_name']))->toBe(['first_name' => null, 'last_name' => null]);
+
+    $contact->update(['first_name' => 'Ada', 'last_name' => 'Lovelace']);
+
+    $this->actingAs($user)
+        ->patch(route('contacts.update', [$team, $contact]), [
+            'email' => 'nameless@example.com',
+            'first_name' => '',
+            'last_name' => '',
+            'company_assignment_mode' => 'automatic',
+        ])
+        ->assertValid();
+
+    expect($contact->fresh()->only(['first_name', 'last_name']))->toBe(['first_name' => null, 'last_name' => null]);
 });

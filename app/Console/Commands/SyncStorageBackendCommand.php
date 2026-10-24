@@ -116,7 +116,7 @@ class SyncStorageBackendCommand extends Command
         }
 
         $this->components->warn(sprintf(
-            '%d upload(s) are still being converted. Their rows are repointed too, so keep the old files in place until the queue drains.',
+            '%d upload(s) are still being converted or imported. Their rows are repointed too, so keep the old files in place until the queue drains.',
             $inFlight,
         ));
     }
@@ -139,6 +139,7 @@ class SyncStorageBackendCommand extends Command
             'Email attachments' => $report->repointedAttachments,
             'Processing media' => $report->repointedMedia,
             'Processing form artwork' => $report->repointedSubscribeForms,
+            'Contact imports' => $report->repointedContactImports,
         ];
 
         foreach (array_filter($repointed) as $label => $count) {

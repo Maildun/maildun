@@ -4,7 +4,7 @@ import type { CompanyOption, ContactSummary } from './contacts';
 export type CompanySummary = {
     uuid: string;
     name: string;
-    favicon: string | null;
+    favicon: string;
     domains: string[];
     contacts_count: number;
     created_at: string | null;

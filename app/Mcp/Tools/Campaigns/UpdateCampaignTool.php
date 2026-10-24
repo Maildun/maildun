@@ -10,6 +10,7 @@ use App\Models\Audience;
 use App\Models\Email;
 use App\Models\Team;
 use App\Rules\AuthorizedSenderAddress;
+use App\Services\EmailBuilderAgent;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Validation\Rule;
@@ -41,6 +42,7 @@ class UpdateCampaignTool extends Tool
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
+        private EmailBuilderAgent $agent,
     ) {}
 
     public function handle(Request $request): ResponseFactory
@@ -69,7 +71,6 @@ class UpdateCampaignTool extends Tool
             'track_clicks' => ['sometimes', 'boolean'],
             'track_opens' => ['sometimes', 'boolean'],
             'design' => ['sometimes', 'nullable', 'array', 'required_array_keys:root'],
-            'design.root' => ['array'],
             'audience_uuid' => ['sometimes', 'nullable', 'uuid', Rule::exists(Audience::class, 'uuid')->where('team_id', $team->id)],
             'segment_uuid' => ['sometimes', 'nullable', 'uuid'],
         ]);
@@ -90,6 +91,13 @@ class UpdateCampaignTool extends Tool
         // document the draft already has in place.
         if ($editor !== EmailEditor::Builder || ($changes['design'] ?? null) === null) {
             unset($changes['design']);
+        }
+
+        if ($team->email_editor === EmailEditor::Builder && isset($changes['design'])) {
+            $rendered = $this->agent->render($changes['design']);
+            $changes['design'] = $rendered['design'];
+            $changes['html'] = $rendered['html'];
+            $changes['plain_text'] = array_key_exists('plain_text', $changes) ? $changes['plain_text'] : $rendered['text'];
         }
 
         // A draft body may be cleared, so only an omitted source keeps the current one.

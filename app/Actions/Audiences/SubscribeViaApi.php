@@ -18,16 +18,40 @@ class SubscribeViaApi
         private QueueAudienceConfirmationEmail $queueConfirmationEmail,
         private ManageContact $manageContact,
         private NotifyAudienceOfSubscriptionChange $notifyAudience,
+        private RequestResubscription $requestResubscription,
+        private RestoreOptedOutMember $restoreOptedOutMember,
     ) {}
 
-    /** @param array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, consent_text?: string|null, attributes?: array<string, string|int|float|null>} $data */
+    /**
+     * An API caller relays a signup it collected, so like a public form it
+     * never reverses an opt-out, even on a single opt-in audience. It only
+     * requests a resubscription, which the person must confirm from their own
+     * inbox. A team member can still resubscribe them from the app.
+     *
+     * @param  array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, consent_text?: string|null, attributes?: array<string, string|int|float|null>}  $data
+     */
     public function handle(Audience $audience, array $data, ?string $ipAddress): Subscriber
     {
         $trigger = null;
 
         $subscriber = DB::transaction(function () use ($audience, $data, $ipAddress, &$trigger): Subscriber {
             $lockedAudience = Audience::query()->whereKey($audience->id)->lockForUpdate()->firstOrFail();
-            $subscriber = $lockedAudience->subscribers()->where('email', $data['email'])->first();
+            $subscriber = $this->restoreOptedOutMember->handle($lockedAudience, [
+                'email' => $data['email'],
+                'first_name' => $data['first_name'] ?? null,
+                'last_name' => $data['last_name'] ?? null,
+            ])
+                ?? $lockedAudience->subscribers()->where('email', $data['email'])->first();
+
+            if ($subscriber?->status === SubscriberStatus::Unsubscribed) {
+                return $this->requestResubscription->handle(
+                    $lockedAudience,
+                    $subscriber,
+                    $data['consent_text'] ?? 'Marketing consent confirmed via API.',
+                    $ipAddress,
+                );
+            }
+
             $attributeValues = Arr::where(
                 $data['attributes'] ?? [],
                 fn (mixed $value): bool => $value !== null && $value !== '',
@@ -62,9 +86,7 @@ class SubscribeViaApi
             $requiresConfirmation = $lockedAudience->double_opt_in;
 
             if (! $requiresConfirmation) {
-                $trigger = $subscriber?->status === SubscriberStatus::Unsubscribed
-                    ? AutomationTrigger::Resubscribed
-                    : AutomationTrigger::Subscribed;
+                $trigger = AutomationTrigger::Subscribed;
             }
 
             $values = [
@@ -78,6 +100,7 @@ class SubscribeViaApi
                 'consent_ip' => $ipAddress,
                 'subscribed_at' => $requiresConfirmation ? null : now(),
                 'unsubscribed_at' => null,
+                'resubscribe_requested_at' => null,
             ];
 
             if ($subscriber instanceof Subscriber) {

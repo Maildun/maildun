@@ -21,17 +21,20 @@
     },
     "require": {
         "php": "^8.4",
+        "abduns/laravel-db-backup": "@dev",
         "aws/aws-php-sns-message-validator": "^1.10",
         "aws/aws-sdk-php": "^3.393",
         "dicebear/core": "^10.6",
         "dicebear/styles": "^10.5",
         "inertiajs/inertia-laravel": "^3.0",
+        "laravel/ai": "^1.0",
         "laravel/chisel": "^0.1.0",
         "laravel/fortify": "^1.37.2",
         "laravel/framework": "^13.17",
         "laravel/horizon": "^5.48",
         "laravel/mcp": "^1.0",
         "laravel/passport": "^13.7",
+        "laravel/socialite": "^5.31",
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.14",
         "league/flysystem-aws-s3-v3": "^3.0",
@@ -134,5 +137,16 @@
         }
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "repositories": [{
+        "name": "db-backup",
+        "type": "path",
+        "url": "packages/abduns/laravel-db-backup",
+        "options": {
+            "symlink": true,
+            "versions": {
+                "abduns/laravel-db-backup": "dev-main"
+            }
+        }
+    }]
 }

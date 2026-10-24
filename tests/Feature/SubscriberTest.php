@@ -1,10 +1,14 @@
 <?php
 
+use App\Enums\AudienceAttributeType;
+use App\Enums\AutomationTrigger;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
+use App\Enums\TeamPermission;
 use App\Enums\TeamRole;
+use App\Events\SubscriberLifecycleOccurred;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Automation;
@@ -19,6 +23,7 @@ use App\Models\Team;
 use App\Models\User;
 use App\Models\WorkspaceRole;
 use App\Services\DiceBearAvatarGenerator;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\URL;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -138,6 +143,28 @@ test('owners can update unsubscribe resubscribe and delete subscribers', functio
     $this->assertModelMissing($subscriber);
 });
 
+test('a team resubscribe of a member awaiting re-signup confirmation clears the pending request', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingResubscription()->create();
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.resubscribe', [$team, $audience, $subscriber]), ['consent_confirmed' => true])
+        ->assertRedirect();
+
+    $subscriber->refresh();
+
+    expect($subscriber->isOptedIn())->toBeTrue()
+        ->and($subscriber->resubscribe_requested_at)->toBeNull();
+    Event::assertDispatchedTimes(SubscriberLifecycleOccurred::class, 1);
+    Event::assertDispatched(
+        SubscriberLifecycleOccurred::class,
+        fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Resubscribed,
+    );
+});
+
 test('a subscriber email cannot be changed to another team contact email', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
@@ -234,6 +261,83 @@ test('owners can bulk unsubscribe and delete selected subscribers', function () 
     $this->assertModelExists($unsubscribe);
 });
 
+test('owners can bulk change the language of selected subscribers', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en', 'id']]);
+    $selected = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+    $keep = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-language', [$team, $audience]), [
+            'ids' => [$selected->uuid],
+            'language' => SubscriberLanguage::Indonesian->value,
+        ])
+        ->assertRedirect();
+
+    expect($selected->fresh()->language)->toBe(SubscriberLanguage::Indonesian)
+        ->and($keep->fresh()->language)->toBe(SubscriberLanguage::English);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-language', [$team, $audience]), [
+            'ids' => [$selected->uuid],
+            'language' => 'klingon',
+        ])
+        ->assertInvalid('language');
+});
+
+test('bulk language only sets a language the audience offers', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en']]);
+    $subscriber = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-language', [$team, $audience]), [
+            'ids' => [$subscriber->uuid],
+            'language' => SubscriberLanguage::Indonesian->value,
+        ])
+        ->assertInvalid('language');
+
+    expect($subscriber->fresh()->language)->toBe(SubscriberLanguage::English);
+});
+
+test('owners can bulk add and remove tags on selected subscribers', function () {
+    Event::fake([SubscriberLifecycleOccurred::class]);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $selected = Subscriber::factory()->for($audience)->create();
+    $keep = Subscriber::factory()->for($audience)->create();
+    $vip = Tag::factory()->for($team)->create(['name' => 'VIP']);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-tags', [$team, $audience]), [
+            'ids' => [$selected->uuid],
+            'action' => 'add',
+            'tags' => ['VIP', 'Donor'],
+        ])
+        ->assertRedirect();
+
+    expect($selected->contact->tags()->pluck('name')->sort()->values()->all())->toBe(['Donor', 'VIP'])
+        ->and($keep->contact->tags()->count())->toBe(0);
+
+    Event::assertDispatched(SubscriberLifecycleOccurred::class, fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Tagged
+        && $event->subscriber->is($selected)
+        && $event->context === ['tag_uuid' => $vip->uuid]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-tags', [$team, $audience]), [
+            'ids' => [$selected->uuid],
+            'action' => 'remove',
+            'tags' => ['vip'],
+        ])
+        ->assertRedirect();
+
+    expect($selected->contact->tags()->pluck('name')->all())->toBe(['Donor'])
+        ->and($team->tags()->where('name', 'VIP')->exists())->toBeTrue();
+});
+
 test('bulk subscriber actions stay scoped to the audience and managers', function () {
     $owner = User::factory()->create();
     $member = User::factory()->create();
@@ -261,9 +365,24 @@ test('bulk subscriber actions stay scoped to the audience and managers', functio
         ])
         ->assertForbidden();
 
+    $this->actingAs($member)
+        ->patch(route('audiences.subscribers.bulk-tags', [$team, $audience]), [
+            'ids' => [$subscriber->uuid],
+            'action' => 'add',
+            'tags' => ['VIP'],
+        ])
+        ->assertForbidden();
+
     $this->actingAs($owner)
         ->delete(route('audiences.subscribers.bulk-destroy', [$team, $audience]), [
             'ids' => [$foreign->uuid],
+        ])
+        ->assertInvalid('ids.0');
+
+    $this->actingAs($owner)
+        ->patch(route('audiences.subscribers.bulk-language', [$team, $audience]), [
+            'ids' => [$foreign->uuid],
+            'language' => SubscriberLanguage::French->value,
         ])
         ->assertInvalid('ids.0');
 
@@ -335,6 +454,8 @@ test('subscriber details redirect to the selected contact membership with activi
             ->where('contact.memberships.0.uuid', $subscriber->uuid)
             ->where('contact.memberships.0.consent_ip', '203.0.113.10')
             ->where('contact.memberships.0.attributes.0.uuid', $attribute->uuid)
+            ->where('contact.memberships.0.attributes.0.key', 'company')
+            ->where('contact.memberships.0.attributes.0.required', false)
             ->where('contact.memberships.0.attributes.0.value', 'Laravel')
             ->where('contact.memberships.0.segments.0.uuid', $segment->uuid)
             ->where('activity.received', 1)
@@ -402,16 +523,16 @@ test('subscriber profile bindings stay scoped to the audience', function () {
         ->assertNotFound();
 });
 
-test('deleting a subscriber from the profile returns to the audience', function () {
+test('deleting a subscriber returns to the page it was deleted from', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $audience = Audience::factory()->for($team)->create();
     $subscriber = Subscriber::factory()->for($audience)->create();
 
     $this->actingAs($user)
-        ->from(route('audiences.subscribers.show', [$team, $audience, $subscriber]))
+        ->from(route('audiences.show', [$team, $audience, 'page' => 2]))
         ->delete(route('audiences.subscribers.destroy', [$team, $audience, $subscriber]))
-        ->assertRedirect(route('audiences.show', [$team, $audience]));
+        ->assertRedirect(route('audiences.show', [$team, $audience, 'page' => 2]));
 
     $this->assertModelMissing($subscriber);
 });
@@ -537,4 +658,219 @@ test('the audience page offers only its available languages to the subscriber di
                 ['value' => 'en', 'label' => 'English'],
                 ['value' => 'id', 'label' => 'Indonesian'],
             ]));
+});
+
+test('an audience-only role cannot change a shared contact email or name from the subscriber dialog', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignCustomRole($team, $member, [TeamPermission::ManageAudience]);
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create(['email' => 'ada@example.com', 'first_name' => 'Ada', 'last_name' => null]);
+
+    $this->actingAs($member)
+        ->put(route('audiences.subscribers.update', [$team, $audience, $subscriber]), [
+            'email' => 'attacker@example.com',
+            'first_name' => 'Ada',
+        ])
+        ->assertForbidden();
+    $this->actingAs($member)
+        ->put(route('audiences.subscribers.update', [$team, $audience, $subscriber]), [
+            'email' => 'ada@example.com',
+            'first_name' => 'Grace',
+        ])
+        ->assertForbidden();
+
+    expect($subscriber->refresh()->contact->only(['email', 'first_name']))->toBe(['email' => 'ada@example.com', 'first_name' => 'Ada']);
+});
+
+test('an audience-only role can still change a member language when the contact profile is unchanged', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignCustomRole($team, $member, [TeamPermission::ManageAudience]);
+    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en', 'fr']]);
+    $subscriber = Subscriber::factory()->for($audience)->create(['email' => 'ada@example.com', 'first_name' => 'Ada', 'last_name' => null]);
+
+    $this->actingAs($member)
+        ->put(route('audiences.subscribers.update', [$team, $audience, $subscriber]), [
+            'email' => 'ada@example.com',
+            'first_name' => 'Ada',
+            'last_name' => '',
+            'language' => SubscriberLanguage::French->value,
+        ])
+        ->assertRedirect();
+
+    expect($subscriber->refresh()->language)->toBe(SubscriberLanguage::French);
+    $this->actingAs($member)
+        ->get(route('audiences.show', [$team, $audience]))
+        ->assertInertia(fn (Assert $page) => $page->where('canManageContacts', false));
+});
+
+test('resubscribing a member who never left changes nothing', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->create(['consent_text' => 'Joined from the checkout form', 'subscribed_at' => now()->subYear()]);
+    $subscribedAt = $subscriber->subscribed_at;
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.resubscribe', [$team, $audience, $subscriber]), ['consent_confirmed' => true])
+        ->assertRedirect()
+        ->assertInertiaFlash('toast.type', 'info');
+
+    $subscriber->refresh();
+
+    expect($subscriber->consent_text)->toBe('Joined from the checkout form')
+        ->and($subscriber->subscribed_at?->equalTo($subscribedAt))->toBeTrue();
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('unsubscribing someone already unsubscribed keeps the original opt-out date', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->pendingResubscription()->create();
+    $unsubscribedAt = $subscriber->unsubscribed_at;
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.unsubscribe', [$team, $audience, $subscriber]))
+        ->assertRedirect();
+
+    $subscriber->refresh();
+
+    expect($subscriber->unsubscribed_at?->equalTo($unsubscribedAt))->toBeTrue()
+        ->and($subscriber->resubscribe_requested_at)->toBeNull();
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('managers can edit custom attribute values from the dashboard', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Seats', 'key' => 'seats', 'type' => AudienceAttributeType::Number]);
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Renewal', 'key' => 'renewal', 'type' => AudienceAttributeType::Date]);
+    $subscriber = Subscriber::factory()->for($audience)->create([
+        'attribute_values' => ['company' => 'Old Co', 'seats' => '5', 'retired_field' => 'kept'],
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.attributes.update', [$team, $audience, $subscriber]), [
+            'attributes' => ['company' => 'Acme', 'seats' => '', 'renewal' => '31.12.2026'],
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    expect($subscriber->fresh()->attribute_values)->toEqual([
+        'company' => 'Acme',
+        'renewal' => '2026-12-31',
+        'retired_field' => 'kept',
+    ]);
+});
+
+test('custom attribute edits are validated by type and keep required fields filled', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company', 'required' => true]);
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Seats', 'key' => 'seats', 'type' => AudienceAttributeType::Number]);
+    $subscriber = Subscriber::factory()->for($audience)->create(['attribute_values' => ['company' => 'Acme']]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.attributes.update', [$team, $audience, $subscriber]), [
+            'attributes' => ['company' => '', 'seats' => 'many', 'email' => 'spoof@example.com'],
+        ])
+        ->assertSessionHasErrors([
+            'attributes',
+            'attributes.company' => 'The Company field is required.',
+            'attributes.seats' => 'The Seats field must be a number.',
+        ]);
+
+    expect($subscriber->fresh()->attribute_values)->toBe(['company' => 'Acme']);
+});
+
+test('custom attribute edits respect audience scope and manager permissions', function () {
+    $owner = User::factory()->create();
+    $member = User::factory()->create();
+    $team = Team::factory()->create();
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $viewerRole = WorkspaceRole::create([
+        'team_id' => $team->id,
+        'name' => 'viewer',
+        'label' => 'Viewer',
+        'guard_name' => 'web',
+    ]);
+    $team->memberships()
+        ->where('user_id', $member->id)
+        ->sole()
+        ->update(['role' => $viewerRole->name]);
+    $audience = Audience::factory()->for($team)->create();
+    $otherAudience = Audience::factory()->for($team)->create();
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    $subscriber = Subscriber::factory()->for($audience)->create(['attribute_values' => ['company' => 'Acme']]);
+
+    $this->actingAs($owner)
+        ->patch(route('audiences.subscribers.attributes.update', [$team, $otherAudience, $subscriber]), [
+            'attributes' => ['company' => 'Changed'],
+        ])
+        ->assertNotFound();
+
+    $this->actingAs($member)
+        ->patch(route('audiences.subscribers.attributes.update', [$team, $audience, $subscriber]), [
+            'attributes' => ['company' => 'Changed'],
+        ])
+        ->assertForbidden();
+
+    expect($subscriber->fresh()->attribute_values)->toBe(['company' => 'Acme']);
+});
+
+test('owners can bulk clear the language of selected subscribers', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $selected = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+    $keep = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-language', [$team, $audience]), [
+            'ids' => [$selected->uuid],
+            'language' => null,
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    expect($selected->fresh()->language)->toBeNull()
+        ->and($keep->fresh()->language)->toBe(SubscriberLanguage::English);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-language', [$team, $audience]), [
+            'ids' => [$keep->uuid],
+        ])
+        ->assertInvalid('language');
+
+    expect($keep->fresh()->language)->toBe(SubscriberLanguage::English);
+});
+
+test('subscribers added without a name get a contact with null names', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('audiences.subscribers.store', [$team, $audience]), [
+            'email' => 'nameless@example.com',
+            'first_name' => '',
+            'last_name' => '',
+            'consent_confirmed' => true,
+        ])
+        ->assertValid();
+
+    expect($team->contacts()->sole()->only(['first_name', 'last_name']))
+        ->toBe(['first_name' => null, 'last_name' => null]);
 });

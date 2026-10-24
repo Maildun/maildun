@@ -3,12 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Concerns\FiltersCampaignRecipients;
-use App\Concerns\SanitizesCsvCells;
+use App\Concerns\ReadsQueryFilters;
+use App\Concerns\SanitizesSpreadsheetCells;
+use App\Concerns\SearchesText;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
-use App\Enums\SubscriberStatus;
 use App\Models\Audience;
+use App\Models\AudienceAttribute;
 use App\Models\Contact;
 use App\Models\Email;
 use App\Models\EmailDelivery;
@@ -17,19 +19,22 @@ use App\Models\Team;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ContactExportController extends Controller
 {
     use FiltersCampaignRecipients;
-    use SanitizesCsvCells;
+    use ReadsQueryFilters;
+    use SanitizesSpreadsheetCells;
+    use SearchesText;
 
     public function contacts(Request $request, Team $currentTeam, string $format): StreamedResponse
     {
         Gate::authorize('create', [Contact::class, $currentTeam]);
 
-        $filters = $this->contactFilters($request);
+        $filters = $this->contactFilters($request, $currentTeam);
         $query = Contact::query()
             ->whereBelongsTo($currentTeam)
             ->with([
@@ -38,12 +43,12 @@ class ContactExportController extends Controller
                 'subscribers.audience:id,name',
             ])
             ->when($filters['search'] !== '', function (Builder $query) use ($filters): void {
-                $search = '%'.mb_strtolower($filters['search']).'%';
-                $query->where(fn (Builder $contactQuery) => $contactQuery
-                    ->whereRaw('LOWER(email) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(first_name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(last_name) LIKE ?', [$search]));
+                $this->wherePersonContains($query, $filters['search']);
             })
+            ->when($filters['tag'] !== '', fn (Builder $query) => $query->whereHas(
+                'tags',
+                fn (Builder $tagQuery) => $tagQuery->where('tags.uuid', $filters['tag']),
+            ))
             ->when($filters['company'] === 'assigned', fn (Builder $query) => $query->whereNotNull('company_id'))
             ->when($filters['company'] === 'unassigned', fn (Builder $query) => $query->whereNull('company_id'))
             ->when(
@@ -53,23 +58,40 @@ class ContactExportController extends Controller
                     fn (Builder $companyQuery) => $companyQuery->where('uuid', $filters['company']),
                 ),
             )
-            ->when($filters['audience'] !== '', fn (Builder $query) => $query->whereHas(
-                'subscribers.audience',
-                fn (Builder $audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
+            // Audience and language must hold on the same membership.
+            ->when($filters['audience'] !== '' || $filters['language'] !== '', fn (Builder $query) => $query->whereHas(
+                'subscribers',
+                fn (Builder $subscriberQuery) => $subscriberQuery
+                    ->when($filters['audience'] !== '', fn (Builder $membership) => $membership->whereHas(
+                        'audience',
+                        fn (Builder $audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
+                    ))
+                    ->when($filters['language'] !== '', fn (Builder $membership) => $membership->where('language', $filters['language'])),
             ));
+
+        // Follow the list's sort. Name order is not unique per row, so it
+        // pages by offset with the id as the tiebreaker instead of by id.
+        $contacts = match ($filters['sort']) {
+            'oldest' => $query->lazyById(500),
+            'name' => $query->orderByName()->lazy(500),
+            default => $query->lazyByIdDesc(500),
+        };
 
         return $this->download(
             $format,
             'contacts-'.now()->format('Y-m-d'),
-            ['Email', 'First name', 'Last name', 'Company', 'Tags', 'Audiences', 'Created at'],
-            $query,
+            ['Email', 'First name', 'Last name', 'Company', 'Tags', 'Audiences', 'Languages', 'Created at'],
+            $contacts,
             fn (Contact $contact): array => [
                 $contact->email,
                 $contact->first_name,
                 $contact->last_name,
                 $contact->company?->name,
                 $contact->tags->pluck('name')->implode(', '),
-                $contact->subscribers->pluck('audience.name')->unique()->implode(', '),
+                $contact->subscribers
+                    ->map(fn (Subscriber $subscriber): string => $subscriber->audience->name.' ('.$this->membershipStatus($subscriber).')')
+                    ->implode(', '),
+                $contact->subscribers->map(fn (Subscriber $subscriber): ?string => $subscriber->language?->value)->filter()->unique()->implode(', '),
                 $contact->created_at?->toIso8601String(),
             ],
         );
@@ -88,21 +110,32 @@ class ContactExportController extends Controller
             ->whereBelongsTo($audience)
             ->with('tags:id,name')
             ->when($filters['search'] !== '', function (Builder $query) use ($filters): void {
-                $search = '%'.mb_strtolower($filters['search']).'%';
-                $query->where(fn (Builder $subscriberQuery) => $subscriberQuery
-                    ->whereRaw('LOWER(email) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(first_name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(last_name) LIKE ?', [$search]));
+                $this->wherePersonContains($query, $filters['search']);
             })
-            ->when($filters['status'] !== 'all', fn (Builder $query) => $query->where('status', $filters['status']))
+            ->when($filters['status'] !== 'all', fn (Builder $query) => $query->withMembershipStatus($filters['status']))
             ->when($filters['source'] !== 'all', fn (Builder $query) => $query->where('source', $filters['source']))
-            ->when($filters['language'] !== 'all', fn (Builder $query) => $query->where('language', $filters['language']));
+            ->when($filters['language'] !== 'all', fn (Builder $query) => $query->where('language', $filters['language']))
+            ->when($filters['tag'] !== 'all', fn (Builder $query) => $query->whereHas(
+                'contact.tags',
+                fn (Builder $tagQuery) => $tagQuery->where('tags.uuid', $filters['tag']),
+            ));
+
+        // Custom fields are headed by their key, which is what an import maps
+        // back to the field, so an exported file can be imported again.
+        $attributeKeys = $audience->audienceAttributes()->orderBy('position')->get(['key'])
+            ->map(fn (AudienceAttribute $attribute): string => $attribute->key)
+            ->values()
+            ->all();
 
         return $this->download(
             $format,
             (Str::slug($audience->name) ?: 'audience').'-contacts-'.now()->format('Y-m-d'),
-            ['Email', 'First name', 'Last name', 'Status', 'Source', 'Language', 'Tags', 'Subscribed at'],
-            $query,
+            [
+                'Email', 'First name', 'Last name', 'Status', 'Source', 'Language', 'Tags', 'Subscribed at',
+                'Unsubscribed at', 'Consent text', 'Consented at', 'Consent IP',
+                ...$attributeKeys,
+            ],
+            $query->lazyById(500),
             fn (Subscriber $subscriber): array => [
                 $subscriber->email,
                 $subscriber->first_name,
@@ -112,6 +145,14 @@ class ContactExportController extends Controller
                 $subscriber->language?->value,
                 $subscriber->tags->pluck('name')->implode(', '),
                 $subscriber->subscribed_at?->toIso8601String(),
+                $subscriber->unsubscribed_at?->toIso8601String(),
+                $subscriber->consent_text,
+                $subscriber->consented_at?->toIso8601String(),
+                $subscriber->consent_ip,
+                ...array_map(
+                    fn (string $key): ?string => $this->attributeCell($subscriber->attribute_values[$key] ?? null),
+                    $attributeKeys,
+                ),
             ],
         );
     }
@@ -137,7 +178,7 @@ class ContactExportController extends Controller
             $format,
             (Str::slug($email->name) ?: 'campaign').'-recipients-'.now()->format('Y-m-d'),
             ['Email', 'First name', 'Last name', 'Status', 'Failure', 'Opens', 'Clicks', 'Sent at', 'Delivered at'],
-            $query,
+            $query->lazyById(500),
             fn (EmailDelivery $delivery): array => [
                 $delivery->email_address,
                 $delivery->first_name,
@@ -156,20 +197,20 @@ class ContactExportController extends Controller
      * @template TModel of Contact|Subscriber|EmailDelivery
      *
      * @param  list<string>  $headers
-     * @param  Builder<TModel>  $query
+     * @param  LazyCollection<int, TModel>  $models
      * @param  callable(TModel): list<string|null>  $row
      */
     private function download(
         string $format,
         string $filename,
         array $headers,
-        Builder $query,
+        LazyCollection $models,
         callable $row,
     ): StreamedResponse {
         abort_unless(in_array($format, ['csv', 'xls'], true), 404);
 
         if ($format === 'csv') {
-            return response()->streamDownload(function () use ($headers, $query, $row): void {
+            return response()->streamDownload(function () use ($headers, $models, $row): void {
                 $output = fopen('php://output', 'wb');
 
                 if ($output === false) {
@@ -179,7 +220,7 @@ class ContactExportController extends Controller
                 fwrite($output, "\xEF\xBB\xBF");
                 fputcsv($output, $this->sanitizeCsvRow($headers), ',', '"', '');
 
-                foreach ($query->lazyById(500) as $model) {
+                foreach ($models as $model) {
                     fputcsv($output, $this->sanitizeCsvRow($row($model)), ',', '"', '');
                 }
 
@@ -189,13 +230,13 @@ class ContactExportController extends Controller
             ]);
         }
 
-        return response()->streamDownload(function () use ($headers, $query, $row): void {
+        return response()->streamDownload(function () use ($headers, $models, $row): void {
             echo '<?xml version="1.0" encoding="UTF-8"?>';
             echo '<?mso-application progid="Excel.Sheet"?>';
             echo '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Contacts"><Table>';
             $this->writeSpreadsheetRow($headers);
 
-            foreach ($query->lazyById(500) as $model) {
+            foreach ($models as $model) {
                 $this->writeSpreadsheetRow($row($model));
             }
 
@@ -212,39 +253,70 @@ class ContactExportController extends Controller
 
         foreach ($cells as $cell) {
             echo '<Cell><Data ss:Type="String">'
-                .htmlspecialchars((string) $cell, ENT_QUOTES | ENT_XML1, 'UTF-8')
+                .$this->spreadsheetXmlText($cell)
                 .'</Data></Cell>';
         }
 
         echo '</Row>';
     }
 
-    /** @return array{search: string, company: string, audience: string} */
-    private function contactFilters(Request $request): array
+    /**
+     * The membership state shown in the contacts export's Audiences column.
+     */
+    private function membershipStatus(Subscriber $subscriber): string
     {
-        $company = $request->string('company')->toString();
-        $audience = $request->string('audience')->toString();
+        return $subscriber->isPendingConfirmation()
+            ? 'pending confirmation'
+            : $subscriber->status->value;
+    }
+
+    /**
+     * Attribute values are usually text, but the API can store numbers or
+     * nested JSON.
+     */
+    private function attributeCell(mixed $value): ?string
+    {
+        return match (true) {
+            $value === null => null,
+            is_scalar($value) => (string) $value,
+            default => (string) json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        };
+    }
+
+    /** @return array{search: string, company: string, audience: string, tag: string, language: string, sort: string} */
+    private function contactFilters(Request $request, Team $team): array
+    {
+        $company = $this->queryFilter($request, 'company');
+        $company = Str::isUuid($company) && ! $team->companies()->where('uuid', $company)->exists() ? '' : $company;
+        $audience = $this->queryFilter($request, 'audience');
+        $tag = $this->queryFilter($request, 'tag');
+        $sort = $this->queryFilter($request, 'sort');
 
         return [
-            'search' => $request->string('search')->trim()->toString(),
+            'search' => $this->queryFilter($request, 'search'),
             'company' => in_array($company, ['assigned', 'unassigned'], true) || Str::isUuid($company)
                 ? $company
                 : '',
             'audience' => Str::isUuid($audience) ? $audience : '',
+            'tag' => Str::isUuid($tag) ? Str::lower($tag) : '',
+            'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))->value ?? '',
+            'sort' => in_array($sort, ['oldest', 'name'], true) ? $sort : 'newest',
         ];
     }
 
-    /** @return array{search: string, status: string, source: string, language: string} */
+    /** @return array{search: string, status: string, source: string, language: string, tag: string} */
     private function subscriberFilters(Request $request): array
     {
-        $status = $request->string('status')->toString();
-        $source = $request->string('source')->toString();
+        $status = $this->queryFilter($request, 'status');
+        $source = $this->queryFilter($request, 'source');
+        $tag = $this->queryFilter($request, 'tag');
 
         return [
-            'search' => $request->string('search')->trim()->toString(),
-            'status' => SubscriberStatus::tryFrom($status)->value ?? 'all',
+            'search' => $this->queryFilter($request, 'search'),
+            'status' => in_array($status, Subscriber::MEMBERSHIP_STATUSES, true) ? $status : 'all',
             'source' => SubscriberSource::tryFrom($source)->value ?? 'all',
-            'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())->value ?? 'all',
+            'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))->value ?? 'all',
+            'tag' => Str::isUuid($tag) ? Str::lower($tag) : 'all',
         ];
     }
 }

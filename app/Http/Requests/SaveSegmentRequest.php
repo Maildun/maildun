@@ -32,10 +32,21 @@ class SaveSegmentRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
             'match_type' => ['required', Rule::enum(SegmentMatchType::class)],
-            'rules' => ['required', 'array', 'min:1', 'max:10'],
+            'rules' => ['required', 'array', 'list', 'min:1', 'max:10'],
             'rules.*.field' => ['required', Rule::enum(SegmentRuleField::class)],
             'rules.*.operator' => ['required', Rule::enum(SegmentRuleOperator::class)],
             'rules.*.value' => ['required', 'string', 'max:255'],
+            'rules.*.attribute' => ['nullable', 'string', 'max:255'],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function attributes(): array
+    {
+        return [
+            'rules.*.field' => 'rule field',
+            'rules.*.operator' => 'rule operator',
+            'rules.*.value' => 'rule value',
         ];
     }
 
@@ -47,7 +58,13 @@ class SaveSegmentRequest extends FormRequest
 
             abort_unless($audience instanceof Audience, 404);
 
-            foreach ($validateSegmentRules->handle($audience, $this->input('rules', [])) as $key => $message) {
+            $rules = $this->input('rules');
+
+            if (! is_array($rules) || $validator->errors()->has('rules')) {
+                return;
+            }
+
+            foreach ($validateSegmentRules->handle($audience, $rules) as $key => $message) {
                 $validator->errors()->add($key, $message);
             }
         }];

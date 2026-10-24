@@ -2,16 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Audiences\BuildSegmentRuleOptions;
 use App\Actions\Audiences\DeleteSegment;
+use App\Actions\Audiences\EnsureSegmentRulesCanChange;
 use App\Actions\Audiences\SyncSegmentSubscribers;
 use App\Enums\SubscriberLanguage;
 use App\Http\Requests\SaveSegmentRequest;
 use App\Models\Audience;
+use App\Models\Contact;
 use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -21,8 +25,12 @@ class SegmentController extends Controller
     public function store(SaveSegmentRequest $request, Team $currentTeam, Audience $audience, SyncSegmentSubscribers $syncSegmentSubscribers): RedirectResponse
     {
         Gate::authorize('create', [Segment::class, $audience]);
-        $segment = $audience->segments()->create($request->validated());
-        $syncSegmentSubscribers->handle($segment);
+        $segment = DB::transaction(function () use ($request, $audience, $syncSegmentSubscribers): Segment {
+            $segment = $audience->segments()->create($request->validated());
+            $syncSegmentSubscribers->handle($segment);
+
+            return $segment;
+        });
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Segment created.')]);
 
@@ -33,13 +41,14 @@ class SegmentController extends Controller
         ]);
     }
 
-    public function show(Team $currentTeam, Audience $audience, Segment $segment): Response
+    public function show(Team $currentTeam, Audience $audience, Segment $segment, BuildSegmentRuleOptions $buildSegmentRuleOptions): Response
     {
         Gate::authorize('view', $segment);
 
         $subscribers = $segment->subscribers()
             ->with(['subscribeForm:id,uuid,name,deleted_at', 'tags:id,uuid,name,color'])
             ->orderByDesc('subscribers.created_at')
+            ->orderByDesc('subscribers.id')
             ->paginate(20)
             ->through(fn (Subscriber $subscriber) => [
                 'uuid' => $subscriber->uuid,
@@ -61,6 +70,7 @@ class SegmentController extends Controller
                     'color' => $tag->color,
                 ])->all()),
                 'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
+                'pending_confirmation' => $subscriber->isPendingConfirmation() || $subscriber->isPendingResubscription(),
             ]);
 
         return Inertia::render('segments/show', [
@@ -75,22 +85,27 @@ class SegmentController extends Controller
                 'match_type' => $segment->match_type->value,
                 'rules' => $segment->rules,
                 'rules_synced_at' => $segment->rules_synced_at?->toISOString(),
+                // What a campaign to this segment would reach right now.
+                'sendable_count' => $segment->subscribers()->sendableFor($currentTeam)->count(),
             ],
             'subscribers' => $subscribers,
-            'forms' => $audience->subscribeForms()->withTrashed()->get(['uuid', 'name'])->map(fn ($form) => [
-                'uuid' => $form->uuid,
-                'name' => $form->name,
-            ]),
+            'segmentRuleOptions' => $buildSegmentRuleOptions->handle($audience),
             'languages' => SubscriberLanguage::options(),
+            'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'canManage' => Gate::allows('update', $segment),
+            'canManageSubscribers' => Gate::allows('update', $audience),
+            'canManageContacts' => Gate::allows('create', [Contact::class, $currentTeam]),
         ]);
     }
 
-    public function update(SaveSegmentRequest $request, Team $currentTeam, Audience $audience, Segment $segment, SyncSegmentSubscribers $syncSegmentSubscribers): RedirectResponse
+    public function update(SaveSegmentRequest $request, Team $currentTeam, Audience $audience, Segment $segment, SyncSegmentSubscribers $syncSegmentSubscribers, EnsureSegmentRulesCanChange $ensureSegmentRulesCanChange): RedirectResponse
     {
         Gate::authorize('update', $segment);
-        $segment->update($request->validated());
-        $syncSegmentSubscribers->handle($segment);
+        $ensureSegmentRulesCanChange->handle($segment, $request->validated());
+        DB::transaction(function () use ($request, $segment, $syncSegmentSubscribers): void {
+            $segment->update($request->validated());
+            $syncSegmentSubscribers->handle($segment);
+        });
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Segment updated.')]);
 

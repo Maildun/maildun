@@ -6,6 +6,7 @@ use App\Enums\ContactCompanyAssignmentMode;
 use App\Services\DiceBearAvatarGenerator;
 use Database\Factories\ContactFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -59,6 +60,12 @@ class Contact extends Model
         static::creating(function (Contact $contact): void {
             $contact->uuid ??= (string) Str::uuid();
         });
+
+        // Memberships would go with the database cascade, which skips the
+        // subscriber builder, so delete them here to keep their opt-outs.
+        static::deleting(function (Contact $contact): void {
+            $contact->subscribers()->delete();
+        });
     }
 
     /** @return BelongsTo<Team, $this> */
@@ -89,6 +96,19 @@ class Contact extends Model
     public function deliveries(): HasMany
     {
         return $this->hasMany(EmailDelivery::class);
+    }
+
+    /**
+     * Alphabetical by last name, then first name, ignoring case. Nameless
+     * contacts go last and the id breaks ties so pages never repeat or skip.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeOrderByName(Builder $query): void
+    {
+        $query
+            ->orderByRaw('contacts.last_name IS NULL, LOWER(contacts.last_name), contacts.first_name IS NULL, LOWER(contacts.first_name)')
+            ->orderBy('contacts.id');
     }
 
     /** @return Attribute<string, string> */

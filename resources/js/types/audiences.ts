@@ -1,4 +1,3 @@
-import type { EmailDeliveryStatus } from './emails';
 import type { TeamBrandTheme } from './teams';
 
 export type SubscriberStatus = 'subscribed' | 'unsubscribed';
@@ -49,14 +48,18 @@ export type SegmentRuleField =
     | 'source'
     | 'subscribe_form'
     | 'subscribed_at'
-    | 'language';
+    | 'language'
+    | 'tag'
+    | 'attribute';
 export type SegmentRuleOperator =
     | 'equals'
     | 'not_equals'
     | 'contains'
     | 'does_not_contain'
     | 'before'
-    | 'after';
+    | 'after'
+    | 'greater_than'
+    | 'less_than';
 
 export type PaginationLink = {
     url: string | null;
@@ -105,6 +108,7 @@ export type SubscriberIndexFilters = {
     status: string;
     source: string;
     language: string;
+    tag: string;
 };
 
 export type Audience = Pick<
@@ -165,6 +169,13 @@ export type SubscriberLanguageOption = {
     label: string;
 };
 
+export type SegmentRuleOptions = {
+    forms: { uuid: string; name: string; deleted: boolean }[];
+    sources: { value: string; label: string }[];
+    tags: { uuid: string; name: string }[];
+    attributes: { uuid: string; name: string; type: AudienceAttributeType }[];
+};
+
 export type AudienceSenderFallbacks = {
     from_name: string | null;
     from_address: string | null;
@@ -218,6 +229,7 @@ export type AudienceSubscriberStats = {
     total: AudienceSubscriberMetric;
     subscribed: AudienceSubscriberMetric;
     unsubscribed: AudienceSubscriberMetric;
+    pending: AudienceSubscriberMetric;
     new_this_week: AudienceSubscriberMetric;
     subscribe_rate: AudienceSubscriberMetric;
     series: AudienceSubscriberSeriesPoint[];
@@ -242,71 +254,15 @@ export type Subscriber = {
     source_form: { uuid: string; name: string } | null;
     tags: Tag[];
     subscribed_at: string | null;
-};
-
-export type SubscriberProfile = Subscriber & {
-    unsubscribed_at: string | null;
-    created_at: string | null;
-    consent_text: string | null;
-    consented_at: string | null;
-    consent_ip: string | null;
-};
-
-export type SubscriberAttributeValue = {
-    uuid: string;
-    name: string;
-    key: string;
-    type: AudienceAttributeType;
-    required: boolean;
-    value: string | number | null;
-};
-
-export type SubscriberEmailFilter =
-    'all' | 'opened' | 'clicked' | 'failed' | EmailDeliveryStatus;
-
-export type SubscriberShowFilters = {
-    tab: 'details' | 'emails' | 'automations';
-    status: SubscriberEmailFilter;
-};
-
-export type SubscriberEmailStats = {
-    received: number;
-    opened: number;
-    clicked: number;
-    bounced: number;
-    last_sent_at: string | null;
-    last_opened_at: string | null;
-    last_clicked_at: string | null;
-};
-
-export type SubscriberReceivedEmail = {
-    uuid: string;
-    campaign: { uuid: string | null; name: string; subject: string } | null;
-    status: EmailDeliveryStatus;
-    opens: number;
-    clicks: number;
-    failure_reason: string | null;
-    sent_at: string | null;
-    delivered_at: string | null;
-    last_opened_at: string | null;
-    last_clicked_at: string | null;
-};
-
-export type SubscriberAutomationRun = {
-    uuid: string;
-    name: string;
-    automation_uuid: string | null;
-    status: string;
-    started_at: string | null;
-    completed_at: string | null;
-    failed_at: string | null;
-    failure_reason: string | null;
+    pending_confirmation: boolean;
 };
 
 export type SegmentRule = {
     field: SegmentRuleField;
     operator: SegmentRuleOperator;
     value: string;
+    /** The custom field UUID, for `attribute` rules only. */
+    attribute?: string;
 };
 
 export type Segment = {
@@ -317,6 +273,8 @@ export type Segment = {
     rules: SegmentRule[];
     rules_synced_at?: string | null;
     subscribers_count?: number;
+    /** Members a campaign would reach: opted in and not suppressed. */
+    sendable_count?: number;
 };
 
 export type SubscribeFormSummary = {

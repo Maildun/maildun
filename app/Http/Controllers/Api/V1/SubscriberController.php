@@ -30,22 +30,22 @@ class SubscriberController extends Controller
 
     public function destroy(UnsubscribeSubscriberRequest $request, UnsubscribeViaApi $unsubscribe): JsonResponse
     {
-        $subscriber = $unsubscribe->handle(
+        $unsubscribe->handle(
             $request->audience(),
             $request->string('email')->value(),
         );
 
+        // The same body whether or not the address was ever a member, so the
+        // response never reveals audience membership.
         return response()->json([
             'data' => [
-                'id' => $subscriber?->uuid,
                 'email' => $request->string('email')->value(),
                 'status' => 'unsubscribed',
-                'unsubscribed_at' => $subscriber?->unsubscribed_at?->toISOString(),
             ],
         ]);
     }
 
-    /** @return array{id: string, email: string, first_name: string|null, last_name: string|null, language: string|null, status: string, subscribed_at: string|null} */
+    /** @return array{id: string, email: string, first_name: string|null, last_name: string|null, language: string|null, status: string, pending_confirmation: bool, subscribed_at: string|null} */
     private function subscriberPayload(Subscriber $subscriber): array
     {
         return [
@@ -55,6 +55,7 @@ class SubscriberController extends Controller
             'last_name' => $subscriber->last_name,
             'language' => $subscriber->language?->value,
             'status' => $subscriber->status->value,
+            'pending_confirmation' => $subscriber->isPendingConfirmation() || $subscriber->isPendingResubscription(),
             'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
         ];
     }

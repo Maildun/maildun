@@ -75,6 +75,7 @@ class PrepareEmailSendChunk implements ShouldQueue
         $sentAt = $email->send_started_at ?? now();
         $createdAt = now();
         $sendRunId = $email->sendRuns()->latest('id')->value('id');
+        $attributeKeys = RenderCampaignContent::attributeKeys($email->audience_id);
         $rows = $subscribers->map(fn (Subscriber $subscriber): array => [
             'uuid' => (string) Str::uuid(),
             'email_id' => $email->id,
@@ -84,7 +85,7 @@ class PrepareEmailSendChunk implements ShouldQueue
             'email_address' => $subscriber->email,
             'first_name' => $subscriber->first_name,
             'last_name' => $subscriber->last_name,
-            'merge_data' => json_encode($renderer->mergeData($subscriber, $sentAt), JSON_THROW_ON_ERROR),
+            'merge_data' => json_encode($renderer->mergeData($subscriber, $sentAt, $attributeKeys), JSON_THROW_ON_ERROR),
             'status' => EmailDeliveryStatus::Queued->value,
             'provider' => $transport->provider->value,
             'uses_team_email_integration' => true,

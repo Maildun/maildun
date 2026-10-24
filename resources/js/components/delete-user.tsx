@@ -16,7 +16,11 @@ import {
 import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Spinner } from '@/components/ui/spinner';
 
-export default function DeleteUser() {
+type Props = {
+    hasPassword: boolean;
+};
+
+export default function DeleteUser({ hasPassword }: Props) {
     const passwordInput = useRef<HTMLInputElement>(null);
 
     return (
@@ -51,8 +55,10 @@ export default function DeleteUser() {
                             Once your account is deleted, teams you own will
                             pass to their longest-standing admin or member, and
                             your personal team will be permanently removed along
-                            with its data. Please enter your password to confirm
-                            you would like to permanently delete your account.
+                            with its data.{' '}
+                            {hasPassword
+                                ? 'Please enter your password to confirm you would like to permanently delete your account.'
+                                : 'Your account does not have a password, so you may be asked to confirm with your Google account before it is deleted.'}
                         </DialogDescription>
 
                         <Form
@@ -66,31 +72,35 @@ export default function DeleteUser() {
                         >
                             {({ resetAndClearErrors, processing, errors }) => (
                                 <>
-                                    <Field
-                                        data-invalid={Boolean(errors.password)}
-                                    >
-                                        <FieldLabel
-                                            htmlFor="password"
-                                            className="sr-only"
-                                        >
-                                            Password
-                                        </FieldLabel>
-
-                                        <PasswordInput
-                                            id="password"
-                                            name="password"
-                                            ref={passwordInput}
-                                            placeholder="Password"
-                                            autoComplete="current-password"
-                                            aria-invalid={Boolean(
+                                    {hasPassword ? (
+                                        <Field
+                                            data-invalid={Boolean(
                                                 errors.password,
                                             )}
-                                        />
+                                        >
+                                            <FieldLabel
+                                                htmlFor="password"
+                                                className="sr-only"
+                                            >
+                                                Password
+                                            </FieldLabel>
 
-                                        <FieldError>
-                                            {errors.password}
-                                        </FieldError>
-                                    </Field>
+                                            <PasswordInput
+                                                id="password"
+                                                name="password"
+                                                ref={passwordInput}
+                                                placeholder="Password"
+                                                autoComplete="current-password"
+                                                aria-invalid={Boolean(
+                                                    errors.password,
+                                                )}
+                                            />
+
+                                            <FieldError>
+                                                {errors.password}
+                                            </FieldError>
+                                        </Field>
+                                    ) : null}
 
                                     <DialogFooter className="gap-2">
                                         <DialogClose

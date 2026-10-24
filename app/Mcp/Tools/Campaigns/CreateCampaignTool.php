@@ -10,6 +10,7 @@ use App\Models\Email;
 use App\Models\EmailTemplate;
 use App\Models\Team;
 use App\Rules\AuthorizedSenderAddress;
+use App\Services\EmailBuilderAgent;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Validation\Rule;
@@ -34,6 +35,7 @@ class CreateCampaignTool extends Tool
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
+        private EmailBuilderAgent $agent,
     ) {}
 
     public function handle(Request $request): ResponseFactory
@@ -54,7 +56,6 @@ class CreateCampaignTool extends Tool
             'track_clicks' => ['sometimes', 'boolean'],
             'track_opens' => ['sometimes', 'boolean'],
             'design' => ['nullable', 'array', 'required_array_keys:root'],
-            'design.root' => ['array'],
             'audience_uuid' => ['nullable', 'uuid', Rule::exists(Audience::class, 'uuid')->where('team_id', $team->id)],
             'segment_uuid' => ['nullable', 'uuid'],
         ]);
@@ -67,6 +68,13 @@ class CreateCampaignTool extends Tool
         ]);
 
         unset($attributes['audience_uuid'], $attributes['segment_uuid']);
+
+        if ($team->email_editor === EmailEditor::Builder && isset($attributes['design'])) {
+            $rendered = $this->agent->render($attributes['design']);
+            $attributes['design'] = $rendered['design'];
+            $attributes['html'] = $rendered['html'];
+            $attributes['plain_text'] ??= $rendered['text'];
+        }
 
         $campaign = $team->emails()->create([
             ...$attributes,

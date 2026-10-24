@@ -54,14 +54,6 @@ class TeamPolicy
     }
 
     /**
-     * Determine whether the user can add a member to the team.
-     */
-    public function addMember(User $user, Team $team): bool
-    {
-        return $user->hasTeamPermission($team, TeamPermission::AddMember);
-    }
-
-    /**
      * Determine whether the user can update a member's role in the team.
      */
     public function updateMember(User $user, Team $team): bool

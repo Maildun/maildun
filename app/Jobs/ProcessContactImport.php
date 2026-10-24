@@ -11,6 +11,7 @@ use App\Enums\ContactImportStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
+use App\Exceptions\ContactImportFailed;
 use App\Models\AudienceAttribute;
 use App\Models\Contact;
 use App\Models\ContactImport;
@@ -28,7 +29,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use RuntimeException;
 use Throwable;
 
 class ProcessContactImport implements ShouldQueue
@@ -67,9 +67,15 @@ class ProcessContactImport implements ShouldQueue
         ContactImportCsv $csv,
         ImportEmailReview $emailReview,
     ): void {
-        $contactImport = ContactImport::query()->with(['team', 'audience.audienceAttributes'])->find($this->contactImportId);
+        $contactImport = ContactImport::query()->with(['team', 'audience.audienceAttributes', 'uploadedBy:id,name'])->find($this->contactImportId);
 
         if ($contactImport === null || ! $contactImport->status->isRunning()) {
+            return;
+        }
+
+        if ($contactImport->team === null) {
+            $this->cancelForDeletedWorkspace($contactImport);
+
             return;
         }
 
@@ -80,32 +86,37 @@ class ProcessContactImport implements ShouldQueue
         $stream = Storage::disk($contactImport->disk)->readStream($contactImport->path);
 
         if (! is_resource($stream)) {
-            throw new RuntimeException('The uploaded CSV file could not be read.');
+            throw new ContactImportFailed(__('The uploaded CSV file could not be read.'));
         }
 
         $completed = false;
+        $stopped = false;
 
         try {
+            $csv->skipByteOrderMark($stream);
             $headers = $csv->readRow($stream, $contactImport->delimiter);
 
             if ($headers === false) {
-                throw new RuntimeException('The CSV is empty.');
+                throw new ContactImportFailed(__('The CSV is empty.'));
             }
 
-            $fields = $this->fieldIndexes($contactImport->column_map ?? $csv->suggestMapping(array_map(
-                fn (string $header, int $index): string => $index === 0 ? ltrim($header, "\xEF\xBB\xBF") : $header,
-                $headers,
-                array_keys($headers),
-            )));
+            $fields = $this->fieldIndexes($contactImport->column_map ?? $csv->suggestMapping(
+                array_map(fn (string $header): string => trim($header), $headers),
+            ));
 
             if (! array_key_exists('email', $fields)) {
-                throw new RuntimeException('The CSV must include an email column.');
+                throw new ContactImportFailed(__('The CSV must include an email column.'));
             }
 
             $this->resume($stream, $contactImport->file_offset);
             $deadline = microtime(true) + 30;
 
             for ($rows = 0; $rows < self::CHUNK_SIZE && microtime(true) < $deadline; $rows++) {
+                if (! $this->isStillRunning($contactImport)) {
+                    $stopped = true;
+                    break;
+                }
+
                 $row = $csv->readRow($stream, $contactImport->delimiter);
 
                 if ($row === false) {
@@ -116,7 +127,7 @@ class ProcessContactImport implements ShouldQueue
                 $offset = ftell($stream);
 
                 if ($offset === false) {
-                    throw new RuntimeException('The uploaded CSV position could not be recorded.');
+                    throw new ContactImportFailed(__('The uploaded CSV position could not be recorded.'));
                 }
 
                 DB::transaction(function () use ($contactImport, $row, $offset, $fields, $csv, $manageContact, $addContactToAudiences, $emailReview): void {
@@ -134,15 +145,15 @@ class ProcessContactImport implements ShouldQueue
             }
 
             if ($completed) {
-                $contactImport->update([
-                    'status' => ContactImportStatus::Completed,
-                    'total_rows' => $contactImport->processed_rows,
-                    'completed_at' => now(),
-                ]);
-                DB::table('contact_import_emails')->where('contact_import_id', $contactImport->id)->delete();
+                $completed = $this->markCompleted($contactImport);
+                $stopped = ! $completed;
             }
         } finally {
             fclose($stream);
+        }
+
+        if ($stopped) {
+            return;
         }
 
         if ($completed) {
@@ -167,11 +178,65 @@ class ProcessContactImport implements ShouldQueue
 
         $contactImport->update([
             'status' => ContactImportStatus::Failed,
-            'failure_message' => $exception instanceof RuntimeException
+            'failure_message' => $exception instanceof ContactImportFailed
                 ? $exception->getMessage()
-                : 'The import could not be completed.',
+                : __('The import could not be completed.'),
             'completed_at' => now(),
         ]);
+    }
+
+    /**
+     * The workspace was deleted after the import was queued. Stop the import the
+     * same way a dashboard cancel does, so its uploaded CSV and review rows go.
+     */
+    private function cancelForDeletedWorkspace(ContactImport $contactImport): void
+    {
+        $contactImport->update([
+            'status' => ContactImportStatus::Cancelled,
+            'completed_at' => now(),
+        ]);
+        DB::table('contact_import_emails')->where('contact_import_id', $contactImport->id)->delete();
+        Storage::disk($contactImport->disk)->delete($contactImport->path);
+    }
+
+    /**
+     * A cancel from the dashboard writes the status directly, so re-read it
+     * before every row instead of trusting the copy loaded with the chunk.
+     */
+    private function isStillRunning(ContactImport $contactImport): bool
+    {
+        $status = ContactImport::query()->whereKey($contactImport->id)->value('status');
+
+        return $status instanceof ContactImportStatus && $status->isRunning();
+    }
+
+    /**
+     * Complete the import only if nobody cancelled it meanwhile.
+     */
+    private function markCompleted(ContactImport $contactImport): bool
+    {
+        $completedAt = now();
+        $updated = ContactImport::query()
+            ->whereKey($contactImport->id)
+            ->whereIn('status', [ContactImportStatus::Pending, ContactImportStatus::Processing])
+            ->update([
+                'status' => ContactImportStatus::Completed,
+                'total_rows' => $contactImport->processed_rows,
+                'completed_at' => $completedAt,
+            ]);
+
+        if ($updated === 0) {
+            return false;
+        }
+
+        $contactImport->forceFill([
+            'status' => ContactImportStatus::Completed,
+            'total_rows' => $contactImport->processed_rows,
+            'completed_at' => $completedAt,
+        ])->syncOriginal();
+        DB::table('contact_import_emails')->where('contact_import_id', $contactImport->id)->delete();
+
+        return true;
     }
 
     /**
@@ -206,6 +271,10 @@ class ProcessContactImport implements ShouldQueue
 
         if ($error === null && $languageValue !== null && $language !== null && $this->wouldApplyUnavailableLanguage($contactImport, $email, $language)) {
             $error = $this->unavailableLanguageError($languageValue);
+        }
+
+        if ($languageValue === null && $contactImport->audience !== null) {
+            $language = $contactImport->language;
         }
 
         if ($error === null && $contactImport->audience !== null) {
@@ -347,6 +416,7 @@ class ProcessContactImport implements ShouldQueue
         $counts = $contactImport->review_counts ?? [];
         $counts[$issue->value] = ($counts[$issue->value] ?? 0) + 1;
         $contactImport->review_counts = $counts;
+        $this->recordIssue($contactImport, $email, $action, $issue, $detail);
         $flags = $contactImport->review_flags ?? [];
 
         if (count($flags) < self::MAX_ERRORS) {
@@ -359,6 +429,19 @@ class ProcessContactImport implements ShouldQueue
             ];
             $contactImport->review_flags = $flags;
         }
+    }
+
+    /**
+     * The consent record of an imported membership points back at the import
+     * whose consent attestation it relies on.
+     */
+    private function consentText(ContactImport $contactImport): string
+    {
+        return __('Marketing consent confirmed by :name when importing :file (import :uuid).', [
+            'name' => $contactImport->uploadedBy->name ?? __('a team member'),
+            'file' => $contactImport->original_name,
+            'uuid' => $contactImport->uuid,
+        ]);
     }
 
     private function unsupportedLanguageError(string $value): string
@@ -428,16 +511,28 @@ class ProcessContactImport implements ShouldQueue
             return [0, false, true];
         }
 
-        $createdMembership = $addContactToAudiences->handle($contact, $audience->newCollection([$audience]), $contactImport->consent_ip);
+        $createdMembership = $addContactToAudiences->handle(
+            $contact,
+            $audience->newCollection([$audience]),
+            $contactImport->consent_ip,
+            $this->consentText($contactImport),
+            $contactImport->consent_confirmed_at,
+        );
 
-        if (($attributes === [] && $language === null) || ($existing !== null && $createdMembership === 0 && ! $fillBlanks)) {
+        if (($attributes === [] && $language === null) || ($existing !== null && ! $fillBlanks)) {
             return [$createdMembership, false, false];
         }
 
         $subscriber = $audience->subscribers()->where('email', $contact->email)->first();
         $current = $subscriber->attribute_values ?? [];
-        $merged = [...$attributes, ...array_filter($current, fn (string|int|float $value): bool => $value !== '')];
-        $changes = $merged === $current ? [] : ['attribute_values' => $merged];
+        // Only blank values are filled. Stored values may be any JSON the API
+        // accepted, so test for blanks instead of assuming scalars.
+        $blanks = array_filter(
+            $attributes,
+            fn (string $value, int|string $key): bool => ($current[$key] ?? null) === null || $current[$key] === '',
+            ARRAY_FILTER_USE_BOTH,
+        );
+        $changes = $blanks === [] ? [] : ['attribute_values' => [...$current, ...$blanks]];
 
         // A new membership takes the CSV language over the audience default; an
         // existing one, even when resubscribed, only gains a language it was missing.
@@ -535,7 +630,7 @@ class ProcessContactImport implements ShouldQueue
 
         if ($metadata['seekable']) {
             if (fseek($stream, $offset) !== 0) {
-                throw new RuntimeException('The uploaded CSV file could not be resumed.');
+                throw new ContactImportFailed(__('The uploaded CSV file could not be resumed.'));
             }
 
             return;
@@ -547,7 +642,7 @@ class ProcessContactImport implements ShouldQueue
             $skipped = fread($stream, min($remainingBytes, 1024 * 1024));
 
             if ($skipped === false || $skipped === '') {
-                throw new RuntimeException('The uploaded CSV file could not be resumed.');
+                throw new ContactImportFailed(__('The uploaded CSV file could not be resumed.'));
             }
 
             $remainingBytes -= strlen($skipped);
@@ -568,11 +663,28 @@ class ProcessContactImport implements ShouldQueue
 
     private function addError(ContactImport $contactImport, ?string $email, string $message): void
     {
+        $this->recordIssue($contactImport, $email, 'failed', null, $message);
         $errors = $contactImport->errors ?? [];
 
         if (count($errors) < self::MAX_ERRORS) {
             $errors[] = ['row' => $contactImport->last_row_number + 1, 'email' => $email, 'message' => $message];
             $contactImport->errors = $errors;
         }
+    }
+
+    /**
+     * Keep every problem row for the downloadable report; the JSON columns on
+     * the import only hold the first MAX_ERRORS for the page.
+     */
+    private function recordIssue(ContactImport $contactImport, ?string $email, string $outcome, ?ContactImportIssue $issue, ?string $detail): void
+    {
+        DB::table('contact_import_issues')->insert([
+            'contact_import_id' => $contactImport->id,
+            'row_number' => $contactImport->last_row_number + 1,
+            'email' => $email === null ? null : mb_substr($email, 0, 255),
+            'outcome' => $outcome,
+            'issue' => $issue?->value,
+            'detail' => $detail,
+        ]);
     }
 }

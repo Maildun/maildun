@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Settings\GoogleAccountController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Controllers\Settings\SystemCheckController;
@@ -36,6 +37,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::put('settings/password', [SecurityController::class, 'update'])
         ->middleware('throttle:6,1')
         ->name('user-password.update');
+
+    Route::get('settings/security/google/connect', [GoogleAccountController::class, 'connect'])
+        ->middleware([RequirePassword::class, 'throttle:google'])
+        ->name('google.connect');
+    Route::delete('settings/security/google', [GoogleAccountController::class, 'destroy'])
+        ->middleware([RequirePassword::class, 'throttle:6,1'])
+        ->name('google.disconnect');
 
     Route::inertia('settings/appearance', 'settings/appearance')->name('appearance.edit');
 

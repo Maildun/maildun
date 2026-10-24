@@ -113,7 +113,7 @@ export default function ContactImportCreate({
                 <SettingsPanel
                     variant="inset"
                     title="Choose a file"
-                    description="Comma, semicolon, tab and pipe separated files are detected automatically. Up to 10 MB."
+                    description="Comma, semicolon, tab and pipe separated files are detected automatically, and you can change the delimiter before importing. Up to 10 MB."
                 >
                     <FieldGroup className="gap-5 p-6 sm:p-7">
                         <Field data-invalid={Boolean(form.errors.file)}>

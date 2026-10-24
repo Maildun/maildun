@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * @property int $id
@@ -31,16 +32,36 @@ class AudienceAttribute extends Model
     use HasFactory;
 
     /**
-     * Subscriber columns and other built-in keys that custom fields cannot reuse.
+     * Merge tags every campaign and automation email fills in itself. A custom
+     * field with one of these keys would never be shown.
+     *
+     * @var list<string>
+     */
+    public const array BUILT_IN_MERGE_TAGS = [
+        'name',
+        'first_name',
+        'last_name',
+        'email',
+        'language',
+        'language_name',
+        'day',
+        'day_name',
+        'month',
+        'month_name',
+        'year',
+        'unsubscribe_url',
+        'web_view_url',
+        'subscribe_url',
+    ];
+
+    /**
+     * Subscriber columns, built-in merge tags and other keys that custom
+     * fields cannot reuse.
      *
      * @var list<string>
      */
     public const array RESERVED_KEYS = [
-        'email',
-        'first_name',
-        'last_name',
-        'language',
-        'language_name',
+        ...self::BUILT_IN_MERGE_TAGS,
         'status',
         'source',
         'tags',
@@ -49,7 +70,6 @@ class AudienceAttribute extends Model
         'consent',
         'uuid',
         'id',
-        'name',
     ];
 
     protected $attributes = [
@@ -85,6 +105,44 @@ class AudienceAttribute extends Model
         }
 
         return $key;
+    }
+
+    /**
+     * Rewrite submitted Date field values as Y-m-d, the format imports store,
+     * so every reader can parse them. Values that are not a date are left for
+     * validation to reject.
+     *
+     * @param  iterable<AudienceAttribute>  $attributes
+     */
+    public static function normalizeDateInput(mixed $values, iterable $attributes): mixed
+    {
+        if (! is_array($values)) {
+            return $values;
+        }
+
+        foreach ($attributes as $attribute) {
+            $value = $values[$attribute->key] ?? null;
+
+            if ($attribute->type !== AudienceAttributeType::Date || ! is_string($value) || trim($value) === '') {
+                continue;
+            }
+
+            $parts = date_parse($value);
+
+            if (strtotime($value) === false
+                || ! is_int($parts['year']) || ! is_int($parts['month']) || ! is_int($parts['day'])
+                || ! checkdate($parts['month'], $parts['day'], $parts['year'])) {
+                continue;
+            }
+
+            try {
+                $values[$attribute->key] = Carbon::parse($value)->toDateString();
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        return $values;
     }
 
     /** @return BelongsTo<Audience, $this> */

@@ -9,15 +9,19 @@ use App\Events\SubscriberLifecycleOccurred;
 use App\Mail\AutomationEmail;
 use App\Mail\CampaignEmail;
 use App\Models\Audience;
+use App\Models\AudienceOptOut;
 use App\Models\Automation;
 use App\Models\Email;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
+use App\Models\TeamApiKey;
 use App\Models\TeamEmailIntegration;
 use App\Models\TransactionalEmail;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 function unsubscribeDelivery(array $audienceAttributes = []): EmailDelivery
@@ -35,6 +39,7 @@ function unsubscribeDelivery(array $audienceAttributes = []): EmailDelivery
 test('a test unsubscribe link explains that nobody is opted out', function () {
     $this->get(route('public.unsubscribe.test'))
         ->assertOk()
+        ->assertHeader('X-Robots-Tag', 'noindex, nofollow')
         ->assertSee('This is a test email', false)
         ->assertSee('does not unsubscribe anyone', false)
         ->assertSee('Powered by', false);
@@ -133,6 +138,31 @@ test('a one click request from a mail provider succeeds without a session', func
     )->assertNoContent();
 
     expect($delivery->subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+});
+
+test('one click requests pass csrf protection without a token', function () {
+    // The framework skips CSRF checks under unit tests, which would hide a
+    // missing unsubscribe/* exemption from every other one-click test here.
+    $this->app->bind(PreventRequestForgery::class, fn ($app) => new class($app, $app['encrypter']) extends PreventRequestForgery
+    {
+        protected function runningUnitTests(): bool
+        {
+            return false;
+        }
+    });
+
+    $delivery = unsubscribeDelivery();
+    $subscriber = Subscriber::factory()->for(Audience::factory()->create())->create();
+
+    $this->post(route('logout'))->assertStatus(419);
+
+    $this->post(URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]), ['List-Unsubscribe' => 'One-Click'])
+        ->assertNoContent();
+    $this->post(URL::signedRoute('public.unsubscribe.subscriber.store', ['subscriber' => $subscriber]), ['List-Unsubscribe' => 'One-Click'])
+        ->assertNoContent();
+
+    expect($delivery->subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed)
+        ->and($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
 });
 
 test('unsubscribing twice is not an error', function () {
@@ -349,6 +379,205 @@ test('deleted campaigns retain their signed unsubscribe confirmation and landing
     $this->post($store, [], ['X-Inertia' => 'true'])
         ->assertStatus(409)
         ->assertHeader('X-Inertia-Location', 'https://example.com/unsubscribed');
+
+    expect($delivery->subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+});
+
+/**
+ * @return array{0: Subscriber, 1: string}
+ */
+function pendingResubscriptionWithLink(): array
+{
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingResubscription()->create();
+
+    return [$subscriber, URL::signedRoute('public.subscribe.confirm', [
+        'subscriber' => $subscriber,
+        'resubscribe' => $subscriber->resubscribe_requested_at->getTimestamp(),
+    ])];
+}
+
+test('a one click unsubscribe while a re-signup is pending cancels it and voids the confirmation link', function () {
+    [$subscriber, $confirmationUrl] = pendingResubscriptionWithLink();
+    $unsubscribedAt = $subscriber->unsubscribed_at;
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->post(URL::signedRoute('public.unsubscribe.subscriber.store', ['subscriber' => $subscriber]))->assertNoContent();
+    $this->post($confirmationUrl);
+
+    $subscriber->refresh();
+
+    expect($subscriber->status)->toBe(SubscriberStatus::Unsubscribed)
+        ->and($subscriber->resubscribe_requested_at)->toBeNull()
+        ->and($subscriber->unsubscribed_at?->equalTo($unsubscribedAt))->toBeTrue();
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('an api unsubscribe while a re-signup is pending cancels it and voids the confirmation link', function () {
+    [$subscriber, $confirmationUrl] = pendingResubscriptionWithLink();
+    $unsubscribedAt = $subscriber->unsubscribed_at;
+    $issued = TeamApiKey::issue($subscriber->audience->team, 'Production');
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->withToken($issued['token'])
+        ->deleteJson(route('api.v1.audiences.subscribers.destroy', $subscriber->audience->uuid), ['email' => $subscriber->email])
+        ->assertOk();
+    $this->post($confirmationUrl);
+
+    $subscriber->refresh();
+
+    expect($subscriber->status)->toBe(SubscriberStatus::Unsubscribed)
+        ->and($subscriber->resubscribe_requested_at)->toBeNull()
+        ->and($subscriber->unsubscribed_at?->equalTo($unsubscribedAt))->toBeTrue();
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('an older campaign unsubscribe link opts out the membership of a person who was removed and added back', function () {
+    $delivery = unsubscribeDelivery();
+    $audience = $delivery->email->audience;
+    $address = $delivery->email_address;
+    $delivery->subscriber->delete();
+    $readded = Subscriber::factory()->for($audience)->create(['email' => $address]);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->get(URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]))
+        ->assertInertia(fn (Assert $page) => $page->where('unsubscribed', false));
+    $this->post(URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]))->assertNoContent();
+
+    expect($delivery->fresh()->subscriber_id)->toBeNull()
+        ->and($readded->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+    Event::assertDispatched(
+        SubscriberLifecycleOccurred::class,
+        fn (SubscriberLifecycleOccurred $event): bool => $event->subscriber->is($readded),
+    );
+});
+
+test('an unsubscribe link for a removed member does not touch the same address in another audience', function () {
+    $delivery = unsubscribeDelivery();
+    $address = $delivery->email_address;
+    $delivery->subscriber->delete();
+    $elsewhere = Subscriber::factory()->for(Audience::factory()->for($delivery->email->team))->create(['email' => $address]);
+
+    $this->get(URL::signedRoute('public.unsubscribe.show', ['delivery' => $delivery]))
+        ->assertInertia(fn (Assert $page) => $page->where('unsubscribed', true));
+    $this->post(URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]))->assertNoContent();
+
+    expect($elsewhere->fresh()->status)->toBe(SubscriberStatus::Subscribed);
+});
+
+/**
+ * Send one automation email and return its recipient with the confirmation
+ * page and one-click links it carried.
+ *
+ * @return array{0: Subscriber, 1: string, 2: string}
+ */
+function sentAutomationUnsubscribeLinks(): array
+{
+    Mail::fake();
+
+    $automation = Automation::factory()->active()->create();
+    TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create();
+    $subscriber = Subscriber::factory()
+        ->for(Audience::factory()->for($automation->team)->create(['name' => 'Onboarding']))
+        ->create();
+    $run = $automation->runs()->create([
+        'subscriber_id' => $subscriber->id,
+        'graph' => [
+            'nodes' => [
+                ['id' => 'trigger', 'type' => 'trigger', 'data' => ['kind' => 'subscribed']],
+                ['id' => 'send', 'type' => 'action', 'data' => [
+                    'kind' => AutomationAction::SendEmail->value,
+                    'transactional_email_uuid' => $email->uuid,
+                ]],
+            ],
+            'edges' => [['source' => 'trigger', 'target' => 'send']],
+        ],
+        'current_node_id' => 'send',
+    ]);
+
+    app(AdvanceAutomationRun::class)->handle($run);
+    Mail::assertSent(AutomationEmail::class);
+
+    return [$subscriber, AutomationEmail::unsubscribeUrl($subscriber), AutomationEmail::oneClickUrl($subscriber)];
+}
+
+test('an older automation unsubscribe link opts out the membership of a person who was removed and added back', function () {
+    [$subscriber, $show, $store] = sentAutomationUnsubscribeLinks();
+    $subscriber->delete();
+    $readded = Subscriber::factory()->for($subscriber->audience)->create(['email' => $subscriber->email]);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->get($show)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('unsubscribe/show')
+            ->where('email', $subscriber->email)
+            ->where('audience', 'Onboarding')
+            ->where('unsubscribed', false));
+    $this->post($store)->assertNoContent();
+
+    expect($readded->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+    Event::assertDispatched(
+        SubscriberLifecycleOccurred::class,
+        fn (SubscriberLifecycleOccurred $event): bool => $event->subscriber->is($readded),
+    );
+});
+
+test('an automation unsubscribe link for a removed member whose opt-out was kept shows the unsubscribed page', function () {
+    [$subscriber, $show, $store] = sentAutomationUnsubscribeLinks();
+    $this->post($store)->assertNoContent();
+    $subscriber->fresh()->delete();
+
+    $this->get($show)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('unsubscribe/show')
+            ->where('audience', 'Onboarding')
+            ->where('unsubscribed', true));
+    $this->post($store)->assertNoContent();
+
+    expect(AudienceOptOut::existsFor($subscriber->audience_id, $subscriber->email))->toBeTrue();
+});
+
+test('an automation unsubscribe link for a removed member does not touch the same address in another audience', function () {
+    [$subscriber, $show, $store] = sentAutomationUnsubscribeLinks();
+    $subscriber->delete();
+    $elsewhere = Subscriber::factory()
+        ->for(Audience::factory()->for($subscriber->audience->team))
+        ->create(['email' => $subscriber->email]);
+
+    $this->get($show)->assertInertia(fn (Assert $page) => $page->where('unsubscribed', true));
+    $this->post($store)->assertNoContent();
+
+    expect($elsewhere->fresh()->status)->toBe(SubscriberStatus::Subscribed);
+});
+
+test('an automation unsubscribe link for a subscriber that never received automation mail is not found', function () {
+    $this->get(URL::signedRoute('public.unsubscribe.subscriber.show', ['subscriber' => (string) Str::uuid()]))
+        ->assertNotFound();
+});
+
+test('automation links sent before deliveries kept their recipient still find a person who was removed and added back', function () {
+    [$subscriber, $show, $store] = sentAutomationUnsubscribeLinks();
+    $migration = require base_path('database/migrations/2026_10_21_035251_add_recipient_to_automation_email_deliveries_table.php');
+    $migration->down();
+    $migration->up();
+    $subscriber->delete();
+    $readded = Subscriber::factory()->for($subscriber->audience)->create(['email' => $subscriber->email]);
+
+    $this->get($show)->assertInertia(fn (Assert $page) => $page->where('unsubscribed', false));
+    $this->post($store)->assertNoContent();
+
+    expect($readded->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+});
+
+test('an unsubscribe link still records the opt-out after the workspace is deleted', function () {
+    $delivery = unsubscribeDelivery();
+    $delivery->email->team->delete();
+
+    $this->post(URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]))
+        ->assertNoContent();
 
     expect($delivery->subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
 });

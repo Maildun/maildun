@@ -142,12 +142,17 @@ return [
     |
     | These settings configure Fortify's passkey (WebAuthn) support.
     |
+    | The user handle secret falls back to APP_KEY when the variable is empty
+    | as well as when it is absent: env() only applies its default to a
+    | missing variable, and the empty line .env.example ships would otherwise
+    | key every user handle with an empty string.
+    |
     */
 
     'passkeys' => [
         'relying_party_id' => parse_url(config('app.url'), PHP_URL_HOST),
         'allowed_origins' => [config('app.url')],
-        'user_handle_secret' => env('PASSKEYS_USER_HANDLE_SECRET', config('app.key')),
+        'user_handle_secret' => env('PASSKEYS_USER_HANDLE_SECRET') ?: config('app.key'),
         'timeout' => 60000,
     ],
 

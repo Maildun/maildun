@@ -483,17 +483,19 @@ export default function TeamMembers({
                                 />
                                 Send reset email
                             </Button>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="icon"
-                                aria-label="Generate new password"
-                                title="Generate new password"
-                                data-test="member-generate-password-button"
-                                onClick={confirmGenerateMemberPassword}
-                            >
-                                <HugeiconsIcon icon={ResetPasswordIcon} />
-                            </Button>
+                            {memberToResetPassword?.can_generate_password ? (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    aria-label="Generate new password"
+                                    title="Generate new password"
+                                    data-test="member-generate-password-button"
+                                    onClick={confirmGenerateMemberPassword}
+                                >
+                                    <HugeiconsIcon icon={ResetPasswordIcon} />
+                                </Button>
+                            ) : null}
                         </ButtonGroup>
                     </DialogFooter>
                 </DialogContent>

@@ -1,5 +1,7 @@
 import {
     Add01Icon,
+    ArrowDown01Icon,
+    ArrowUp01Icon,
     Delete02Icon,
     Edit03Icon,
     LeftToRightListBulletIcon,
@@ -74,6 +76,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { toast } from '@/components/ui/toast';
 import {
     Tooltip,
     TooltipContent,
@@ -83,6 +86,7 @@ import AudienceSettingsLayout from '@/layouts/audiences/settings-layout';
 import { update as updateAudience } from '@/routes/audiences';
 import {
     destroy as destroyAttribute,
+    reorder as reorderAttributes,
     store as storeAttribute,
     update as updateAttribute,
 } from '@/routes/audiences/attributes';
@@ -132,6 +136,27 @@ export default function AudienceAttributeSettings({
     const openEditAttribute = (attribute: AudienceAttribute) => {
         setAttributeToEdit(attribute);
         setAttributeOpen(true);
+    };
+
+    const moveAttribute = (index: number, offset: -1 | 1) => {
+        const order = attributes.map(({ uuid }) => uuid);
+        const target = index + offset;
+
+        [order[index], order[target]] = [order[target], order[index]];
+
+        router.patch(
+            reorderAttributes.url(routeArgs),
+            { attributes: order },
+            {
+                preserveScroll: true,
+                onError: (errors) =>
+                    toast.add({
+                        type: 'error',
+                        title: 'Order not saved.',
+                        description: Object.values(errors)[0],
+                    }),
+            },
+        );
     };
 
     return (
@@ -210,7 +235,7 @@ export default function AudienceAttributeSettings({
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {attributes.map((attribute) => (
+                                    {attributes.map((attribute, index) => (
                                         <TableRow
                                             key={attribute.uuid}
                                             data-test="attribute-row"
@@ -235,6 +260,48 @@ export default function AudienceAttributeSettings({
                                             </TableCell>
                                             <TableCell>
                                                 <div className="flex justify-end gap-1">
+                                                    <Button
+                                                        type="button"
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        data-test="move-attribute-up"
+                                                        aria-label={`Move ${attribute.name} up`}
+                                                        disabled={index === 0}
+                                                        onClick={() =>
+                                                            moveAttribute(
+                                                                index,
+                                                                -1,
+                                                            )
+                                                        }
+                                                    >
+                                                        <HugeiconsIcon
+                                                            icon={ArrowUp01Icon}
+                                                        />
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        size="icon"
+                                                        variant="ghost"
+                                                        data-test="move-attribute-down"
+                                                        aria-label={`Move ${attribute.name} down`}
+                                                        disabled={
+                                                            index ===
+                                                            attributes.length -
+                                                                1
+                                                        }
+                                                        onClick={() =>
+                                                            moveAttribute(
+                                                                index,
+                                                                1,
+                                                            )
+                                                        }
+                                                    >
+                                                        <HugeiconsIcon
+                                                            icon={
+                                                                ArrowDown01Icon
+                                                            }
+                                                        />
+                                                    </Button>
                                                     <Tooltip>
                                                         <TooltipTrigger
                                                             render={

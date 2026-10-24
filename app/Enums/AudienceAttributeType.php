@@ -18,6 +18,33 @@ enum AudienceAttributeType: string
     }
 
     /**
+     * The operators a segment rule on a field of this type accepts.
+     *
+     * @return list<SegmentRuleOperator>
+     */
+    public function segmentOperators(): array
+    {
+        return match ($this) {
+            self::Text => [
+                SegmentRuleOperator::Equals,
+                SegmentRuleOperator::NotEquals,
+                SegmentRuleOperator::Contains,
+                SegmentRuleOperator::DoesNotContain,
+            ],
+            self::Number => [
+                SegmentRuleOperator::Equals,
+                SegmentRuleOperator::NotEquals,
+                SegmentRuleOperator::GreaterThan,
+                SegmentRuleOperator::LessThan,
+            ],
+            self::Date => [
+                SegmentRuleOperator::Before,
+                SegmentRuleOperator::After,
+            ],
+        };
+    }
+
+    /**
      * @return list<array{value: string, label: string}>
      */
     public static function options(): array

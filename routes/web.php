@@ -15,6 +15,7 @@ use App\Http\Controllers\ContactController;
 use App\Http\Controllers\ContactExportController;
 use App\Http\Controllers\ContactImportController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DesignAssistantController;
 use App\Http\Controllers\EditorMediaController;
 use App\Http\Controllers\EmailAttachmentController;
 use App\Http\Controllers\EmailController;
@@ -23,15 +24,18 @@ use App\Http\Controllers\EmailLinkCheckController;
 use App\Http\Controllers\EmailTemplateController;
 use App\Http\Controllers\EmailTrackingController;
 use App\Http\Controllers\EmailWebViewController;
+use App\Http\Controllers\GoogleAuthController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\InstallationController;
 use App\Http\Controllers\ListHygieneController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MediaSettingsController;
+use App\Http\Controllers\PreheaderController;
 use App\Http\Controllers\PublicSubscribeFormController;
 use App\Http\Controllers\SavedSectionController;
 use App\Http\Controllers\SegmentController;
 use App\Http\Controllers\SubscribeFormController;
+use App\Http\Controllers\SubscriberAttributeController;
 use App\Http\Controllers\SubscriberController;
 use App\Http\Controllers\SubscriptionConfirmationController;
 use App\Http\Controllers\Teams\TeamInvitationController;
@@ -90,14 +94,33 @@ Route::get('avatars/{style}/{seed}.svg', AvatarController::class)
     ])
     ->name('avatars.show');
 
+// "Continue with Google". Registered even when GOOGLE_CLIENT_ID is empty so
+// Wayfinder can generate their helpers; the controllers answer 404 instead.
+// The callback carries no guest middleware because connecting an account and
+// confirming a password finish there too.
+Route::get('auth/google/redirect', [GoogleAuthController::class, 'redirect'])
+    ->middleware(['guest:web', 'throttle:google'])
+    ->name('google.redirect');
+Route::get('auth/google/callback', [GoogleAuthController::class, 'callback'])
+    ->middleware('throttle:google')
+    ->name('google.callback');
+Route::get('user/confirm-password/google', [GoogleAuthController::class, 'confirm'])
+    ->middleware(['auth', 'throttle:google'])
+    ->name('google.confirm');
+
 Route::get('forms/{subscribeForm}', [PublicSubscribeFormController::class, 'show'])
     ->name('public.subscribe_forms.show');
 Route::post('forms/{subscribeForm}/subscribe', [PublicSubscribeFormController::class, 'store'])
     ->middleware('throttle:public-subscribe')
     ->name('public.subscribe_forms.store');
-Route::get('confirm/{subscriber}', [SubscriptionConfirmationController::class, 'confirm'])
+Route::get('confirm/{subscriber}', [SubscriptionConfirmationController::class, 'show'])
     ->middleware(['inbox-signed', 'throttle:10,1'])
     ->name('public.subscribe.confirm');
+// The page's Confirm button posts to the same signed URL. confirm/* is CSRF
+// exempt in bootstrap/app.php, like unsubscribe/*: the signature guards it.
+Route::post('confirm/{subscriber}', [SubscriptionConfirmationController::class, 'store'])
+    ->middleware(['inbox-signed', 'throttle:10,1'])
+    ->name('public.subscribe.confirm.store');
 Route::get('sender-verifications/{teamSender}', TeamSenderVerificationController::class)
     ->whereUuid('teamSender')
     ->middleware(['signed', 'throttle:10,1'])
@@ -124,9 +147,11 @@ Route::post('unsubscribe/{delivery}', [UnsubscribeController::class, 'store'])
 // routes above. unsubscribe/* is already CSRF exempt in bootstrap/app.php.
 Route::get('unsubscribe/s/{subscriber}', [UnsubscribeController::class, 'showForSubscriber'])
     ->middleware('inbox-signed')
+    ->whereUuid('subscriber')
     ->name('public.unsubscribe.subscriber.show');
 Route::post('unsubscribe/s/{subscriber}', [UnsubscribeController::class, 'storeForSubscriber'])
     ->middleware(['inbox-signed', 'throttle:public-unsubscribe'])
+    ->whereUuid('subscriber')
     ->name('public.unsubscribe.subscriber.store');
 
 // The hosted copy behind {{ web_view_url }}. Campaign deliveries take one
@@ -162,6 +187,7 @@ Route::prefix('{current_team}')
 
             Route::get('audiences/{audience}/exports/{format}', [ContactExportController::class, 'audience'])
                 ->whereIn('format', ['csv', 'xls'])
+                ->middleware('throttle:10,1')
                 ->name('audiences.exports.show');
             Route::resource('audiences', AudienceController::class)
                 ->only(['index', 'store', 'show', 'update', 'destroy']);
@@ -178,6 +204,9 @@ Route::prefix('{current_team}')
             Route::delete('contacts/imports/{contactImport}', [ContactImportController::class, 'destroy'])
                 ->whereUuid('contactImport')
                 ->name('contacts.imports.destroy');
+            Route::put('contacts/imports/{contactImport}/delimiter', [ContactImportController::class, 'delimiter'])
+                ->whereUuid('contactImport')
+                ->name('contacts.imports.delimiter');
             Route::post('contacts/imports/{contactImport}/start', [ContactImportController::class, 'start'])
                 ->whereUuid('contactImport')
                 ->name('contacts.imports.start');
@@ -192,9 +221,16 @@ Route::prefix('{current_team}')
                 ->name('contacts.imports.report');
             Route::get('contacts/exports/{format}', [ContactExportController::class, 'contacts'])
                 ->whereIn('format', ['csv', 'xls'])
+                ->middleware('throttle:10,1')
                 ->name('contacts.exports.show');
             Route::get('contacts/lookup', [ContactController::class, 'lookup'])
                 ->name('contacts.lookup');
+            Route::patch('contacts/bulk-unsubscribe', [ContactController::class, 'bulkUnsubscribe'])
+                ->name('contacts.bulk-unsubscribe');
+            Route::patch('contacts/bulk-tags', [ContactController::class, 'bulkTags'])
+                ->name('contacts.bulk-tags');
+            Route::delete('contacts/bulk-destroy', [ContactController::class, 'bulkDestroy'])
+                ->name('contacts.bulk-destroy');
             Route::resource('contacts', ContactController::class)
                 ->only(['index', 'store', 'show', 'update', 'destroy']);
             Route::post('contacts/{contact}/audiences', [ContactAudienceController::class, 'store'])
@@ -225,16 +261,24 @@ Route::prefix('{current_team}')
             Route::get('audiences/{audience}/settings/danger', [AudienceSettingsController::class, 'danger'])
                 ->name('audiences.settings.danger');
 
+            Route::patch('audiences/{audience}/attributes/order', [AudienceAttributeController::class, 'reorder'])
+                ->name('audiences.attributes.reorder');
             Route::resource('audiences.attributes', AudienceAttributeController::class)
                 ->only(['store', 'update', 'destroy'])
                 ->parameters(['attributes' => 'audience_attribute']);
 
             Route::patch('audiences/{audience}/subscribers/bulk-unsubscribe', [SubscriberController::class, 'bulkUnsubscribe'])
                 ->name('audiences.subscribers.bulk-unsubscribe');
+            Route::patch('audiences/{audience}/subscribers/bulk-language', [SubscriberController::class, 'bulkLanguage'])
+                ->name('audiences.subscribers.bulk-language');
+            Route::patch('audiences/{audience}/subscribers/bulk-tags', [SubscriberController::class, 'bulkTags'])
+                ->name('audiences.subscribers.bulk-tags');
             Route::delete('audiences/{audience}/subscribers/bulk-destroy', [SubscriberController::class, 'bulkDestroy'])
                 ->name('audiences.subscribers.bulk-destroy');
             Route::resource('audiences.subscribers', SubscriberController::class)
                 ->only(['show', 'store', 'update', 'destroy']);
+            Route::patch('audiences/{audience}/subscribers/{subscriber}/attributes', [SubscriberAttributeController::class, 'update'])
+                ->name('audiences.subscribers.attributes.update');
             Route::patch('audiences/{audience}/subscribers/{subscriber}/unsubscribe', [SubscriberController::class, 'unsubscribe'])
                 ->name('audiences.subscribers.unsubscribe');
             Route::patch('audiences/{audience}/subscribers/{subscriber}/resubscribe', [SubscriberController::class, 'resubscribe'])
@@ -271,6 +315,12 @@ Route::prefix('{current_team}')
                 ->name('emails.check-links');
             Route::get('emails/{email}/compose-preview', [EmailController::class, 'composePreview'])
                 ->name('emails.compose-preview');
+            Route::post('emails/{email}/design-assistant', [DesignAssistantController::class, 'campaign'])
+                ->middleware('throttle:20,1')
+                ->name('emails.design-assistant');
+            Route::post('emails/{email}/preheader', [PreheaderController::class, 'campaign'])
+                ->middleware('throttle:20,1')
+                ->name('emails.preheader');
             Route::get('emails/{email}/preview-and-send', [EmailController::class, 'previewAndSend'])
                 ->name('emails.preview-and-send');
             Route::post('emails/{email}/attachments', [EmailAttachmentController::class, 'store'])
@@ -332,6 +382,12 @@ Route::prefix('{current_team}')
             Route::post('transactional-emails/{transactionalEmail}/test', [TransactionalEmailController::class, 'sendTest'])
                 ->middleware('throttle:6,1')
                 ->name('transactional_emails.test');
+            Route::post('transactional-emails/{transactionalEmail}/design-assistant', [DesignAssistantController::class, 'transactional'])
+                ->middleware('throttle:20,1')
+                ->name('transactional_emails.design-assistant');
+            Route::post('transactional-emails/{transactionalEmail}/preheader', [PreheaderController::class, 'transactional'])
+                ->middleware('throttle:20,1')
+                ->name('transactional_emails.preheader');
 
             Route::get('media/settings', [MediaSettingsController::class, 'edit'])
                 ->name('media.settings.edit');
@@ -361,6 +417,12 @@ Route::prefix('{current_team}')
                 ->name('email_templates.update');
             Route::delete('email-templates/{emailTemplate}', [EmailTemplateController::class, 'destroy'])
                 ->name('email_templates.destroy');
+            Route::post('email-templates/{emailTemplate}/design-assistant', [DesignAssistantController::class, 'template'])
+                ->middleware('throttle:20,1')
+                ->name('email_templates.design-assistant');
+            Route::post('email-templates/{emailTemplate}/preheader', [PreheaderController::class, 'template'])
+                ->middleware('throttle:20,1')
+                ->name('email_templates.preheader');
         });
 
         // Duplicating reaches starter templates, which belong to no team and so

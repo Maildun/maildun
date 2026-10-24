@@ -1,6 +1,6 @@
 import { Building06Icon, UserGroupIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
+import { show as showCompany } from '@/routes/companies';
 import type { ContactSummary } from '@/types/contacts';
 
 export function contactDisplayName(contact: ContactSummary): string {
@@ -36,6 +37,7 @@ export function ContactHoverCard({
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
 }) {
+    const { currentTeam } = usePage().props;
     const name = contactDisplayName(contact);
     const initial = (contact.first_name ?? contact.email)
         .charAt(0)
@@ -91,9 +93,21 @@ export function ContactHoverCard({
                                 icon={Building06Icon}
                                 className="size-3.5 shrink-0"
                             />
-                            <span className="truncate">
-                                {contact.company?.name ?? 'No company'}
-                            </span>
+                            {contact.company && currentTeam ? (
+                                <Link
+                                    href={showCompany.url([
+                                        currentTeam.slug,
+                                        contact.company.uuid,
+                                    ])}
+                                    className="truncate underline-offset-4 hover:underline"
+                                >
+                                    {contact.company.name}
+                                </Link>
+                            ) : (
+                                <span className="truncate">
+                                    {contact.company?.name ?? 'No company'}
+                                </span>
+                            )}
                         </dd>
                     </div>
                     <div className="flex items-center justify-between gap-3">

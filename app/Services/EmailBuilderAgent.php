@@ -7,16 +7,59 @@ use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Validation\ValidationException;
 use JsonException;
+use Throwable;
 
 class EmailBuilderAgent
 {
     /**
+     * Why the runtime cannot run the bridge, for operators: null when it works,
+     * otherwise the runtime's own error (missing binary, missing package, …).
+     * Never shown to end users, since it can include server paths.
+     */
+    public function diagnose(): ?string
+    {
+        $runtime = (string) config('mcp.email_builder_runtime', 'node');
+
+        try {
+            $process = Process::path(base_path())
+                ->timeout(20)
+                ->input((string) json_encode(['document' => null, 'html' => null, 'tool' => 'get_document', 'input' => (object) [], 'merge_tags' => []]))
+                ->run([$runtime, resource_path('js/lib/email-builder-agent.mjs')]);
+        } catch (Throwable $exception) {
+            return "Could not start \"{$runtime}\": ".$exception->getMessage();
+        }
+
+        if ($process->successful() && str_contains($process->output(), '"ok":true')) {
+            return null;
+        }
+
+        $error = trim($process->errorOutput()) ?: trim($process->output()) ?: 'no output';
+
+        return "\"{$runtime}\" exited with code {$process->exitCode()}: ".mb_strimwidth($error, 0, 600, '…');
+    }
+
+    /**
+     * Validate a whole design supplied by a client and render its delivery HTML,
+     * so the editor never receives a document the package cannot open.
+     *
+     * @param  array<string, mixed>  $design
+     * @return array{design: array<string, mixed>, html: string, text: string}
+     */
+    public function render(array $design): array
+    {
+        $result = $this->run($design, null, 'check_email');
+
+        return ['design' => $result['document'], 'html' => $result['html'], 'text' => $result['text']];
+    }
+
+    /**
      * @param  array<string, mixed>|null  $document
      * @param  array<string, mixed>  $input
      * @param  list<string>  $mergeTags
+     * @param  bool  $requireUnsubscribe  Lint for a missing {{ unsubscribe_url }} link, as marketing email needs one.
      * @return array<string, mixed>
      */
-    public function run(?array $document, ?string $html, string $tool, array $input = [], array $mergeTags = []): array
+    public function run(?array $document, ?string $html, string $tool, array $input = [], array $mergeTags = [], bool $requireUnsubscribe = false): array
     {
         $payload = json_encode([
             'document' => $document,
@@ -24,6 +67,7 @@ class EmailBuilderAgent
             'tool' => $tool,
             'input' => (object) $input,
             'merge_tags' => $mergeTags,
+            'require_unsubscribe' => $requireUnsubscribe,
         ], JSON_THROW_ON_ERROR);
 
         if (strlen($payload) > 4_000_000) {
@@ -69,13 +113,16 @@ class EmailBuilderAgent
         }
 
         // Keep JSON objects as objects; associative decoding re-encodes `{}` as `[]`,
-        // which breaks JSON Schemas and the `props: {}` of a saved or returned container.
+        // which breaks JSON Schemas, ops replayed in the browser editor, and the
+        // `props: {}` of a saved or returned container.
         $objects = json_decode($process->output(), flags: JSON_THROW_ON_ERROR);
         $result['document'] = DesignDocument::fromObjects($objects->document);
         $result['result'] = DesignDocument::fromObjects($objects->result ?? null);
 
-        if (isset($result['tools'])) {
-            $result['tools'] = $objects->tools;
+        foreach (['tools', 'ops'] as $key) {
+            if (isset($result[$key])) {
+                $result[$key] = $objects->{$key};
+            }
         }
 
         return $result;

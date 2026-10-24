@@ -4,14 +4,18 @@ import {
     ArrowLeft02Icon,
     ArrowUpRight01Icon,
     Cancel01Icon,
+    ChartIncreaseIcon,
+    CheckmarkBadge01Icon,
     Clock01Icon,
     Delete02Icon,
     Edit03Icon,
+    Flag02Icon,
     FolderRemoveIcon,
     FoldersIcon,
     MailOpen01Icon,
     MailRemove01Icon,
     MailSend01Icon,
+    Money03Icon,
     MoreHorizontalIcon,
     MouseLeftClick01Icon,
     PieChartIcon,
@@ -99,6 +103,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
     CAMPAIGN_STATUS_LABELS,
     campaignStatusVariant,
@@ -113,8 +118,22 @@ import { edit as editCampaign, show as showCampaign } from '@/routes/emails';
 import type {
     AvailableSeriesCampaign,
     CampaignSeriesCampaign,
+    CampaignSeriesContactGroup,
+    CampaignSeriesContactGroupKey,
+    CampaignSeriesReportSummary,
     CampaignSeriesShowProps,
+    ConversionValue,
 } from '@/types';
+
+const CONTACT_GROUPS: {
+    value: CampaignSeriesContactGroupKey;
+    label: string;
+}[] = [
+    { value: 'converted', label: 'Converted' },
+    { value: 'clicked_not_converted', label: 'Clicked, not converted' },
+    { value: 'opened_not_clicked', label: 'Opened, did not click' },
+    { value: 'not_engaged', label: 'Not engaged' },
+];
 
 export default function CampaignSeriesShow({
     series,
@@ -123,6 +142,8 @@ export default function CampaignSeriesShow({
     templates,
     defaultEditor,
     goals,
+    conversionEvents,
+    contactGroup,
     canManage,
 }: CampaignSeriesShowProps) {
     const { currentTeam } = usePage().props;
@@ -148,6 +169,7 @@ export default function CampaignSeriesShow({
             ? Math.round((summary.processed / queuedSends) * 100)
             : 0;
     const feedbackReported = summary.delivery_feedback !== 'unavailable';
+    const tracksConversions = summary.conversion_tracking;
     const lastSentAt = sentCampaigns
         .map((campaign) => campaign.sent_at)
         .filter((sentAt): sentAt is string => sentAt !== null)
@@ -339,6 +361,14 @@ export default function CampaignSeriesShow({
                     )}
                 </div>
 
+                {summary.conversion_tracking && series.conversion_event_key && (
+                    <ConversionOverview
+                        summary={summary}
+                        eventKey={series.conversion_event_key}
+                        windowDays={series.attribution_window_days}
+                    />
+                )}
+
                 {report.has_mixed_recipients && (
                     <Callout icon={UserGroupIcon}>
                         <CalloutContent>
@@ -498,6 +528,11 @@ export default function CampaignSeriesShow({
                                     <TableHead className="text-right">
                                         Click-to-open
                                     </TableHead>
+                                    {tracksConversions && (
+                                        <TableHead className="text-right">
+                                            Conversions
+                                        </TableHead>
+                                    )}
                                     {series.primary_cta_url && (
                                         <TableHead className="text-right">
                                             CTA clicks
@@ -585,8 +620,9 @@ export default function CampaignSeriesShow({
                                                 ) : (
                                                     <span className="inline-flex items-center justify-end gap-2">
                                                         {isBest && (
-                                                            <Badge variant="success">
-                                                                Best
+                                                            <Badge variant="secondary">
+                                                                Highest click
+                                                                rate
                                                             </Badge>
                                                         )}
                                                         {campaign.click_rate}%
@@ -597,6 +633,38 @@ export default function CampaignSeriesShow({
                                                 campaign={campaign}
                                                 metric="click_to_open_rate"
                                             />
+                                            {tracksConversions && (
+                                                <TableCell className="text-right tabular-nums">
+                                                    {isDraft ? (
+                                                        '—'
+                                                    ) : (
+                                                        <div className="flex flex-col items-end gap-0.5">
+                                                            <span className="inline-flex items-center justify-end gap-2">
+                                                                {campaign.is_conversion_leader && (
+                                                                    <Badge variant="success">
+                                                                        Winner
+                                                                    </Badge>
+                                                                )}
+                                                                {campaign.conversions.toLocaleString()}{' '}
+                                                                ·{' '}
+                                                                {
+                                                                    campaign.conversion_rate
+                                                                }
+                                                                %
+                                                            </span>
+                                                            {campaign
+                                                                .conversion_value
+                                                                .length > 0 && (
+                                                                <span className="text-xs text-muted-foreground">
+                                                                    {formatValues(
+                                                                        campaign.conversion_value,
+                                                                    )}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </TableCell>
+                                            )}
                                             {series.primary_cta_url && (
                                                 <TableCell className="text-right tabular-nums">
                                                     {isDraft
@@ -696,6 +764,13 @@ export default function CampaignSeriesShow({
                         </Table>
                     )}
                 </section>
+
+                {summary.unique_recipients + summary.conversions > 0 && (
+                    <FollowUpContacts
+                        counts={summary.contact_groups}
+                        contactGroup={contactGroup}
+                    />
+                )}
             </div>
 
             {canManage && (
@@ -704,6 +779,7 @@ export default function CampaignSeriesShow({
                         key={`${series.uuid}-${series.updated_at}`}
                         teamSlug={currentTeam.slug}
                         goals={goals}
+                        conversionEvents={conversionEvents}
                         series={series}
                         open={editOpen}
                         onOpenChange={setEditOpen}
@@ -757,6 +833,231 @@ export default function CampaignSeriesShow({
             </AlertDialog>
         </>
     );
+}
+
+function ConversionOverview({
+    summary,
+    eventKey,
+    windowDays,
+}: {
+    summary: CampaignSeriesReportSummary;
+    eventKey: string;
+    windowDays: number;
+}) {
+    const targetProgress = summary.target_progress;
+
+    return (
+        <section className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+                <h2 className="text-base font-semibold">Conversions</h2>
+                <p className="text-sm text-muted-foreground">
+                    Completed <code className="font-mono">{eventKey}</code>{' '}
+                    events. Last-touch attribution: the latest tracked click
+                    within {windowDays} days before a conversion credits its
+                    campaign. Without a click, a recent send credits the series
+                    as assisted. Opens never earn credit.
+                </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <MetricCard
+                    label="Conversions"
+                    value={summary.conversions.toLocaleString()}
+                    detail={`${summary.attributed_conversions.toLocaleString()} from a click · ${summary.assisted_conversions.toLocaleString()} assisted`}
+                    hint="People who completed the conversion event and were credited to this series. Someone who converted twice counts once. A person can be both click-attributed and assisted."
+                    icon={CheckmarkBadge01Icon}
+                    iconClassName="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                />
+                <MetricCard
+                    label="Conversion rate"
+                    value={`${summary.conversion_rate}%`}
+                    detail={`Of ${summary.unique_recipients.toLocaleString()} people reached`}
+                    hint="Converted people as a share of the unique people this series reached."
+                    icon={ChartIncreaseIcon}
+                    iconClassName="bg-violet-500/10 text-violet-600 dark:text-violet-400"
+                />
+                <MetricCard
+                    label="Target progress"
+                    value={targetProgress === null ? '—' : `${targetProgress}%`}
+                    detail={
+                        summary.conversion_target === null
+                            ? 'Set a conversion target to track progress'
+                            : `${summary.conversions.toLocaleString()} of ${summary.conversion_target.toLocaleString()} conversions`
+                    }
+                    icon={Flag02Icon}
+                    iconClassName="bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                />
+                <MetricCard
+                    label="Attributed value"
+                    value={
+                        summary.conversion_value.length === 0
+                            ? '—'
+                            : formatMoney(summary.conversion_value[0])
+                    }
+                    detail={
+                        summary.conversion_value.length > 1
+                            ? `Also ${formatValues(summary.conversion_value.slice(1))}`
+                            : summary.conversion_value.length === 1
+                              ? 'Total reported value of credited conversions'
+                              : 'No conversion reported a value'
+                    }
+                    hint="The sum of every credited conversion's value, grouped by currency. Currencies are never converted into each other."
+                    icon={Money03Icon}
+                    iconClassName="bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                />
+            </div>
+            {targetProgress !== null && (
+                <Progress
+                    value={Math.min(targetProgress, 100)}
+                    className="gap-3 [&_[data-slot=progress-indicator]]:rounded-full [&_[data-slot=progress-track]]:h-2.5"
+                >
+                    <ProgressLabel>Toward the conversion target</ProgressLabel>
+                </Progress>
+            )}
+        </section>
+    );
+}
+
+function FollowUpContacts({
+    counts,
+    contactGroup,
+}: {
+    counts: Record<CampaignSeriesContactGroupKey, number>;
+    contactGroup: CampaignSeriesContactGroup | null;
+}) {
+    const [loading, setLoading] = useState(false);
+
+    const openGroup = (group: CampaignSeriesContactGroupKey) => {
+        router.reload({
+            only: ['contactGroup'],
+            data: { contacts: group },
+            onStart: () => setLoading(true),
+            onFinish: () => setLoading(false),
+        });
+    };
+
+    return (
+        <section className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+                <h2 className="text-base font-semibold">Follow up</h2>
+                <p className="text-sm text-muted-foreground">
+                    Everyone this series reached, split by how far they got.
+                    Engagement alone is not a sale, so people who clicked but
+                    did not convert are the first to follow up with.
+                </p>
+            </div>
+            <div className="overflow-x-auto overflow-y-hidden">
+                <Tabs
+                    value={contactGroup?.group ?? null}
+                    onValueChange={(value) =>
+                        openGroup(value as CampaignSeriesContactGroupKey)
+                    }
+                >
+                    <TabsList variant="sliding">
+                        {CONTACT_GROUPS.map((group) => (
+                            <TabsTrigger key={group.value} value={group.value}>
+                                {group.label}
+                                <span className="text-muted-foreground tabular-nums">
+                                    {counts[group.value].toLocaleString()}
+                                </span>
+                            </TabsTrigger>
+                        ))}
+                    </TabsList>
+                </Tabs>
+            </div>
+
+            {loading && !contactGroup ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Spinner />
+                    Loading people
+                </div>
+            ) : contactGroup === null ? (
+                <p className="text-sm text-muted-foreground">
+                    Choose a group to see who is in it.
+                </p>
+            ) : contactGroup.contacts.length === 0 ? (
+                <Empty className="border">
+                    <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                            <HugeiconsIcon icon={UserGroupIcon} />
+                        </EmptyMedia>
+                        <EmptyTitle>Nobody here yet</EmptyTitle>
+                        <EmptyDescription>
+                            No one in this series is{' '}
+                            {contactGroup.label.toLocaleLowerCase()}.
+                        </EmptyDescription>
+                    </EmptyHeader>
+                </Empty>
+            ) : (
+                <div className="flex flex-col gap-2">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Email</TableHead>
+                                <TableHead>Name</TableHead>
+                                {contactGroup.group === 'converted' && (
+                                    <TableHead className="text-right">
+                                        Conversions
+                                    </TableHead>
+                                )}
+                                <TableHead>Last activity</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {contactGroup.contacts.map((contact) => (
+                                <TableRow
+                                    key={contact.email}
+                                    data-test="series-follow-up-row"
+                                >
+                                    <TableCell className="font-medium">
+                                        {contact.email}
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground">
+                                        {contact.name ?? '—'}
+                                    </TableCell>
+                                    {contactGroup.group === 'converted' && (
+                                        <TableCell className="text-right tabular-nums">
+                                            {contact.conversions.toLocaleString()}
+                                        </TableCell>
+                                    )}
+                                    <TableCell className="text-muted-foreground">
+                                        {contact.last_activity_at
+                                            ? `${formatRelativeTime(contact.last_activity_at)} ago`
+                                            : '—'}
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                    {contactGroup.total > contactGroup.contacts.length && (
+                        <p className="text-xs text-muted-foreground">
+                            Showing the first{' '}
+                            {contactGroup.contacts.length.toLocaleString()} of{' '}
+                            {contactGroup.total.toLocaleString()} people,
+                            alphabetically.
+                        </p>
+                    )}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function formatMoney({ currency, value_minor }: ConversionValue): string {
+    try {
+        const formatter = new Intl.NumberFormat(undefined, {
+            style: 'currency',
+            currency,
+        });
+        const digits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
+
+        return formatter.format(value_minor / 10 ** digits);
+    } catch {
+        return `${(value_minor / 100).toLocaleString()} ${currency}`;
+    }
+}
+
+function formatValues(values: ConversionValue[]): string {
+    return values.map(formatMoney).join(' · ');
 }
 
 function RateCell({

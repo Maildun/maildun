@@ -8,6 +8,7 @@ use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
 use App\Models\TransactionalEmail;
 use App\Rules\AuthorizedSenderAddress;
+use App\Services\EmailBuilderAgent;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Validation\ValidationException;
@@ -39,6 +40,7 @@ class UpdateTransactionalEmailTool extends Tool
         private WorkspaceContext $context,
         private ResourcePayload $payload,
         private RenderTransactionalContent $renderer,
+        private EmailBuilderAgent $agent,
     ) {}
 
     public function handle(Request $request): ResponseFactory
@@ -58,7 +60,6 @@ class UpdateTransactionalEmailTool extends Tool
             'html' => ['sometimes', 'required', 'string', 'max:2000000'],
             'source' => ['sometimes', 'required', 'string', 'max:2000000'],
             'design' => ['sometimes', 'nullable', 'array', 'required_array_keys:root'],
-            'design.root' => ['array'],
             'variables' => ['sometimes', 'nullable', 'array'],
             'variables.*.key' => ['required', 'string', 'max:64', 'regex:/^[a-zA-Z_][a-zA-Z0-9_]*$/'],
             'variables.*.example' => ['nullable', 'string', 'max:255'],
@@ -89,6 +90,12 @@ class UpdateTransactionalEmailTool extends Tool
             throw ValidationException::withMessages([
                 'design' => 'The block layout is missing.',
             ]);
+        }
+
+        if ($team->email_editor === EmailEditor::Builder && isset($changes['design'])) {
+            $rendered = $this->agent->render($changes['design']);
+            $changes['design'] = $rendered['design'];
+            $changes['html'] = $rendered['html'];
         }
 
         $subject = (string) ($changes['subject'] ?? $email->subject);

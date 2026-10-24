@@ -30,6 +30,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import { tagsError } from '@/lib/tags';
 import {
     store as storeSubscriber,
     update as updateSubscriber,
@@ -46,6 +47,7 @@ export function SubscriberDialog({
     onOpenChange,
     routeArgs,
     subscriber,
+    canEditProfile = true,
     tags,
     languages = [],
 }: {
@@ -53,6 +55,7 @@ export function SubscriberDialog({
     onOpenChange: (open: boolean) => void;
     routeArgs: [string, string];
     subscriber?: Subscriber;
+    canEditProfile?: boolean;
     tags: Tag[];
     languages?: SubscriberLanguageOption[];
 }) {
@@ -76,6 +79,8 @@ export function SubscriberDialog({
                   },
               ]
             : languages;
+
+    const profileReadOnly = Boolean(subscriber) && !canEditProfile;
 
     const submit = (event: React.FormEvent) => {
         event.preventDefault();
@@ -137,11 +142,19 @@ export function SubscriberDialog({
                                 type="email"
                                 placeholder="email@example.com"
                                 value={form.data.email}
+                                readOnly={profileReadOnly}
                                 onChange={(event) =>
                                     form.setData('email', event.target.value)
                                 }
                                 aria-invalid={Boolean(form.errors.email)}
                             />
+                            {profileReadOnly && (
+                                <FieldDescription>
+                                    Email and name are shared across every
+                                    audience. Editing them needs the contact
+                                    permission.
+                                </FieldDescription>
+                            )}
                             <FieldError>{form.errors.email}</FieldError>
                         </Field>
                         <div className="grid gap-4 sm:grid-cols-2">
@@ -157,6 +170,7 @@ export function SubscriberDialog({
                                     id={`first-${subscriber?.uuid || 'new'}`}
                                     placeholder="Taylor"
                                     value={form.data.first_name}
+                                    readOnly={profileReadOnly}
                                     onChange={(event) =>
                                         form.setData(
                                             'first_name',
@@ -183,6 +197,7 @@ export function SubscriberDialog({
                                     id={`last-${subscriber?.uuid || 'new'}`}
                                     placeholder="Otwell"
                                     value={form.data.last_name}
+                                    readOnly={profileReadOnly}
                                     onChange={(event) =>
                                         form.setData(
                                             'last_name',
@@ -240,7 +255,7 @@ export function SubscriberDialog({
                                 <FieldError>{form.errors.language}</FieldError>
                             </Field>
                         )}
-                        <Field data-invalid={Boolean(form.errors.tags)}>
+                        <Field data-invalid={Boolean(tagsError(form.errors))}>
                             <FieldLabel>Tags</FieldLabel>
                             <TagsCombobox
                                 value={form.data.tags}
@@ -248,9 +263,9 @@ export function SubscriberDialog({
                                 onValueChange={(next) =>
                                     form.setData('tags', next)
                                 }
-                                aria-invalid={Boolean(form.errors.tags)}
+                                aria-invalid={Boolean(tagsError(form.errors))}
                             />
-                            <FieldError>{form.errors.tags}</FieldError>
+                            <FieldError>{tagsError(form.errors)}</FieldError>
                         </Field>
                         {!subscriber && (
                             <Field

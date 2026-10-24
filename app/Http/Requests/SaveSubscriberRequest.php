@@ -67,7 +67,9 @@ class SaveSubscriberRequest extends FormRequest
                     ...($subscriber instanceof Subscriber && $subscriber->language !== null ? [$subscriber->language->value] : []),
                 ]),
             ],
-            'tags' => ['sometimes', 'array', 'max:20'],
+            // A contact already past the limit (from an import, bulk tags or
+            // an automation) can still be edited without dropping tags first.
+            'tags' => ['sometimes', 'array', 'max:'.max(20, $subscriber instanceof Subscriber ? ($subscriber->contact?->tags()->count() ?? 0) : 0)],
             'tags.*' => ['string', 'max:50'],
         ];
 

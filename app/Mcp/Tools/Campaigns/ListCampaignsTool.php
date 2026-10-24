@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Tools\Campaigns;
 
+use App\Concerns\SearchesText;
 use App\Enums\EmailStatus;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
@@ -24,6 +25,8 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[Name('list-campaigns')]
 class ListCampaignsTool extends Tool
 {
+    use SearchesText;
+
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
@@ -44,9 +47,7 @@ class ListCampaignsTool extends Tool
         $campaigns = $team->emails()
             ->with(['audience:id,uuid,name', 'segment:id,uuid,name'])
             ->when($search !== '', function ($query) use ($search): void {
-                $pattern = '%'.addcslashes($search, '%_\\').'%';
-
-                $query->whereAny(['name', 'subject'], 'like', $pattern);
+                $this->whereAnyColumnContains($query, ['name', 'subject'], $search);
             })
             ->when(isset($validated['status']), fn ($query) => $query->where('status', $validated['status']))
             ->orderByDesc('updated_at')

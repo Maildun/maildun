@@ -96,6 +96,25 @@ Back up and regularly restore-test:
 
 Losing `APP_KEY` makes encrypted workspace provider settings and tokens unreadable. A database-only backup is incomplete when local storage is in use.
 
+### Database backups
+
+Maildun bundles `abduns/laravel-db-backup`, which is off by default. To let the scheduler back up the database, set:
+
+```dotenv
+DB_BACKUP_SCHEDULE=true
+DB_BACKUP_DISK=s3
+DB_BACKUP_TIME=02:00
+DB_BACKUP_KEEP_LAST=14
+```
+
+This runs `db-backup:run` daily at `DB_BACKUP_TIME`, `db-backup:prune` an hour later, and `db-backup:monitor` at `DB_BACKUP_MONITOR_TIME`. The monitor reports a stale backup when none has succeeded within `DB_BACKUP_MAX_AGE_HOURS` (default 26). The other `DB_BACKUP_*` values are listed in `.env.example` and `config/db-backup.php`.
+
+- PostgreSQL backups need `pg_dump`, and restores need `pg_restore`, at the database server's major version or newer. Install the PostgreSQL client tools on the application server; they are not part of PHP or the Docker image. Set `DB_BACKUP_PG_DUMP` and `DB_BACKUP_PG_RESTORE` to absolute paths when they are not on the PHP user's `PATH`.
+- SQLite backups need SQLite 3.27 or newer and no extra binaries.
+- Keep `DB_BACKUP_DISK` off the application server. The default `local` disk stores backups beside the database they protect; `s3` writes them to the private bucket configured for [storage](installation.md#storage), under `DB_BACKUP_PATH`.
+
+Run `php artisan db-backup:run` once after setup to confirm it works, and test `php artisan db-backup:restore` on a spare server before you rely on it.
+
 ## Email and webhooks
 
 Every sending workspace must configure and test one connection under **Settings → Email delivery**, then verify every exact From address under **Settings → Sender**. Follow the [Amazon SES](email-delivery/amazon-ses.md) or [SMTP](email-delivery/smtp.md) guide.

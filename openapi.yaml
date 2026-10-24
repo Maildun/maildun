@@ -3,7 +3,7 @@ openapi: 3.1.0
 info:
     title: Maildun API
     version: 1.0.0
-    summary: Send transactional email, manage audience subscriptions, and trigger automations.
+    summary: Send transactional email, check its delivery status, manage audience subscriptions, and trigger automations.
     description: |
         Maildun exposes a JSON API for server-to-server integrations.
 
@@ -23,9 +23,11 @@ servers:
 
 tags:
     - name: Transactional email
-      description: Queue deliveries from published transactional email templates.
+      description: Queue deliveries from published transactional email templates and check their status.
     - name: Subscribers
       description: Subscribe or unsubscribe an address in an audience.
+    - name: Conversions
+      description: Record completed sales outcomes and credit them to campaign series.
     - name: Automations
       description: Start an active automation configured with the API trigger.
 
@@ -186,9 +188,15 @@ paths:
                 - Subscribers
             summary: Subscribe an address
             description: |
-                Creates an audience membership, returns an existing subscribed membership,
-                or resubscribes an unsubscribed membership. The operation is idempotent for
-                an email address within an audience.
+                Creates an audience membership or returns an existing subscribed membership.
+                The operation is idempotent for an email address within an audience.
+
+                An unsubscribed membership stays unsubscribed. Maildun records a
+                resubscription request and returns `status: unsubscribed` with
+                `pending_confirmation: true`. On a double opt-in audience the recipient
+                is emailed the confirmation link and is resubscribed only when they click
+                it. A single opt-in audience has no confirmation email, so a team member
+                must resubscribe the address in Maildun.
 
                 Custom attributes are defined per audience. Required attributes must be
                 supplied, unknown attribute keys are rejected when the audience has a
@@ -217,7 +225,7 @@ paths:
                                         company: Analytical Engines
             responses:
                 '200':
-                    description: The address is subscribed or awaiting double opt-in confirmation.
+                    description: The address is subscribed, awaiting double opt-in confirmation, or an unsubscribed address with a recorded resubscription request.
                     headers:
                         X-RateLimit-Limit:
                             $ref: '#/components/headers/RateLimitLimit'
@@ -235,7 +243,9 @@ paths:
                                             email: ada@example.com
                                             first_name: Ada
                                             last_name: Lovelace
+                                            language: null
                                             status: subscribed
+                                            pending_confirmation: false
                                             subscribed_at: '2026-08-23T03:00:00.000000Z'
                                 confirmationPending:
                                     summary: Double opt-in confirmation is pending
@@ -245,7 +255,21 @@ paths:
                                             email: ada@example.com
                                             first_name: Ada
                                             last_name: Lovelace
+                                            language: null
                                             status: subscribed
+                                            pending_confirmation: true
+                                            subscribed_at: null
+                                resubscriptionRequested:
+                                    summary: An unsubscribed address asked to rejoin
+                                    value:
+                                        data:
+                                            id: ff55fd14-4b87-4923-b933-4912e14566f4
+                                            email: ada@example.com
+                                            first_name: Ada
+                                            last_name: Lovelace
+                                            language: null
+                                            status: unsubscribed
+                                            pending_confirmation: true
                                             subscribed_at: null
                 '401':
                     $ref: '#/components/responses/Unauthenticated'
@@ -264,8 +288,8 @@ paths:
             description: |
                 Unsubscribes an address from the audience. The operation is deliberately
                 opaque and idempotent: an unknown address and an already unsubscribed
-                address both receive a successful response without disclosing prior
-                membership. Consequently, `id` and `unsubscribed_at` can be null.
+                address both receive the same successful response, which echoes only the
+                address and status so it never discloses prior membership.
 
                 Although this operation uses `DELETE`, its target email is supplied in a
                 JSON request body.
@@ -293,16 +317,120 @@ paths:
                                 $ref: '#/components/schemas/UnsubscribeResponse'
                             example:
                                 data:
-                                    id: ff55fd14-4b87-4923-b933-4912e14566f4
                                     email: ada@example.com
                                     status: unsubscribed
-                                    unsubscribed_at: '2026-08-23T03:05:00.000000Z'
                 '401':
                     $ref: '#/components/responses/Unauthenticated'
                 '404':
                     $ref: '#/components/responses/AudienceNotFound'
                 '422':
                     $ref: '#/components/responses/ValidationFailed'
+                '429':
+                    $ref: '#/components/responses/TooManyRequests'
+
+    /v1/conversions:
+        post:
+            operationId: recordConversion
+            tags:
+                - Conversions
+            summary: Record a conversion
+            description: |
+                Records a completed sales outcome and attributes it once, on arrival, using
+                last-touch attribution. The latest tracked click within a series'
+                attribution window before the conversion credits that campaign (`click`).
+                Without a click, the latest eligible delivery credits its series
+                (`assisted`). A named `campaign_series` with no eligible touch is credited
+                as `explicit`; anything else is stored as `unattributed`. Opens never
+                earn credit, and the stored decision does not change later.
+
+                `event_id` is idempotent within the workspace. An identical retry returns
+                the stored event with `200`; the same `event_id` with different data
+                returns `409 Conflict`. Limited to 60 requests per minute per key, in
+                addition to the general API limit.
+            security:
+                - TeamApiKey: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/RecordConversionRequest'
+                        examples:
+                            meetingBooked:
+                                summary: A booked demo worth 2,500.00 USD
+                                value:
+                                    event_id: booking_01J9Y8PGT2
+                                    event: meeting_booked
+                                    email: lead@example.com
+                                    occurred_at: '2026-09-14T08:30:00Z'
+                                    value_minor: 250000
+                                    currency: USD
+                                    metadata:
+                                        booking_id: demo_1842
+            responses:
+                '201':
+                    description: The conversion was recorded and attributed.
+                    headers:
+                        X-RateLimit-Limit:
+                            $ref: '#/components/headers/RateLimitLimit'
+                        X-RateLimit-Remaining:
+                            $ref: '#/components/headers/RateLimitRemaining'
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ConversionResponse'
+                            example:
+                                data:
+                                    id: 0f9b6c2e-5d1a-4c7e-8f3b-2a9d4e6c1b70
+                                    event_id: booking_01J9Y8PGT2
+                                    event: meeting_booked
+                                    email: lead@example.com
+                                    occurred_at: '2026-09-14T08:30:00.000000Z'
+                                    received_at: '2026-09-14T08:30:02.000000Z'
+                                    value_minor: 250000
+                                    currency: USD
+                                    metadata:
+                                        booking_id: demo_1842
+                                    attribution:
+                                        type: click
+                                        model: last_touch
+                                        campaign_series: 5b0e8f3c-3a5e-4f43-9d0e-6f1e2a7c9b10
+                                        campaign: 9c3a7d52-1f4b-4e8a-b6d0-3e5f7a9c2b41
+                                        delivery: 2d6e8a14-7b3c-4f5e-9a1d-0c8b6e4f2a37
+                                        touched_at: '2026-09-12T15:04:11.000000Z'
+                                meta:
+                                    idempotent_replay: false
+                '200':
+                    description: An identical retry of an event already recorded with this `event_id`.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ConversionResponse'
+                '401':
+                    $ref: '#/components/responses/Unauthenticated'
+                '409':
+                    description: The `event_id` was already used with different data.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                message: This event_id has already been used with different data.
+                                code: idempotency_conflict
+                '422':
+                    description: |
+                        The request body failed validation. An unknown `campaign_series` and
+                        one belonging to another workspace receive the same error.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ValidationError'
+                            example:
+                                message: The currency field is required when value minor is present.
+                                code: validation_failed
+                                errors:
+                                    currency:
+                                        - The currency field is required when value minor is present.
                 '429':
                     $ref: '#/components/responses/TooManyRequests'
 
@@ -727,6 +855,7 @@ components:
                 - last_name
                 - language
                 - status
+                - pending_confirmation
                 - subscribed_at
             properties:
                 id:
@@ -749,13 +878,19 @@ components:
                         - type: 'null'
                 status:
                     type: string
-                    const: subscribed
+                    enum:
+                        - subscribed
+                        - unsubscribed
+                    description: Stays `unsubscribed` for an address that opted out until its resubscription is confirmed.
+                pending_confirmation:
+                    type: boolean
+                    description: True while a double opt-in signup or a resubscription request awaits confirmation.
                 subscribed_at:
                     type:
                         - string
                         - 'null'
                     format: date-time
-                    description: Null while double opt-in confirmation is pending.
+                    description: Null while confirmation is pending.
 
         SubscriberLanguage:
             type: string
@@ -801,28 +936,15 @@ components:
                     type: object
                     additionalProperties: false
                     required:
-                        - id
                         - email
                         - status
-                        - unsubscribed_at
                     properties:
-                        id:
-                            type:
-                                - string
-                                - 'null'
-                            format: uuid
-                            description: Null when no matching membership exists.
                         email:
                             type: string
                             format: email
                         status:
                             type: string
                             const: unsubscribed
-                        unsubscribed_at:
-                            type:
-                                - string
-                                - 'null'
-                            format: date-time
 
         TriggerAutomationRequest:
             type: object
@@ -901,3 +1023,133 @@ components:
                               type: array
                               items:
                                   type: string
+
+        RecordConversionRequest:
+            type: object
+            additionalProperties: false
+            required:
+                - event_id
+                - event
+                - email
+            properties:
+                event_id:
+                    type: string
+                    maxLength: 255
+                    description: Your ID for this event. Unique within the workspace and used for idempotency.
+                    example: booking_01J9Y8PGT2
+                event:
+                    type: string
+                    pattern: '^[a-z][a-z0-9_]{0,63}$'
+                    description: The conversion event key a series is configured to track.
+                    example: meeting_booked
+                email:
+                    type: string
+                    format: email
+                    maxLength: 255
+                    description: The person who converted. Maildun trims and lowercases it.
+                    example: lead@example.com
+                occurred_at:
+                    type: [string, 'null']
+                    format: date-time
+                    description: When the conversion happened. Defaults to when Maildun receives it; at most 5 minutes in the future.
+                value_minor:
+                    type: [integer, 'null']
+                    minimum: 0
+                    maximum: 1000000000000000
+                    description: The value in the currency's minor unit, such as cents. Requires `currency`.
+                currency:
+                    type: [string, 'null']
+                    pattern: '^[A-Za-z]{3}$'
+                    description: An ISO 4217 code, stored uppercase. Required with `value_minor`.
+                    example: USD
+                campaign_series:
+                    type: [string, 'null']
+                    format: uuid
+                    description: A campaign series in the workspace. Restricts attribution to that series.
+                metadata:
+                    type: [object, 'null']
+                    maxProperties: 20
+                    description: Keys of 1 to 64 letters, numbers, dots, dashes, or underscores; at most 4096 bytes as JSON.
+                    additionalProperties:
+                        type: [string, number, boolean, 'null']
+
+        ConversionResponse:
+            type: object
+            required:
+                - data
+                - meta
+            properties:
+                data:
+                    $ref: '#/components/schemas/Conversion'
+                meta:
+                    type: object
+                    required:
+                        - idempotent_replay
+                    properties:
+                        idempotent_replay:
+                            type: boolean
+
+        Conversion:
+            type: object
+            required:
+                - id
+                - event_id
+                - event
+                - email
+                - occurred_at
+                - attribution
+            properties:
+                id:
+                    type: string
+                    format: uuid
+                event_id:
+                    type: string
+                event:
+                    type: string
+                email:
+                    type: string
+                    format: email
+                occurred_at:
+                    type: string
+                    format: date-time
+                received_at:
+                    type: [string, 'null']
+                    format: date-time
+                value_minor:
+                    type: [integer, 'null']
+                currency:
+                    type: [string, 'null']
+                metadata:
+                    type: [object, 'null']
+                    additionalProperties: true
+                attribution:
+                    type: object
+                    required:
+                        - type
+                        - model
+                    properties:
+                        type:
+                            type: string
+                            enum:
+                                - click
+                                - assisted
+                                - explicit
+                                - unattributed
+                        model:
+                            type: string
+                            enum:
+                                - last_touch
+                        campaign_series:
+                            type: [string, 'null']
+                            format: uuid
+                        campaign:
+                            type: [string, 'null']
+                            format: uuid
+                            description: Set for `click` and `assisted`; only `click` gives the campaign credit.
+                        delivery:
+                            type: [string, 'null']
+                            format: uuid
+                        touched_at:
+                            type: [string, 'null']
+                            format: date-time
+                            description: The click or delivery time the decision was based on.

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AutomationAction;
 use App\Enums\AutomationCondition;
 use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationStatus;
@@ -10,6 +11,7 @@ use App\Models\Audience;
 use App\Models\Automation;
 use App\Models\Subscriber;
 use App\Models\Team;
+use App\Models\TransactionalEmail;
 use App\Models\User;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -501,3 +503,70 @@ test('saving a draft automation accepts an incomplete graph', function () {
     expect($automation->refresh()->name)->toBe('Work in progress')
         ->and($automation->graph['nodes'])->toHaveCount(1);
 });
+
+test('a set language step needs a supported language', function (?string $language) {
+    $user = User::factory()->create();
+    $automation = Automation::factory()->for($user->currentTeam)->create([
+        'graph' => [
+            'nodes' => [
+                ['id' => 'trigger', 'type' => 'trigger', 'data' => ['kind' => AutomationTrigger::Subscribed->value]],
+                ['id' => 'language', 'type' => 'action', 'data' => [
+                    'kind' => AutomationAction::SetLanguage->value,
+                    'language' => $language,
+                ]],
+            ],
+            'edges' => [['source' => 'trigger', 'target' => 'language']],
+        ],
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('automations.activate', [$user->currentTeam, $automation]))
+        ->assertSessionHasErrors('graph');
+
+    expect($automation->refresh()->status)->toBe(AutomationStatus::Draft);
+})->with([
+    'missing language' => null,
+    'unsupported language' => 'xx',
+]);
+
+test('send email language versions need a unique language and a published email', function (string $case) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $published = TransactionalEmail::factory()->for($team)->published()->create();
+    $draft = TransactionalEmail::factory()->for($team)->create();
+    $versions = match ($case) {
+        'valid' => [['language' => 'id', 'transactional_email_uuid' => $published->uuid]],
+        'duplicate language' => [
+            ['language' => 'id', 'transactional_email_uuid' => $published->uuid],
+            ['language' => 'id', 'transactional_email_uuid' => $published->uuid],
+        ],
+        'missing language' => [['language' => null, 'transactional_email_uuid' => $published->uuid]],
+        'draft email' => [['language' => 'id', 'transactional_email_uuid' => $draft->uuid]],
+    };
+    $automation = Automation::factory()->for($team)->create([
+        'graph' => [
+            'nodes' => [
+                ['id' => 'trigger', 'type' => 'trigger', 'data' => ['kind' => AutomationTrigger::Subscribed->value]],
+                ['id' => 'send', 'type' => 'action', 'data' => [
+                    'kind' => AutomationAction::SendEmail->value,
+                    'transactional_email_uuid' => $published->uuid,
+                    'language_emails' => $versions,
+                ]],
+            ],
+            'edges' => [['source' => 'trigger', 'target' => 'send']],
+        ],
+    ]);
+
+    $response = $this->actingAs($user)
+        ->post(route('automations.activate', [$team, $automation]));
+
+    if ($case === 'valid') {
+        $response->assertSessionHasNoErrors();
+        expect($automation->refresh()->status)->toBe(AutomationStatus::Active);
+
+        return;
+    }
+
+    $response->assertSessionHasErrors('graph');
+    expect($automation->refresh()->status)->toBe(AutomationStatus::Draft);
+})->with(['valid', 'duplicate language', 'missing language', 'draft email']);

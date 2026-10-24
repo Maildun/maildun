@@ -3,21 +3,26 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audiences\NotifyAudienceOfSubscriptionChange;
-use App\Enums\AutomationTrigger;
+use App\Actions\Audiences\UnsubscribeSubscriber;
 use App\Enums\SubscriberStatus;
-use App\Events\SubscriberLifecycleOccurred;
+use App\Models\Audience;
+use App\Models\AutomationEmailDelivery;
 use App\Models\EmailDelivery;
 use App\Models\Subscriber;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 class UnsubscribeController extends Controller
 {
-    public function __construct(private NotifyAudienceOfSubscriptionChange $notifyAudience) {}
+    public function __construct(
+        private UnsubscribeSubscriber $unsubscribeSubscriber,
+        private NotifyAudienceOfSubscriptionChange $notifyAudience,
+    ) {}
 
     /**
      * Test copies have no delivery to sign, so this page explains the link
@@ -63,9 +68,11 @@ class UnsubscribeController extends Controller
     {
         $delivery->loadMissing(['subscriber', 'email' => fn ($query) => $query->withTrashed()->with('audience')]);
 
-        $this->optOut($delivery->subscriber);
+        $this->optOutThroughDelivery($delivery, $this->currentMembership($delivery));
 
-        // One-click providers only need a 2xx; they never render a page.
+        // One-click providers only need a 2xx; they never render a page. The
+        // page posts over XHR, so an external landing page needs an Inertia
+        // location visit: a plain redirect would be followed silently.
         if (! $request->header('X-Inertia')) {
             return response()->noContent();
         }
@@ -82,16 +89,15 @@ class UnsubscribeController extends Controller
     }
 
     /**
-     * Show the opt-out confirmation for mail that has no delivery row.
+     * Show the opt-out confirmation for automation mail.
      *
-     * Automation sends are not recorded as an EmailDelivery, so their opt-out is
-     * keyed to the subscriber and the audience comes off the subscriber.
+     * Automation links are keyed to the subscriber, not a campaign delivery, so
+     * the audience comes off the subscriber, or off the automation delivery
+     * once that member is gone.
      */
-    public function showForSubscriber(Subscriber $subscriber): Response
+    public function showForSubscriber(string $subscriber): Response
     {
-        $subscriber->loadMissing('audience');
-
-        return Inertia::render('unsubscribe/show', $this->subscriberProps($subscriber));
+        return Inertia::render('unsubscribe/show', $this->subscriberProps($subscriber, $this->automationRecipient($subscriber)));
     }
 
     /**
@@ -100,17 +106,17 @@ class UnsubscribeController extends Controller
      * Signed rather than authenticated and CSRF exempt for the same RFC 8058
      * one-click reason as the campaign route above.
      */
-    public function storeForSubscriber(Request $request, Subscriber $subscriber): SymfonyResponse
+    public function storeForSubscriber(Request $request, string $subscriber): SymfonyResponse
     {
-        $subscriber->loadMissing('audience');
+        $recipient = $this->automationRecipient($subscriber);
 
-        $this->optOut($subscriber);
+        $this->optOut($recipient['membership']);
 
         if (! $request->header('X-Inertia')) {
             return response()->noContent();
         }
 
-        $landingPage = $subscriber->audience->unsubscribed_url;
+        $landingPage = $recipient['audience']->unsubscribed_url;
 
         // An Inertia visit cannot follow a cross-origin redirect, so the
         // browser is told to load the landing page itself.
@@ -122,25 +128,47 @@ class UnsubscribeController extends Controller
     }
 
     /**
-     * The shared opt-out transition. Idempotent: a second click on the same link
-     * neither restamps unsubscribed_at nor fires the lifecycle event again.
+     * Opt out through a campaign link and record it on the delivery, so the
+     * campaign report can count it. Only a real opt-out is recorded, and only
+     * the first one: a member who was already unsubscribed, or who follows
+     * the link again, leaves the delivery as it was.
      */
-    private function optOut(?Subscriber $subscriber): void
+    private function optOutThroughDelivery(EmailDelivery $delivery, ?Subscriber $subscriber): void
     {
-        if (! $subscriber instanceof Subscriber || $subscriber->status === SubscriberStatus::Unsubscribed) {
+        $wasSubscribed = $subscriber?->status === SubscriberStatus::Subscribed;
+
+        $this->optOut($subscriber);
+
+        if (! $wasSubscribed) {
             return;
         }
 
-        $subscriber->update([
-            'status' => SubscriberStatus::Unsubscribed,
-            'unsubscribed_at' => now(),
-        ]);
-
-        event(new SubscriberLifecycleOccurred(AutomationTrigger::Unsubscribed, $subscriber));
-        $this->notifyAudience->handle($subscriber, subscribed: false);
+        EmailDelivery::query()
+            ->whereKey($delivery->id)
+            ->whereNull('unsubscribed_at')
+            ->update(['unsubscribed_at' => now()]);
     }
 
     /**
+     * Opting out reuses the app's idempotent transition. A link whose member
+     * is gone has nothing left to opt out.
+     */
+    private function optOut(?Subscriber $subscriber): void
+    {
+        if (! $subscriber instanceof Subscriber) {
+            return;
+        }
+
+        $wasUnsubscribed = $subscriber->status === SubscriberStatus::Unsubscribed;
+        $subscriber = $this->unsubscribeSubscriber->handle($subscriber);
+
+        if (! $wasUnsubscribed && $subscriber->status === SubscriberStatus::Unsubscribed) {
+            $this->notifyAudience->handle($subscriber, subscribed: false);
+        }
+    }
+
+    /**
+     * @param  array{audience: Audience, email: string, membership: Subscriber|null}  $recipient
      * @return array{
      *     email: string,
      *     audience: string|null,
@@ -148,24 +176,61 @@ class UnsubscribeController extends Controller
      *     action: string
      * }
      */
-    private function subscriberProps(Subscriber $subscriber): array
+    private function subscriberProps(string $subscriberUuid, array $recipient): array
     {
         return [
-            'email' => $subscriber->email,
-            'audience' => $subscriber->audience->name,
-            'unsubscribed' => $subscriber->status === SubscriberStatus::Unsubscribed,
+            'email' => $recipient['email'],
+            'audience' => $recipient['audience']->name,
+            'unsubscribed' => $recipient['membership'] === null
+                || $recipient['membership']->status === SubscriberStatus::Unsubscribed,
             'action' => URL::signedRoute(
                 'public.unsubscribe.subscriber.store',
-                ['subscriber' => $subscriber],
+                ['subscriber' => $subscriberUuid],
             ),
         ];
     }
 
-    private function subscriberShowUrl(Subscriber $subscriber): string
+    /**
+     * Who an automation link opts out. Removing the member nulls the
+     * delivery's subscriber_id but keeps its subscriber_uuid, so when the
+     * person was later added back the link falls back to their current
+     * membership in the same audience, by contact and then by address. With
+     * no membership left, the link shows them as unsubscribed. A uuid no
+     * automation was ever sent to is a 404.
+     *
+     * @return array{audience: Audience, email: string, membership: Subscriber|null}
+     */
+    private function automationRecipient(string $subscriberUuid): array
+    {
+        $subscriber = Subscriber::query()->with('audience')->where('uuid', $subscriberUuid)->first();
+
+        if ($subscriber instanceof Subscriber) {
+            return ['audience' => $subscriber->audience, 'email' => $subscriber->email, 'membership' => $subscriber];
+        }
+
+        $delivery = AutomationEmailDelivery::query()
+            ->with('audience')
+            ->where('subscriber_uuid', $subscriberUuid)
+            ->whereNotNull('audience_id')
+            ->latest('id')
+            ->first();
+
+        abort_if($delivery?->audience === null, 404);
+
+        $membership = $this->membershipIn($delivery->audience, $delivery->contact_id, $delivery->to_address);
+
+        return [
+            'audience' => $delivery->audience,
+            'email' => $membership->email ?? $delivery->to_address,
+            'membership' => $membership,
+        ];
+    }
+
+    private function subscriberShowUrl(string $subscriberUuid): string
     {
         return URL::signedRoute(
             'public.unsubscribe.subscriber.show',
-            ['subscriber' => $subscriber],
+            ['subscriber' => $subscriberUuid],
         );
     }
 
@@ -182,10 +247,41 @@ class UnsubscribeController extends Controller
         return [
             'email' => $delivery->email_address,
             'audience' => $delivery->email->audience?->name,
-            'unsubscribed' => $delivery->subscriber?->status === SubscriberStatus::Unsubscribed
-                || $delivery->subscriber === null,
+            'unsubscribed' => $this->currentMembership($delivery)?->status !== SubscriberStatus::Subscribed,
             'action' => URL::signedRoute('public.unsubscribe.store', ['delivery' => $delivery]),
         ];
+    }
+
+    /**
+     * The membership a campaign's opt-out applies to. Removing a member nulls
+     * the delivery's subscriber_id, so when the person was later added back
+     * the link falls back to their current membership in the same audience,
+     * by contact and then by address. It never reaches another audience.
+     */
+    private function currentMembership(EmailDelivery $delivery): ?Subscriber
+    {
+        if ($delivery->subscriber instanceof Subscriber) {
+            return $delivery->subscriber;
+        }
+
+        $audience = $delivery->email->audience;
+
+        if ($audience === null) {
+            return null;
+        }
+
+        return $this->membershipIn($audience, $delivery->contact_id, $delivery->email_address);
+    }
+
+    /**
+     * The person's membership in one audience, by contact and then by address.
+     */
+    private function membershipIn(Audience $audience, ?int $contactId, string $address): ?Subscriber
+    {
+        return ($contactId !== null
+            ? $audience->subscribers()->where('contact_id', $contactId)->first()
+            : null)
+            ?? $audience->subscribers()->where('email', Str::lower($address))->first();
     }
 
     private function showUrl(EmailDelivery $delivery): string

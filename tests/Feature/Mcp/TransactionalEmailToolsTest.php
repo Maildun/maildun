@@ -200,3 +200,26 @@ test('keeps markdown source when transactional email is managed through MCP', fu
         ->where('transactional_email.source', '# Receipt **ready**')
         ->etc());
 });
+
+test('validates a block design and detects variables in its rendered HTML', function () {
+    $team = Team::factory()->create(['slug' => 'transactional-design', 'email_editor' => EmailEditor::Builder]);
+
+    MaildunServer::tool(CreateTransactionalEmailTool::class, [
+        'workspace' => $team->slug,
+        'name' => 'Partial design',
+        'design' => ['root' => [], 'blocks' => []],
+    ])->assertHasErrors(['theme: Required.']);
+
+    MaildunServer::tool(CreateTransactionalEmailTool::class, [
+        'workspace' => $team->slug,
+        'name' => 'Password reset',
+        'design' => EmailTemplate::builderDesign([
+            'block-1' => ['type' => 'text', 'props' => ['markdown' => 'Reset with {{ reset_url }}']],
+        ]),
+    ])->assertOk();
+
+    $email = TransactionalEmail::query()->whereBelongsTo($team)->sole();
+
+    expect($email->html)->toContain('{{ reset_url }}')
+        ->and(array_column($email->variables, 'key'))->toContain('reset_url');
+});

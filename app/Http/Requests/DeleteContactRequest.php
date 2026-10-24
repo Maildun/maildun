@@ -6,6 +6,7 @@ use App\Models\Contact;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 
 class DeleteContactRequest extends FormRequest
 {
@@ -24,7 +25,7 @@ class DeleteContactRequest extends FormRequest
         abort_unless($contact instanceof Contact, 404);
 
         return [
-            'confirmation' => ['required', 'string', 'in:'.$contact->email],
+            'confirmation' => ['required', 'string', Rule::in([$contact->email])],
         ];
     }
 }
