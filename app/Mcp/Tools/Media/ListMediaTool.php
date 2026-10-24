@@ -2,7 +2,7 @@
 
 namespace App\Mcp\Tools\Media;
 
-use App\Enums\MediaStatus;
+use App\Actions\Media\SearchReadyTeamMedia;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
 use App\Models\Media;
@@ -26,6 +26,7 @@ class ListMediaTool extends Tool
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
+        private SearchReadyTeamMedia $search,
     ) {}
 
     public function handle(Request $request): ResponseFactory
@@ -36,18 +37,7 @@ class ListMediaTool extends Tool
             'search' => ['nullable', 'string', 'max:255'],
             'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
-        $search = trim((string) ($validated['search'] ?? ''));
-
-        $media = $team->media()
-            ->with(['category', 'tags'])
-            ->where('status', MediaStatus::Ready)
-            ->whereNotNull('path')
-            ->when($search !== '', fn ($query) => $query->where(fn ($query) => $query
-                ->whereLike('name', '%'.addcslashes($search, '%_\\').'%')
-                ->orWhereLike('alt', '%'.addcslashes($search, '%_\\').'%')))
-            ->latest()
-            ->limit($validated['limit'] ?? 20)
-            ->get();
+        $media = $this->search->handle($team, (string) ($validated['search'] ?? ''), $validated['limit'] ?? 20);
 
         return Response::structured([
             'workspace' => $this->payload->workspace($team),
