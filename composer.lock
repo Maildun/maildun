@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "e32b25765d4b91a391bdc9c065264d13",
+    "content-hash": "d5a1708ec0f8403401101ba1c9ad4f09",
     "packages": [
         {
             "name": "abduns/laravel-db-backup",
@@ -12,7 +12,7 @@
             "dist": {
                 "type": "path",
                 "url": "packages/abduns/laravel-db-backup",
-                "reference": "99057e61dbc1a7d94b22931952149e91d933f53f"
+                "reference": "6e2b70ec911e87b3c6afc2fddc76bc6a289a2cba"
             },
             "require": {
                 "ext-zlib": "*",
@@ -9640,7 +9640,7 @@
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/vlucas/phpdotenv/zipball/301c07936b16d88628b126b01d082ba153cf4c40",
+                "url": "https://api.github.com/repos/phpdotenv/phpdotenv/zipball/301c07936b16d88628b126b01d082ba153cf4c40",
                 "reference": "301c07936b16d88628b126b01d082ba153cf4c40",
                 "shasum": ""
             },

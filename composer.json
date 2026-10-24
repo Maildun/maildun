@@ -142,7 +142,10 @@
         "type": "path",
         "url": "packages/abduns/laravel-db-backup",
         "options": {
-            "symlink": true
+            "symlink": true,
+            "versions": {
+                "abduns/laravel-db-backup": "dev-main"
+            }
         }
     }]
 }
