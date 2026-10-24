@@ -44,6 +44,7 @@ use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
+use App\Services\AssistantModels;
 use App\Services\InstallationState;
 use App\Services\SesAccountLimits;
 use Illuminate\Database\Eloquent\Builder;
@@ -227,7 +228,7 @@ class EmailController extends Controller
         return to_route('emails.edit', ['current_team' => $currentTeam, 'email' => $email]);
     }
 
-    public function edit(Team $currentTeam, Email $email, BuildSendReadiness $sendReadiness, BuildMediaLibrary $mediaLibrary): Response|RedirectResponse
+    public function edit(Team $currentTeam, Email $email, BuildSendReadiness $sendReadiness, BuildMediaLibrary $mediaLibrary, AssistantModels $assistantModels): Response|RedirectResponse
     {
         Gate::authorize('view', $email);
 
@@ -344,6 +345,7 @@ class EmailController extends Controller
                 'reply_to' => $currentTeam->email_reply_to,
             ],
             'canManage' => Gate::allows('update', $email),
+            'assistantModels' => Gate::allows('update', $email) ? $assistantModels->options() : [],
             'mediaLibrary' => fn (): ?array => $email->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)
                 : null,

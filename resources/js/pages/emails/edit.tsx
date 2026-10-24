@@ -27,6 +27,9 @@ import type { FormEvent } from 'react';
 import { useMemo, useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteEmailModal from '@/components/delete-email-modal';
+import { DesignAssistant } from '@/components/design-assistant';
+import type { AssistantModel } from '@/components/design-assistant';
+import { DesignAssistantIcon } from '@/components/design-assistant-icon';
 import { EmailBuilderActions } from '@/components/email-builder-actions';
 import { EmailBuilderEditor } from '@/components/email-builder-editor';
 import { EmailHtmlEditor } from '@/components/email-html-editor';
@@ -92,6 +95,7 @@ import {
     firstUploadErrorMessage,
     useUploadToast,
 } from '@/hooks/use-upload-toast';
+import { readStoredModel } from '@/lib/assistant-model';
 import {
     BUILDER_MERGE_TAGS,
     EMPTY_BUILDER_DOCUMENT,
@@ -103,10 +107,13 @@ import {
     toBuilderDocument,
 } from '@/lib/email-builder';
 import type { SavedSection } from '@/lib/email-builder';
+import { generatePreheader } from '@/lib/generate-preheader';
 import { cn } from '@/lib/utils';
 import {
     checkLinks,
+    designAssistant,
     index,
+    preheader as preheaderRoute,
     previewAndSend,
     unschedule,
     update,
@@ -139,6 +146,7 @@ type Props = {
     mediaLibrary: MediaLibraryData | null;
     savedSections: SavedSection[];
     sendReadiness: SendReadiness;
+    assistantModels: AssistantModel[];
 };
 
 /** The Select primitive has no "empty" value, so absence gets its own key. */
@@ -234,8 +242,13 @@ export default function EmailEdit({
     mediaLibrary,
     savedSections,
     sendReadiness,
+    assistantModels,
 }: Props) {
     const [view, setView] = useState<'hub' | 'design'>('hub');
+    const [assistantOpen, setAssistantOpen] = useState(false);
+    const [assistantWorking, setAssistantWorking] = useState(false);
+    const assistantAvailable =
+        email.editor === 'builder' && canManage && assistantModels.length > 0;
     const [openSection, setOpenSection] = useState<DialogSection | null>(null);
     const [cancellingSchedule, setCancellingSchedule] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
@@ -648,6 +661,23 @@ export default function EmailEdit({
 
     setLayoutProps({ fullscreen: designing });
 
+    const writePreheader = async (
+        design: EmailBuilderDocument,
+    ): Promise<string> => {
+        const text = await generatePreheader(
+            preheaderRoute.url([currentTeam.slug, email.uuid]),
+            {
+                design,
+                subject: form.data.subject,
+                model: readStoredModel(assistantModels),
+            },
+        );
+        // The form's preheader is what gets sent, so keep it equal to the design's.
+        form.setData('preheader', text);
+
+        return text;
+    };
+
     return (
         <>
             <Head title={`Edit ${form.data.name || email.name}`} />
@@ -743,6 +773,29 @@ export default function EmailEdit({
                                         </span>
                                     </Button>
                                 ) : null}
+                                {assistantAvailable ? (
+                                    <Button
+                                        type="button"
+                                        variant={
+                                            assistantOpen
+                                                ? 'secondary'
+                                                : 'outline'
+                                        }
+                                        size="sm"
+                                        aria-pressed={assistantOpen}
+                                        aria-busy={assistantWorking}
+                                        data-test="toggle-design-assistant"
+                                        onClick={() =>
+                                            setAssistantOpen((open) => !open)
+                                        }
+                                    >
+                                        <DesignAssistantIcon
+                                            loading={assistantWorking}
+                                            data-icon="inline-start"
+                                        />
+                                        Assistant
+                                    </Button>
+                                ) : null}
                                 <Button
                                     type="button"
                                     variant="outline"
@@ -775,35 +828,79 @@ export default function EmailEdit({
                         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                             {email.editor === 'builder' ? (
                                 <>
-                                    <EmailBuilderEditor
-                                        ref={builderRef}
-                                        onPickImage={
-                                            mediaLibrary
-                                                ? pickBuilderImage
-                                                : undefined
-                                        }
-                                        onUploadImage={uploadBuilderImage}
-                                        paletteGroups={paletteGroups}
-                                        document={
-                                            form.data.design ??
-                                            EMPTY_BUILDER_DOCUMENT
-                                        }
-                                        disabled={!canManage}
-                                        fill
-                                        mergeTags={[
-                                            ...BUILDER_MERGE_TAGS,
-                                            ...(
-                                                selectedAudience?.attributes ??
-                                                []
-                                            ).map((attribute) => ({
-                                                key: attribute.key,
-                                                label: attribute.name,
-                                            })),
-                                        ]}
-                                        onChange={(design) =>
-                                            form.setData('design', design)
-                                        }
-                                    />
+                                    <div className="flex min-h-0 min-w-0 flex-1">
+                                        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                                            <EmailBuilderEditor
+                                                ref={builderRef}
+                                                onPickImage={
+                                                    mediaLibrary
+                                                        ? pickBuilderImage
+                                                        : undefined
+                                                }
+                                                onUploadImage={
+                                                    uploadBuilderImage
+                                                }
+                                                onGeneratePreheader={
+                                                    assistantAvailable
+                                                        ? writePreheader
+                                                        : undefined
+                                                }
+                                                paletteGroups={paletteGroups}
+                                                assistantOpen={
+                                                    assistantAvailable &&
+                                                    assistantOpen
+                                                }
+                                                document={
+                                                    form.data.design ??
+                                                    EMPTY_BUILDER_DOCUMENT
+                                                }
+                                                disabled={!canManage}
+                                                fill
+                                                mergeTags={[
+                                                    ...BUILDER_MERGE_TAGS,
+                                                    ...(
+                                                        selectedAudience?.attributes ??
+                                                        []
+                                                    ).map((attribute) => ({
+                                                        key: attribute.key,
+                                                        label: attribute.name,
+                                                    })),
+                                                ]}
+                                                onChange={(design) =>
+                                                    form.setData(
+                                                        'design',
+                                                        design,
+                                                    )
+                                                }
+                                            />
+                                        </div>
+                                        {assistantAvailable ? (
+                                            <DesignAssistant
+                                                url={designAssistant.url([
+                                                    currentTeam.slug,
+                                                    email.uuid,
+                                                ])}
+                                                models={assistantModels}
+                                                editor={builderRef}
+                                                open={assistantOpen}
+                                                campaign={{
+                                                    name: form.data.name,
+                                                    subject: form.data.subject,
+                                                    preheader:
+                                                        form.data.preheader,
+                                                    audience:
+                                                        selectedAudience?.name ??
+                                                        null,
+                                                }}
+                                                onStreamingChange={
+                                                    setAssistantWorking
+                                                }
+                                                onClose={() =>
+                                                    setAssistantOpen(false)
+                                                }
+                                            />
+                                        ) : null}
+                                    </div>
                                     <FieldError>
                                         {form.errors.design}
                                     </FieldError>

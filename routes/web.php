@@ -15,6 +15,7 @@ use App\Http\Controllers\ContactController;
 use App\Http\Controllers\ContactExportController;
 use App\Http\Controllers\ContactImportController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DesignAssistantController;
 use App\Http\Controllers\EditorMediaController;
 use App\Http\Controllers\EmailAttachmentController;
 use App\Http\Controllers\EmailController;
@@ -28,6 +29,7 @@ use App\Http\Controllers\InstallationController;
 use App\Http\Controllers\ListHygieneController;
 use App\Http\Controllers\MediaController;
 use App\Http\Controllers\MediaSettingsController;
+use App\Http\Controllers\PreheaderController;
 use App\Http\Controllers\PublicSubscribeFormController;
 use App\Http\Controllers\SavedSectionController;
 use App\Http\Controllers\SegmentController;
@@ -271,6 +273,12 @@ Route::prefix('{current_team}')
                 ->name('emails.check-links');
             Route::get('emails/{email}/compose-preview', [EmailController::class, 'composePreview'])
                 ->name('emails.compose-preview');
+            Route::post('emails/{email}/design-assistant', [DesignAssistantController::class, 'campaign'])
+                ->middleware('throttle:20,1')
+                ->name('emails.design-assistant');
+            Route::post('emails/{email}/preheader', [PreheaderController::class, 'campaign'])
+                ->middleware('throttle:20,1')
+                ->name('emails.preheader');
             Route::get('emails/{email}/preview-and-send', [EmailController::class, 'previewAndSend'])
                 ->name('emails.preview-and-send');
             Route::post('emails/{email}/attachments', [EmailAttachmentController::class, 'store'])
@@ -332,6 +340,12 @@ Route::prefix('{current_team}')
             Route::post('transactional-emails/{transactionalEmail}/test', [TransactionalEmailController::class, 'sendTest'])
                 ->middleware('throttle:6,1')
                 ->name('transactional_emails.test');
+            Route::post('transactional-emails/{transactionalEmail}/design-assistant', [DesignAssistantController::class, 'transactional'])
+                ->middleware('throttle:20,1')
+                ->name('transactional_emails.design-assistant');
+            Route::post('transactional-emails/{transactionalEmail}/preheader', [PreheaderController::class, 'transactional'])
+                ->middleware('throttle:20,1')
+                ->name('transactional_emails.preheader');
 
             Route::get('media/settings', [MediaSettingsController::class, 'edit'])
                 ->name('media.settings.edit');
@@ -361,6 +375,12 @@ Route::prefix('{current_team}')
                 ->name('email_templates.update');
             Route::delete('email-templates/{emailTemplate}', [EmailTemplateController::class, 'destroy'])
                 ->name('email_templates.destroy');
+            Route::post('email-templates/{emailTemplate}/design-assistant', [DesignAssistantController::class, 'template'])
+                ->middleware('throttle:20,1')
+                ->name('email_templates.design-assistant');
+            Route::post('email-templates/{emailTemplate}/preheader', [PreheaderController::class, 'template'])
+                ->middleware('throttle:20,1')
+                ->name('email_templates.preheader');
         });
 
         // Duplicating reaches starter templates, which belong to no team and so

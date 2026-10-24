@@ -18,6 +18,7 @@ use App\Models\EmailTemplate;
 use App\Models\SavedSection;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
+use App\Services\AssistantModels;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -107,7 +108,7 @@ class TransactionalEmailController extends Controller
         return to_route('transactional_emails.edit', ['current_team' => $currentTeam, 'transactionalEmail' => $email]);
     }
 
-    public function edit(Team $currentTeam, TransactionalEmail $transactionalEmail, BuildMediaLibrary $mediaLibrary): Response
+    public function edit(Team $currentTeam, TransactionalEmail $transactionalEmail, BuildMediaLibrary $mediaLibrary, AssistantModels $assistantModels): Response
     {
         Gate::authorize('view', $transactionalEmail);
 
@@ -153,6 +154,7 @@ class TransactionalEmailController extends Controller
                 ])
                 ->all(),
             'canManage' => Gate::allows('update', $transactionalEmail),
+            'assistantModels' => Gate::allows('update', $transactionalEmail) ? $assistantModels->options() : [],
             'mediaLibrary' => fn (): ?array => $transactionalEmail->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)
                 : null,

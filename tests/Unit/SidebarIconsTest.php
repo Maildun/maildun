@@ -61,7 +61,7 @@ test('app logo mark is a customizable inline SVG', function () {
         ->toContain('viewBox="0 0 63.72 70.16"')
         ->toContain('fill="currentColor"')
         ->toContain('color?: string;')
-        ->toContain("animate?: 'none' | 'pulse' | 'spin';")
+        ->toContain("animate?: 'none' | 'pulse' | 'spin' | 'think';")
         ->toContain("'motion-safe:animate-pulse'")
         ->toContain("'motion-safe:animate-spin'")
         ->toContain("type LogoMode = 'theme' | 'light' | 'dark';")

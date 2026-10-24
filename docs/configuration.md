@@ -84,6 +84,12 @@ The default callback origins are `https://chatgpt.com` and `https://grok.com`. N
 
 Remote OAuth needs a persistent Passport key pair; `app:install` does not generate it. See [Using MCP](mcp.md) for key setup, local and remote connection instructions, supported tools, and troubleshooting.
 
+## AI design assistant
+
+The design assistant is off until at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` is set. Each key adds that provider's models to the picker; override the model IDs with `ASSISTANT_OPENAI_MODEL`, `ASSISTANT_ANTHROPIC_MODEL`, `ASSISTANT_ANTHROPIC_FAST_MODEL`, and `ASSISTANT_GEMINI_MODEL`. It appears only in the Email Builder editor for campaigns, transactional emails, and templates, and only to users who can manage the item. The same models write preheaders from the preheader field's generate button.
+
+Each workspace may make `ASSISTANT_DAILY_LIMIT` requests per rolling 24 hours (default 100; `0` means unlimited). Requests are also throttled to 20 per minute. The assistant needs Node.js and the installed JavaScript packages on the server, like the MCP email builder tools (see [Production](production.md)), and it sends prompts and email design content to the selected third-party AI provider. Run `php artisan assistant:check` to confirm that a model is configured, the builder runtime works, and a model call succeeds.
+
 ## Secrets
 
 Never commit `.env`, provider credentials, API keys, database dumps, OAuth keys, `.mmdb` databases, or generated storage content. Prefer the hosting platform's secret manager and restrict access to backups and logs.

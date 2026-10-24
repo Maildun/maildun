@@ -7,9 +7,37 @@ use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Validation\ValidationException;
 use JsonException;
+use Throwable;
 
 class EmailBuilderAgent
 {
+    /**
+     * Why the runtime cannot run the bridge, for operators: null when it works,
+     * otherwise the runtime's own error (missing binary, missing package, …).
+     * Never shown to end users, since it can include server paths.
+     */
+    public function diagnose(): ?string
+    {
+        $runtime = (string) config('mcp.email_builder_runtime', 'node');
+
+        try {
+            $process = Process::path(base_path())
+                ->timeout(20)
+                ->input((string) json_encode(['document' => null, 'html' => null, 'tool' => 'get_document', 'input' => (object) [], 'merge_tags' => []]))
+                ->run([$runtime, resource_path('js/lib/email-builder-agent.mjs')]);
+        } catch (Throwable $exception) {
+            return "Could not start \"{$runtime}\": ".$exception->getMessage();
+        }
+
+        if ($process->successful() && str_contains($process->output(), '"ok":true')) {
+            return null;
+        }
+
+        $error = trim($process->errorOutput()) ?: trim($process->output()) ?: 'no output';
+
+        return "\"{$runtime}\" exited with code {$process->exitCode()}: ".mb_strimwidth($error, 0, 600, '…');
+    }
+
     /**
      * Validate a whole design supplied by a client and render its delivery HTML,
      * so the editor never receives a document the package cannot open.
@@ -85,13 +113,16 @@ class EmailBuilderAgent
         }
 
         // Keep JSON objects as objects; associative decoding re-encodes `{}` as `[]`,
-        // which breaks JSON Schemas and the `props: {}` of a saved or returned container.
+        // which breaks JSON Schemas, ops replayed in the browser editor, and the
+        // `props: {}` of a saved or returned container.
         $objects = json_decode($process->output(), flags: JSON_THROW_ON_ERROR);
         $result['document'] = DesignDocument::fromObjects($objects->document);
         $result['result'] = DesignDocument::fromObjects($objects->result ?? null);
 
-        if (isset($result['tools'])) {
-            $result['tools'] = $objects->tools;
+        foreach (['tools', 'ops'] as $key) {
+            if (isset($result[$key])) {
+                $result[$key] = $objects->{$key};
+            }
         }
 
         return $result;

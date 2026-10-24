@@ -8,6 +8,7 @@ use App\Http\Requests\SaveEmailTemplateRequest;
 use App\Models\EmailTemplate;
 use App\Models\SavedSection;
 use App\Models\Team;
+use App\Services\AssistantModels;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -68,7 +69,7 @@ class EmailTemplateController extends Controller
         return back();
     }
 
-    public function edit(Team $currentTeam, EmailTemplate $emailTemplate, BuildMediaLibrary $mediaLibrary): Response
+    public function edit(Team $currentTeam, EmailTemplate $emailTemplate, BuildMediaLibrary $mediaLibrary, AssistantModels $assistantModels): Response
     {
         Gate::authorize('update', $emailTemplate);
 
@@ -89,6 +90,7 @@ class EmailTemplateController extends Controller
             'templates' => $this->templatesFor($currentTeam),
             'defaultEditor' => $currentTeam->email_editor->value,
             'canManage' => Gate::allows('update', $emailTemplate),
+            'assistantModels' => $assistantModels->options(),
             'mediaLibrary' => fn (): ?array => $emailTemplate->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)
                 : null,

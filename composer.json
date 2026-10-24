@@ -26,6 +26,7 @@
         "dicebear/core": "^10.6",
         "dicebear/styles": "^10.5",
         "inertiajs/inertia-laravel": "^3.0",
+        "laravel/ai": "^1.0",
         "laravel/chisel": "^0.1.0",
         "laravel/fortify": "^1.37.2",
         "laravel/framework": "^13.17",
