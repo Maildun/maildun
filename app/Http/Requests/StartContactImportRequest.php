@@ -40,7 +40,7 @@ class StartContactImportRequest extends FormRequest
             'tags.*' => ['string', 'max:50'],
             'resubscribe_unsubscribed' => ['boolean'],
             // The language set on members without one in the file; only the audience's languages.
-            'language' => ['nullable', Rule::enum(SubscriberLanguage::class), Rule::in($contactImport->audience?->allowed_languages ?? [])],
+            'language' => ['nullable', Rule::enum(SubscriberLanguage::class), Rule::in($contactImport->audience->allowed_languages ?? [])],
             'review_options' => ['array'],
             ...collect(ContactImportIssue::cases())
                 ->filter(fn (ContactImportIssue $issue): bool => $issue->actions() !== [])

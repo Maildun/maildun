@@ -5,7 +5,6 @@ use App\Enums\TeamRole;
 use App\Models\Team;
 use App\Models\TeamInvitation;
 use App\Models\User;
-use Illuminate\Support\Facades\Notification;
 
 function gatedWorkspaceActions(): array
 {
