@@ -46,7 +46,12 @@ test('a double opt-in signup alerts only once it is confirmed', function () {
         'subscribed_at' => null,
     ]);
 
-    $this->get(URL::signedRoute('public.subscribe.confirm', $subscriber))->assertOk();
+    $confirmationUrl = URL::signedRoute('public.subscribe.confirm', $subscriber);
+    $this->get($confirmationUrl)->assertOk();
+
+    Notification::assertNothingSent();
+
+    $this->post($confirmationUrl)->assertRedirect($confirmationUrl);
 
     Notification::assertSentOnDemand(AudienceSubscriptionChanged::class, sentToAlerts('reader@example.com', subscribed: true));
 });
