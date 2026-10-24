@@ -428,7 +428,9 @@ test('a delivery gives its text part a working unsubscribe link', function () {
         'status' => EmailStatus::Sending,
     ]);
     TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($email->team))->create(['email' => 'reader@example.com']);
     $delivery = $email->deliveries()->create([
+        'subscriber_id' => $subscriber->id,
         'email_address' => 'reader@example.com',
         'status' => 'queued',
         'provider' => 'smtp',
@@ -449,7 +451,9 @@ test('an author placed text unsubscribe tag is filled instead of getting a secon
         'status' => EmailStatus::Sending,
     ]);
     TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($email->team))->create(['email' => 'reader@example.com']);
     $delivery = $email->deliveries()->create([
+        'subscriber_id' => $subscriber->id,
         'email_address' => 'reader@example.com',
         'status' => 'queued',
         'provider' => 'smtp',

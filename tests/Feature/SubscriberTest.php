@@ -240,7 +240,7 @@ test('owners can bulk unsubscribe and delete selected subscribers', function () 
 test('owners can bulk change the language of selected subscribers', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
-    $audience = Audience::factory()->for($team)->create();
+    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en', 'id']]);
     $selected = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
     $keep = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
 
@@ -260,6 +260,22 @@ test('owners can bulk change the language of selected subscribers', function () 
             'language' => 'klingon',
         ])
         ->assertInvalid('language');
+});
+
+test('bulk language only sets a language the audience offers', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create(['allowed_languages' => ['en']]);
+    $subscriber = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.bulk-language', [$team, $audience]), [
+            'ids' => [$subscriber->uuid],
+            'language' => SubscriberLanguage::Indonesian->value,
+        ])
+        ->assertInvalid('language');
+
+    expect($subscriber->fresh()->language)->toBe(SubscriberLanguage::English);
 });
 
 test('owners can bulk add and remove tags on selected subscribers', function () {
