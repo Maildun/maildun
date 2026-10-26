@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\ConversionEventController;
 use App\Http\Controllers\Api\V1\SubscriberController;
 use App\Http\Controllers\Api\V1\TransactionalEmailController;
 use App\Http\Controllers\AutomationTriggerController;
@@ -27,4 +28,8 @@ Route::prefix('v1')
         Route::delete('audiences/{audience}/subscribers', [SubscriberController::class, 'destroy'])
             ->whereUuid('audience')
             ->name('audiences.subscribers.destroy');
+
+        Route::post('conversions', [ConversionEventController::class, 'store'])
+            ->middleware('throttle:conversion-api')
+            ->name('conversions.store');
     });

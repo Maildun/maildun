@@ -3,13 +3,16 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audiences\BuildAudienceSubscriberStats;
+use App\Actions\Audiences\BuildSegmentRuleOptions;
+use App\Actions\Audiences\DeleteAudience;
+use App\Concerns\SearchesText;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
-use App\Enums\SubscriberStatus;
 use App\Enums\TransactionalEmailStatus;
 use App\Http\Requests\DeleteAudienceRequest;
 use App\Http\Requests\SaveAudienceRequest;
 use App\Models\Audience;
+use App\Models\Contact;
 use App\Models\Segment;
 use App\Models\SubscribeForm;
 use App\Models\Subscriber;
@@ -18,11 +21,15 @@ use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class AudienceController extends Controller
 {
+    use SearchesText;
+
     public function index(Request $request): Response
     {
         $team = $this->currentTeam($request);
@@ -31,21 +38,21 @@ class AudienceController extends Controller
         $query = $team->audiences()
             ->withCount([
                 'subscribers',
-                'subscribers as subscribed_count' => fn ($query) => $query->where('status', SubscriberStatus::Subscribed),
+                'subscribers as subscribed_count' => fn ($query) => $query->optedIn(),
                 'segments',
                 'subscribeForms',
             ])
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                $search = '%'.str($filters['search'])->lower().'%';
-                $query->where(fn ($audienceQuery) => $audienceQuery
-                    ->whereRaw('LOWER(name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(description) LIKE ?', [$search]));
+                $this->whereAnyColumnContains($query, ['name', 'description'], $filters['search']);
             })
             ->when($filters['filter'] === 'active', fn ($query) => $query->whereHas(
                 'subscribers',
-                fn ($subscribers) => $subscribers->where('status', SubscriberStatus::Subscribed),
+                fn ($subscribers) => $subscribers->optedIn(),
             ))
-            ->when($filters['filter'] === 'empty', fn ($query) => $query->doesntHave('subscribers'))
+            ->when($filters['filter'] === 'empty', fn ($query) => $query->whereDoesntHave(
+                'subscribers',
+                fn ($subscribers) => $subscribers->optedIn(),
+            ))
             ->when($filters['filter'] === 'segments', fn ($query) => $query->has('segments'))
             ->when($filters['filter'] === 'forms', fn ($query) => $query->has('subscribeForms'));
 
@@ -93,6 +100,7 @@ class AudienceController extends Controller
         Team $currentTeam,
         Audience $audience,
         BuildAudienceSubscriberStats $buildSubscriberStats,
+        BuildSegmentRuleOptions $buildSegmentRuleOptions,
     ): Response {
         Gate::authorize('view', $audience);
 
@@ -101,16 +109,17 @@ class AudienceController extends Controller
         $subscribers = $audience->subscribers()
             ->with(['subscribeForm:id,uuid,name,deleted_at', 'tags:id,uuid,name,color'])
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                $search = '%'.mb_strtolower($filters['search']).'%';
-                $query->where(fn ($subscriberQuery) => $subscriberQuery
-                    ->whereRaw('LOWER(email) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(first_name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(last_name) LIKE ?', [$search]));
+                $this->wherePersonContains($query, $filters['search']);
             })
-            ->when($filters['status'] !== 'all', fn ($query) => $query->where('status', $filters['status']))
+            ->when($filters['status'] !== 'all', fn ($query) => $query->withMembershipStatus($filters['status']))
             ->when($filters['source'] !== 'all', fn ($query) => $query->where('source', $filters['source']))
             ->when($filters['language'] !== 'all', fn ($query) => $query->where('language', $filters['language']))
+            ->when($filters['tag'] !== 'all', fn ($query) => $query->whereHas(
+                'contact.tags',
+                fn ($tagQuery) => $tagQuery->where('tags.uuid', $filters['tag']),
+            ))
             ->latest()
+            ->orderByDesc('subscribers.id')
             ->paginate(20)
             ->withQueryString()
             ->through(fn (Subscriber $subscriber) => [
@@ -133,15 +142,21 @@ class AudienceController extends Controller
                     'color' => $tag->color,
                 ])->all()),
                 'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
+                'pending_confirmation' => $subscriber->isPendingConfirmation() || $subscriber->isPendingResubscription(),
             ]);
 
-        $segments = $audience->segments()->withCount('subscribers')->latest()->get()->map(fn (Segment $segment) => [
+        // Sendable matches what a campaign to the segment would reach.
+        $segments = $audience->segments()->withCount([
+            'subscribers',
+            'subscribers as sendable_count' => fn ($query) => $query->sendableFor($currentTeam),
+        ])->latest()->get()->map(fn (Segment $segment) => [
             'uuid' => $segment->uuid,
             'name' => $segment->name,
             'description' => $segment->description,
             'match_type' => $segment->match_type->value,
             'rules' => $segment->rules,
             'subscribers_count' => $segment->subscribers_count,
+            'sendable_count' => $segment->sendable_count,
         ]);
 
         $forms = $audience->subscribeForms()->withCount('subscribers')->latest()->get()->map(fn (SubscribeForm $form) => [
@@ -162,34 +177,39 @@ class AudienceController extends Controller
         return Inertia::render('audiences/show', [
             'audience' => $this->audiencePayload($audience),
             'subscribers' => $subscribers,
-            'companies' => $currentTeam->companies()->orderBy('name')->get(['uuid', 'name']),
+            // Only the contact dialog needs these; it loads them when it opens.
+            'companies' => Inertia::optional(fn () => $currentTeam->companies()->alphabetical()->get(['uuid', 'name'])),
             'tags' => $tags,
             'subscriberStats' => $buildSubscriberStats->handle($audience),
             'segments' => $segments,
             'forms' => $forms,
+            'segmentRuleOptions' => $buildSegmentRuleOptions->handle($audience),
             'languages' => SubscriberLanguage::options(),
             'subscriberLanguages' => $audience->languageOptions(),
             'filters' => $filters,
             'canManage' => Gate::allows('update', $audience),
+            'canManageContacts' => Gate::allows('create', [Contact::class, $currentTeam]),
         ]);
     }
 
     public function update(SaveAudienceRequest $request, Team $currentTeam, Audience $audience): RedirectResponse
     {
         Gate::authorize('update', $audience);
-        $audience->update($this->audienceAttributes($request, $currentTeam));
+        $audience->update($this->audienceAttributes($request, $currentTeam, $audience));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Audience updated.')]);
 
         return back();
     }
 
-    public function destroy(DeleteAudienceRequest $request, Team $currentTeam, Audience $audience): RedirectResponse
+    public function destroy(DeleteAudienceRequest $request, Team $currentTeam, Audience $audience, DeleteAudience $deleteAudience): RedirectResponse
     {
         $team = $audience->team;
-        $audience->delete();
+        $pausedAutomations = $deleteAudience->handle($audience);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Audience deleted.')]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => $pausedAutomations === []
+            ? __('Audience deleted.')
+            : __('Audience deleted. Paused the automations it triggered: :automations.', ['automations' => implode(', ', $pausedAutomations)])]);
 
         return to_route('audiences.index', ['current_team' => $team]);
     }
@@ -237,7 +257,7 @@ class AudienceController extends Controller
     }
 
     /**
-     * @return array{search: string, status: string, source: string, language: string}
+     * @return array{search: string, status: string, source: string, language: string, tag: string}
      */
     private function subscriberFilters(Request $request): array
     {
@@ -246,9 +266,10 @@ class AudienceController extends Controller
 
         return [
             'search' => $request->string('search')->trim()->toString(),
-            'status' => SubscriberStatus::tryFrom($status)->value ?? 'all',
+            'status' => in_array($status, Subscriber::MEMBERSHIP_STATUSES, true) ? $status : 'all',
             'source' => SubscriberSource::tryFrom($source)->value ?? 'all',
             'language' => SubscriberLanguage::tryFrom($request->string('language')->toString())->value ?? 'all',
+            'tag' => Str::isUuid($request->string('tag')->toString()) ? Str::lower($request->string('tag')->toString()) : 'all',
         ];
     }
 
@@ -284,6 +305,7 @@ class AudienceController extends Controller
     private function audienceAttributes(
         SaveAudienceRequest $request,
         Team $team,
+        ?Audience $audience = null,
     ): array {
         $attributes = $request->validated();
 
@@ -319,6 +341,17 @@ class AudienceController extends Controller
 
         if (array_key_exists('double_opt_in', $attributes) && ! $attributes['double_opt_in']) {
             $attributes['double_opt_in_email_id'] = null;
+        }
+
+        $doubleOptIn = $attributes['double_opt_in'] ?? $audience->double_opt_in ?? false;
+        $doubleOptInEmailId = array_key_exists('double_opt_in_email_id', $attributes)
+            ? $attributes['double_opt_in_email_id']
+            : $audience?->double_opt_in_email_id;
+
+        if ($doubleOptIn && $doubleOptInEmailId === null) {
+            throw ValidationException::withMessages([
+                'double_opt_in_email_uuid' => __('Choose a published confirmation email to use double opt-in.'),
+            ]);
         }
 
         return $attributes;

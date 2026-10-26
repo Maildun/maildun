@@ -23,13 +23,20 @@ class UnsubscribeViaApi
                 ->lockForUpdate()
                 ->first();
 
-            if (! $subscriber instanceof Subscriber || $subscriber->status === SubscriberStatus::Unsubscribed) {
+            if (! $subscriber instanceof Subscriber) {
+                return null;
+            }
+
+            if ($subscriber->status === SubscriberStatus::Unsubscribed) {
+                $subscriber->update(['resubscribe_requested_at' => null]);
+
                 return $subscriber;
             }
 
             $subscriber->update([
                 'status' => SubscriberStatus::Unsubscribed,
                 'unsubscribed_at' => now(),
+                'resubscribe_requested_at' => null,
             ]);
             $changed = true;
 

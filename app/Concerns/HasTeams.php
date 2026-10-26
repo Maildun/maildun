@@ -179,7 +179,6 @@ trait HasTeams
         return new TeamPermissions(
             canUpdateTeam: $this->hasTeamPermission($team, TeamPermission::UpdateTeam),
             canDeleteTeam: $this->hasTeamPermission($team, TeamPermission::DeleteTeam),
-            canAddMember: $this->hasTeamPermission($team, TeamPermission::AddMember),
             canUpdateMember: $this->hasTeamPermission($team, TeamPermission::UpdateMember),
             canRemoveMember: $this->hasTeamPermission($team, TeamPermission::RemoveMember),
             canCreateInvitation: $this->hasTeamPermission($team, TeamPermission::CreateInvitation),

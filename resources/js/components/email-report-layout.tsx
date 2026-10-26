@@ -101,6 +101,8 @@ export type CampaignReportMetrics = {
     clicked: number;
     bounced: number;
     complained: number;
+    /** Recipients who opted out through this campaign's unsubscribe link. */
+    unsubscribed: number;
     failed: number;
     /** Queued deliveries whose last send attempt failed; the queue tries them again. */
     retrying: number;

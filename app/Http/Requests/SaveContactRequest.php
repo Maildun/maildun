@@ -26,8 +26,10 @@ class SaveContactRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $email = $this->input('email');
+
         $this->merge([
-            'email' => Str::lower($this->string('email')->trim()->toString()),
+            'email' => is_string($email) ? Str::lower(trim($email)) : $email,
             'first_name' => $this->blankToNull('first_name'),
             'last_name' => $this->blankToNull('last_name'),
             'company_uuid' => $this->blankToNull('company_uuid'),
@@ -56,11 +58,14 @@ class SaveContactRequest extends FormRequest
             'last_name' => ['nullable', 'string', 'max:255'],
             'company_assignment_mode' => ['required', Rule::enum(ContactCompanyAssignmentMode::class)],
             'company_uuid' => [
+                'exclude_unless:company_assignment_mode,manual',
                 'nullable',
                 'string',
                 Rule::exists(Company::class, 'uuid')->where('team_id', $team->id),
             ],
-            'tags' => ['sometimes', 'array', 'max:20'],
+            // A contact already past the limit (from an import, bulk tags or
+            // an automation) can still be edited without dropping tags first.
+            'tags' => ['sometimes', 'array', 'max:'.max(20, $contact instanceof Contact ? $contact->tags()->count() : 0)],
             'tags.*' => ['string', 'max:50'],
         ];
 
@@ -76,7 +81,7 @@ class SaveContactRequest extends FormRequest
             ];
             $rules['consent_confirmed'] = $hasAudienceSelection
                 ? ['required', 'accepted']
-                : ['sometimes', 'accepted'];
+                : ['nullable', 'boolean'];
         }
 
         return $rules;
@@ -87,6 +92,7 @@ class SaveContactRequest extends FormRequest
     {
         return [
             'email.unique' => __('This email is already used by another contact.'),
+            'company_uuid.exists' => __('That company no longer exists. Choose another company.'),
         ];
     }
 

@@ -32,9 +32,10 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string $uuid
  * @property string $name
  * @property string $email
+ * @property string|null $google_id
  * @property string|null $avatar_path
  * @property Carbon|null $email_verified_at
- * @property string $password
+ * @property string|null $password
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
@@ -49,7 +50,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property-read Collection<int, Team> $teams
  */
 #[Fillable(['name', 'email', 'password', 'current_team_id', 'avatar_path'])]
-#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token', 'avatar_path'])]
+#[Hidden(['password', 'google_id', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token', 'avatar_path'])]
 class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable, PasskeyUser
 {
     protected string $guard_name = 'web';
@@ -113,6 +114,17 @@ class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable,
     public function sendEmailVerificationNotification(): void
     {
         $this->notify(new VerifyEmail);
+    }
+
+    /**
+     * Determine whether the user can sign in with a password.
+     *
+     * Accounts created through Google start without one until it is set from
+     * Security settings or through a password reset.
+     */
+    public function hasPassword(): bool
+    {
+        return $this->password !== null;
     }
 
     /**

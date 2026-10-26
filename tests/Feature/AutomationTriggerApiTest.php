@@ -7,6 +7,7 @@ use App\Models\Audience;
 use App\Models\Automation;
 use App\Models\Subscriber;
 use App\Models\Team;
+use App\Models\User;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -258,6 +259,30 @@ test('a second call while a run is open is rejected', function () {
         ['email' => $subscriber->email],
         ['X-Automation-Token' => $automation->trigger_token],
     )->assertStatus(409);
+
+    expect($automation->runs()->count())->toBe(1);
+});
+
+test('a regenerated token takes over and the old one is refused', function () {
+    $user = User::factory()->create();
+    [$automation, $subscriber] = apiAutomation($user->currentTeam);
+    $oldToken = $automation->trigger_token;
+
+    $this->actingAs($user)
+        ->post(route('automations.regenerate-token', [$user->currentTeam, $automation]))
+        ->assertRedirect();
+
+    $this->postJson(
+        route('automations.trigger', $automation),
+        ['email' => $subscriber->email],
+        ['X-Automation-Token' => $oldToken],
+    )->assertUnauthorized();
+
+    $this->postJson(
+        route('automations.trigger', $automation),
+        ['email' => $subscriber->email],
+        ['X-Automation-Token' => $automation->refresh()->trigger_token],
+    )->assertStatus(202);
 
     expect($automation->runs()->count())->toBe(1);
 });

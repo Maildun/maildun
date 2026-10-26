@@ -15,7 +15,7 @@ use Laravel\Mcp\Server\Tools\Annotations\IsOpenWorld;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[Name('check-email-builder')]
-#[Description('Validates and lints a block email and returns its rendered HTML, plain text, and warnings without saving.')]
+#[Description('Validates and lints a block email and returns its warnings, outline, and plain text without saving. Pass include_html for the rendered HTML.')]
 #[IsOpenWorld(false)]
 #[IsReadOnly]
 class CheckEmailBuilderTool extends Tool
@@ -32,7 +32,7 @@ class CheckEmailBuilderTool extends Tool
     {
         return [
             ...$this->context->schema($schema),
-
+            'include_html' => $schema->boolean()->description('Include the full rendered HTML. Usually unnecessary; warnings and plain text cover most checks.')->default(false),
         ];
     }
 }

@@ -3,15 +3,19 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audiences\ResubscribeSubscriber;
+use App\Actions\Audiences\UnsubscribeSubscriber;
 use App\Actions\Automations\DispatchTaggedTriggers;
 use App\Enums\AutomationTrigger;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
+use App\Http\Requests\BulkSubscriberLanguageRequest;
 use App\Http\Requests\BulkSubscriberRequest;
+use App\Http\Requests\BulkSubscriberTagsRequest;
 use App\Http\Requests\ResubscribeSubscriberRequest;
 use App\Http\Requests\SaveSubscriberRequest;
 use App\Models\Audience;
+use App\Models\Contact;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Services\ManageContact;
@@ -57,7 +61,16 @@ class SubscriberController extends Controller
             'subscribed_at' => now(),
         ]);
 
-        $addedTags = $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []));
+        // An existing contact keeps the tags it has in its other audiences.
+        $addedTags = $contact->wasRecentlyCreated
+            ? $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []))
+            : $manageContact->addTags($currentTeam, $contact, $request->validated('tags', []));
+
+        if ($subscriber->status === SubscriberStatus::Unsubscribed) {
+            Inertia::flash('toast', ['type' => 'warning', 'message' => __('This person unsubscribed from this audience before, so they were added back as unsubscribed. Resubscribe them only if they consented again.')]);
+
+            return back();
+        }
 
         event(new SubscriberLifecycleOccurred(AutomationTrigger::Subscribed, $subscriber));
         $dispatchTaggedTriggers->handle($contact, $addedTags);
@@ -70,13 +83,17 @@ class SubscriberController extends Controller
     public function update(SaveSubscriberRequest $request, Team $currentTeam, Audience $audience, Subscriber $subscriber, ManageContact $manageContact, DispatchTaggedTriggers $dispatchTaggedTriggers): RedirectResponse
     {
         Gate::authorize('update', $subscriber);
+        $profile = Arr::only($request->validated(), ['email', 'first_name', 'last_name']);
+        $this->authorizeContactProfileChange($currentTeam, $subscriber->contact, $profile);
         $contact = $subscriber->contact ?? $manageContact->findOrCreate($currentTeam, $this->contactProfile($request));
-        $contact = $manageContact->update($contact, Arr::only($request->validated(), ['email', 'first_name', 'last_name']));
+        $contact = $manageContact->update($contact, $profile);
         $subscriber->update([
             'contact_id' => $contact->id,
             ...($request->has('language') ? ['language' => $request->validated('language')] : []),
         ]);
-        $addedTags = $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []));
+        $addedTags = $request->has('tags')
+            ? $manageContact->syncTags($currentTeam, $contact, $request->validated('tags', []))
+            : [];
         $dispatchTaggedTriggers->handle($contact, $addedTags);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber updated.')]);
@@ -84,15 +101,10 @@ class SubscriberController extends Controller
         return back();
     }
 
-    public function unsubscribe(Team $currentTeam, Audience $audience, Subscriber $subscriber): RedirectResponse
+    public function unsubscribe(Team $currentTeam, Audience $audience, Subscriber $subscriber, UnsubscribeSubscriber $unsubscribeSubscriber): RedirectResponse
     {
         Gate::authorize('update', $subscriber);
-        $subscriber->update([
-            'status' => SubscriberStatus::Unsubscribed,
-            'unsubscribed_at' => now(),
-        ]);
-
-        event(new SubscriberLifecycleOccurred(AutomationTrigger::Unsubscribed, $subscriber));
+        $unsubscribeSubscriber->handle($subscriber);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber unsubscribed.')]);
 
@@ -102,6 +114,13 @@ class SubscriberController extends Controller
     public function resubscribe(ResubscribeSubscriberRequest $request, Team $currentTeam, Audience $audience, Subscriber $subscriber, ResubscribeSubscriber $resubscribeSubscriber): RedirectResponse
     {
         Gate::authorize('update', $subscriber);
+
+        if ($subscriber->status !== SubscriberStatus::Unsubscribed) {
+            Inertia::flash('toast', ['type' => 'info', 'message' => __('This subscriber is already subscribed.')]);
+
+            return back();
+        }
+
         $resubscribeSubscriber->handle($subscriber, $request->ip());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber resubscribed.')]);
@@ -109,13 +128,36 @@ class SubscriberController extends Controller
         return back();
     }
 
+    /**
+     * The email and name belong to the shared contact, so changing them from an
+     * audience edits every membership and needs the contact permission too.
+     *
+     * @param  array<string, mixed>  $profile
+     */
+    private function authorizeContactProfileChange(Team $team, ?Contact $contact, array $profile): void
+    {
+        if (! $contact instanceof Contact) {
+            Gate::authorize('create', [Contact::class, $team]);
+
+            return;
+        }
+
+        $changed = collect($profile)->contains(
+            fn (mixed $value, string $key): bool => (string) $value !== (string) $contact->getAttribute($key),
+        );
+
+        if ($changed) {
+            Gate::authorize('update', $contact);
+        }
+    }
+
     /** @return array{email: string, first_name: string|null, last_name: string|null} */
     private function contactProfile(SaveSubscriberRequest $request): array
     {
         return [
             'email' => $request->string('email')->toString(),
-            'first_name' => $request->has('first_name') ? $request->string('first_name')->toString() : null,
-            'last_name' => $request->has('last_name') ? $request->string('last_name')->toString() : null,
+            'first_name' => $request->validated('first_name'),
+            'last_name' => $request->validated('last_name'),
         ];
     }
 
@@ -123,14 +165,9 @@ class SubscriberController extends Controller
     {
         Gate::authorize('delete', $subscriber);
 
-        $fromProfile = str_contains(url()->previous(), '/subscribers/'.$subscriber->uuid);
         $subscriber->delete();
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscriber permanently deleted.')]);
-
-        if ($fromProfile) {
-            return to_route('audiences.show', [$currentTeam, $audience]);
-        }
 
         return back();
     }
@@ -151,6 +188,11 @@ class SubscriberController extends Controller
                 'unsubscribed_at' => now(),
             ]);
 
+        $audience->subscribers()
+            ->whereIn('uuid', $request->validated('ids'))
+            ->whereNotNull('resubscribe_requested_at')
+            ->update(['resubscribe_requested_at' => null]);
+
         foreach ($subscribers as $subscriber) {
             $subscriber->status = SubscriberStatus::Unsubscribed;
             $subscriber->setAttribute('unsubscribed_at', now());
@@ -158,6 +200,56 @@ class SubscriberController extends Controller
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Selected subscribers unsubscribed.')]);
+
+        return back();
+    }
+
+    public function bulkLanguage(BulkSubscriberLanguageRequest $request, Team $currentTeam, Audience $audience): RedirectResponse
+    {
+        Gate::authorize('create', [Subscriber::class, $audience]);
+
+        $audience->subscribers()
+            ->whereIn('uuid', $request->validated('ids'))
+            ->update(['language' => $request->validated('language')]);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Language updated for selected subscribers.')]);
+
+        return back();
+    }
+
+    /**
+     * Tags belong to the contact, so adding or removing one here applies in
+     * every audience the contact is subscribed to.
+     */
+    public function bulkTags(BulkSubscriberTagsRequest $request, Team $currentTeam, Audience $audience, ManageContact $manageContact, DispatchTaggedTriggers $dispatchTaggedTriggers): RedirectResponse
+    {
+        Gate::authorize('create', [Subscriber::class, $audience]);
+
+        /** @var list<string> $names */
+        $names = $request->validated('tags');
+        $contacts = $audience->subscribers()
+            ->whereIn('uuid', $request->validated('ids'))
+            ->whereNotNull('contact_id')
+            ->with('contact')
+            ->get()
+            ->pluck('contact')
+            ->filter();
+
+        if ($request->validated('action') === 'add') {
+            foreach ($contacts as $contact) {
+                $dispatchTaggedTriggers->handle($contact, $manageContact->addTags($currentTeam, $contact, $names));
+            }
+
+            Inertia::flash('toast', ['type' => 'success', 'message' => __('Tags added to selected subscribers.')]);
+
+            return back();
+        }
+
+        foreach ($contacts as $contact) {
+            $manageContact->removeTags($currentTeam, $contact, $names);
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Tags removed from selected subscribers.')]);
 
         return back();
     }

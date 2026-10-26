@@ -17,6 +17,9 @@ import type { FormEvent } from 'react';
 import { useMemo, useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteTransactionalEmailModal from '@/components/delete-transactional-email-modal';
+import { DesignAssistant } from '@/components/design-assistant';
+import type { AssistantModel } from '@/components/design-assistant';
+import { DesignAssistantIcon } from '@/components/design-assistant-icon';
 import { EmailBuilderActions } from '@/components/email-builder-actions';
 import { EmailBuilderEditor } from '@/components/email-builder-editor';
 import { EmailHtmlEditor } from '@/components/email-html-editor';
@@ -64,6 +67,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { toast } from '@/components/ui/toast';
 import { useBuilderMediaPicker } from '@/hooks/use-builder-media-picker';
 import { useClipboard } from '@/hooks/use-clipboard';
+import { readStoredModel } from '@/lib/assistant-model';
 import {
     EMPTY_BUILDER_DOCUMENT,
     getChildrenIds,
@@ -74,10 +78,13 @@ import {
     toBuilderDocument,
 } from '@/lib/email-builder';
 import type { SavedSection } from '@/lib/email-builder';
+import { generatePreheader } from '@/lib/generate-preheader';
 import { cn } from '@/lib/utils';
 import {
+    designAssistant,
     index,
     log,
+    preheader as preheaderRoute,
     publish,
     unpublish,
     update,
@@ -99,6 +106,7 @@ type Props = {
     canManage: boolean;
     currentTeam: Team;
     auth: { user: { email: string } };
+    assistantModels: AssistantModel[];
     mediaLibrary: MediaLibraryData | null;
     savedSections: SavedSection[];
 };
@@ -188,10 +196,15 @@ export default function TransactionalEdit({
     canManage,
     currentTeam,
     auth,
+    assistantModels,
     mediaLibrary,
     savedSections,
 }: Props) {
     const [view, setView] = useState<'hub' | 'design'>('hub');
+    const [assistantOpen, setAssistantOpen] = useState(false);
+    const [assistantWorking, setAssistantWorking] = useState(false);
+    const assistantAvailable =
+        email.editor === 'builder' && canManage && assistantModels.length > 0;
     const builderRef = useRef<EmailEditorHandle>(null);
     const savedSectionsGroup = useSavedSectionsGroup({
         teamSlug: currentTeam.slug,
@@ -396,6 +409,23 @@ export default function TransactionalEdit({
 
     setLayoutProps({ fullscreen: designing });
 
+    const writePreheader = async (
+        design: EmailBuilderDocument,
+    ): Promise<string> => {
+        const text = await generatePreheader(
+            preheaderRoute.url([currentTeam.slug, email.uuid]),
+            {
+                design,
+                subject: form.data.subject,
+                model: readStoredModel(assistantModels),
+            },
+        );
+        // The form's preheader is what gets sent, so keep it equal to the design's.
+        form.setData('preheader', text);
+
+        return text;
+    };
+
     return (
         <>
             <Head title={`Edit ${form.data.name || email.name}`} />
@@ -477,6 +507,29 @@ export default function TransactionalEdit({
                                         </span>
                                     </Button>
                                 ) : null}
+                                {assistantAvailable ? (
+                                    <Button
+                                        type="button"
+                                        variant={
+                                            assistantOpen
+                                                ? 'secondary'
+                                                : 'outline'
+                                        }
+                                        size="sm"
+                                        aria-pressed={assistantOpen}
+                                        aria-busy={assistantWorking}
+                                        data-test="toggle-design-assistant"
+                                        onClick={() =>
+                                            setAssistantOpen((open) => !open)
+                                        }
+                                    >
+                                        <DesignAssistantIcon
+                                            loading={assistantWorking}
+                                            data-icon="inline-start"
+                                        />
+                                        Assistant
+                                    </Button>
+                                ) : null}
                                 {canManage ? (
                                     <Button
                                         type="submit"
@@ -495,25 +548,60 @@ export default function TransactionalEdit({
                         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                             {email.editor === 'builder' ? (
                                 <>
-                                    <EmailBuilderEditor
-                                        ref={builderRef}
-                                        onPickImage={
-                                            mediaLibrary
-                                                ? pickBuilderImage
-                                                : undefined
-                                        }
-                                        onUploadImage={uploadBuilderImage}
-                                        paletteGroups={paletteGroups}
-                                        document={
-                                            form.data.design ??
-                                            EMPTY_BUILDER_DOCUMENT
-                                        }
-                                        disabled={!canManage}
-                                        fill
-                                        onChange={(design) =>
-                                            form.setData('design', design)
-                                        }
-                                    />
+                                    <div className="flex min-h-0 min-w-0 flex-1">
+                                        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                                            <EmailBuilderEditor
+                                                ref={builderRef}
+                                                onPickImage={
+                                                    mediaLibrary
+                                                        ? pickBuilderImage
+                                                        : undefined
+                                                }
+                                                onUploadImage={
+                                                    uploadBuilderImage
+                                                }
+                                                onGeneratePreheader={
+                                                    assistantAvailable
+                                                        ? writePreheader
+                                                        : undefined
+                                                }
+                                                paletteGroups={paletteGroups}
+                                                assistantOpen={
+                                                    assistantAvailable &&
+                                                    assistantOpen
+                                                }
+                                                document={
+                                                    form.data.design ??
+                                                    EMPTY_BUILDER_DOCUMENT
+                                                }
+                                                disabled={!canManage}
+                                                fill
+                                                onChange={(design) =>
+                                                    form.setData(
+                                                        'design',
+                                                        design,
+                                                    )
+                                                }
+                                            />
+                                        </div>
+                                        {assistantAvailable ? (
+                                            <DesignAssistant
+                                                url={designAssistant.url([
+                                                    currentTeam.slug,
+                                                    email.uuid,
+                                                ])}
+                                                models={assistantModels}
+                                                editor={builderRef}
+                                                open={assistantOpen}
+                                                onStreamingChange={
+                                                    setAssistantWorking
+                                                }
+                                                onClose={() =>
+                                                    setAssistantOpen(false)
+                                                }
+                                            />
+                                        ) : null}
+                                    </div>
                                     <FieldError>
                                         {form.errors.design}
                                     </FieldError>

@@ -1,0 +1,65 @@
+<?php
+
+namespace App\Mcp\Support;
+
+use App\Actions\Audiences\AddContactToAudiences;
+use App\Actions\Automations\DispatchTaggedTriggers;
+use App\Enums\ContactCompanyAssignmentMode;
+use App\Enums\SubscriberStatus;
+use App\Models\Audience;
+use App\Models\AudienceOptOut;
+use App\Models\Contact;
+use App\Models\Team;
+use App\Services\ManageContact;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+
+class AudienceMembership
+{
+    public function __construct(
+        private ManageContact $manageContact,
+        private AddContactToAudiences $addContactToAudiences,
+        private DispatchTaggedTriggers $dispatchTaggedTriggers,
+    ) {}
+
+    /**
+     * Find or create the workspace contact and subscribe it to each audience
+     * on a team member's consent. An existing contact keeps its profile and
+     * tags, and anyone who unsubscribed is refused here: winning them back is
+     * an explicit resubscribe, never a side effect of adding them again.
+     *
+     * @param  array{email: string, first_name?: string|null, last_name?: string|null, company_id?: int|null, company_assignment_mode?: ContactCompanyAssignmentMode}  $profile
+     * @param  Collection<int, Audience>  $audiences
+     * @param  list<string>  $tags
+     * @param  string|null  $language  for new memberships; defaults to each audience's default
+     * @return array{0: Contact, 1: int}
+     */
+    public function join(Team $team, array $profile, Collection $audiences, array $tags = [], ?string $language = null): array
+    {
+        $unsubscribedFrom = $audiences->filter(fn (Audience $audience): bool => AudienceOptOut::existsFor($audience->id, $profile['email'])
+            || $audience->subscribers()
+                ->where('email', $profile['email'])
+                ->where('status', SubscriberStatus::Unsubscribed)
+                ->exists());
+
+        if ($unsubscribedFrom->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'email' => 'This person unsubscribed from '.$unsubscribedFrom->pluck('name')->join(', ')
+                    .'. Use resubscribe-subscriber only if they consented again.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($team, $profile, $audiences, $tags, $language): array {
+            $contact = $this->manageContact->findOrCreate($team, $profile);
+            $addedTags = $contact->wasRecentlyCreated
+                ? $this->manageContact->syncTags($team, $contact, $tags)
+                : [];
+
+            $changedMemberships = $this->addContactToAudiences->handle($contact, $audiences, null, language: $language);
+            $this->dispatchTaggedTriggers->handle($contact, $addedTags);
+
+            return [$contact, $changedMemberships];
+        });
+    }
+}

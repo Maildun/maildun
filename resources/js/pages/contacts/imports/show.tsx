@@ -4,7 +4,15 @@ import {
     InformationCircleIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Form, Head, Link, useForm, usePage, usePoll } from '@inertiajs/react';
+import {
+    Form,
+    Head,
+    Link,
+    router,
+    useForm,
+    usePage,
+    usePoll,
+} from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import {
@@ -57,10 +65,12 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { formatRelativeTime } from '@/lib/format';
+import { tagsError } from '@/lib/tags';
 import { cn } from '@/lib/utils';
 import { show as showAudience } from '@/routes/audiences';
 import {
     cancel,
+    delimiter as changeDelimiter,
     destroy,
     report as downloadReport,
     retry,
@@ -187,6 +197,7 @@ export default function ContactImportShow({
 
                 {mapping && canManage ? (
                     <MappingForm
+                        key={mapping.delimiter}
                         contactImport={contactImport}
                         mapping={mapping}
                         issues={issues}
@@ -321,6 +332,56 @@ function Outcome({
     return null;
 }
 
+function DelimiterSelect({
+    mapping,
+    routeArgs,
+}: {
+    mapping: ContactImportMapping;
+    routeArgs: RouteArgs;
+}) {
+    const [processing, setProcessing] = useState(false);
+
+    return (
+        <Select
+            items={mapping.delimiters}
+            value={mapping.delimiter}
+            disabled={processing}
+            onValueChange={(value) => {
+                if (typeof value !== 'string' || value === mapping.delimiter) {
+                    return;
+                }
+
+                router.put(
+                    changeDelimiter.url(routeArgs),
+                    { delimiter: value },
+                    {
+                        preserveScroll: true,
+                        onStart: () => setProcessing(true),
+                        onFinish: () => setProcessing(false),
+                    },
+                );
+            }}
+        >
+            <SelectTrigger
+                className="w-40"
+                aria-label="Column delimiter"
+                data-test="import-delimiter"
+            >
+                <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectGroup>
+                    {mapping.delimiters.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                        </SelectItem>
+                    ))}
+                </SelectGroup>
+            </SelectContent>
+        </Select>
+    );
+}
+
 function MappingForm({
     contactImport,
     mapping,
@@ -337,6 +398,7 @@ function MappingForm({
         column_map: mapping.columnMap,
         merge_strategy: 'skip' as ContactImport['merge_strategy'],
         tags: [] as string[],
+        language: null as ContactImport['language'],
         resubscribe_unsubscribed: false,
         consent_confirmed: false,
         review_options: contactImport.review_options,
@@ -351,6 +413,7 @@ function MappingForm({
                 column.field !== null,
         );
     const hasEmail = form.data.column_map.includes('email');
+    const hasLanguageColumn = form.data.column_map.includes('language');
 
     const setColumnField = (columnIndex: number, field: string | null) => {
         form.setData(
@@ -376,6 +439,9 @@ function MappingForm({
                 variant="inset"
                 title="Map columns"
                 description="Choose what each column holds. Columns set to Don't import are skipped."
+                actions={
+                    <DelimiterSelect mapping={mapping} routeArgs={routeArgs} />
+                }
             >
                 <Table className="table-fixed">
                     <TableHeader>
@@ -552,7 +618,7 @@ function MappingForm({
                         <FieldError>{form.errors.merge_strategy}</FieldError>
                     </Field>
 
-                    <Field data-invalid={Boolean(form.errors.tags)}>
+                    <Field data-invalid={Boolean(tagsError(form.errors))}>
                         <FieldLabel htmlFor="import-tags">
                             Tag every imported contact
                         </FieldLabel>
@@ -569,11 +635,70 @@ function MappingForm({
                             Useful to find this batch later, such as
                             &ldquo;Webinar 2026&rdquo;.
                         </FieldDescription>
-                        <FieldError>{form.errors.tags}</FieldError>
+                        <FieldError>{tagsError(form.errors)}</FieldError>
                     </Field>
 
                     {isAudienceImport ? (
                         <>
+                            <Field data-invalid={Boolean(form.errors.language)}>
+                                <FieldLabel htmlFor="import-language">
+                                    Language
+                                </FieldLabel>
+                                <Select
+                                    items={[
+                                        {
+                                            value: IGNORE,
+                                            label: 'Audience default',
+                                        },
+                                        ...mapping.languages,
+                                    ]}
+                                    value={form.data.language ?? IGNORE}
+                                    onValueChange={(value) =>
+                                        form.setData(
+                                            'language',
+                                            typeof value === 'string' &&
+                                                value !== IGNORE
+                                                ? (value as ContactImport['language'])
+                                                : null,
+                                        )
+                                    }
+                                >
+                                    <SelectTrigger
+                                        id="import-language"
+                                        className="w-full sm:w-64"
+                                        data-test="import-language"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectGroup>
+                                            <SelectItem value={IGNORE}>
+                                                Audience default
+                                            </SelectItem>
+                                        </SelectGroup>
+                                        <SelectSeparator />
+                                        <SelectGroup>
+                                            {mapping.languages.map(
+                                                (language) => (
+                                                    <SelectItem
+                                                        key={language.value}
+                                                        value={language.value}
+                                                    >
+                                                        {language.label}
+                                                    </SelectItem>
+                                                ),
+                                            )}
+                                        </SelectGroup>
+                                    </SelectContent>
+                                </Select>
+                                <FieldDescription>
+                                    {hasLanguageColumn
+                                        ? 'Used for rows with an empty Language column. Filled cells keep their own language.'
+                                        : 'Assigned to every imported subscriber. To set it per row, map a column to Language (codes like en or names like English).'}
+                                </FieldDescription>
+                                <FieldError>{form.errors.language}</FieldError>
+                            </Field>
+
                             <Field orientation="horizontal">
                                 <FieldContent>
                                     <FieldLabel htmlFor="import-resubscribe">
@@ -989,8 +1114,8 @@ function RowErrorsPanel({
             variant="inset"
             title="Rows that could not be imported"
             description={
-                contactImport.error_count > rowErrors.length
-                    ? `Showing ${rowErrors.length} of ${contactImport.error_count.toLocaleString()} recorded errors.`
+                contactImport.failed_rows > rowErrors.length
+                    ? `Showing ${rowErrors.length} of ${contactImport.failed_rows.toLocaleString()} rows. Download the report for the rest.`
                     : 'Fix these rows in your spreadsheet and import them again.'
             }
         >

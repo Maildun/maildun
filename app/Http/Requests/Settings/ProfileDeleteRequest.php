@@ -13,10 +13,17 @@ class ProfileDeleteRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
+     * An account that signed up with Google has no password to type;
+     * ProfileController asks it for a recent confirmation instead.
+     *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
+        if ($this->user()?->hasPassword() === false) {
+            return [];
+        }
+
         return [
             'password' => $this->currentPasswordRules(),
         ];

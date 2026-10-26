@@ -22,7 +22,7 @@ use Illuminate\Support\Str;
  * @property Carbon|null $last_used_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read Team $team
+ * @property-read Team|null $team
  */
 #[Fillable(['team_id', 'name', 'prefix', 'token_hash', 'last_used_at'])]
 #[Hidden(['token_hash'])]

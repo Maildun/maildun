@@ -37,3 +37,16 @@ export function tagBadgeVariant(color: string | null): BadgeVariant {
 
     return TAG_COLORS[color.toLowerCase()]?.variant ?? 'default';
 }
+
+/**
+ * The error for a tags field: the array rule's own message, or the first one
+ * raised for a single tag (`tags.0`), such as a name that is too long.
+ */
+export function tagsError(
+    errors: Partial<Record<string, string>>,
+): string | undefined {
+    return (
+        errors.tags ??
+        Object.entries(errors).find(([key]) => key.startsWith('tags.'))?.[1]
+    );
+}

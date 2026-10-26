@@ -10,17 +10,44 @@ Copy `.env.example` to `.env` and treat the resulting file as a secret. This pag
 | `APP_PREVIOUS_KEYS` | Former `APP_KEY` values kept as decryption fallbacks | Set during a rotation so encrypted workspace credentials keep working |
 | `APP_URL` | Canonical origin for signed links and the passkey relying party | Use the public HTTPS origin |
 | `APP_DEBUG` | Detailed exception output | Always `false` in production |
-| `PASSKEYS_USER_HANDLE_SECRET` | Derives the WebAuthn user handle | Set it explicitly; left empty it defaults to `APP_KEY` |
+| `PASSKEYS_USER_HANDLE_SECRET` | Derives the WebAuthn user handle | Set it once to its own random, stable value; when empty or absent it falls back to `APP_KEY` |
 | `REGISTRATION_ENABLED` | Allows public account creation | Prefer `false` unless open registration is intentional |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Enables "Continue with Google" | Leave empty to hide the button; set both from a Google Cloud OAuth client |
+| `GOOGLE_REDIRECT_URI` | Callback URL sent to Google | Leave unset; it defaults to `APP_URL` + `/auth/google/callback` |
 | `TRUSTED_PROXIES` | Trusts proxy-provided client addresses | Use explicit proxy addresses when possible; never set `*` on a directly exposed server |
 
 Invited teammates can finish registration even when public registration is disabled.
 
+"Continue with Google" appears on the login, registration, and password confirmation
+screens once both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set; with either one
+empty the button is hidden and every Google route responds 404. In Google Cloud Console,
+create a Web application OAuth client and add `{APP_URL}/auth/google/callback` as an
+authorized redirect URI. Google sign-in follows the same rules as the register form:
+new accounts need `REGISTRATION_ENABLED=true` or a pending workspace invitation for that
+address, none can be created before installation finishes, and each starts with its
+own personal workspace. Only addresses Google
+reports as verified are accepted. An existing account is linked by email only if its own
+address is verified, and after that it is matched by its Google account ID. Two-factor
+authentication still applies, and people who signed up with Google can set a password
+later from Security settings.
+
 `APP_URL` carries more weight than its name suggests. Queue workers serve no request and
 cannot infer the host, so open pixels, click redirects, and unsubscribe links are signed
 against this value; changing it invalidates the links in every message already delivered.
-Its host is also the passkey relying party ID, so a change locks people out of passkey
-sign-in unless `PASSKEYS_USER_HANDLE_SECRET` was set independently.
+Its host is also the passkey relying party ID, so changing the host invalidates every
+registered passkey, whatever `PASSKEYS_USER_HANDLE_SECRET` is set to.
+
+`PASSKEYS_USER_HANDLE_SECRET` keys the HMAC that derives the WebAuthn user handle given to
+an authenticator when a passkey is registered. Left empty, as the
+`PASSKEYS_USER_HANDLE_SECRET=` line in `.env.example` ships, or removed, it falls back to
+`APP_KEY`. Set it once to its own random, stable value, for example from
+`openssl rand -base64 32`, so the handle stays the same if `APP_KEY` is ever rotated.
+
+The secret is used only at registration. Sign-in checks the handle stored with each
+passkey, so changing the secret, or rotating `APP_KEY` while it is unset, leaves existing
+passkeys working; only passkeys registered afterwards get a handle derived from the new
+value. Passkeys registered by earlier releases, which used an empty secret when the line
+was left blank, also keep working.
 
 ## Database, Redis, and queues
 
@@ -83,6 +110,12 @@ Maildun provides a local MCP server through `.mcp.json` and a remote OAuth-prote
 The default callback origins are `https://chatgpt.com` and `https://grok.com`. Native callback schemes are configured separately in `config/mcp.php`; only `cursor` is enabled by default. Access tokens expire after `MCP_ACCESS_TOKEN_EXPIRATION_MINUTES` (default 60), and refresh tokens after `MCP_REFRESH_TOKEN_EXPIRATION_DAYS` (default 30).
 
 Remote OAuth needs a persistent Passport key pair; `app:install` does not generate it. See [Using MCP](mcp.md) for key setup, local and remote connection instructions, supported tools, and troubleshooting.
+
+## AI design assistant
+
+The design assistant is off until at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` is set. Each key adds that provider's models to the picker; override the model IDs with `ASSISTANT_OPENAI_MODEL`, `ASSISTANT_ANTHROPIC_MODEL`, `ASSISTANT_ANTHROPIC_FAST_MODEL`, and `ASSISTANT_GEMINI_MODEL`. It appears only in the Email Builder editor for campaigns, transactional emails, and templates, and only to users who can manage the item. The same models write preheaders from the preheader field's generate button.
+
+Each workspace may make `ASSISTANT_DAILY_LIMIT` requests per rolling 24 hours (default 100; `0` means unlimited). Requests are also throttled to 20 per minute. The assistant needs Node.js and the installed JavaScript packages on the server, like the MCP email builder tools (see [Production](production.md)), and it sends prompts and email design content to the selected third-party AI provider. Run `php artisan assistant:check` to confirm that a model is configured, the builder runtime works, and a model call succeeds.
 
 ## Secrets
 

@@ -16,10 +16,12 @@ use App\Mail\CampaignEmail;
 use App\Models\Email;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
+use App\Models\Subscriber;
 use App\Services\ResolvedEmailTransport;
 use App\Services\TeamMailer;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -219,18 +221,57 @@ class SendEmailDelivery implements ShouldQueue
     {
         // The campaign must still be sending. StopEmailSend flips the campaign
         // and cancels unclaimed rows in one transaction, so a racing claim
-        // either wins (and sends) or sees the stop (and sends nothing).
-        return EmailDelivery::query()
+        // either wins (and sends) or sees the stop (and sends nothing). The
+        // recipient must also still be opted in: an unsubscribe or a deleted
+        // membership after the row was queued means nobody is mailed.
+        $claimed = EmailDelivery::query()
             ->whereKey($delivery->id)
             ->where('status', EmailDeliveryStatus::Queued)
             ->whereNull('send_attempted_at')
             ->whereIn('email_id', Email::query()->whereIn('status', EmailStatus::active())->select('id'))
+            ->whereExists($this->optedInRecipient())
             ->update([
                 'status' => EmailDeliveryStatus::Sending,
                 'send_attempted_at' => now(),
                 'failure_reason' => null,
                 'failure_code' => null,
             ]) === 1;
+
+        if (! $claimed) {
+            $this->cancelForUnavailableRecipient($delivery);
+        }
+
+        return $claimed;
+    }
+
+    /**
+     * Close a still-queued row whose recipient unsubscribed or was removed, so
+     * FinalizeEmailSend does not report it as a send that never came back.
+     */
+    private function cancelForUnavailableRecipient(EmailDelivery $delivery): void
+    {
+        EmailDelivery::query()
+            ->whereKey($delivery->id)
+            ->where('status', EmailDeliveryStatus::Queued)
+            ->whereNull('send_attempted_at')
+            ->whereNotExists($this->optedInRecipient())
+            ->update([
+                'status' => EmailDeliveryStatus::Cancelled,
+                'failure_reason' => __('The recipient unsubscribed or was removed before this email was sent.'),
+                'failure_code' => EmailFailureCode::RecipientUnavailable,
+            ]);
+    }
+
+    /**
+     * The delivery's subscriber, provided they still exist and are opted in.
+     *
+     * @return Builder<Subscriber>
+     */
+    private function optedInRecipient(): Builder
+    {
+        return Subscriber::query()
+            ->optedIn()
+            ->whereColumn('subscribers.id', 'email_deliveries.subscriber_id');
     }
 
     /**

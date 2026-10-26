@@ -5,18 +5,33 @@ namespace App\Http\Requests;
 use App\Enums\SubscribeFormFieldMode;
 use App\Enums\SubscriberLanguage;
 use App\Enums\TransactionalEmailStatus;
+use App\Models\Audience;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use App\Rules\AuthorizedSenderAddress;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class SaveAudienceRequest extends FormRequest
 {
     public const string WORKSPACE_DEFAULT_SENDER = 'workspace-default';
+
+    /**
+     * Authorize before validating, so a view-only member gets a 403 rather
+     * than validation errors for a form they could never save.
+     */
+    public function authorize(): bool
+    {
+        $audience = $this->route('audience');
+
+        return $audience instanceof Audience
+            ? Gate::allows('update', $audience)
+            : Gate::allows('create', [Audience::class, $this->route('current_team')]);
+    }
 
     protected function prepareForValidation(): void
     {
@@ -57,7 +72,7 @@ class SaveAudienceRequest extends FormRequest
                 'default_language' => [
                     $languageIsVisible ? 'required' : 'nullable',
                     Rule::enum(SubscriberLanguage::class),
-                    Rule::in($this->input('allowed_languages', [])),
+                    Rule::in(array_values(array_filter((array) $this->input('allowed_languages', []), is_string(...)))),
                 ],
             ];
         }
@@ -73,14 +88,16 @@ class SaveAudienceRequest extends FormRequest
             ...$languageRules,
             'double_opt_in' => ['sometimes', 'boolean'],
             'double_opt_in_email_uuid' => [
-                Rule::requiredIf(fn (): bool => $this->boolean('double_opt_in')),
+                Rule::requiredIf(fn (): bool => $this->doubleOptInStaysOn()),
                 'nullable',
                 'string',
-                Rule::exists(TransactionalEmail::class, 'uuid')->where(
-                    fn ($query) => $query
-                        ->where('team_id', $team->id)
-                        ->where('status', TransactionalEmailStatus::Published->value),
-                ),
+                Rule::exists(TransactionalEmail::class, 'uuid')
+                    ->where(
+                        fn ($query) => $query
+                            ->where('team_id', $team->id)
+                            ->where('status', TransactionalEmailStatus::Published->value),
+                    )
+                    ->withoutTrashed(),
             ],
             'sender_uuid' => [
                 'sometimes',
@@ -112,6 +129,32 @@ class SaveAudienceRequest extends FormRequest
             'notification_email' => ['nullable', 'string', 'email', 'max:255'],
             'unsubscribed_url' => ['nullable', 'string', 'url:http,https', 'max:2048'],
         ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'double_opt_in_email_uuid.required' => __('Choose a published confirmation email to use double opt-in.'),
+            'double_opt_in_email_uuid.exists' => __('Choose a published confirmation email.'),
+        ];
+    }
+
+    /**
+     * Double opt-in is on after this save when the request turns it on, or
+     * leaves the flag out of a partial save while touching the email.
+     */
+    private function doubleOptInStaysOn(): bool
+    {
+        if ($this->exists('double_opt_in')) {
+            return $this->boolean('double_opt_in');
+        }
+
+        $audience = $this->route('audience');
+
+        return $this->exists('double_opt_in_email_uuid')
+            && $audience instanceof Audience
+            && $audience->double_opt_in;
     }
 
     /**

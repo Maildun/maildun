@@ -1,7 +1,7 @@
 import { Add01Icon, ArrowLeft01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Link, useForm, useHttp } from '@inertiajs/react';
-import { useState } from 'react';
+import { Link, router, useForm, useHttp } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
 import { TagsCombobox } from '@/components/tags-combobox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +33,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import { tagsError } from '@/lib/tags';
 import { lookup, show, store, update } from '@/routes/contacts';
 import type { Tag } from '@/types/audiences';
 import type {
@@ -55,7 +56,11 @@ type ContactFormData = {
 
 type ContactDialogProps = {
     teamSlug: string;
-    companies: CompanyOption[];
+    /**
+     * Undefined while the page has not loaded its optional `companies` prop;
+     * the dialog reloads it when it opens.
+     */
+    companies?: CompanyOption[];
     tags: Tag[];
     audiences?: CompanyOption[];
     lacksAudienceAccess?: boolean;
@@ -67,7 +72,7 @@ type ContactDialogProps = {
 
 export function ContactDialog({
     teamSlug,
-    companies,
+    companies: loadedCompanies,
     tags,
     audiences = [],
     lacksAudienceAccess = false,
@@ -76,6 +81,15 @@ export function ContactDialog({
     open,
     onOpenChange,
 }: ContactDialogProps) {
+    const companiesLoading = loadedCompanies === undefined;
+    const companies = loadedCompanies ?? [];
+
+    useEffect(() => {
+        if (open && companiesLoading) {
+            router.reload({ only: ['companies'] });
+        }
+    }, [open, companiesLoading]);
+
     const [step, setStep] = useState<'email' | 'details'>(
         contact ? 'details' : 'email',
     );
@@ -190,6 +204,11 @@ export function ContactDialog({
         const onSuccess = (): void => {
             handleOpenChange(false);
         };
+
+        form.transform((data) => ({
+            ...data,
+            company_uuid: knownCompanyUuid(companies, data.company_uuid),
+        }));
 
         if (contact) {
             form.put(update.url([teamSlug, contact.uuid]), { onSuccess });
@@ -396,6 +415,7 @@ export function ContactDialog({
                                 <NewContactFields
                                     form={form}
                                     companies={companies}
+                                    companiesLoading={companiesLoading}
                                     tags={tags}
                                     contactUuid={contact?.uuid}
                                 />
@@ -545,13 +565,20 @@ export function ContactDialog({
                                     </div>
                                 </Field>
                             ) : null}
+
+                            {!contact && !hasAudienceSelection ? (
+                                <FieldError>
+                                    {form.errors.consent_confirmed}
+                                </FieldError>
+                            ) : null}
                         </FieldGroup>
                         <DialogFooter className="mt-6">
                             <Button
                                 type="submit"
                                 disabled={
                                     form.processing ||
-                                    cannotSubmitExistingContact
+                                    cannotSubmitExistingContact ||
+                                    companiesLoading
                                 }
                             >
                                 {form.processing ? (
@@ -567,14 +594,24 @@ export function ContactDialog({
     );
 }
 
+/**
+ * A company that was deleted since the page loaded is no longer offered, so treat
+ * it as "No company" instead of submitting a UUID the server will reject.
+ */
+function knownCompanyUuid(companies: CompanyOption[], uuid: string): string {
+    return companies.some((company) => company.uuid === uuid) ? uuid : '';
+}
+
 function NewContactFields({
     form,
     companies,
+    companiesLoading,
     tags,
     contactUuid,
 }: {
     form: ReturnType<typeof useForm<ContactFormData>>;
     companies: CompanyOption[];
+    companiesLoading: boolean;
     tags: Tag[];
     contactUuid?: string;
 }) {
@@ -676,7 +713,13 @@ function NewContactFields({
                         Company
                     </FieldLabel>
                     <Select
-                        value={form.data.company_uuid || null}
+                        disabled={companiesLoading}
+                        value={
+                            knownCompanyUuid(
+                                companies,
+                                form.data.company_uuid,
+                            ) || null
+                        }
                         onValueChange={(value) =>
                             form.setData(
                                 'company_uuid',
@@ -688,7 +731,13 @@ function NewContactFields({
                             id={`contact-company-${suffix}`}
                             className="w-full"
                         >
-                            <SelectValue placeholder="No company" />
+                            <SelectValue
+                                placeholder={
+                                    companiesLoading
+                                        ? 'Loading companies…'
+                                        : 'No company'
+                                }
+                            />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectGroup>
@@ -707,15 +756,15 @@ function NewContactFields({
                     <FieldError>{form.errors.company_uuid}</FieldError>
                 </Field>
             ) : null}
-            <Field data-invalid={Boolean(form.errors.tags)}>
+            <Field data-invalid={Boolean(tagsError(form.errors))}>
                 <FieldLabel>Tags</FieldLabel>
                 <TagsCombobox
                     value={form.data.tags}
                     availableTags={tags}
                     onValueChange={(value) => form.setData('tags', value)}
-                    aria-invalid={Boolean(form.errors.tags)}
+                    aria-invalid={Boolean(tagsError(form.errors))}
                 />
-                <FieldError>{form.errors.tags}</FieldError>
+                <FieldError>{tagsError(form.errors)}</FieldError>
             </Field>
         </>
     );

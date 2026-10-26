@@ -76,3 +76,25 @@ export function formatFileSize(bytes: number): string {
 
     return `${rounded} ${FILE_SIZE_UNITS[unit]}`;
 }
+
+/**
+ * Formats a Date attribute value for display. A value that is not a date is
+ * shown as typed instead of throwing, so one bad value cannot blank a page.
+ * Date-only values parse as UTC midnight, so they are formatted in UTC too;
+ * the viewer's zone would otherwise show the previous day west of UTC.
+ */
+export function formatAttributeDate(
+    value: string | number,
+    locale?: string,
+): string {
+    const parsed = new Date(String(value));
+
+    if (Number.isNaN(parsed.getTime())) {
+        return String(value);
+    }
+
+    return new Intl.DateTimeFormat(locale, {
+        dateStyle: 'medium',
+        timeZone: 'UTC',
+    }).format(parsed);
+}

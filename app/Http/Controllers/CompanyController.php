@@ -2,24 +2,28 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\ContactCompanyAssignmentMode;
+use App\Actions\Companies\DeleteCompany;
+use App\Actions\Companies\SaveCompany;
+use App\Concerns\ReadsQueryFilters;
+use App\Concerns\SearchesText;
 use App\Http\Requests\SaveCompanyRequest;
-use App\Jobs\ResolveCompanyFavicon;
 use App\Models\Company;
 use App\Models\Contact;
 use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\Team;
-use App\Services\ResolveContactCompany;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CompanyController extends Controller
 {
+    use ReadsQueryFilters;
+    use SearchesText;
+
     public function index(Request $request, Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [Company::class, $currentTeam]);
@@ -29,16 +33,14 @@ class CompanyController extends Controller
             ->with('domains:id,company_id,domain')
             ->withCount('contacts')
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                $search = '%'.mb_strtolower($filters['search']).'%';
-                $query->where(fn ($companyQuery) => $companyQuery
-                    ->whereRaw('LOWER(name) LIKE ?', [$search])
-                    ->orWhereHas('domains', fn ($domainQuery) => $domainQuery->where('domain', 'like', $search)));
+                $query->where(fn ($companyQuery) => $this->whereAnyColumnContains($companyQuery, ['name'], $filters['search'])
+                    ->orWhereHas('domains', fn ($domainQuery) => $this->whereAnyColumnContains($domainQuery, ['domain'], $filters['search'])));
             });
 
         $companies = match ($filters['sort']) {
             'oldest' => $companies->oldest('created_at')->orderBy('id'),
             'name' => $companies->orderBy('normalized_name')->orderBy('id'),
-            'contacts' => $companies->orderByDesc('contacts_count')->latest(),
+            'contacts' => $companies->orderByDesc('contacts_count')->latest()->orderByDesc('id'),
             default => $companies->latest()->orderByDesc('id'),
         };
 
@@ -49,47 +51,47 @@ class CompanyController extends Controller
         ]);
     }
 
-    public function store(SaveCompanyRequest $request, Team $currentTeam, ResolveContactCompany $resolveCompany): RedirectResponse
+    public function store(SaveCompanyRequest $request, Team $currentTeam, SaveCompany $saveCompany): RedirectResponse
     {
         Gate::authorize('create', [Company::class, $currentTeam]);
-        $company = $currentTeam->companies()->create(Arr::only($request->validated(), ['name']));
-        $this->syncDomains($company, $currentTeam, $request->validated('domains'));
-        $resolveCompany->refreshTeam($currentTeam);
+        $company = $saveCompany->handle($currentTeam, null, $request->validated('name'), $request->validated('domains'));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Company created.')]);
 
         return to_route('companies.show', [$currentTeam, $company]);
     }
 
-    public function show(Request $request, Team $currentTeam, Company $company): Response
+    public function show(Request $request, Team $currentTeam, Company $company): Response|RedirectResponse
     {
         Gate::authorize('view', $company);
         $filters = $this->showFilters($request);
 
+        $contacts = $company->contacts()
+            ->with([
+                'tags:id,uuid,name,color',
+                'subscribers.audience:id,uuid,name',
+            ])
+            ->withCount('subscribers')
+            ->when($filters['search'] !== '', function ($query) use ($filters): void {
+                $this->wherePersonContains($query, $filters['search']);
+            })
+            ->when($filters['audience'] !== '', fn ($query) => $query->whereHas(
+                'subscribers.audience',
+                fn ($audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
+            ))
+            ->orderByName()
+            ->paginate(20)
+            ->withQueryString();
+
+        // Contacts can move to another company, leaving the page past the end.
+        if ($contacts->isEmpty() && $contacts->currentPage() > 1) {
+            return redirect($contacts->url($contacts->lastPage()));
+        }
+
         return Inertia::render('companies/show', [
             'company' => [
                 ...$this->payload($company->load('domains')),
-                'contacts' => $company->contacts()
-                    ->with([
-                        'tags:id,uuid,name,color',
-                        'subscribers.audience:id,uuid,name',
-                    ])
-                    ->withCount('subscribers')
-                    ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                        $term = '%'.mb_strtolower($filters['search']).'%';
-                        $query->where(fn ($contactQuery) => $contactQuery
-                            ->whereRaw('LOWER(email) LIKE ?', [$term])
-                            ->orWhereRaw('LOWER(first_name) LIKE ?', [$term])
-                            ->orWhereRaw('LOWER(last_name) LIKE ?', [$term]));
-                    })
-                    ->when($filters['audience'] !== '', fn ($query) => $query->whereHas(
-                        'subscribers.audience',
-                        fn ($audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
-                    ))
-                    ->orderBy('last_name')
-                    ->orderBy('first_name')
-                    ->paginate(20)
-                    ->withQueryString()
+                'contacts' => $contacts
                     ->through(fn (Contact $contact): array => [
                         'uuid' => $contact->uuid,
                         'email' => $contact->email,
@@ -117,49 +119,44 @@ class CompanyController extends Controller
                         'created_at' => $contact->created_at?->toISOString(),
                     ]),
             ],
-            'companies' => $currentTeam->companies()->orderBy('name')->get(['uuid', 'name']),
+            // Only the contact dialog needs these; it loads them when it opens.
+            'companies' => Inertia::optional(fn () => $currentTeam->companies()->alphabetical()->get(['uuid', 'name'])),
             'audiences' => $currentTeam->audiences()->orderBy('name')->get(['uuid', 'name']),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'filters' => $filters,
             'canManage' => Gate::allows('update', $company),
+            'canManageContacts' => Gate::allows('create', [Contact::class, $currentTeam]),
         ]);
     }
 
-    public function update(SaveCompanyRequest $request, Team $currentTeam, Company $company, ResolveContactCompany $resolveCompany): RedirectResponse
+    public function update(SaveCompanyRequest $request, Team $currentTeam, Company $company, SaveCompany $saveCompany): RedirectResponse
     {
         Gate::authorize('update', $company);
-        $company->update(Arr::only($request->validated(), ['name']));
-        $this->syncDomains($company, $currentTeam, $request->validated('domains'));
-        $resolveCompany->refreshTeam($currentTeam);
+        $saveCompany->handle($currentTeam, $company, $request->validated('name'), $request->validated('domains'));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Company updated.')]);
 
         return back();
     }
 
-    public function destroy(Team $currentTeam, Company $company, ResolveContactCompany $resolveCompany): RedirectResponse
+    public function destroy(Team $currentTeam, Company $company, DeleteCompany $deleteCompany): RedirectResponse
     {
         Gate::authorize('delete', $company);
-        $company->contacts()->update([
-            'company_id' => null,
-            'company_assignment_mode' => ContactCompanyAssignmentMode::Automatic,
-        ]);
-        $company->delete();
-        $resolveCompany->refreshTeam($currentTeam);
+        $deleteCompany->handle($currentTeam, $company);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Company deleted.')]);
 
         return to_route('companies.index', $currentTeam);
     }
 
-    /** @return array{uuid: string, name: string, favicon: string|null, domains: list<string>, contacts_count: int, created_at: string|null} */
+    /** @return array{uuid: string, name: string, favicon: string, domains: list<string>, contacts_count: int, created_at: string|null} */
     private function payload(Company $company): array
     {
         return [
             'uuid' => $company->uuid,
             'name' => $company->name,
-            'favicon' => $company->favicon,
-            'domains' => array_values($company->domains->pluck('domain')->all()),
+            'favicon' => $company->faviconOrFallbackUrl(),
+            'domains' => array_values($company->domains->sortBy('id')->pluck('domain')->all()),
             'contacts_count' => $company->contacts_count ?? $company->contacts()->count(),
             'created_at' => $company->created_at?->toISOString(),
         ];
@@ -168,10 +165,10 @@ class CompanyController extends Controller
     /** @return array{search: string, sort: string} */
     private function indexFilters(Request $request): array
     {
-        $sort = $request->string('sort')->toString();
+        $sort = $this->queryFilter($request, 'sort');
 
         return [
-            'search' => $request->string('search')->trim()->toString(),
+            'search' => $this->queryFilter($request, 'search'),
             'sort' => in_array($sort, ['oldest', 'name', 'contacts'], true) ? $sort : 'newest',
         ];
     }
@@ -179,31 +176,11 @@ class CompanyController extends Controller
     /** @return array{search: string, audience: string} */
     private function showFilters(Request $request): array
     {
+        $audience = $this->queryFilter($request, 'audience');
+
         return [
-            'search' => $request->string('search')->trim()->toString(),
-            'audience' => $request->string('audience')->toString(),
+            'search' => $this->queryFilter($request, 'search'),
+            'audience' => Str::isUuid($audience) ? $audience : '',
         ];
-    }
-
-    /** @param list<string> $domains */
-    private function syncDomains(Company $company, Team $team, array $domains): void
-    {
-        $company->domains()->whereNotIn('domain', $domains)->delete();
-
-        foreach ($domains as $domain) {
-            $company->domains()->firstOrCreate([
-                'team_id' => $team->id,
-                'domain' => $domain,
-            ]);
-        }
-
-        $company->favicon = $company->fallbackFaviconUrl();
-        $company->save();
-
-        ResolveCompanyFavicon::dispatch(
-            $company->id,
-            $domains[0],
-            $company->updated_at?->toISOString() ?? '',
-        );
     }
 }

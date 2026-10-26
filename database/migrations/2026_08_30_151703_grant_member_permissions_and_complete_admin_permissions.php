@@ -34,7 +34,6 @@ return new class extends Migration
         $this->revokePermissions(TeamRole::Member, $this->memberPermissions());
         $this->revokePermissions(TeamRole::Admin, [
             TeamPermission::DeleteTeam,
-            TeamPermission::AddMember,
             TeamPermission::UpdateMember,
             TeamPermission::RemoveMember,
         ]);

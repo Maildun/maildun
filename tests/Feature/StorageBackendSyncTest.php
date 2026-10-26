@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\ContactImportStatus;
 use App\Enums\StorageBackend;
 use App\Jobs\ProcessMediaImage;
 use App\Jobs\ProcessSubscribeFormImage;
+use App\Models\ContactImport;
 use App\Models\Email;
 use App\Models\EmailAttachment;
 use App\Models\Media;
@@ -95,6 +97,29 @@ test('it repoints rows that name a concrete private disk and leaves ready media 
     expect($attachment->fresh()->disk)->toBe('s3')
         ->and($pending->fresh()->disk)->toBe('s3')
         ->and($ready->fresh()->disk)->toBe('public');
+});
+
+test('it repoints contact imports that still need their uploaded file', function () {
+    $team = Team::factory()->create();
+    $imports = collect([
+        ContactImportStatus::Draft,
+        ContactImportStatus::Processing,
+        ContactImportStatus::Failed,
+        ContactImportStatus::Completed,
+    ])->mapWithKeys(fn (ContactImportStatus $status): array => [
+        $status->value => ContactImport::factory()->for($team)->create(['disk' => 'local', 'status' => $status]),
+    ]);
+
+    withConfiguredS3(fn () => $this->artisan('storage:sync', ['--to' => 's3'])
+        ->expectsOutputToContain('still being converted or imported')
+        ->assertSuccessful()->run());
+
+    expect($imports->map(fn (ContactImport $contactImport): string => $contactImport->fresh()->disk)->all())->toBe([
+        'draft' => 's3',
+        'processing' => 's3',
+        'failed' => 's3',
+        'completed' => 'local',
+    ]);
 });
 
 test('it repoints subscribe form artwork that is still being converted', function () {

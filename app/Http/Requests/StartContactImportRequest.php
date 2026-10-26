@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\ContactImportIssue;
 use App\Enums\ContactImportMergeStrategy;
+use App\Enums\SubscriberLanguage;
 use App\Models\ContactImport;
 use App\Services\ContactImportCsv;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -38,6 +39,8 @@ class StartContactImportRequest extends FormRequest
             'tags' => ['array', 'max:20'],
             'tags.*' => ['string', 'max:50'],
             'resubscribe_unsubscribed' => ['boolean'],
+            // The language set on members without one in the file; only the audience's languages.
+            'language' => ['nullable', Rule::enum(SubscriberLanguage::class), Rule::in($contactImport->audience->allowed_languages ?? [])],
             'review_options' => ['array'],
             ...collect(ContactImportIssue::cases())
                 ->filter(fn (ContactImportIssue $issue): bool => $issue->actions() !== [])
@@ -62,6 +65,12 @@ class StartContactImportRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
+                if (collect($validator->errors()->keys())->contains(fn (string $key): bool => str_starts_with($key, 'column_map.'))) {
+                    $validator->errors()->add('column_map', __('A mapped field no longer exists. Choose what each column holds again.'));
+
+                    return;
+                }
+
                 $mapped = array_values(array_filter((array) $this->input('column_map', []), fn (mixed $field): bool => is_string($field) && $field !== ''));
 
                 if (! in_array('email', $mapped, true)) {

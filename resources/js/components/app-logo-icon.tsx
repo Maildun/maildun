@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 type LogoMode = 'theme' | 'light' | 'dark';
 
 type AppLogoIconProps = Omit<SVGProps<SVGSVGElement>, 'children' | 'color'> & {
-    animate?: 'none' | 'pulse' | 'spin';
+    animate?: 'none' | 'pulse' | 'spin' | 'think';
     color?: string;
     mode?: LogoMode;
     title?: string;
@@ -22,6 +22,8 @@ const animationClassNames = {
     none: undefined,
     pulse: 'motion-safe:animate-pulse',
     spin: 'motion-safe:animate-spin',
+    /** Turns a quarter at a time, squeezing on each step: the design assistant at work. */
+    think: 'origin-center motion-safe:animate-maildun-think motion-reduce:animate-none',
 } as const;
 
 const markColors = {

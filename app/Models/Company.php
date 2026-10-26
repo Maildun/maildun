@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Services\DiceBearAvatarGenerator;
 use Database\Factories\CompanyFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -59,15 +60,35 @@ class Company extends Model
         return $this->hasMany(Contact::class);
     }
 
+    /**
+     * Alphabetical regardless of capitalisation, with the id breaking ties.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeAlphabetical(Builder $query): void
+    {
+        $query->orderBy('companies.normalized_name')->orderBy('companies.id');
+    }
+
     /** @return Attribute<string, string> */
     protected function name(): Attribute
     {
         return Attribute::make(
             set: fn (string $value): array => [
                 'name' => Str::squish($value),
-                'normalized_name' => Str::lower(Str::squish($value)),
+                'normalized_name' => self::normalizeName($value),
             ],
         );
+    }
+
+    /**
+     * Case-insensitive form of a company name. Uses simple case mapping so the
+     * length never grows (Str::lower turns "İ" into two characters), keeping it
+     * within the varchar(255) column.
+     */
+    public static function normalizeName(string $name): string
+    {
+        return mb_convert_case(Str::squish($name), MB_CASE_LOWER_SIMPLE, 'UTF-8');
     }
 
     public function getRouteKeyName(): string
@@ -78,6 +99,24 @@ class Company extends Model
     public static function faviconUrlFor(string $domain): string
     {
         return 'https://www.google.com/s2/favicons?domain='.rawurlencode($domain).'&sz=64';
+    }
+
+    /**
+     * The domain whose favicon represents the company: the oldest stored domain, so
+     * reordering or re-saving the domain list never switches the icon on its own.
+     */
+    public function faviconDomain(): ?string
+    {
+        return $this->domains()->orderBy('id')->value('domain');
+    }
+
+    /**
+     * The resolved Google favicon, or the placeholder signed at read time so it keeps
+     * loading after the app key changes.
+     */
+    public function faviconOrFallbackUrl(): string
+    {
+        return $this->favicon ?? $this->fallbackFaviconUrl();
     }
 
     public function fallbackFaviconUrl(): string

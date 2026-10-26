@@ -8,6 +8,7 @@ use App\Enums\TeamRole;
 use App\Models\Audience;
 use App\Models\CampaignSeries;
 use App\Models\Email;
+use App\Models\EmailConversionEvent;
 use App\Models\EmailDelivery;
 use App\Models\Team;
 use App\Models\User;
@@ -379,3 +380,238 @@ test('a campaign series cannot be reached through another team', function () {
         ->get(route('campaign_series.show', [$otherTeam, $campaignSeries]))
         ->assertNotFound();
 });
+
+test('a campaign series stores its conversion tracking settings', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('campaign_series.store', $team), [
+            'name' => 'Q4 demo sequence',
+            'goal' => CampaignSeriesGoal::BookMeetings->value,
+            'conversion_event_key' => 'meeting_booked',
+            'attribution_window_days' => 14,
+            'conversion_target' => 30,
+            'value_currency' => 'eur',
+        ])
+        ->assertRedirect();
+
+    expect($team->campaignSeries()->sole())
+        ->conversion_event_key->toBe('meeting_booked')
+        ->attribution_window_days->toBe(14)
+        ->conversion_target->toBe(30)
+        ->value_currency->toBe('EUR');
+});
+
+test('clearing the conversion event makes a series engagement only with the default window', function () {
+    $user = User::factory()->create();
+    $campaignSeries = CampaignSeries::factory()->for($user->currentTeam)->tracksConversions('meeting_booked', 7)->create();
+
+    $this->actingAs($user)
+        ->patch(route('campaign_series.update', [$user->currentTeam, $campaignSeries]), [
+            'name' => 'Engagement only',
+            'goal' => CampaignSeriesGoal::BookMeetings->value,
+            'conversion_event_key' => '',
+        ])
+        ->assertRedirect();
+
+    expect($campaignSeries->fresh())
+        ->conversion_event_key->toBeNull()
+        ->attribution_window_days->toBe(30);
+});
+
+test('campaign series conversion settings are validated', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->post(route('campaign_series.store', $user->currentTeam), [
+            'name' => 'Q4 demo sequence',
+            'goal' => CampaignSeriesGoal::BookMeetings->value,
+            'conversion_event_key' => 'Meeting Booked',
+            'attribution_window_days' => 0,
+            'conversion_target' => -5,
+            'value_currency' => 'dollars',
+        ])
+        ->assertInvalid([
+            'conversion_event_key' => 'Use lowercase letters, numbers, and underscores, starting with a letter, such as meeting_booked.',
+            'attribution_window_days' => 'The attribution window days field must be at least 1.',
+            'conversion_target' => 'The conversion target field must be at least 1.',
+            'value_currency' => 'Use a three-letter currency code such as USD.',
+        ]);
+
+    $this->assertDatabaseCount('campaign_series', 0);
+});
+
+test('the series report totals conversions, value, target progress and the conversion leader', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $campaignSeries = CampaignSeries::factory()->for($team)->tracksConversions()->create([
+        'conversion_target' => 4,
+        'value_currency' => 'USD',
+    ]);
+    $firstCampaign = Email::factory()->for($team)->for($campaignSeries, 'campaignSeries')->create([
+        'name' => 'Initial pitch',
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 2,
+        'sent_at' => now()->subDays(2),
+    ]);
+    $secondCampaign = Email::factory()->for($team)->for($campaignSeries, 'campaignSeries')->create([
+        'name' => 'Follow-up proof',
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 2,
+        'sent_at' => now()->subDay(),
+    ]);
+    $aliceClick = EmailDelivery::factory()->for($firstCampaign)->create([
+        'email_address' => 'alice@example.com',
+        'sent_at' => now()->subDays(2),
+        'first_clicked_at' => now()->subDays(2),
+    ]);
+    EmailDelivery::factory()->for($firstCampaign)->create([
+        'email_address' => 'bob@example.com',
+        'sent_at' => now()->subDays(2),
+    ]);
+    EmailDelivery::factory()->for($secondCampaign)->create([
+        'email_address' => 'ALICE@example.com',
+        'sent_at' => now()->subDay(),
+    ]);
+    EmailDelivery::factory()->for($secondCampaign)->create([
+        'email_address' => 'carol@example.com',
+        'sent_at' => now()->subDay(),
+        'first_clicked_at' => now()->subDay(),
+    ]);
+    EmailConversionEvent::factory()->clickedFrom($aliceClick)->worth(250000, 'USD')->create();
+    EmailConversionEvent::factory()->clickedFrom($aliceClick)->worth(10000, 'EUR')->create();
+    EmailConversionEvent::factory()->assistedBy($campaignSeries)->worth(5000, 'USD')->create(['email' => 'bob@example.com']);
+    EmailConversionEvent::factory()->for($team)->create(['email' => 'carol@example.com']);
+
+    $this->actingAs($user)
+        ->get(route('campaign_series.show', [$team, $campaignSeries]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('campaign-series/show')
+            ->where('series.conversion_event_key', 'meeting_booked')
+            ->where('report.summary.conversion_tracking', true)
+            ->where('report.summary.unique_recipients', 3)
+            ->where('report.summary.conversions', 2)
+            ->where('report.summary.attributed_conversions', 1)
+            ->where('report.summary.assisted_conversions', 1)
+            ->where('report.summary.conversion_rate', 66.7)
+            ->where('report.summary.target_progress', 50)
+            ->where('report.summary.conversion_value', [
+                ['currency' => 'USD', 'value_minor' => 255000],
+                ['currency' => 'EUR', 'value_minor' => 10000],
+            ])
+            ->where('report.summary.contact_groups', [
+                'converted' => 2,
+                'clicked_not_converted' => 1,
+                'opened_not_clicked' => 0,
+                'not_engaged' => 0,
+            ])
+            ->where('report.campaigns.0.conversions', 1)
+            ->where('report.campaigns.0.conversion_rate', 50)
+            ->where('report.campaigns.0.conversion_value', [
+                ['currency' => 'USD', 'value_minor' => 250000],
+                ['currency' => 'EUR', 'value_minor' => 10000],
+            ])
+            ->where('report.campaigns.0.is_conversion_leader', true)
+            ->where('report.campaigns.1.conversions', 0)
+            ->where('report.campaigns.1.is_conversion_leader', false)
+            ->where('contactGroup', null));
+});
+
+test('a tie on conversion rate names no conversion leader', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $campaignSeries = CampaignSeries::factory()->for($team)->tracksConversions()->create();
+    $campaigns = Email::factory()->count(2)->for($team)->for($campaignSeries, 'campaignSeries')->create([
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 1,
+        'sent_at' => now()->subDay(),
+    ]);
+
+    foreach ($campaigns as $campaign) {
+        $delivery = EmailDelivery::factory()->for($campaign)->create([
+            'sent_at' => now()->subDay(),
+            'first_clicked_at' => now()->subDay(),
+        ]);
+        EmailConversionEvent::factory()->clickedFrom($delivery)->create();
+    }
+
+    $this->actingAs($user)
+        ->get(route('campaign_series.show', [$team, $campaignSeries]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('report.campaigns.0.conversions', 1)
+            ->where('report.campaigns.0.is_conversion_leader', false)
+            ->where('report.campaigns.1.is_conversion_leader', false));
+});
+
+test('an engagement-only series reports no conversion tracking', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $campaignSeries = CampaignSeries::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->get(route('campaign_series.show', [$team, $campaignSeries]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('series.conversion_event_key', null)
+            ->where('report.summary.conversion_tracking', false)
+            ->where('report.summary.conversions', 0)
+            ->where('report.summary.conversion_value', [])
+            ->where('report.summary.target_progress', null)
+            ->has('report.campaigns', 0));
+});
+
+test('viewers can drill into the people of a follow-up group', function (string $group, string $expectedEmail, int $expectedConversions) {
+    $owner = User::factory()->create();
+    $viewer = User::factory()->create();
+    $team = Team::factory()->create();
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($viewer, ['role' => TeamRole::Member->value]);
+    assignViewerRole($team, $viewer);
+    $campaignSeries = CampaignSeries::factory()->for($team)->tracksConversions()->create();
+    $campaign = Email::factory()->for($team)->for($campaignSeries, 'campaignSeries')->create([
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 4,
+        'sent_at' => now()->subDay(),
+    ]);
+    $converted = EmailDelivery::factory()->for($campaign)->create([
+        'email_address' => 'converted@example.com',
+        'sent_at' => now()->subDay(),
+        'first_clicked_at' => now()->subDay(),
+    ]);
+    EmailDelivery::factory()->for($campaign)->create([
+        'email_address' => 'Clicked@Example.com',
+        'sent_at' => now()->subDay(),
+        'first_opened_at' => now()->subDay(),
+        'first_clicked_at' => now()->subDay(),
+        'last_clicked_at' => now()->subDay(),
+    ]);
+    EmailDelivery::factory()->for($campaign)->create([
+        'email_address' => 'opened@example.com',
+        'sent_at' => now()->subDay(),
+        'first_opened_at' => now()->subDay(),
+    ]);
+    EmailDelivery::factory()->for($campaign)->create([
+        'email_address' => 'quiet@example.com',
+        'sent_at' => now()->subDay(),
+    ]);
+    EmailConversionEvent::factory()->count(2)->clickedFrom($converted)->create();
+
+    $this->actingAs($viewer)
+        ->get(route('campaign_series.show', [$team, $campaignSeries, 'contacts' => $group]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('canManage', false)
+            ->where('contactGroup.group', $group)
+            ->where('contactGroup.total', 1)
+            ->where('contactGroup.contacts.0.email', $expectedEmail)
+            ->where('contactGroup.contacts.0.conversions', $expectedConversions)
+            ->has('contactGroup.contacts', 1));
+})->with([
+    'converted' => ['converted', 'converted@example.com', 2],
+    'clicked but not converted' => ['clicked_not_converted', 'clicked@example.com', 0],
+    'opened but did not click' => ['opened_not_clicked', 'opened@example.com', 0],
+    'not engaged' => ['not_engaged', 'quiet@example.com', 0],
+]);

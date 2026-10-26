@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\TeamRole;
+use App\Models\Audience;
 use App\Models\Team;
 use App\Models\TeamApiKey;
 use App\Models\User;
@@ -44,6 +45,17 @@ test('the plaintext key authenticates while the database stores only its hash', 
     expect($issued['token'])->toStartWith(TeamApiKey::TOKEN_PREFIX)
         ->and(TeamApiKey::findToken($issued['token'])?->is($issued['key']))->toBeTrue()
         ->and(TeamApiKey::findToken($issued['token'].'x'))->toBeNull();
+});
+
+test('a key from a deleted workspace returns 401', function () {
+    $audience = Audience::factory()->create();
+    $issued = TeamApiKey::issue($audience->team, 'Production');
+    $audience->team->delete();
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), ['email' => 'ada@example.com'])
+        ->assertUnauthorized()
+        ->assertExactJson(['message' => 'Unauthenticated.']);
 });
 
 test('members cannot access api key settings', function () {

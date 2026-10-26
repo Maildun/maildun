@@ -2,7 +2,7 @@
 
 namespace App\Mcp\Tools\Audiences;
 
-use App\Enums\SubscriberStatus;
+use App\Concerns\SearchesText;
 use App\Mcp\Support\ResourcePayload;
 use App\Mcp\Support\WorkspaceContext;
 use App\Models\Audience;
@@ -23,6 +23,8 @@ use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 #[Name('list-audiences')]
 class ListAudiencesTool extends Tool
 {
+    use SearchesText;
+
     public function __construct(
         private WorkspaceContext $context,
         private ResourcePayload $payload,
@@ -40,15 +42,14 @@ class ListAudiencesTool extends Tool
         $limit = (int) ($validated['limit'] ?? 20);
 
         $audiences = $team->audiences()
+            ->with(['doubleOptInEmail:id,uuid,name', 'audienceAttributes'])
             ->withCount([
                 'subscribers',
-                'subscribers as subscribed_count' => fn ($query) => $query->where('status', SubscriberStatus::Subscribed),
+                'subscribers as subscribed_count' => fn ($query) => $query->optedIn(),
                 'segments',
             ])
             ->when($search !== '', function ($query) use ($search): void {
-                $pattern = '%'.addcslashes($search, '%_\\').'%';
-
-                $query->whereAny(['name', 'description'], 'like', $pattern);
+                $this->whereAnyColumnContains($query, ['name', 'description'], $search);
             })
             ->orderByDesc('updated_at')
             ->orderByDesc('id')

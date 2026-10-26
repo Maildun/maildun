@@ -4,14 +4,22 @@ namespace App\Http\Controllers;
 
 use App\Actions\Audiences\AddContactToAudiences;
 use App\Actions\Automations\DispatchTaggedTriggers;
+use App\Concerns\ReadsQueryFilters;
+use App\Concerns\SearchesText;
+use App\Enums\AutomationTrigger;
 use App\Enums\ContactCompanyAssignmentMode;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
+use App\Events\SubscriberLifecycleOccurred;
+use App\Http\Requests\BulkContactRequest;
+use App\Http\Requests\BulkContactTagsRequest;
 use App\Http\Requests\DeleteContactRequest;
 use App\Http\Requests\LookupContactRequest;
 use App\Http\Requests\SaveContactRequest;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
+use App\Models\AudienceOptOut;
 use App\Models\AutomationRun;
 use App\Models\Company;
 use App\Models\Contact;
@@ -33,45 +41,61 @@ use Inertia\Response;
 
 class ContactController extends Controller
 {
-    public function index(Request $request, Team $currentTeam): Response
+    use ReadsQueryFilters;
+    use SearchesText;
+
+    public function index(Request $request, Team $currentTeam): Response|RedirectResponse
     {
         Gate::authorize('viewAny', [Contact::class, $currentTeam]);
-        $filters = $this->indexFilters($request);
+        $filters = $this->indexFilters($request, $currentTeam);
 
         $contacts = $currentTeam->contacts()
             ->with(['company:id,uuid,name', 'tags:id,uuid,name,color'])
             ->withCount('subscribers')
             ->when($filters['search'] !== '', function ($query) use ($filters): void {
-                $search = '%'.mb_strtolower($filters['search']).'%';
-                $query->where(fn ($contactQuery) => $contactQuery
-                    ->whereRaw('LOWER(email) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(first_name) LIKE ?', [$search])
-                    ->orWhereRaw('LOWER(last_name) LIKE ?', [$search]));
+                $this->wherePersonContains($query, $filters['search']);
             })
+            ->when($filters['tag'] !== '', fn ($query) => $query->whereHas(
+                'tags',
+                fn ($tagQuery) => $tagQuery->where('tags.uuid', $filters['tag']),
+            ))
             ->when($filters['company'] === 'assigned', fn ($query) => $query->whereNotNull('company_id'))
             ->when($filters['company'] === 'unassigned', fn ($query) => $query->whereNull('company_id'))
             ->when(
                 $filters['company'] !== '' && ! in_array($filters['company'], ['assigned', 'unassigned'], true),
                 fn ($query) => $query->whereHas('company', fn ($companyQuery) => $companyQuery->where('uuid', $filters['company'])),
             )
-            ->when($filters['audience'] !== '', fn ($query) => $query->whereHas(
-                'subscribers.audience',
-                fn ($audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
+            // Audience and language must hold on the same membership.
+            ->when($filters['audience'] !== '' || $filters['language'] !== '', fn ($query) => $query->whereHas(
+                'subscribers',
+                fn ($subscriberQuery) => $subscriberQuery
+                    ->when($filters['audience'] !== '', fn ($membership) => $membership->whereHas(
+                        'audience',
+                        fn ($audienceQuery) => $audienceQuery->where('uuid', $filters['audience']),
+                    ))
+                    ->when($filters['language'] !== '', fn ($membership) => $membership->where('language', $filters['language'])),
             ));
 
         $contacts = match ($filters['sort']) {
             'oldest' => $contacts->oldest('created_at')->orderBy('id'),
-            'name' => $contacts->orderBy('last_name')->orderBy('first_name')->orderBy('id'),
+            'name' => $contacts->orderByName(),
             default => $contacts->latest()->orderByDesc('id'),
         };
+        $contacts = $contacts->paginate(20)->withQueryString();
+
+        // A bulk delete or a filter change can leave the page past the end.
+        if ($contacts->isEmpty() && $contacts->currentPage() > 1) {
+            return redirect($contacts->url($contacts->lastPage()));
+        }
 
         return Inertia::render('contacts/index', [
-            'contacts' => $contacts->paginate(20)->withQueryString()->through(fn (Contact $contact): array => $this->summary($contact)),
-            'companies' => $currentTeam->companies()->orderBy('name')->get(['uuid', 'name']),
+            'contacts' => $contacts->through(fn (Contact $contact): array => $this->summary($contact)),
+            'companies' => $currentTeam->companies()->alphabetical()->get(['uuid', 'name']),
             'audiences' => $currentTeam->audiences()->orderBy('name')->get(['uuid', 'name']),
             'addableAudiences' => $this->addableAudiences($currentTeam),
             'canAddToAudiences' => Gate::allows('create', [Audience::class, $currentTeam]),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
+            'languages' => SubscriberLanguage::options(),
             'filters' => $filters,
             'canManage' => Gate::allows('create', [Contact::class, $currentTeam]),
         ]);
@@ -139,7 +163,7 @@ class ContactController extends Controller
             Gate::authorize('create', [Subscriber::class, $audience]);
         }
 
-        [$contact, $changedMemberships] = DB::transaction(function () use (
+        [$contact, $changedMemberships, $keptOptOuts] = DB::transaction(function () use (
             $request,
             $currentTeam,
             $manageContact,
@@ -156,11 +180,20 @@ class ContactController extends Controller
                 ]);
             }
 
+            $keptOptOuts = $audiences
+                ->filter(fn (Audience $audience): bool => AudienceOptOut::existsFor($audience->id, $contact->email))
+                ->count();
             $changedMemberships = $addContactToAudiences->handle($contact, $audiences, $request->ip());
             $dispatchTaggedTriggers->handle($contact, $addedTags);
 
-            return [$contact, $changedMemberships];
+            return [$contact, $changedMemberships, $keptOptOuts];
         });
+
+        if ($keptOptOuts > 0) {
+            Inertia::flash('toast', ['type' => 'warning', 'message' => __('This person unsubscribed from :count of the selected audiences before, so they stay unsubscribed there. Resubscribe them only if they consented again.', ['count' => $keptOptOuts])]);
+
+            return back();
+        }
 
         $message = match (true) {
             $contact->wasRecentlyCreated && $changedMemberships > 0 => __('Contact created and added to the selected audiences.'),
@@ -190,7 +223,7 @@ class ContactController extends Controller
             ->sortByDesc('created_at')
             ->values();
         $activity = $this->activity($contact);
-        $selectedAudienceUuid = $request->string('audience')->toString();
+        $selectedAudienceUuid = $this->queryFilter($request, 'audience');
 
         if (! $memberships->contains(
             fn (Subscriber $subscriber): bool => $subscriber->audience->uuid === $selectedAudienceUuid,
@@ -216,6 +249,7 @@ class ContactController extends Controller
                         'language_name' => $subscriber->language?->label(),
                         'can_manage' => Gate::allows('update', $subscriber),
                         'subscribed_at' => $subscriber->subscribed_at?->toISOString(),
+                        'pending_confirmation' => $subscriber->isPendingConfirmation() || $subscriber->isPendingResubscription(),
                         'source_form' => $subscriber->subscribeForm ? [
                             'uuid' => $subscriber->subscribeForm->uuid,
                             'name' => $subscriber->subscribeForm->name,
@@ -230,7 +264,9 @@ class ContactController extends Controller
                             ->map(fn (AudienceAttribute $attribute): array => [
                                 'uuid' => $attribute->uuid,
                                 'name' => $attribute->name,
+                                'key' => $attribute->key,
                                 'type' => $attribute->type->value,
+                                'required' => $attribute->required,
                                 'value' => ($subscriber->attribute_values ?? [])[$attribute->key] ?? null,
                             ])
                             ->values()
@@ -296,7 +332,8 @@ class ContactController extends Controller
                     ],
                 ])->all(),
             'selectedAudienceUuid' => $selectedAudienceUuid,
-            'companies' => $currentTeam->companies()->orderBy('name')->get(['uuid', 'name']),
+            // Only the contact dialog needs these; it loads them when it opens.
+            'companies' => Inertia::optional(fn () => $currentTeam->companies()->alphabetical()->get(['uuid', 'name'])),
             'audiences' => $this->addableAudiences($currentTeam),
             'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
             'canManage' => Gate::allows('update', $contact),
@@ -308,7 +345,14 @@ class ContactController extends Controller
     private function activity(Contact $contact): array
     {
         $stats = $contact->deliveries()
-            ->whereNot('status', EmailDeliveryStatus::Cancelled)
+            // Only deliveries handed to the recipient's mail server count as
+            // received: queued, bounced, rejected, failed and stopped ones do not.
+            ->whereIn('status', [
+                EmailDeliveryStatus::Sent,
+                EmailDeliveryStatus::Delivered,
+                EmailDeliveryStatus::Delayed,
+                EmailDeliveryStatus::Complained,
+            ])
             ->toBase()
             ->selectRaw('count(*) as received')
             ->selectRaw('sum(case when opens_count > 0 then 1 else 0 end) as opened')
@@ -329,8 +373,12 @@ class ContactController extends Controller
     public function update(SaveContactRequest $request, Team $currentTeam, Contact $contact, ManageContact $manageContact, DispatchTaggedTriggers $dispatchTaggedTriggers): RedirectResponse
     {
         Gate::authorize('update', $contact);
-        [$contact, $addedTags] = $this->saveContact($request, $currentTeam, $manageContact, $contact);
-        $dispatchTaggedTriggers->handle($contact, $addedTags);
+        // The profile, its subscriber copies, tags and triggers save together,
+        // as they do on create, so a failure never leaves half an edit.
+        DB::transaction(function () use ($request, $currentTeam, $manageContact, $contact, $dispatchTaggedTriggers): void {
+            [$contact, $addedTags] = $this->saveContact($request, $currentTeam, $manageContact, $contact);
+            $dispatchTaggedTriggers->handle($contact, $addedTags);
+        });
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Contact updated.')]);
 
@@ -344,6 +392,84 @@ class ContactController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Contact deleted.')]);
 
         return to_route('contacts.index', $currentTeam);
+    }
+
+    public function bulkUnsubscribe(BulkContactRequest $request, Team $currentTeam): RedirectResponse
+    {
+        $memberships = Subscriber::query()
+            ->with('audience.team')
+            ->whereIn('contact_id', $currentTeam->contacts()->whereIn('uuid', $request->validated('ids'))->select('id'))
+            ->get();
+        $memberships->each(fn (Subscriber $subscriber) => Gate::authorize('update', $subscriber));
+
+        $subscribers = $memberships
+            ->where('status', SubscriberStatus::Subscribed)
+            ->values();
+
+        Subscriber::query()
+            ->whereIn('id', $subscribers->modelKeys())
+            ->update([
+                'status' => SubscriberStatus::Unsubscribed,
+                'unsubscribed_at' => now(),
+            ]);
+
+        Subscriber::query()
+            ->whereIn('id', $memberships->modelKeys())
+            ->whereNotNull('resubscribe_requested_at')
+            ->update(['resubscribe_requested_at' => null]);
+
+        foreach ($subscribers as $subscriber) {
+            $subscriber->status = SubscriberStatus::Unsubscribed;
+            $subscriber->setAttribute('unsubscribed_at', now());
+            event(new SubscriberLifecycleOccurred(AutomationTrigger::Unsubscribed, $subscriber));
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Selected contacts unsubscribed from every audience.')]);
+
+        return back();
+    }
+
+    /**
+     * Tags belong to the contact, so adding or removing one applies in every
+     * audience the contact is subscribed to.
+     */
+    public function bulkTags(BulkContactTagsRequest $request, Team $currentTeam, ManageContact $manageContact, DispatchTaggedTriggers $dispatchTaggedTriggers): RedirectResponse
+    {
+        /** @var list<string> $names */
+        $names = $request->validated('tags');
+        $contacts = $currentTeam->contacts()
+            ->whereIn('uuid', $request->validated('ids'))
+            ->get();
+
+        if ($request->validated('action') === 'add') {
+            foreach ($contacts as $contact) {
+                $dispatchTaggedTriggers->handle($contact, $manageContact->addTags($currentTeam, $contact, $names));
+            }
+
+            Inertia::flash('toast', ['type' => 'success', 'message' => __('Tags added to selected contacts.')]);
+
+            return back();
+        }
+
+        foreach ($contacts as $contact) {
+            $manageContact->removeTags($currentTeam, $contact, $names);
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Tags removed from selected contacts.')]);
+
+        return back();
+    }
+
+    public function bulkDestroy(BulkContactRequest $request, Team $currentTeam): RedirectResponse
+    {
+        $currentTeam->contacts()
+            ->whereIn('uuid', $request->validated('ids'))
+            ->get()
+            ->each(fn (Contact $contact): ?bool => $contact->delete());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Selected contacts deleted.')]);
+
+        return back();
     }
 
     /** @return array{uuid: string, email: string, first_name: string|null, last_name: string|null, avatar: string, company: array{uuid: string, name: string}|null, tags: list<array{uuid: string, name: string, color: string|null}>, audiences_count: int, created_at: string|null} */
@@ -391,18 +517,21 @@ class ContactController extends Controller
             ->all());
     }
 
-    /** @return array{search: string, company: string, audience: string, sort: string} */
-    private function indexFilters(Request $request): array
+    /** @return array{search: string, company: string, audience: string, tag: string, language: string, sort: string} */
+    private function indexFilters(Request $request, Team $team): array
     {
-        $company = $request->string('company')->toString();
-        $sort = $request->string('sort')->toString();
+        $company = $this->queryFilter($request, 'company');
+        $company = Str::isUuid($company) && ! $team->companies()->where('uuid', $company)->exists() ? '' : $company;
+        $audience = $this->queryFilter($request, 'audience');
+        $tag = $this->queryFilter($request, 'tag');
+        $sort = $this->queryFilter($request, 'sort');
 
         return [
-            'search' => $request->string('search')->trim()->toString(),
+            'search' => $this->queryFilter($request, 'search'),
             'company' => $company === 'assigned' || $company === 'unassigned' || Str::isUuid($company) ? $company : '',
-            'audience' => Str::isUuid($request->string('audience')->toString())
-                ? $request->string('audience')->toString()
-                : '',
+            'audience' => Str::isUuid($audience) ? $audience : '',
+            'tag' => Str::isUuid($tag) ? Str::lower($tag) : '',
+            'language' => SubscriberLanguage::tryFrom($this->queryFilter($request, 'language'))->value ?? '',
             'sort' => in_array($sort, ['oldest', 'name'], true) ? $sort : 'newest',
         ];
     }
@@ -412,14 +541,19 @@ class ContactController extends Controller
     {
         $attributes = $request->validated();
         $mode = ContactCompanyAssignmentMode::from($attributes['company_assignment_mode']);
-        $companyId = $mode === ContactCompanyAssignmentMode::Manual && $attributes['company_uuid'] !== null
-            ? $team->companies()->where('uuid', $attributes['company_uuid'])->value('id')
-            : null;
+        $companyUuid = $mode === ContactCompanyAssignmentMode::Manual ? ($attributes['company_uuid'] ?? null) : null;
+        $companyId = $companyUuid !== null ? $team->companies()->where('uuid', $companyUuid)->value('id') : null;
+
+        if ($companyUuid !== null && $companyId === null) {
+            throw ValidationException::withMessages([
+                'company_uuid' => __('That company no longer exists. Choose another company.'),
+            ]);
+        }
 
         $profile = [
             'email' => $request->string('email')->toString(),
-            'first_name' => $request->has('first_name') ? $request->string('first_name')->toString() : null,
-            'last_name' => $request->has('last_name') ? $request->string('last_name')->toString() : null,
+            'first_name' => $attributes['first_name'] ?? null,
+            'last_name' => $attributes['last_name'] ?? null,
             'company_assignment_mode' => $mode,
             'company_id' => $companyId,
         ];

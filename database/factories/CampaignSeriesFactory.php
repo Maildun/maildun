@@ -28,4 +28,15 @@ class CampaignSeriesFactory extends Factory
             'primary_cta_url' => fake()->url(),
         ];
     }
+
+    /**
+     * Track a conversion event for this series.
+     */
+    public function tracksConversions(string $eventKey = 'meeting_booked', int $windowDays = 30): static
+    {
+        return $this->state(fn (): array => [
+            'conversion_event_key' => $eventKey,
+            'attribution_window_days' => $windowDays,
+        ]);
+    }
 }

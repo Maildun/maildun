@@ -1,21 +1,37 @@
 import {
     ArrowDown01Icon,
     Building06Icon,
+    Delete02Icon,
+    Tag01Icon,
+    TranslateIcon,
     UserGroupIcon,
     UserIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Head, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
+import { BulkSubscriberTagsDialog } from '@/components/bulk-subscriber-tags-dialog';
 import { ContactDialog } from '@/components/contact-dialog';
 import { ContactHoverCard } from '@/components/contact-hover-card';
 import { ContactImportMenu } from '@/components/contact-import-menu';
 import { FilterMenu } from '@/components/filter-menu';
 import { ListSearch } from '@/components/list-search';
 import { Paginator } from '@/components/paginator';
+import { SelectionActionBar } from '@/components/selection-action-bar';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -39,10 +55,18 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
+import { toast } from '@/components/ui/toast';
 import { useListFilters } from '@/hooks/use-list-filters';
 import { formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
-import { index, show } from '@/routes/contacts';
+import { show as showCompany } from '@/routes/companies';
+import {
+    bulkDestroy,
+    bulkTags,
+    bulkUnsubscribe,
+    index,
+    show,
+} from '@/routes/contacts';
 import { show as showContactExport } from '@/routes/contacts/exports';
 import type { ContactIndexProps, ContactSummary } from '@/types/contacts';
 
@@ -59,21 +83,80 @@ export default function ContactsIndex({
     addableAudiences,
     canAddToAudiences,
     tags,
+    languages,
     filters,
     canManage,
 }: ContactIndexProps) {
     const { currentTeam } = usePage().props;
     const [createOpen, setCreateOpen] = useState(false);
-    const { visit, clear, clearAll, searchKey } = useListFilters({
-        url: currentTeam ? index.url(currentTeam.slug) : '',
-        filters,
-        empty: { search: '', company: '', audience: '' },
-        searchField: 'search',
-    });
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+    const [bulkTagsOpen, setBulkTagsOpen] = useState(false);
+
+    // A search, filter or sort change (from any control, Esc or history)
+    // drops the selection, so a bulk action never reaches hidden contacts.
+    const filterKey = JSON.stringify(filters);
+    const [selectionFilterKey, setSelectionFilterKey] = useState(filterKey);
+
+    if (selectionFilterKey !== filterKey) {
+        setSelectionFilterKey(filterKey);
+        setSelected(new Set());
+    }
+
+    const { visit, clear, clearAll, hasActiveFilters, searchKey } =
+        useListFilters({
+            url: currentTeam ? index.url(currentTeam.slug) : '',
+            filters,
+            empty: {
+                search: '',
+                company: '',
+                audience: '',
+                tag: '',
+                language: '',
+            },
+            searchField: 'search',
+        });
 
     if (!currentTeam) {
         return null;
     }
+
+    const pageIds = contacts.data.map((contact) => contact.uuid);
+    const allSelected =
+        pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+    const someSelected = pageIds.some((id) => selected.has(id));
+
+    /**
+     * A bulk action fails validation when a selected contact was deleted
+     * meanwhile. Drop those ids so the next try acts on the rest.
+     */
+    const dropMissingSelection = (
+        ids: string[],
+        errors: Record<string, string>,
+    ): void => {
+        const missing = new Set(
+            Object.keys(errors)
+                .filter((key) => key.startsWith('ids.'))
+                .map((key) => ids[Number(key.slice(4))]),
+        );
+
+        setSelected(new Set(ids.filter((id) => !missing.has(id))));
+        toast.add({
+            type: 'error',
+            title: 'Nothing was changed.',
+            description:
+                missing.size > 0
+                    ? 'Some selected contacts no longer exist and were removed from the selection. Try again.'
+                    : Object.values(errors)[0],
+        });
+    };
+
+    const toggleSelected = (ids: string[], checked: boolean): void => {
+        const next = new Set(selected);
+
+        ids.forEach((id) => (checked ? next.add(id) : next.delete(id)));
+        setSelected(next);
+    };
 
     const companyOptions = [
         { value: 'assigned', label: 'Assigned to a company' },
@@ -148,6 +231,31 @@ export default function ContactsIndex({
                                 })),
                                 onValueChange: (audience) =>
                                     visit({ audience }),
+                            },
+                            {
+                                key: 'tag',
+                                icon: Tag01Icon,
+                                label: 'Tag',
+                                value: filters.tag,
+                                allLabel: 'All tags',
+                                options: tags.map((tag) => ({
+                                    value: tag.uuid,
+                                    label: tag.name,
+                                })),
+                                onValueChange: (tag) => visit({ tag }),
+                            },
+                            {
+                                key: 'language',
+                                icon: TranslateIcon,
+                                label: 'Language',
+                                value: filters.language,
+                                allLabel: 'All languages',
+                                options: languages,
+                                onValueChange: (language) =>
+                                    visit({
+                                        language:
+                                            language as ContactIndexProps['filters']['language'],
+                                    }),
                             },
                         ]}
                     />
@@ -239,32 +347,53 @@ export default function ContactsIndex({
                                   },
                               ]
                             : []),
+                        ...(filters.tag
+                            ? [
+                                  {
+                                      key: 'tag',
+                                      field: 'Tag',
+                                      value:
+                                          tags.find(
+                                              (tag) => tag.uuid === filters.tag,
+                                          )?.name ?? filters.tag,
+                                      onClear: () => clear({ tag: '' }),
+                                  },
+                              ]
+                            : []),
+                        ...(filters.language
+                            ? [
+                                  {
+                                      key: 'language',
+                                      field: 'Language',
+                                      value:
+                                          languages.find(
+                                              (language) =>
+                                                  language.value ===
+                                                  filters.language,
+                                          )?.label ?? filters.language,
+                                      onClear: () => clear({ language: '' }),
+                                  },
+                              ]
+                            : []),
                     ]}
                     onClearAll={clearAll}
                 />
 
-                {contacts.total === 0 ? (
+                {contacts.data.length === 0 ? (
                     <Empty>
                         <EmptyHeader>
                             <EmptyMedia variant="icon">
                                 <HugeiconsIcon icon={UserIcon} />
                             </EmptyMedia>
-                            <EmptyTitle>No contacts yet</EmptyTitle>
+                            <EmptyTitle>
+                                {hasActiveFilters
+                                    ? 'No matching contacts'
+                                    : 'No contacts yet'}
+                            </EmptyTitle>
                             <EmptyDescription>
-                                Add a person directly, or they will be created
-                                when they join an audience.
-                            </EmptyDescription>
-                        </EmptyHeader>
-                    </Empty>
-                ) : contacts.data.length === 0 ? (
-                    <Empty>
-                        <EmptyHeader>
-                            <EmptyMedia variant="icon">
-                                <HugeiconsIcon icon={UserIcon} />
-                            </EmptyMedia>
-                            <EmptyTitle>No matching contacts</EmptyTitle>
-                            <EmptyDescription>
-                                Try another search or filter.
+                                {hasActiveFilters
+                                    ? 'Try another search or filter.'
+                                    : 'Add a person directly, or they will be created when they join an audience.'}
                             </EmptyDescription>
                         </EmptyHeader>
                     </Empty>
@@ -278,6 +407,24 @@ export default function ContactsIndex({
                         >
                             <TableHeader>
                                 <TableRow>
+                                    {canManage && (
+                                        <TableHead className="w-10">
+                                            <Checkbox
+                                                aria-label="Select all"
+                                                data-test="contact-select-all"
+                                                checked={allSelected}
+                                                indeterminate={
+                                                    someSelected && !allSelected
+                                                }
+                                                onCheckedChange={(checked) =>
+                                                    toggleSelected(
+                                                        pageIds,
+                                                        checked === true,
+                                                    )
+                                                }
+                                            />
+                                        </TableHead>
+                                    )}
                                     <TableHead className="w-80">
                                         Contact
                                     </TableHead>
@@ -300,10 +447,139 @@ export default function ContactsIndex({
                                         companies={companies}
                                         tags={tags}
                                         canManage={canManage}
+                                        isSelected={selected.has(contact.uuid)}
+                                        onSelectedChange={(checked) =>
+                                            toggleSelected(
+                                                [contact.uuid],
+                                                checked,
+                                            )
+                                        }
                                     />
                                 ))}
                             </TableBody>
                         </Table>
+                    </>
+                )}
+                {canManage && (
+                    <>
+                        <SelectionActionBar
+                            count={selected.size}
+                            noun={['contact', 'contacts']}
+                            onClear={() => setSelected(new Set())}
+                        >
+                            {canAddToAudiences ? (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        const ids = [...selected];
+
+                                        router.patch(
+                                            bulkUnsubscribe.url(
+                                                currentTeam.slug,
+                                            ),
+                                            { ids },
+                                            {
+                                                preserveScroll: true,
+                                                onSuccess: () =>
+                                                    setSelected(new Set()),
+                                                onError: (errors) =>
+                                                    dropMissingSelection(
+                                                        ids,
+                                                        errors,
+                                                    ),
+                                            },
+                                        );
+                                    }}
+                                >
+                                    Unsubscribe
+                                </Button>
+                            ) : null}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setBulkTagsOpen(true)}
+                                data-test="contact-bulk-tags"
+                            >
+                                Tags
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => setConfirmDeleteOpen(true)}
+                            >
+                                <HugeiconsIcon
+                                    icon={Delete02Icon}
+                                    data-icon="inline-start"
+                                />
+                                Delete
+                            </Button>
+                        </SelectionActionBar>
+                        <BulkSubscriberTagsDialog
+                            url={bulkTags.url(currentTeam.slug)}
+                            ids={[...selected]}
+                            noun={['contact', 'contacts']}
+                            tags={tags}
+                            open={bulkTagsOpen}
+                            onOpenChange={setBulkTagsOpen}
+                            onSuccess={() => setSelected(new Set())}
+                        />
+                        <AlertDialog
+                            open={confirmDeleteOpen}
+                            onOpenChange={setConfirmDeleteOpen}
+                        >
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>
+                                        Delete {selected.size}{' '}
+                                        {selected.size === 1
+                                            ? 'contact'
+                                            : 'contacts'}
+                                        ?
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        They are removed from every audience
+                                        they belong to. This cannot be undone.
+                                        Anyone who unsubscribed stays
+                                        unsubscribed if added back.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>
+                                        Cancel
+                                    </AlertDialogCancel>
+                                    <AlertDialogAction
+                                        variant="destructive"
+                                        onClick={() => {
+                                            const ids = [...selected];
+
+                                            router.delete(
+                                                bulkDestroy.url(
+                                                    currentTeam.slug,
+                                                ),
+                                                {
+                                                    data: { ids },
+                                                    preserveScroll: true,
+                                                    onSuccess: () =>
+                                                        setSelected(new Set()),
+                                                    onError: (errors) =>
+                                                        dropMissingSelection(
+                                                            ids,
+                                                            errors,
+                                                        ),
+                                                    onFinish: () =>
+                                                        setConfirmDeleteOpen(
+                                                            false,
+                                                        ),
+                                                },
+                                            );
+                                        }}
+                                    >
+                                        Delete
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
                     </>
                 )}
             </div>
@@ -317,12 +593,16 @@ function ContactRow({
     companies,
     tags,
     canManage,
+    isSelected,
+    onSelectedChange,
 }: {
     contact: ContactSummary;
     teamSlug: string;
     companies: ContactIndexProps['companies'];
     tags: ContactIndexProps['tags'];
     canManage: boolean;
+    isSelected: boolean;
+    onSelectedChange: (checked: boolean) => void;
 }) {
     const [hoverOpen, setHoverOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
@@ -339,6 +619,18 @@ function ContactRow({
 
     return (
         <TableRow data-test="contact-row">
+            {canManage && (
+                <TableCell>
+                    <Checkbox
+                        aria-label={`Select ${contact.email}`}
+                        data-test="contact-row-select"
+                        checked={isSelected}
+                        onCheckedChange={(checked) =>
+                            onSelectedChange(checked === true)
+                        }
+                    />
+                </TableCell>
+            )}
             <TableCell className="max-w-80">
                 <ContactHoverCard
                     contact={contact}
@@ -369,7 +661,14 @@ function ContactRow({
                 )}
             </TableCell>
             <TableCell>
-                {contact.company?.name ?? (
+                {contact.company ? (
+                    <Link
+                        href={showCompany.url([teamSlug, contact.company.uuid])}
+                        className="underline-offset-4 hover:underline"
+                    >
+                        {contact.company.name}
+                    </Link>
+                ) : (
                     <span className="text-muted-foreground">—</span>
                 )}
             </TableCell>

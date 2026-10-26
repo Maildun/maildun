@@ -95,7 +95,7 @@ class TeamMemberController extends Controller
     /**
      * Serialize a team member for the settings page.
      *
-     * @return array{id: int, uuid: string, name: string, email: string, avatar: string|null, role: string, role_label: string, can_manage_password: bool}
+     * @return array{id: int, uuid: string, name: string, email: string, avatar: string|null, role: string, role_label: string, can_manage_password: bool, can_generate_password: bool}
      */
     private function memberProps(User $member, ?string $roleLabel, bool $canManagePassword): array
     {
@@ -111,6 +111,7 @@ class TeamMemberController extends Controller
             'role' => $membership->role,
             'role_label' => $roleLabel ?? str($membership->role)->headline()->toString(),
             'can_manage_password' => $canManagePassword,
+            'can_generate_password' => $canManagePassword && $member->hasPassword(),
         ];
     }
 
@@ -142,6 +143,7 @@ class TeamMemberController extends Controller
     {
         Gate::authorize('updateMember', $team);
         $this->ensureMemberPasswordCanBeManaged($team, $user);
+        $this->ensureMemberPasswordCanBeGenerated($user);
 
         $password = $this->newPassword();
 
@@ -227,6 +229,20 @@ class TeamMemberController extends Controller
             ->firstOrFail();
 
         Gate::authorize('manageMemberPassword', [$team, $user]);
+    }
+
+    /**
+     * Ensure a generated password does not add a password login to an account
+     * that signs in with Google or a passkey. The reset email, which only the
+     * member can act on, remains available.
+     */
+    private function ensureMemberPasswordCanBeGenerated(User $user): void
+    {
+        abort_unless(
+            $user->hasPassword(),
+            403,
+            __('This member signs in without a password. Send them a reset email instead.'),
+        );
     }
 
     /**

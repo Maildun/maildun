@@ -33,6 +33,7 @@ class GetEmailBuilderTool extends Tool
         return [
             ...$this->context->schema($schema),
             'block_id' => $schema->string()->description('Optional block ID from the outline; returns that block and its children.')->max(255),
+            'include_reference' => $schema->boolean()->description('Include the native tool schemas and instructions. Pass false on later reads once you have them.')->default(true),
         ];
     }
 }

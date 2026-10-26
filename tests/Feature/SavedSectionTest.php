@@ -1,5 +1,6 @@
 <?php
 
+use App\Ai\DesignSession;
 use App\Enums\EmailEditor;
 use App\Enums\TeamRole;
 use App\Mcp\Servers\MaildunServer;
@@ -10,6 +11,7 @@ use App\Models\Team;
 use App\Models\User;
 use Illuminate\Testing\Fluent\AssertableJson;
 use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Ai\Tools\Request as ToolRequest;
 
 /** @return list<array<string, mixed>> */
 function footerBlocks(): array
@@ -147,4 +149,30 @@ test('MCP clients list the workspace sections with their blocks', function () {
             ->where('sections.0.name', 'Footer')
             ->has('sections.0.blocks', 1)
             ->etc());
+});
+
+test('the design assistant inserts a saved section into its proposal', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->builder()->create();
+    SavedSection::factory()->for($team)->create(['name' => 'Footer', 'blocks' => [
+        ['type' => 'text', 'props' => ['markdown' => 'Saved footer copy']],
+    ]]);
+    $session = app()->makeWith(DesignSession::class, [
+        'document' => $email->design,
+        'team' => $team,
+        'mergeTags' => [],
+        'requireUnsubscribe' => false,
+    ]);
+    $tools = collect($session->tools())->keyBy(fn ($tool) => $tool->name());
+
+    expect((string) $tools['list_saved_sections']->handle(new ToolRequest([])))->toContain('- Footer (id ')
+        ->and((string) $tools['insert_saved_section']->handle(new ToolRequest(['name' => 'missing'])))
+        ->toContain('No saved section "missing"')
+        ->and($session->ops())->toBe([]);
+
+    $tools['insert_saved_section']->handle(new ToolRequest(['name' => 'footer']));
+
+    expect($session->ops())->toHaveCount(1)
+        ->and($session->run('get_document'))->toContain('Saved footer copy');
 });

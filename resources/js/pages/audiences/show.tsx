@@ -8,6 +8,7 @@ import {
     MailAtSign02Icon,
     MoreHorizontalIcon,
     StatusIcon,
+    Tag01Icon,
     Tick02Icon,
     TranslateIcon,
     UserCheck01Icon,
@@ -19,6 +20,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { Form, Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
+import { BulkSubscriberTagsDialog } from '@/components/bulk-subscriber-tags-dialog';
 import { ContactDialog } from '@/components/contact-dialog';
 import { ContactImportMenu } from '@/components/contact-import-menu';
 import { FilterMenu } from '@/components/filter-menu';
@@ -33,6 +35,7 @@ import {
     subscriberSourceLabel,
 } from '@/components/subscriber-hover-card';
 import { SubscriberStatsChart } from '@/components/subscriber-stats-chart';
+import { SubscriberStatusBadge } from '@/components/subscriber-status-badge';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -106,6 +109,8 @@ import {
 } from '@/routes/audiences/subscribe_forms';
 import {
     bulkDestroy,
+    bulkLanguage,
+    bulkTags,
     bulkUnsubscribe,
     destroy as destroySubscriber,
     resubscribe,
@@ -118,6 +123,7 @@ import type {
     Paginated,
     Segment,
     SegmentRule,
+    SegmentRuleOptions,
     Subscriber,
     SubscribeFormSummary,
     SubscriberIndexFilters,
@@ -134,12 +140,14 @@ type Props = {
     subscriberStats: AudienceSubscriberStats;
     segments: Segment[];
     forms: SubscribeFormSummary[];
+    segmentRuleOptions: SegmentRuleOptions;
     languages: SubscriberLanguageOption[];
     subscriberLanguages: SubscriberLanguageOption[];
-    companies: CompanyOption[];
+    companies?: CompanyOption[];
     tags: Tag[];
     filters: SubscriberIndexFilters;
     canManage: boolean;
+    canManageContacts: boolean;
 };
 
 const SOURCE_FILTER_OPTIONS = [
@@ -150,6 +158,7 @@ const SOURCE_FILTER_OPTIONS = [
 
 const STATUS_FILTER_LABELS: Record<string, string> = {
     subscribed: 'Subscribed',
+    pending: 'Pending confirmation',
     unsubscribed: 'Unsubscribed',
 };
 
@@ -164,12 +173,14 @@ export default function AudienceShow(props: Props) {
         subscriberStats,
         segments,
         forms,
+        segmentRuleOptions,
         languages,
         subscriberLanguages,
         companies,
         tags,
         filters,
         canManage,
+        canManageContacts,
     } = props;
     const { currentTeam } = usePage().props;
     const [subscriberOpen, setSubscriberOpen] = useState(false);
@@ -180,6 +191,23 @@ export default function AudienceShow(props: Props) {
     );
     const [formOpen, setFormOpen] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [selectionRows, setSelectionRows] = useState(subscribers.data);
+
+    // A filter, search, page change or row delete brings new rows; keep only
+    // the selected ones still on screen so a bulk action never reaches rows
+    // the manager can no longer see.
+    if (selectionRows !== subscribers.data) {
+        const visibleIds = new Set(subscribers.data.map(({ uuid }) => uuid));
+
+        setSelectionRows(subscribers.data);
+        setSelected(
+            (current) =>
+                new Set([...current].filter((id) => visibleIds.has(id))),
+        );
+    }
+
+    const [bulkTagsOpen, setBulkTagsOpen] = useState(false);
+    const [confirmBulkDeleteOpen, setConfirmBulkDeleteOpen] = useState(false);
     const [copiedText, copy] = useClipboard();
     const {
         visit: visitSubscribers,
@@ -189,7 +217,13 @@ export default function AudienceShow(props: Props) {
     } = useListFilters<SubscriberIndexFilters>({
         url: currentTeam ? show.url([currentTeam.slug, audience.uuid]) : '',
         filters,
-        empty: { search: '', status: 'all', source: 'all', language: 'all' },
+        empty: {
+            search: '',
+            status: 'all',
+            source: 'all',
+            language: 'all',
+            tag: 'all',
+        },
         searchField: 'search',
     });
 
@@ -198,6 +232,23 @@ export default function AudienceShow(props: Props) {
     }
 
     const routeArgs: [string, string] = [currentTeam.slug, audience.uuid];
+    const bulkActionFailed =
+        (title: string) => (errors: Record<string, string>) =>
+            toast.add({
+                type: 'error',
+                title,
+                description: errors.ids ?? Object.values(errors)[0],
+            });
+    const setBulkLanguage = (language: string | null) =>
+        router.patch(
+            bulkLanguage.url(routeArgs),
+            { ids: [...selected], language },
+            {
+                preserveScroll: true,
+                onSuccess: () => setSelected(new Set()),
+                onError: bulkActionFailed('Language not changed.'),
+            },
+        );
 
     return (
         <>
@@ -277,6 +328,10 @@ export default function AudienceShow(props: Props) {
                                                 label: 'Subscribed',
                                             },
                                             {
+                                                value: 'pending',
+                                                label: 'Pending confirmation',
+                                            },
+                                            {
                                                 value: 'unsubscribed',
                                                 label: 'Unsubscribed',
                                             },
@@ -309,6 +364,21 @@ export default function AudienceShow(props: Props) {
                                             visitSubscribers({ language }),
                                         testId: 'subscriber-language-filter',
                                     },
+                                    {
+                                        key: 'tag',
+                                        icon: Tag01Icon,
+                                        label: 'Tag',
+                                        value: filters.tag,
+                                        allValue: 'all',
+                                        allLabel: 'All tags',
+                                        options: tags.map((tag) => ({
+                                            value: tag.uuid,
+                                            label: tag.name,
+                                        })),
+                                        onValueChange: (tag) =>
+                                            visitSubscribers({ tag }),
+                                        testId: 'subscriber-tag-filter',
+                                    },
                                 ]}
                             />
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -336,23 +406,25 @@ export default function AudienceShow(props: Props) {
                                                 { query: filters },
                                             )}
                                         />
-                                        <ContactDialog
-                                            open={subscriberOpen}
-                                            onOpenChange={setSubscriberOpen}
-                                            teamSlug={currentTeam.slug}
-                                            companies={companies}
-                                            tags={tags}
-                                            audiences={[
-                                                {
+                                        {canManageContacts && (
+                                            <ContactDialog
+                                                open={subscriberOpen}
+                                                onOpenChange={setSubscriberOpen}
+                                                teamSlug={currentTeam.slug}
+                                                companies={companies}
+                                                tags={tags}
+                                                audiences={[
+                                                    {
+                                                        uuid: audience.uuid,
+                                                        name: audience.name,
+                                                    },
+                                                ]}
+                                                defaultAudience={{
                                                     uuid: audience.uuid,
                                                     name: audience.name,
-                                                },
-                                            ]}
-                                            defaultAudience={{
-                                                uuid: audience.uuid,
-                                                name: audience.name,
-                                            }}
-                                        />
+                                                }}
+                                            />
+                                        )}
                                     </>
                                 )}
                             </div>
@@ -422,6 +494,24 @@ export default function AudienceShow(props: Props) {
                                           },
                                       ]
                                     : []),
+                                ...(filters.tag !== 'all'
+                                    ? [
+                                          {
+                                              key: 'tag',
+                                              field: 'Tag',
+                                              value:
+                                                  tags.find(
+                                                      (tag) =>
+                                                          tag.uuid ===
+                                                          filters.tag,
+                                                  )?.name ?? filters.tag,
+                                              onClear: () =>
+                                                  clearSubscriberFilter({
+                                                      tag: 'all',
+                                                  }),
+                                          },
+                                      ]
+                                    : []),
                             ]}
                             onClearAll={clearSubscriberFilters}
                             clearTestId="clear-subscriber-filters"
@@ -438,7 +528,7 @@ export default function AudienceShow(props: Props) {
                                         filters.
                                     </EmptyDescription>
                                 </EmptyHeader>
-                                {canManage && (
+                                {canManage && canManageContacts && (
                                     <EmptyContent>
                                         <Button
                                             onClick={() =>
@@ -456,6 +546,7 @@ export default function AudienceShow(props: Props) {
                                 pagination={subscribers}
                                 routeArgs={routeArgs}
                                 canManage={canManage}
+                                canManageContacts={canManageContacts}
                                 tags={tags}
                                 languages={subscriberLanguages}
                                 selected={selected}
@@ -484,28 +575,73 @@ export default function AudienceShow(props: Props) {
                                                 preserveScroll: true,
                                                 onSuccess: () =>
                                                     setSelected(new Set()),
+                                                onError: bulkActionFailed(
+                                                    'Subscribers not unsubscribed.',
+                                                ),
                                             },
                                         );
                                     }}
                                 >
                                     Unsubscribe
                                 </Button>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger
+                                        render={
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                data-test="bulk-language"
+                                            />
+                                        }
+                                    >
+                                        Language
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent
+                                        side="top"
+                                        className="max-h-72 w-44"
+                                    >
+                                        <DropdownMenuGroup>
+                                            <DropdownMenuItem
+                                                onClick={() =>
+                                                    setBulkLanguage(null)
+                                                }
+                                                data-test="bulk-language-clear"
+                                            >
+                                                No language
+                                            </DropdownMenuItem>
+                                        </DropdownMenuGroup>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuGroup>
+                                            {languages.map((language) => (
+                                                <DropdownMenuItem
+                                                    key={language.value}
+                                                    onClick={() =>
+                                                        setBulkLanguage(
+                                                            language.value,
+                                                        )
+                                                    }
+                                                >
+                                                    {language.label}
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </DropdownMenuGroup>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setBulkTagsOpen(true)}
+                                    data-test="bulk-tags"
+                                >
+                                    Tags
+                                </Button>
                                 <Button
                                     variant="destructive"
                                     size="sm"
-                                    onClick={() => {
-                                        router.delete(
-                                            bulkDestroy.url(routeArgs),
-                                            {
-                                                data: {
-                                                    ids: [...selected],
-                                                },
-                                                preserveScroll: true,
-                                                onSuccess: () =>
-                                                    setSelected(new Set()),
-                                            },
-                                        );
-                                    }}
+                                    onClick={() =>
+                                        setConfirmBulkDeleteOpen(true)
+                                    }
+                                    data-test="bulk-delete-subscribers"
                                 >
                                     <HugeiconsIcon
                                         icon={Delete02Icon}
@@ -514,6 +650,74 @@ export default function AudienceShow(props: Props) {
                                     Delete
                                 </Button>
                             </SelectionActionBar>
+                        )}
+                        {canManage && (
+                            <AlertDialog
+                                open={confirmBulkDeleteOpen}
+                                onOpenChange={setConfirmBulkDeleteOpen}
+                            >
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>
+                                            Delete {selected.size}{' '}
+                                            {selected.size === 1
+                                                ? 'subscriber'
+                                                : 'subscribers'}
+                                            ?
+                                        </AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            Their membership in this audience,
+                                            consent record, segment links and
+                                            automation history are removed. This
+                                            cannot be undone.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>
+                                            Cancel
+                                        </AlertDialogCancel>
+                                        <AlertDialogAction
+                                            variant="destructive"
+                                            data-test="confirm-bulk-delete-subscribers"
+                                            onClick={() => {
+                                                router.delete(
+                                                    bulkDestroy.url(routeArgs),
+                                                    {
+                                                        data: {
+                                                            ids: [...selected],
+                                                        },
+                                                        preserveScroll: true,
+                                                        onSuccess: () =>
+                                                            setSelected(
+                                                                new Set(),
+                                                            ),
+                                                        onError:
+                                                            bulkActionFailed(
+                                                                'Subscribers not deleted.',
+                                                            ),
+                                                        onFinish: () =>
+                                                            setConfirmBulkDeleteOpen(
+                                                                false,
+                                                            ),
+                                                    },
+                                                );
+                                            }}
+                                        >
+                                            Delete
+                                        </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                        )}
+                        {canManage && (
+                            <BulkSubscriberTagsDialog
+                                url={bulkTags.url(routeArgs)}
+                                ids={[...selected]}
+                                tags={tags}
+                                open={bulkTagsOpen}
+                                onOpenChange={setBulkTagsOpen}
+                                onSuccess={() => setSelected(new Set())}
+                            />
                         )}
                     </TabsContent>
 
@@ -573,7 +777,7 @@ export default function AudienceShow(props: Props) {
                                 }
                             }}
                             routeArgs={routeArgs}
-                            forms={forms}
+                            segmentRuleOptions={segmentRuleOptions}
                             languages={languages}
                             segment={segmentToEdit}
                         />
@@ -705,6 +909,7 @@ function SubscriberTable({
     pagination,
     routeArgs,
     canManage,
+    canManageContacts,
     tags,
     languages,
     selected,
@@ -714,6 +919,7 @@ function SubscriberTable({
     pagination: Paginated<Subscriber>;
     routeArgs: [string, string];
     canManage: boolean;
+    canManageContacts: boolean;
     tags: Tag[];
     languages: SubscriberLanguageOption[];
     selected: Set<string>;
@@ -781,6 +987,7 @@ function SubscriberTable({
                         subscriber={subscriber}
                         routeArgs={routeArgs}
                         canManage={canManage}
+                        canManageContacts={canManageContacts}
                         tags={tags}
                         languages={languages}
                         selected={selected}
@@ -796,6 +1003,7 @@ function SubscriberRow({
     subscriber,
     routeArgs,
     canManage,
+    canManageContacts,
     tags,
     languages,
     selected,
@@ -804,6 +1012,7 @@ function SubscriberRow({
     subscriber: Subscriber;
     routeArgs: [string, string];
     canManage: boolean;
+    canManageContacts: boolean;
     tags: Tag[];
     languages: SubscriberLanguageOption[];
     selected: Set<string>;
@@ -873,11 +1082,10 @@ function SubscriberRow({
                 </div>
             </TableCell>
             <TableCell className="hidden sm:table-cell">
-                {subscriber.status === 'subscribed' ? (
-                    <Badge variant="success">Subscribed</Badge>
-                ) : (
-                    <Badge variant="secondary">Unsubscribed</Badge>
-                )}
+                <SubscriberStatusBadge
+                    status={subscriber.status}
+                    pendingConfirmation={subscriber.pending_confirmation}
+                />
             </TableCell>
             <TableCell className="hidden max-w-0 lg:table-cell">
                 {subscriber.tags.length > 0 ? (
@@ -925,6 +1133,7 @@ function SubscriberRow({
                     <SubscriberActions
                         subscriber={subscriber}
                         routeArgs={routeArgs}
+                        canManageContacts={canManageContacts}
                         tags={tags}
                         languages={languages}
                         editOpen={editOpen}
@@ -994,8 +1203,16 @@ function SegmentTable({
                             {segment.rules.length}
                         </TableCell>
                         <TableCell>
-                            <Badge variant="secondary">
-                                {segment.subscribers_count ?? 0} matching
+                            <Badge
+                                variant="secondary"
+                                title="Members a campaign to this segment would reach, out of everyone who matches"
+                            >
+                                {(segment.sendable_count ?? 0).toLocaleString()}{' '}
+                                of{' '}
+                                {(
+                                    segment.subscribers_count ?? 0
+                                ).toLocaleString()}{' '}
+                                sendable
                             </Badge>
                         </TableCell>
                         <TableCell className="text-right">
@@ -1159,6 +1376,7 @@ function SubscribeFormTable({
 function SubscriberActions({
     subscriber,
     routeArgs,
+    canManageContacts,
     tags,
     languages,
     editOpen,
@@ -1168,6 +1386,7 @@ function SubscriberActions({
 }: {
     subscriber: Subscriber;
     routeArgs: [string, string];
+    canManageContacts: boolean;
     tags: Tag[];
     languages: SubscriberLanguageOption[];
     editOpen: boolean;
@@ -1189,6 +1408,7 @@ function SubscriberActions({
                 onOpenChange={onEditOpenChange}
                 routeArgs={routeArgs}
                 subscriber={subscriber}
+                canEditProfile={canManageContacts}
                 tags={tags}
                 languages={languages}
             />
@@ -1318,7 +1538,8 @@ function SubscriberActions({
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                             This permanently removes {subscriber.email} from
-                            this audience and its consent record.
+                            this audience and its consent record. An opt-out is
+                            kept, so they stay unsubscribed if added back.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -1353,14 +1574,14 @@ function SegmentDialog({
     open,
     onOpenChange,
     routeArgs,
-    forms,
+    segmentRuleOptions,
     languages,
     segment,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     routeArgs: [string, string];
-    forms: SubscribeFormSummary[];
+    segmentRuleOptions: SegmentRuleOptions;
     languages: SubscriberLanguageOption[];
     segment?: Segment | null;
 }) {
@@ -1423,7 +1644,7 @@ function SegmentDialog({
                         data={form.data}
                         setData={form.setData}
                         errors={form.errors}
-                        forms={forms}
+                        options={segmentRuleOptions}
                         languages={languages}
                     />
                     <DialogFooter className="mt-6">

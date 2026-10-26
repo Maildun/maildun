@@ -19,19 +19,36 @@ class SubscribeToAudience
         private QueueAudienceConfirmationEmail $queueConfirmationEmail,
         private ManageContact $manageContact,
         private NotifyAudienceOfSubscriptionChange $notifyAudience,
+        private RequestResubscription $requestResubscription,
+        private RestoreOptedOutMember $restoreOptedOutMember,
     ) {}
 
-    /** @param array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, attributes?: array<string, string|int|float|null>} $data */
+    /**
+     * An anonymous form signup never reverses an opt-out, even on a single
+     * opt-in audience. It only requests a resubscription, which the person
+     * must confirm from their own inbox.
+     *
+     * @param  array{email: string, first_name?: string|null, last_name?: string|null, language?: string|null, attributes?: array<string, string|int|float|null>}  $data
+     */
     public function handle(SubscribeForm $subscribeForm, array $data, ?string $ipAddress): Subscriber
     {
         $trigger = null;
 
         $subscriber = DB::transaction(function () use ($subscribeForm, $data, $ipAddress, &$trigger): Subscriber {
             $audience = Audience::query()->whereKey($subscribeForm->audience_id)->lockForUpdate()->firstOrFail();
-            $subscriber = $audience->subscribers()->where('email', $data['email'])->first();
+            $subscriber = $this->restoreOptedOutMember->handle($audience, [
+                'email' => $data['email'],
+                'first_name' => $data['first_name'] ?? null,
+                'last_name' => $data['last_name'] ?? null,
+            ])
+                ?? $audience->subscribers()->where('email', $data['email'])->first();
 
             if ($subscriber?->status === SubscriberStatus::Subscribed && ! $subscriber->isPendingConfirmation()) {
                 return $subscriber;
+            }
+
+            if ($subscriber?->status === SubscriberStatus::Unsubscribed) {
+                return $this->requestResubscription->handle($audience, $subscriber, $subscribeForm->consent_text, $ipAddress);
             }
 
             $contact = $this->manageContact->findOrCreate(
@@ -46,9 +63,7 @@ class SubscribeToAudience
             $requiresConfirmation = $audience->double_opt_in;
 
             if (! $requiresConfirmation) {
-                $trigger = $subscriber?->status === SubscriberStatus::Unsubscribed
-                    ? AutomationTrigger::Resubscribed
-                    : AutomationTrigger::Subscribed;
+                $trigger = AutomationTrigger::Subscribed;
             }
 
             $attributeValues = Arr::where(
@@ -70,6 +85,7 @@ class SubscribeToAudience
                 'consent_ip' => $ipAddress,
                 'subscribed_at' => $requiresConfirmation ? null : now(),
                 'unsubscribed_at' => null,
+                'resubscribe_requested_at' => null,
             ];
 
             if ($subscriber) {

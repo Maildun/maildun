@@ -149,7 +149,10 @@ try {
             }),
         );
     } else {
-        const session = createAgentSession(validation.document);
+        const lint = {
+            requireUnsubscribe: request.require_unsubscribe === true,
+        };
+        const session = createAgentSession(validation.document, { lint });
         const result = runTool(
             session.tools,
             request.tool,
@@ -167,7 +170,7 @@ try {
                 html: rendered.html,
                 text: rendered.text,
                 warnings: [
-                    ...lintDocument(next),
+                    ...lintDocument(next, lint),
                     ...rendered.warnings.map((warning) => ({
                         severity: 'warning',
                         ...warning,

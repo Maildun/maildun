@@ -1,7 +1,11 @@
 <?php
 
+use App\Actions\Automations\AdvanceAutomationRun;
 use App\Enums\AudienceAttributeType;
+use App\Enums\AutomationAction;
+use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationTrigger;
+use App\Enums\ContactImportStatus;
 use App\Enums\SubscribeFormArtworkPreset;
 use App\Enums\SubscribeFormArtworkType;
 use App\Enums\SubscribeFormCardPadding;
@@ -19,10 +23,14 @@ use App\Enums\TeamBrandFont;
 use App\Enums\TeamBrandInputStyle;
 use App\Enums\TransactionalEmailStatus;
 use App\Events\SubscriberLifecycleOccurred;
+use App\Jobs\ProcessContactImport;
 use App\Jobs\SendTransactionalEmailDelivery;
+use App\Mail\AutomationEmail;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
+use App\Models\Automation;
 use App\Models\Contact;
+use App\Models\ContactImport;
 use App\Models\EmailAddressHealth;
 use App\Models\SubscribeForm;
 use App\Models\Subscriber;
@@ -30,8 +38,11 @@ use App\Models\TeamEmailIntegration;
 use App\Models\TransactionalEmail;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('only published subscribe forms are public', function () {
@@ -324,29 +335,6 @@ test('a double opt-in signup is kept when the address is suppressed', function (
         ->once();
 });
 
-test('a signed double opt-in link confirms a pending subscriber', function () {
-    $audience = Audience::factory()->create(['double_opt_in' => true]);
-    $subscriber = Subscriber::factory()->for($audience)->create([
-        'subscribed_at' => null,
-        'status' => SubscriberStatus::Subscribed,
-    ]);
-    Event::fake([SubscriberLifecycleOccurred::class]);
-
-    $response = $this->get(URL::signedRoute('public.subscribe.confirm', $subscriber));
-
-    $response->assertOk()
-        ->assertInertia(fn (Assert $page) => $page
-            ->component('subscribe-forms/confirmed')
-            ->where('audienceName', $audience->name)
-            ->where('confirmed', true));
-
-    expect($subscriber->fresh()->subscribed_at)->not->toBeNull();
-    Event::assertDispatched(
-        SubscriberLifecycleOccurred::class,
-        fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Subscribed,
-    );
-});
-
 test('a pending subscriber who submits again gets a fresh confirmation email at most once per cooldown', function () {
     $audience = Audience::factory()->create();
     TeamEmailIntegration::factory()->for($audience->team)->ses()->create();
@@ -370,6 +358,164 @@ test('a pending subscriber who submits again gets a fresh confirmation email at 
     expect($transactionalEmail->deliveries()->sole()->to_address)->toBe('person@example.com')
         ->and($subscriber->fresh()->subscribed_at)->toBeNull();
     Queue::assertPushed(SendTransactionalEmailDelivery::class, 1);
+});
+
+/**
+ * @return array{0: Audience, 1: TransactionalEmail, 2: SubscribeForm}
+ */
+function reconsentForm(): array
+{
+    $audience = Audience::factory()->create([
+        'first_name_mode' => SubscribeFormFieldMode::Optional,
+        'language_mode' => SubscribeFormFieldMode::Optional,
+        'allowed_languages' => [SubscriberLanguage::English->value, SubscriberLanguage::Indonesian->value],
+    ]);
+    TeamEmailIntegration::factory()->for($audience->team)->create();
+    $transactionalEmail = TransactionalEmail::factory()->for($audience->team)->published()->create([
+        'html' => '<a href="{{ confirmation_url }}">Confirm</a>',
+    ]);
+    $audience->update(['double_opt_in' => true, 'double_opt_in_email_id' => $transactionalEmail->id]);
+
+    return [$audience, $transactionalEmail, SubscribeForm::factory()->for($audience)->published()->create()];
+}
+
+test('an anonymous double opt-in signup from an opted-out member keeps the opt-out until they confirm', function () {
+    [$audience, $transactionalEmail, $subscribeForm] = reconsentForm();
+    AudienceAttribute::factory()->for($audience)->create(['key' => 'company', 'type' => AudienceAttributeType::Text]);
+    $unsubscribedAt = now()->subDays(3)->startOfSecond();
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed($unsubscribedAt)->create([
+        'email' => 'person@example.com',
+        'first_name' => 'Ada',
+        'language' => SubscriberLanguage::English,
+        'attribute_values' => ['company' => 'Acme'],
+        'source' => SubscriberSource::Manual,
+    ]);
+    $run = Automation::factory()->active()->for($audience->team)->create()->runs()->create([
+        'subscriber_id' => $subscriber->id,
+        'status' => AutomationRunStatus::Pending,
+        'graph' => [
+            'nodes' => [
+                ['id' => 'trigger', 'type' => 'trigger', 'data' => ['kind' => 'subscribed']],
+                ['id' => 'send', 'type' => 'action', 'data' => [
+                    'kind' => AutomationAction::SendEmail->value,
+                    'transactional_email_uuid' => TransactionalEmail::factory()->for($audience->team)->published()->create()->uuid,
+                ]],
+            ],
+            'edges' => [['source' => 'trigger', 'target' => 'send']],
+        ],
+        'current_node_id' => 'send',
+    ]);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+    Queue::fake([SendTransactionalEmailDelivery::class]);
+    Mail::fake();
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'first_name' => 'Mallory',
+        'language' => SubscriberLanguage::Indonesian->value,
+        'attributes' => ['company' => 'Evil Corp'],
+        'consent' => true,
+        'website' => '',
+    ])->assertOk()->assertExactJson(['message' => $subscribeForm->success_message]);
+    app(AdvanceAutomationRun::class)->handle($run);
+
+    $subscriber->refresh();
+
+    expect($subscriber->status)->toBe(SubscriberStatus::Unsubscribed)
+        ->and($subscriber->unsubscribed_at?->equalTo($unsubscribedAt))->toBeTrue()
+        ->and($subscriber->resubscribe_requested_at)->not->toBeNull()
+        ->and($subscriber->subscribed_at)->toBeNull()
+        ->and($subscriber->first_name)->toBe('Ada')
+        ->and($subscriber->language)->toBe(SubscriberLanguage::English)
+        ->and($subscriber->attribute_values)->toBe(['company' => 'Acme'])
+        ->and($subscriber->source)->toBe(SubscriberSource::Manual)
+        ->and($subscriber->subscribe_form_id)->toBeNull()
+        ->and($subscriber->consent_text)->toBe($subscribeForm->consent_text)
+        ->and($transactionalEmail->deliveries()->sole()->html)->toContain('resubscribe='.$subscriber->resubscribe_requested_at->getTimestamp());
+    Queue::assertPushed(SendTransactionalEmailDelivery::class, 1);
+    Mail::assertNotSent(AutomationEmail::class);
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('a default import after an unconfirmed re-signup keeps the opted-out member unsendable', function () {
+    fakeMailDomains();
+    Storage::fake('local');
+    Queue::fake([SendTransactionalEmailDelivery::class]);
+    [$audience, , $subscribeForm] = reconsentForm();
+    $contact = Contact::factory()->for($audience->team)->create(['email' => 'person@example.com']);
+    $subscriber = Subscriber::factory()->for($audience)->for($contact)->unsubscribed()->create(['email' => $contact->email]);
+    $contactImport = ContactImport::factory()->for($audience->team)->create([
+        'status' => ContactImportStatus::Pending,
+        'headers' => ['email'],
+        'audience_id' => $audience->id,
+        'column_map' => ['email'],
+        'resubscribe_unsubscribed' => false,
+    ]);
+    Storage::disk('local')->put($contactImport->path, "email\nperson@example.com\n");
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+        'website' => '',
+    ])->assertOk();
+    ProcessContactImport::dispatchSync($contactImport->id);
+
+    expect($contactImport->refresh()->skipped_unsubscribed)->toBe(1)
+        ->and(Subscriber::query()->sendableFor($audience->team)->whereKey($subscriber->id)->exists())->toBeFalse();
+});
+
+test('a repeat re-signup inside the cooldown keeps the emailed confirmation link working', function () {
+    [$audience, $transactionalEmail, $subscribeForm] = reconsentForm();
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create(['email' => 'person@example.com']);
+    Queue::fake([SendTransactionalEmailDelivery::class]);
+    $payload = ['email' => 'person@example.com', 'consent' => true, 'website' => ''];
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), $payload)->assertOk();
+    $requestedAt = $subscriber->fresh()->resubscribe_requested_at;
+    $this->travel(2)->minutes();
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), $payload)->assertOk();
+
+    expect($subscriber->fresh()->resubscribe_requested_at?->equalTo($requestedAt))->toBeTrue()
+        ->and($transactionalEmail->deliveries()->sole()->html)->toContain('resubscribe='.$requestedAt->getTimestamp());
+    Queue::assertPushed(SendTransactionalEmailDelivery::class, 1);
+});
+
+test('a confirmation link without the current re-signup token does not resubscribe', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingResubscription()->create();
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $withoutToken = URL::signedRoute('public.subscribe.confirm', $subscriber);
+    $staleToken = URL::signedRoute('public.subscribe.confirm', [
+        'subscriber' => $subscriber,
+        'resubscribe' => $subscriber->resubscribe_requested_at->getTimestamp() - 60,
+    ]);
+
+    $this->post($withoutToken);
+    $this->post($staleToken);
+    $this->get($staleToken)->assertInertia(fn (Assert $page) => $page
+        ->where('confirmed', false)
+        ->where('canConfirm', false));
+
+    expect($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('a double opt-in link confirms without starting automations after the workspace is deleted', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingConfirmation()->create();
+    Automation::factory()->for($audience->team)->active()->create(['trigger' => AutomationTrigger::Subscribed]);
+    $audience->team->delete();
+
+    $confirmationUrl = URL::signedRoute('public.subscribe.confirm', $subscriber);
+
+    $this->post($confirmationUrl)->assertRedirect($confirmationUrl);
+    $this->get($confirmationUrl)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->where('confirmed', true));
+
+    expect($subscriber->fresh()->subscribed_at)->not->toBeNull()
+        ->and($subscriber->automationRuns()->exists())->toBeFalse();
 });
 
 test('a pending subscriber is confirmed on a new submission after double opt-in is turned off', function () {
@@ -429,6 +575,44 @@ test('published forms display and store their audience attributes', function () 
         'company' => 'Acme Inc.',
         'team_size' => 12,
     ]);
+});
+
+test('published forms store date fields as Y-m-d', function () {
+    $audience = Audience::factory()->create();
+    AudienceAttribute::factory()->for($audience)->create([
+        'name' => 'Birthday',
+        'key' => 'birthday',
+        'type' => AudienceAttributeType::Date,
+    ]);
+    $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+        'website' => '',
+        'attributes' => ['birthday' => '31.12.2026'],
+    ])->assertOk();
+
+    expect($audience->subscribers()->sole()->attribute_values)->toBe(['birthday' => '2026-12-31']);
+});
+
+test('published forms reject a date field that is not a date', function () {
+    $audience = Audience::factory()->create();
+    AudienceAttribute::factory()->for($audience)->create([
+        'name' => 'Birthday',
+        'key' => 'birthday',
+        'type' => AudienceAttributeType::Date,
+    ]);
+    $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+        'website' => '',
+        'attributes' => ['birthday' => '2026-02-31'],
+    ])->assertInvalid('attributes.birthday');
+
+    expect($audience->subscribers()->count())->toBe(0);
 });
 
 test('published forms collect a configured subscriber language', function () {
@@ -536,6 +720,19 @@ test('published forms reject unknown audience attributes', function () {
     ])->assertInvalid('attributes');
 });
 
+test('published forms reject attributes when the audience has no custom fields', function () {
+    $subscribeForm = SubscribeForm::factory()->published()->create();
+
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+        'website' => '',
+        'attributes' => ['email' => 'spoof@example.com', 'nested' => ['x' => 1]],
+    ])->assertInvalid('attributes');
+
+    expect($subscribeForm->audience->subscribers()->count())->toBe(0);
+});
+
 test('duplicate public subscriptions are idempotent and do not disclose existence', function () {
     $audience = Audience::factory()->create();
     $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
@@ -582,28 +779,31 @@ test('a public form reuses an existing team contact without replacing its profil
         ->and($subscriber->last_name)->toBe('Person');
 });
 
-test('an unsubscribed address can subscribe again with fresh consent', function () {
-    $audience = Audience::factory()->create();
+test('an anonymous single opt-in signup from an opted-out member keeps the opt-out', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => false]);
     $subscribeForm = SubscribeForm::factory()->for($audience)->published()->create();
-    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create([
+    $unsubscribedAt = now()->subDays(3)->startOfSecond();
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed($unsubscribedAt)->create([
         'email' => 'person@example.com',
-        'consented_at' => now()->subYear(),
+        'first_name' => 'Ada',
     ]);
-    $previousConsentAt = $subscriber->consented_at;
-
-    $this->travel(1)->day();
+    Event::fake([SubscriberLifecycleOccurred::class]);
 
     $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
         'email' => 'person@example.com',
+        'first_name' => 'Mallory',
         'consent' => true,
         'website' => '',
-    ])->assertOk();
+    ])->assertOk()->assertExactJson(['message' => $subscribeForm->success_message]);
 
     $subscriber->refresh();
 
-    expect($subscriber->status)->toBe(SubscriberStatus::Subscribed)
-        ->and($subscriber->unsubscribed_at)->toBeNull()
-        ->and($subscriber->consented_at->isAfter($previousConsentAt))->toBeTrue();
+    expect($subscriber->status)->toBe(SubscriberStatus::Unsubscribed)
+        ->and($subscriber->unsubscribed_at?->equalTo($unsubscribedAt))->toBeTrue()
+        ->and($subscriber->isOptedIn())->toBeFalse()
+        ->and($subscriber->isPendingResubscription())->toBeTrue()
+        ->and($subscriber->first_name)->toBe('Ada');
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
 });
 
 test('public subscribe endpoints are unavailable after a form is deleted', function () {
@@ -618,6 +818,31 @@ test('public subscribe endpoints are unavailable after a form is deleted', funct
     ])->assertNotFound();
 });
 
+test('public subscribe endpoints are unavailable after the workspace is deleted', function () {
+    $subscribeForm = SubscribeForm::factory()->published()->create();
+    $subscribeForm->audience->team->delete();
+
+    $this->get(route('public.subscribe_forms.show', $subscribeForm))->assertNotFound();
+    $this->postJson(route('public.subscribe_forms.store', $subscribeForm), [
+        'email' => 'person@example.com',
+        'consent' => true,
+    ])->assertNotFound();
+
+    expect(Subscriber::query()->where('email', 'person@example.com')->exists())->toBeFalse();
+});
+
+test('an unpublished form returns 404 before validating the submission', function () {
+    $audience = Audience::factory()->create();
+    AudienceAttribute::factory()->for($audience)->create(['key' => 'company', 'required' => true]);
+    $draft = SubscribeForm::factory()->for($audience)->create();
+
+    $this->postJson(route('public.subscribe_forms.store', $draft), ['email' => 'not-an-email'])
+        ->assertNotFound()
+        ->assertJsonMissingPath('errors');
+
+    expect($audience->subscribers()->exists())->toBeFalse();
+});
+
 test('public subscribe submissions are throttled per form and email', function () {
     $subscribeForm = SubscribeForm::factory()->published()->create();
     $payload = [
@@ -630,4 +855,85 @@ test('public subscribe submissions are throttled per form and email', function (
     $this->postJson(route('public.subscribe_forms.store', $subscribeForm), $payload)->assertOk();
     $this->postJson(route('public.subscribe_forms.store', $subscribeForm), $payload)->assertOk();
     $this->postJson(route('public.subscribe_forms.store', $subscribeForm), $payload)->assertTooManyRequests();
+});
+
+test('opening or prefetching a double opt-in link only shows the confirm button', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $openedByGet = Subscriber::factory()->for($audience)->pendingConfirmation()->create();
+    $prefetchedByHead = Subscriber::factory()->for($audience)->pendingConfirmation()->create();
+    $confirmationUrl = URL::signedRoute('public.subscribe.confirm', $openedByGet);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->withHeaders(['User-Agent' => 'Microsoft SafeLinks Defenderoffice365'])
+        ->get($confirmationUrl)
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('subscribe-forms/confirmed')
+            ->where('audienceName', $audience->name)
+            ->where('confirmed', false)
+            ->where('canConfirm', true)
+            ->where('confirmUrl', Str::after($confirmationUrl, config('app.url'))));
+    $this->call('HEAD', URL::signedRoute('public.subscribe.confirm', $prefetchedByHead));
+
+    expect($openedByGet->fresh()->subscribed_at)->toBeNull()
+        ->and($prefetchedByHead->fresh()->subscribed_at)->toBeNull();
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('pressing confirm on a signed double opt-in link confirms a pending subscriber', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingConfirmation()->create();
+    $confirmationUrl = URL::signedRoute('public.subscribe.confirm', $subscriber);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->post($confirmationUrl)->assertRedirect($confirmationUrl);
+
+    expect($subscriber->fresh()->subscribed_at)->not->toBeNull();
+    Event::assertDispatched(
+        SubscriberLifecycleOccurred::class,
+        fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Subscribed,
+    );
+    $this->get($confirmationUrl)->assertInertia(fn (Assert $page) => $page
+        ->where('confirmed', true)
+        ->where('canConfirm', false));
+});
+
+test('confirming a double opt-in needs a valid signature', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingConfirmation()->create();
+
+    $this->post(route('public.subscribe.confirm', $subscriber))->assertForbidden();
+
+    expect($subscriber->fresh()->subscribed_at)->toBeNull();
+});
+
+test('pressing confirm on a re-signup link with the current token resubscribes', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->pendingResubscription()->create();
+    $confirmationUrl = URL::signedRoute('public.subscribe.confirm', [
+        'subscriber' => $subscriber,
+        'resubscribe' => $subscriber->resubscribe_requested_at->getTimestamp(),
+    ]);
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    $this->get($confirmationUrl)->assertInertia(fn (Assert $page) => $page->where('canConfirm', true));
+    expect($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+
+    $this->post($confirmationUrl)->assertRedirect($confirmationUrl);
+
+    expect($subscriber->fresh()->status)->toBe(SubscriberStatus::Subscribed);
+    Event::assertDispatched(
+        SubscriberLifecycleOccurred::class,
+        fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Resubscribed,
+    );
+});
+
+test('reopening a confirmation link after unsubscribing does not say the subscription is confirmed', function () {
+    $audience = Audience::factory()->create(['double_opt_in' => true]);
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create();
+
+    $this->get(URL::signedRoute('public.subscribe.confirm', $subscriber))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('confirmed', false)
+            ->where('canConfirm', false));
 });

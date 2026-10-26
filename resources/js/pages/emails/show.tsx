@@ -3,6 +3,7 @@ import {
     Cancel01Icon,
     Clock01Icon,
     MailRemove01Icon,
+    UserRemove01Icon,
 } from '@hugeicons/core-free-icons';
 import { CampaignInsights } from '@/components/campaign-insights';
 import type { CampaignInsightsData } from '@/components/campaign-insights';
@@ -89,7 +90,7 @@ export default function EmailShow({
                                     {campaign.recipient_count.toLocaleString()}
                                 </span>
                             </Progress>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-4">
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3 xl:grid-cols-5">
                                 <HealthStat
                                     label="Failed"
                                     value={metrics.failed}
@@ -128,6 +129,12 @@ export default function EmailShow({
                                     )}
                                     icon={Clock01Icon}
                                     iconClassName="bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                                />
+                                <HealthStat
+                                    label="Unsubscribed"
+                                    value={metrics.unsubscribed}
+                                    icon={UserRemove01Icon}
+                                    iconClassName="bg-slate-500/10 text-slate-600 dark:text-slate-400"
                                 />
                             </div>
                             <p className="text-xs/relaxed text-muted-foreground">

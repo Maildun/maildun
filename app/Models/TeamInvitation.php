@@ -5,10 +5,12 @@ namespace App\Models;
 use App\Enums\TeamRole;
 use Database\Factories\TeamInvitationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
@@ -87,6 +89,46 @@ class TeamInvitation extends Model
     public function isExpired(): bool
     {
         return $this->expires_at !== null && $this->expires_at->isPast();
+    }
+
+    /**
+     * Invitations addressed to the given user or email address that can still
+     * be accepted.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopePendingFor(Builder $query, User|string $recipient): void
+    {
+        $email = $recipient instanceof User ? $recipient->email : $recipient;
+
+        $query
+            ->whereRaw('LOWER(email) = ?', [strtolower($email)])
+            ->whereNull('accepted_at')
+            ->where(fn (Builder $query) => $query
+                ->whereNull('expires_at')
+                ->orWhere('expires_at', '>=', now()));
+    }
+
+    /**
+     * Summaries of the user's pending invitations for the accept/decline prompt.
+     *
+     * @return Collection<int, array{code: string, inviterName: string, team: array{name: string, slug: string}}>
+     */
+    public static function pendingSummariesFor(User $user): Collection
+    {
+        return static::query()
+            ->with(['inviter', 'team'])
+            ->pendingFor($user)
+            ->latest()
+            ->get()
+            ->map(fn (TeamInvitation $invitation) => [
+                'code' => $invitation->code,
+                'inviterName' => $invitation->inviter->name,
+                'team' => [
+                    'name' => $invitation->team->name,
+                    'slug' => $invitation->team->slug,
+                ],
+            ]);
     }
 
     /**

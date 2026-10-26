@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\ContactCompanyAssignmentMode;
 use App\Models\Contact;
+use App\Models\Tag;
 use App\Models\Team;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
@@ -60,13 +61,7 @@ class ManageContact
     {
         $before = $contact->tags()->pluck('uuid')->all();
 
-        $tagIds = collect($names)
-            ->map(fn (string $name): string => trim($name))
-            ->filter()
-            ->unique(fn (string $name): string => Str::lower($name))
-            ->map(fn (string $name): int => $team->tags()->firstOrCreate(['name' => $name])->id);
-
-        $contact->tags()->sync($tagIds);
+        $contact->tags()->sync($this->tagIds($team, $names));
 
         return array_values(
             $contact->tags()
@@ -84,15 +79,47 @@ class ManageContact
      */
     public function addTags(Team $team, Contact $contact, array $names): array
     {
-        $tagIds = collect($names)
+        $attached = $contact->tags()->syncWithoutDetaching($this->tagIds($team, $names))['attached'];
+
+        return array_values($team->tags()->whereKey($attached)->pluck('uuid')->all());
+    }
+
+    /**
+     * Detach the team tags with these names, matched ignoring case. Names
+     * that are not tags are ignored, and no tag is created.
+     *
+     * @param  list<string>  $names
+     */
+    public function removeTags(Team $team, Contact $contact, array $names): void
+    {
+        $lowerNames = array_map(fn (string $name): string => Str::lower(trim($name)), $names);
+        $tagIds = $team->tags()
+            ->get(['id', 'name'])
+            ->filter(fn (Tag $tag): bool => in_array(Str::lower($tag->name), $lowerNames, true))
+            ->modelKeys();
+
+        $contact->tags()->detach($tagIds);
+    }
+
+    /**
+     * The team's tag ids for these names, creating the missing ones. A name
+     * that differs only in capitals reuses the existing tag.
+     *
+     * @param  list<string>  $names
+     * @return list<int>
+     */
+    private function tagIds(Team $team, array $names): array
+    {
+        $existing = $team->tags()->get(['id', 'name'])
+            ->mapWithKeys(fn (Tag $tag): array => [Str::lower($tag->name) => $tag->id]);
+
+        return array_values(collect($names)
             ->map(fn (string $name): string => trim($name))
             ->filter()
             ->unique(fn (string $name): string => Str::lower($name))
-            ->map(fn (string $name): int => $team->tags()->firstOrCreate(['name' => $name])->id);
-
-        $attached = $contact->tags()->syncWithoutDetaching($tagIds)['attached'];
-
-        return array_values($team->tags()->whereKey($attached)->pluck('uuid')->all());
+            ->map(fn (string $name): int => $existing[Str::lower($name)]
+                ?? $team->tags()->firstOrCreate(['name' => $name])->id)
+            ->all());
     }
 
     private function syncSubscriberCopies(Contact $contact): void

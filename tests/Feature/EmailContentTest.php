@@ -246,6 +246,34 @@ test('campaign personalization is snapshotted and query strings are applied befo
     expect($delivery->fresh()->merge_data['name'])->toBe('Ada Lovelace');
 });
 
+test('campaigns send an audience field with no stored value as a blank', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    Subscriber::factory()->for($audience)->create([
+        'first_name' => 'Ada',
+        'attribute_values' => [],
+    ]);
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'audience_id' => $audience->id,
+        'subject' => 'News from {{ company }}',
+        'html' => '<p>Hi {{ first_name }} from {{ company }}</p>',
+    ]);
+
+    app(StartEmailSend::class)->handle($email);
+    [$loader] = (new PrepareEmailSendChunk($email->id))->withFakeBatch();
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    $delivery = $email->deliveries()->sole();
+
+    expect(app(BuildTrackedEmailHtml::class)->build($delivery))->toContain('<p>Hi Ada from </p>');
+    expect(app(RenderCampaignContent::class)->text($email->subject, $delivery->merge_data ?? []))
+        ->toBe('News from ');
+});
+
 test('disabled tracking keeps tagged links direct and does not count opens', function () {
     $email = Email::factory()->create([
         'html' => '<a href="https://example.com/news">Read</a>',

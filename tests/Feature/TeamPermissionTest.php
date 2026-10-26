@@ -3,7 +3,29 @@
 use App\Enums\TeamPermission;
 use App\Enums\TeamRole;
 use App\Models\Team;
+use App\Models\TeamInvitation;
 use App\Models\User;
+
+function gatedWorkspaceActions(): array
+{
+    return [
+        'audience:manage' => [TeamPermission::ManageAudience, fn (Team $team, User $other): array => ['post', route('audiences.store', $team), []]],
+        'contact:manage' => [TeamPermission::ManageContact, fn (Team $team, User $other): array => ['post', route('contacts.store', $team), []]],
+        'company:manage' => [TeamPermission::ManageCompany, fn (Team $team, User $other): array => ['post', route('companies.store', $team), []]],
+        'tag:manage' => [TeamPermission::ManageTag, fn (Team $team, User $other): array => ['post', route('tags.store', $team), []]],
+        'media:manage' => [TeamPermission::ManageMedia, fn (Team $team, User $other): array => ['post', route('media.store', $team), []]],
+        'campaign:manage' => [TeamPermission::ManageCampaign, fn (Team $team, User $other): array => ['post', route('emails.store', $team), []]],
+        'automation:manage' => [TeamPermission::ManageAutomation, fn (Team $team, User $other): array => ['post', route('automations.store', $team), []]],
+        'transactional:manage' => [TeamPermission::ManageTransactional, fn (Team $team, User $other): array => ['post', route('transactional_emails.store', $team), []]],
+        'template:manage' => [TeamPermission::ManageTemplate, fn (Team $team, User $other): array => ['post', route('email_templates.store', $team), []]],
+        'team:update' => [TeamPermission::UpdateTeam, fn (Team $team, User $other): array => ['patch', route('teams.update', $team), ['name' => 'Renamed workspace']]],
+        'team:delete' => [TeamPermission::DeleteTeam, fn (Team $team, User $other): array => ['delete', route('teams.destroy', $team), ['name' => $team->name]]],
+        'member:update' => [TeamPermission::UpdateMember, fn (Team $team, User $other): array => ['patch', route('teams.members.update', [$team, $other]), ['role' => TeamRole::Admin->value]]],
+        'member:remove' => [TeamPermission::RemoveMember, fn (Team $team, User $other): array => ['delete', route('teams.members.destroy', [$team, $other]), []]],
+        'invitation:create' => [TeamPermission::CreateInvitation, fn (Team $team, User $other): array => ['post', route('teams.invitations.store', $team), ['email' => 'invitee@example.com', 'role' => TeamRole::Member->value]]],
+        'invitation:cancel' => [TeamPermission::CancelInvitation, fn (Team $team, User $other): array => ['delete', route('teams.invitations.destroy', [$team, TeamInvitation::factory()->for($team)->create()]), []]],
+    ];
+}
 
 test('permissions are isolated by team', function () {
     $user = User::factory()->create();

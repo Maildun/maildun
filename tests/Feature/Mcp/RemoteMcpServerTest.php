@@ -7,13 +7,30 @@ use App\Mcp\Tools\Audiences\DeleteAudienceTool;
 use App\Mcp\Tools\Audiences\UpdateAudienceTool;
 use App\Mcp\Tools\Campaigns\CreateCampaignTool;
 use App\Mcp\Tools\Campaigns\DeleteCampaignTool;
+use App\Mcp\Tools\Campaigns\ScheduleCampaignTool;
+use App\Mcp\Tools\Campaigns\SendCampaignTool;
+use App\Mcp\Tools\Campaigns\SendTestCampaignTool;
+use App\Mcp\Tools\Campaigns\StopCampaignTool;
+use App\Mcp\Tools\Campaigns\UnscheduleCampaignTool;
 use App\Mcp\Tools\Campaigns\UpdateCampaignTool;
+use App\Mcp\Tools\Contacts\CreateContactTool;
+use App\Mcp\Tools\Contacts\DeleteContactTool;
+use App\Mcp\Tools\Contacts\UpdateContactTool;
+use App\Mcp\Tools\Segments\CreateSegmentTool;
+use App\Mcp\Tools\Segments\DeleteSegmentTool;
+use App\Mcp\Tools\Segments\UpdateSegmentTool;
+use App\Mcp\Tools\Subscribers\AddSubscriberTool;
+use App\Mcp\Tools\Subscribers\RemoveSubscriberTool;
+use App\Mcp\Tools\Subscribers\ResubscribeSubscriberTool;
+use App\Mcp\Tools\Subscribers\UnsubscribeSubscriberTool;
 use App\Mcp\Tools\TransactionalEmails\CreateTransactionalEmailTool;
 use App\Mcp\Tools\TransactionalEmails\DeleteTransactionalEmailTool;
 use App\Mcp\Tools\TransactionalEmails\UpdateTransactionalEmailTool;
 use App\Mcp\Tools\Workspaces\ListWorkspacesTool;
 use App\Models\Audience;
 use App\Models\Email;
+use App\Models\Segment;
+use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use App\Models\User;
@@ -205,6 +222,9 @@ test('MCP writes enforce the workspace role policies', function () {
     $audience = Audience::factory()->for($team)->create(['name' => 'Existing audience']);
     $campaign = Email::factory()->for($team)->create(['name' => 'Existing campaign']);
     $transactionalEmail = TransactionalEmail::factory()->for($team)->create(['name' => 'Existing transactional email']);
+    $subscriber = Subscriber::factory()->for($audience)->unsubscribed()->create();
+    $contact = $subscriber->contact;
+    $segment = Segment::factory()->for($audience)->create(['name' => 'Existing segment']);
 
     $unauthorizedCalls = [
         [CreateAudienceTool::class, [
@@ -234,6 +254,80 @@ test('MCP writes enforce the workspace role policies', function () {
             'workspace' => $team->slug,
             'uuid' => $campaign->uuid,
             'confirm_name' => $campaign->name,
+        ]],
+        [SendTestCampaignTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $campaign->uuid,
+            'to' => 'reviewer@example.com',
+        ]],
+        [SendCampaignTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $campaign->uuid,
+            'confirm_name' => $campaign->name,
+        ]],
+        [ScheduleCampaignTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $campaign->uuid,
+            'scheduled_at' => now()->addDay()->toIso8601String(),
+            'confirm_name' => $campaign->name,
+        ]],
+        [UnscheduleCampaignTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $campaign->uuid,
+        ]],
+        [StopCampaignTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $campaign->uuid,
+        ]],
+        [CreateContactTool::class, [
+            'workspace' => $team->slug,
+            'email' => 'unauthorized@example.com',
+        ]],
+        [UpdateContactTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $contact->uuid,
+            'first_name' => 'Changed',
+        ]],
+        [DeleteContactTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $contact->uuid,
+            'confirm_email' => $contact->email,
+        ]],
+        [AddSubscriberTool::class, [
+            'workspace' => $team->slug,
+            'audience_uuid' => $audience->uuid,
+            'email' => 'unauthorized@example.com',
+            'consent_confirmed' => true,
+        ]],
+        [UnsubscribeSubscriberTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $subscriber->uuid,
+        ]],
+        [ResubscribeSubscriberTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $subscriber->uuid,
+            'consent_confirmed' => true,
+        ]],
+        [RemoveSubscriberTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $subscriber->uuid,
+            'confirm_email' => $subscriber->email,
+        ]],
+        [CreateSegmentTool::class, [
+            'workspace' => $team->slug,
+            'audience_uuid' => $audience->uuid,
+            'name' => 'Unauthorized segment',
+            'rules' => [['field' => 'status', 'operator' => 'equals', 'value' => 'subscribed']],
+        ]],
+        [UpdateSegmentTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $segment->uuid,
+            'name' => 'Changed segment',
+        ]],
+        [DeleteSegmentTool::class, [
+            'workspace' => $team->slug,
+            'uuid' => $segment->uuid,
+            'confirm_name' => $segment->name,
         ]],
         [CreateTransactionalEmailTool::class, [
             'workspace' => $team->slug,
@@ -290,4 +384,64 @@ test('remote MCP still rejects mutations by a member without audience permission
     ])->assertOk()->assertJsonPath('result.isError', true);
 
     $this->assertDatabaseMissing('audiences', ['team_id' => $team->id, 'name' => 'Unauthorized audience']);
+});
+
+test('an MCP client completes the OAuth flow and calls the server with its token', function () {
+    $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+    openssl_pkey_export($key, $privateKey);
+    config()->set('passport.private_key', $privateKey);
+    config()->set('passport.public_key', openssl_pkey_get_details($key)['key']);
+    config()->set('mcp.redirect_domains', ['https://chatgpt.com']);
+
+    $redirectUri = 'https://chatgpt.com/connector/oauth/test-callback';
+    $clientId = $this->postJson('/oauth/register', [
+        'client_name' => 'ChatGPT',
+        'redirect_uris' => [$redirectUri],
+    ])->assertCreated()->json('client_id');
+
+    $verifier = str_repeat('v', 64);
+    $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get('/oauth/authorize?'.http_build_query([
+            'client_id' => $clientId,
+            'redirect_uri' => $redirectUri,
+            'response_type' => 'code',
+            'scope' => 'mcp:use',
+            'state' => 'state-value',
+            'code_challenge' => $challenge,
+            'code_challenge_method' => 'S256',
+        ]))
+        ->assertOk()
+        ->assertSee('ChatGPT');
+
+    $location = $this->actingAs($user)
+        ->post('/oauth/authorize', [
+            'state' => 'state-value',
+            'client_id' => $clientId,
+            'auth_token' => session('authToken'),
+        ])
+        ->assertRedirect()
+        ->headers->get('Location');
+
+    parse_str((string) parse_url($location, PHP_URL_QUERY), $query);
+
+    expect($location)->toStartWith($redirectUri)
+        ->and($query['state'])->toBe('state-value');
+
+    $accessToken = $this->postJson('/oauth/token', [
+        'grant_type' => 'authorization_code',
+        'client_id' => $clientId,
+        'redirect_uri' => $redirectUri,
+        'code_verifier' => $verifier,
+        'code' => $query['code'],
+    ])->assertOk()->json('access_token');
+
+    app('auth')->forgetGuards();
+
+    $this->withToken($accessToken)
+        ->postJson('/mcp/maildun', initializeMcpPayload())
+        ->assertOk()
+        ->assertJsonPath('result.serverInfo.name', 'Maildun MCP Server');
 });

@@ -14,6 +14,11 @@ use App\Models\SubscribeForm;
 use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\User;
+use Illuminate\Console\Scheduling\Event;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('owners can create valid dynamic segments', function () {
@@ -134,7 +139,11 @@ test('segment page shows the materialized subscriber list', function () {
             ->has('subscribers.data.0.avatar')
             // SubscriberHoverCard reads subscriber.tags on this page too.
             ->has('subscribers.data.0.tags')
-            ->has('subscribers.data.1.tags'));
+            ->has('subscribers.data.1.tags')
+            // The hover card Edit opens the subscriber dialog, which needs the team tags.
+            ->where('tags.0.name', 'VIP')
+            ->where('canManageSubscribers', true)
+            ->where('canManageContacts', true));
 });
 
 test('owners can delete a segment no active campaign targets', function () {
@@ -155,7 +164,7 @@ test('owners can delete a segment no active campaign targets', function () {
     expect(Segment::query()->whereKey($segment->id)->exists())->toBeFalse();
 });
 
-test('segments targeted by a sending or scheduled campaign cannot be deleted', function (array $campaignAttributes) {
+test('segments targeted by an unsent campaign cannot be deleted', function (array $campaignAttributes) {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $audience = Audience::factory()->for($team)->create();
@@ -171,13 +180,69 @@ test('segments targeted by a sending or scheduled campaign cannot be deleted', f
         ->from(route('audiences.segments.show', [$team, $audience, $segment]))
         ->delete(route('audiences.segments.destroy', [$team, $audience, $segment]))
         ->assertRedirect(route('audiences.segments.show', [$team, $audience, $segment]))
-        ->assertSessionHasErrors(['segment' => 'This segment is used by scheduled or sending campaigns: Launch.']);
+        ->assertSessionHasErrors(['segment' => 'This segment is used by campaigns that have not been sent yet: Launch.']);
 
     expect(Segment::query()->whereKey($segment->id)->exists())->toBeTrue();
 })->with([
     'sending' => [['status' => EmailStatus::Sending]],
     'scheduled' => [['status' => EmailStatus::Draft, 'scheduled_at' => now()->addDay()]],
+    'unscheduled draft' => [['status' => EmailStatus::Draft, 'scheduled_at' => null]],
 ]);
+
+test('segment rules cannot change while a campaign to it is in flight', function (EmailStatus $status) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $rules = [['field' => 'language', 'operator' => 'equals', 'value' => 'fr']];
+    $segment = Segment::factory()->for($audience)->create(['name' => 'French', 'rules' => $rules]);
+    Email::factory()->for($team)->create([
+        'name' => 'Launch',
+        'audience_id' => $audience->id,
+        'segment_id' => $segment->id,
+        'status' => $status,
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('audiences.segments.show', [$team, $audience, $segment]))
+        ->patch(route('audiences.segments.update', [$team, $audience, $segment]), [
+            'name' => 'French',
+            'match_type' => 'any',
+            'rules' => [['field' => 'status', 'operator' => 'equals', 'value' => 'subscribed']],
+        ])
+        ->assertSessionHasErrors(['rules' => 'The rules cannot change while these campaigns are sending: Launch.']);
+
+    $segment->refresh();
+    expect($segment->rules)->toBe($rules)
+        ->and($segment->match_type)->toBe(SegmentMatchType::All);
+})->with([EmailStatus::Queued, EmailStatus::Sending]);
+
+test('a sending segment can still be renamed when its rules stay the same', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $rules = [['field' => 'language', 'operator' => 'equals', 'value' => 'fr']];
+    $segment = Segment::factory()->for($audience)->create(['name' => 'French', 'rules' => $rules]);
+    Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'segment_id' => $segment->id,
+        'status' => EmailStatus::Sending,
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.segments.update', [$team, $audience, $segment]), [
+            'name' => 'French readers',
+            'description' => 'Readers who chose French',
+            'match_type' => 'all',
+            'rules' => $rules,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($segment->refresh()->only(['name', 'description', 'rules']))->toBe([
+        'name' => 'French readers',
+        'description' => 'Readers who chose French',
+        'rules' => $rules,
+    ]);
+});
 
 test('creating a segment immediately syncs matching subscribers', function () {
     $user = User::factory()->create();
@@ -225,6 +290,41 @@ test('updating segment rules resyncs matching subscribers', function () {
     expect($segment->subscribers()->pluck('subscribers.id')->all())->toBe([$matching->id]);
 });
 
+test('narrowing the rules of a segment with more members than one query can bind removes every non-match', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $now = now()->toDateTimeString();
+    foreach (array_chunk(range(1, 33000), 500) as $chunk) {
+        DB::table('subscribers')->insert(array_map(fn (int $number): array => [
+            'uuid' => (string) Str::uuid(),
+            'audience_id' => $audience->id,
+            'email' => "user{$number}@example.com",
+            'status' => SubscriberStatus::Subscribed->value,
+            'source' => SubscriberSource::Manual->value,
+            'subscribed_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], $chunk));
+    }
+    $segment = Segment::factory()->for($audience)->create([
+        'rules' => [['field' => 'email', 'operator' => 'contains', 'value' => '@example.com']],
+    ]);
+    app(SyncSegmentSubscribers::class)->handle($segment);
+
+    expect($segment->subscribers()->count())->toBe(33000);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.segments.update', [$team, $audience, $segment]), [
+            'name' => $segment->name,
+            'match_type' => 'all',
+            'rules' => [['field' => 'email', 'operator' => 'equals', 'value' => 'user1@example.com']],
+        ])
+        ->assertRedirect();
+
+    expect($segment->subscribers()->pluck('subscribers.email')->all())->toBe(['user1@example.com']);
+});
+
 test('segments sync command materializes matches for every segment', function () {
     $audience = Audience::factory()->create();
     $matching = Subscriber::factory()->for($audience)->create(['status' => SubscriberStatus::Subscribed]);
@@ -238,6 +338,25 @@ test('segments sync command materializes matches for every segment', function ()
     $segment->refresh();
     expect($segment->rules_synced_at)->not->toBeNull()
         ->and($segment->subscribers()->pluck('subscribers.id')->all())->toBe([$matching->id]);
+});
+
+test('segments sync command keeps syncing after one segment fails', function () {
+    Exceptions::fake();
+    $audience = Audience::factory()->create();
+    $matching = Subscriber::factory()->for($audience)->create(['status' => SubscriberStatus::Subscribed]);
+    $broken = Segment::factory()->for($audience)->create([
+        'rules' => [['field' => 'retired_field', 'operator' => 'equals', 'value' => 'x']],
+    ]);
+    $healthy = Segment::factory()->for($audience)->create([
+        'rules' => [['field' => 'status', 'operator' => 'equals', 'value' => 'subscribed']],
+    ]);
+
+    $this->artisan('segments:sync')->assertFailed();
+
+    Exceptions::assertReported(ValueError::class);
+    expect($broken->refresh()->rules_synced_at)->toBeNull()
+        ->and($healthy->refresh()->rules_synced_at)->not->toBeNull()
+        ->and($healthy->subscribers()->pluck('subscribers.id')->all())->toBe([$matching->id]);
 });
 
 test('segment rule engine supports every phase one operator', function (string $field, string $operator, string $value, string $expectedEmail) {
@@ -367,6 +486,54 @@ test('text rules match wildcard characters literally', function (string $operato
     'does not contain an underscore' => ['does_not_contain', '_', 'plain@example.com'],
 ]);
 
+test('segment date rules accept only YYYY-MM-DD dates', function (string $value) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('audiences.segments.store', [$team, $audience]), [
+            'name' => 'Recent',
+            'match_type' => 'all',
+            'rules' => [['field' => 'subscribed_at', 'operator' => 'after', 'value' => $value]],
+        ])
+        ->assertInvalid(['rules.0.value' => 'The date must be in YYYY-MM-DD format.']);
+
+    expect($audience->segments()->exists())->toBeFalse();
+})->with(['1 month ago', '04/20/2026', '2026-4-20', '2026-02-30', '2026-04-20 10:00']);
+
+test('a stored date rule in an older format still matches by its calendar day', function () {
+    $audience = Audience::factory()->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'old@example.com', 'subscribed_at' => '2026-01-15 12:00:00']);
+    Subscriber::factory()->for($audience)->create(['email' => 'new@example.com', 'subscribed_at' => '2026-05-15 12:00:00']);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [
+            ['field' => 'subscribed_at', 'operator' => 'before', 'value' => '04/20/2026'],
+        ], SegmentMatchType::All)
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe(['old@example.com']);
+});
+
+test('segment rule errors name the rule part instead of the input key', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('audiences.segments.store', [$team, $audience]), [
+            'name' => 'Empty value',
+            'match_type' => 'all',
+            'rules' => [
+                ['field' => 'status', 'operator' => 'equals', 'value' => 'subscribed'],
+                ['field' => 'email', 'operator' => 'contains', 'value' => ''],
+            ],
+        ])
+        ->assertInvalid(['rules.1.value' => 'The rule value field is required.']);
+});
+
 test('segment validation rejects unknown languages and text operators on language', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
@@ -382,4 +549,166 @@ test('segment validation rejects unknown languages and text operators on languag
             ],
         ])
         ->assertInvalid(['rules.0.value', 'rules.1.operator']);
+});
+
+test('malformed segment rules return validation errors instead of a server error', function (mixed $rules, string $invalidKey) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('audiences.segments.store', [$team, $audience]), [
+            'name' => 'Malformed',
+            'match_type' => 'all',
+            'rules' => $rules,
+        ])
+        ->assertInvalid([$invalidKey]);
+
+    expect($audience->segments()->exists())->toBeFalse();
+})->with([
+    'rules as text' => ['subscribed', 'rules'],
+    'field as a list' => [[['field' => ['status'], 'operator' => 'equals', 'value' => 'subscribed']], 'rules.0.field'],
+    'operator as a list' => [[['field' => 'status', 'operator' => ['equals'], 'value' => 'subscribed']], 'rules.0.operator'],
+    'value as a list' => [[['field' => 'status', 'operator' => 'equals', 'value' => ['subscribed']]], 'rules.0.value'],
+]);
+
+test('segment rules must be a list so the editor can read them back', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $segment = Segment::factory()->for($audience)->create();
+    $keyedRules = ['first' => ['field' => 'status', 'operator' => 'equals', 'value' => 'subscribed']];
+
+    $this->actingAs($user)
+        ->post(route('audiences.segments.store', [$team, $audience]), [
+            'name' => 'Keyed',
+            'match_type' => 'all',
+            'rules' => $keyedRules,
+        ])
+        ->assertInvalid(['rules']);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.segments.update', [$team, $audience, $segment]), [
+            'name' => $segment->name,
+            'match_type' => 'all',
+            'rules' => $keyedRules,
+        ])
+        ->assertInvalid(['rules']);
+
+    expect($audience->segments()->count())->toBe(1)
+        ->and($segment->fresh()->rules)->toBe($segment->rules);
+});
+
+test('negative name rules also match subscribers without a name', function (string $operator) {
+    $audience = Audience::factory()->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'test@example.com', 'first_name' => 'Test']);
+    Subscriber::factory()->for($audience)->create(['email' => 'noname@example.com', 'first_name' => null]);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [
+            ['field' => 'first_name', 'operator' => $operator, 'value' => 'test'],
+        ], SegmentMatchType::All)
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe(['noname@example.com']);
+})->with(['not_equals', 'does_not_contain']);
+
+test('subscribe form not equals also matches subscribers without a form', function () {
+    $audience = Audience::factory()->create();
+    $formA = SubscribeForm::factory()->for($audience)->create();
+    $formB = SubscribeForm::factory()->for($audience)->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'form-a@example.com', 'subscribe_form_id' => $formA->id]);
+    Subscriber::factory()->for($audience)->create(['email' => 'form-b@example.com', 'subscribe_form_id' => $formB->id]);
+    Subscriber::factory()->for($audience)->create(['email' => 'manual@example.com', 'subscribe_form_id' => null]);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [
+            ['field' => 'subscribe_form', 'operator' => 'not_equals', 'value' => $formA->uuid],
+        ], SegmentMatchType::All)
+        ->orderBy('email')
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe(['form-b@example.com', 'manual@example.com']);
+});
+
+test('form rules find the form whatever the case of its id', function () {
+    $audience = Audience::factory()->create();
+    $form = SubscribeForm::factory()->for($audience)->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'form@example.com', 'subscribe_form_id' => $form->id]);
+    Subscriber::factory()->for($audience)->create(['email' => 'manual@example.com', 'subscribe_form_id' => null]);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [
+            ['field' => 'subscribe_form', 'operator' => 'equals', 'value' => Str::upper($form->uuid)],
+        ], SegmentMatchType::All)
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe(['form@example.com']);
+});
+
+test('form rules for a missing form match nobody or everyone', function (string $operator, array $expectedEmails) {
+    $audience = Audience::factory()->create();
+    $form = SubscribeForm::factory()->for($audience)->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'form@example.com', 'subscribe_form_id' => $form->id]);
+    Subscriber::factory()->for($audience)->create(['email' => 'manual@example.com', 'subscribe_form_id' => null]);
+
+    $matches = app(ApplySegmentRules::class)
+        ->handle($audience, $audience->subscribers()->getQuery(), [
+            ['field' => 'subscribe_form', 'operator' => $operator, 'value' => (string) Str::uuid()],
+        ], SegmentMatchType::All)
+        ->orderBy('email')
+        ->pluck('email')
+        ->all();
+
+    expect($matches)->toBe($expectedEmails);
+})->with([
+    'equals matches nobody' => ['equals', []],
+    'not equals matches everyone' => ['not_equals', ['form@example.com', 'manual@example.com']],
+]);
+
+test('syncing a segment does not change when it was last updated', function () {
+    $audience = Audience::factory()->create();
+    $segment = Segment::factory()->for($audience)->create(['updated_at' => '2026-10-01 09:00:00']);
+    $this->travelTo('2026-10-21 12:00:00');
+
+    app(SyncSegmentSubscribers::class)->handle($segment);
+
+    $segment->refresh();
+    expect($segment->rules_synced_at->toDateTimeString())->toBe('2026-10-21 12:00:00')
+        ->and($segment->updated_at->toDateTimeString())->toBe('2026-10-01 09:00:00');
+});
+
+test('both segment editors get the same form and source options', function (string $routeName) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $segment = Segment::factory()->for($audience)->create();
+    $retired = SubscribeForm::factory()->for($audience)->create(['name' => 'Beta form']);
+    $retired->delete();
+    $live = SubscribeForm::factory()->for($audience)->create(['name' => 'Alpha form']);
+
+    $this->actingAs($user)
+        ->get(route($routeName, ['current_team' => $team, 'audience' => $audience, 'segment' => $segment]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('segmentRuleOptions.forms', [
+                ['uuid' => $live->uuid, 'name' => 'Alpha form', 'deleted' => false],
+                ['uuid' => $retired->uuid, 'name' => 'Beta form', 'deleted' => true],
+            ])
+            ->where('segmentRuleOptions.sources', [
+                ['value' => 'manual', 'label' => 'Manual'],
+                ['value' => 'form', 'label' => 'Form'],
+                ['value' => 'api', 'label' => 'API'],
+            ]));
+})->with(['audiences.show', 'audiences.segments.show']);
+
+test('the segment sync is scheduled so runs cannot overlap', function () {
+    $event = collect(app(Schedule::class)->events())
+        ->first(fn (Event $event): bool => str_contains((string) $event->command, 'segments:sync'));
+
+    expect($event)->toBeInstanceOf(Event::class)
+        ->and($event->withoutOverlapping)->toBeTrue()
+        ->and($event->onOneServer)->toBeTrue();
 });

@@ -4,7 +4,6 @@ namespace App\Models;
 
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailFailureCode;
-use App\Enums\SubscriberStatus;
 use Database\Factories\EmailDeliveryFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -42,6 +41,7 @@ use Illuminate\Support\Str;
  * @property Carbon|null $delayed_at
  * @property Carbon|null $bounced_at
  * @property Carbon|null $complained_at
+ * @property Carbon|null $unsubscribed_at
  * @property Carbon|null $first_opened_at
  * @property Carbon|null $last_opened_at
  * @property Carbon|null $first_clicked_at
@@ -56,7 +56,7 @@ use Illuminate\Support\Str;
 #[Fillable([
     'email_id', 'email_send_run_id', 'subscriber_id', 'contact_id', 'email_address', 'first_name', 'last_name', 'merge_data',
     'status', 'provider', 'uses_team_email_integration', 'provider_message_id', 'failure_reason', 'failure_code', 'send_attempted_at', 'sent_at',
-    'delivered_at', 'delayed_at', 'bounced_at', 'complained_at',
+    'delivered_at', 'delayed_at', 'bounced_at', 'complained_at', 'unsubscribed_at',
     'first_opened_at', 'last_opened_at', 'first_clicked_at', 'last_clicked_at',
     'opens_count', 'clicks_count',
 ])]
@@ -130,6 +130,7 @@ class EmailDelivery extends Model
             'send_attempted_at' => 'datetime', 'sent_at' => 'datetime',
             'delivered_at' => 'datetime', 'delayed_at' => 'datetime',
             'bounced_at' => 'datetime', 'complained_at' => 'datetime',
+            'unsubscribed_at' => 'datetime',
             'first_opened_at' => 'datetime', 'last_opened_at' => 'datetime',
             'first_clicked_at' => 'datetime', 'last_clicked_at' => 'datetime',
         ];
@@ -142,8 +143,10 @@ class EmailDelivery extends Model
 
     /**
      * Deliveries a deliberate retry may queue again: a retryable outcome, a
-     * subscriber who is still subscribed and confirmed (or was deleted), and an address the
-     * workspace has not suppressed after bounces or a complaint.
+     * subscriber who still exists and is opted in, and an address the
+     * workspace has not suppressed after bounces or a complaint. A delivery
+     * whose membership, contact or audience was deleted has no subscriber and
+     * is never retried.
      *
      * @param  Builder<$this>  $query
      */
@@ -151,16 +154,7 @@ class EmailDelivery extends Model
     {
         $query
             ->whereIn('email_deliveries.status', EmailDeliveryStatus::retryable())
-            ->where(function (Builder $deliveries): void {
-                $deliveries
-                    ->whereNull('subscriber_id')
-                    ->orWhereHas(
-                        'subscriber',
-                        fn (Builder $subscriber) => $subscriber
-                            ->where('status', SubscriberStatus::Subscribed)
-                            ->whereNotNull('subscribed_at'),
-                    );
-            })
+            ->whereHas('subscriber', fn (Builder $subscriber) => $subscriber->optedIn())
             ->whereNotExists(
                 EmailAddressHealth::query()
                     ->suppressedFor($team)

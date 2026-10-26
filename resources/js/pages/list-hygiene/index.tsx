@@ -120,7 +120,7 @@ const hygieneCopy: Record<
     inactive: {
         label: 'Inactive',
         description:
-            'Subscribers who received a campaign but have never opened or clicked one.',
+            'Subscribers who received a campaign with open tracking on but have never opened or clicked one.',
         emptyTitle: 'No inactive subscribers',
         emptyDescription:
             'No subscribers in the selected audience match the inactivity rule.',

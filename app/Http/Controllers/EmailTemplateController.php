@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Media\BuildMediaLibrary;
+use App\Concerns\SearchesText;
 use App\Enums\EmailEditor;
 use App\Http\Requests\SaveEmailTemplateRequest;
 use App\Models\EmailTemplate;
 use App\Models\SavedSection;
 use App\Models\Team;
+use App\Services\AssistantModels;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -16,6 +18,8 @@ use Inertia\Response;
 
 class EmailTemplateController extends Controller
 {
+    use SearchesText;
+
     public function index(Request $request, Team $currentTeam): Response
     {
         Gate::authorize('viewAny', [EmailTemplate::class, $currentTeam]);
@@ -25,8 +29,7 @@ class EmailTemplateController extends Controller
         $templates = EmailTemplate::query()
             ->availableTo($currentTeam)
             ->when($filters['q'] !== '', function ($query) use ($filters): void {
-                $search = '%'.addcslashes($filters['q'], '%_\\').'%';
-                $query->whereAny(['name', 'description', 'subject'], 'like', $search);
+                $this->whereAnyColumnContains($query, ['name', 'description', 'subject'], $filters['q']);
             })
             ->when($filters['editor'] !== '', fn ($query) => $query->where('editor', $filters['editor']))
             ->when($filters['type'] === 'starter', fn ($query) => $query->whereNull('team_id'))
@@ -68,7 +71,7 @@ class EmailTemplateController extends Controller
         return back();
     }
 
-    public function edit(Team $currentTeam, EmailTemplate $emailTemplate, BuildMediaLibrary $mediaLibrary): Response
+    public function edit(Team $currentTeam, EmailTemplate $emailTemplate, BuildMediaLibrary $mediaLibrary, AssistantModels $assistantModels): Response
     {
         Gate::authorize('update', $emailTemplate);
 
@@ -89,6 +92,7 @@ class EmailTemplateController extends Controller
             'templates' => $this->templatesFor($currentTeam),
             'defaultEditor' => $currentTeam->email_editor->value,
             'canManage' => Gate::allows('update', $emailTemplate),
+            'assistantModels' => $assistantModels->options(),
             'mediaLibrary' => fn (): ?array => $emailTemplate->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)
                 : null,

@@ -19,6 +19,15 @@ class PublicSubscribeRequest extends FormRequest
         if ($this->has('email')) {
             $this->merge(['email' => Str::lower($this->string('email')->trim()->toString())]);
         }
+
+        $subscribeForm = $this->route('subscribeForm');
+
+        if ($this->has('attributes') && $subscribeForm instanceof SubscribeForm) {
+            $this->merge(['attributes' => AudienceAttribute::normalizeDateInput(
+                $this->input('attributes'),
+                $subscribeForm->audience->audienceAttributes()->get(),
+            )]);
+        }
     }
 
     /** @return array<string, ValidationRule|array<mixed>|string> */
@@ -26,7 +35,9 @@ class PublicSubscribeRequest extends FormRequest
     {
         $subscribeForm = $this->route('subscribeForm');
 
-        abort_unless($subscribeForm instanceof SubscribeForm, 404);
+        // A draft form, or one from a deleted workspace, answers 404 before any
+        // field error can reveal its fields or attribute keys.
+        abort_unless($subscribeForm instanceof SubscribeForm && $subscribeForm->acceptsPublicSignups(), 404);
 
         $attributes = $subscribeForm->audience->audienceAttributes()
             ->orderBy('position')
@@ -77,7 +88,7 @@ class PublicSubscribeRequest extends FormRequest
                 ];
             }
         } else {
-            $rules['attributes'] = ['nullable', 'array'];
+            $rules['attributes'] = ['nullable', 'array:'];
         }
 
         return $rules;

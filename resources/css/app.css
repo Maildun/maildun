@@ -25,6 +25,144 @@
     --radius-md: calc(var(--radius) - 2px);
     --radius-sm: calc(var(--radius) - 4px);
 
+    /* Sweeping highlight across text while the design assistant works. */
+    --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+
+    @keyframes shimmer {
+        from {
+            background-position: 100% 0;
+        }
+
+        to {
+            background-position: -100% 0;
+        }
+    }
+
+    /* The composer's send/stop icon: the old one slides out to the right, the new one follows in from the left with a small bounce. */
+    --animate-icon-in: icon-in 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) 0.08s
+        both;
+    --animate-icon-out: icon-out 0.2s cubic-bezier(0.55, 0, 1, 0.45) both;
+
+    @keyframes icon-in {
+        from {
+            opacity: 0;
+            transform: translateX(-140%);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+
+    @keyframes icon-out {
+        from {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        to {
+            opacity: 0;
+            transform: translateX(140%);
+        }
+    }
+
+    /* Each word of an assistant reply resolves out of a blur, so the reply reads as if it's streaming in. */
+    --animate-word-in: word-in 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+
+    @keyframes word-in {
+        from {
+            opacity: 0;
+            filter: blur(6px);
+            transform: translateY(3px);
+        }
+
+        to {
+            opacity: 1;
+            filter: blur(0);
+            transform: none;
+        }
+    }
+
+    /* The Maildun mark turns a quarter at a time, squeezing on each step, while the design assistant works. */
+    --animate-maildun-think: maildun-think 3.2s ease-in-out infinite;
+
+    @keyframes maildun-think {
+        0% {
+            transform: rotate(0deg) scale(1);
+        }
+
+        15% {
+            transform: rotate(90deg) scale(0.84);
+        }
+
+        25% {
+            transform: rotate(90deg) scale(1);
+        }
+
+        40% {
+            transform: rotate(180deg) scale(0.84);
+        }
+
+        50% {
+            transform: rotate(180deg) scale(1);
+        }
+
+        65% {
+            transform: rotate(270deg) scale(0.84);
+        }
+
+        75% {
+            transform: rotate(270deg) scale(1);
+        }
+
+        90% {
+            transform: rotate(360deg) scale(0.84);
+        }
+
+        100% {
+            transform: rotate(360deg) scale(1);
+        }
+    }
+
+    /* The editor's proposal bar: slides up and grows from 70% with a bounce, and the reverse on the way out. */
+    --animate-proposal-in: proposal-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)
+        both;
+    --animate-proposal-out: proposal-out 0.28s
+        cubic-bezier(0.36, 0, 0.66, -0.56) both;
+
+    @keyframes proposal-in {
+        from {
+            opacity: 0;
+            transform: translateY(24px) scale(0.7);
+        }
+
+        40% {
+            opacity: 1;
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+
+    @keyframes proposal-out {
+        from {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+
+        60% {
+            opacity: 1;
+        }
+
+        to {
+            opacity: 0;
+            transform: translateY(24px) scale(0.7);
+        }
+    }
+
     --color-background: var(--background);
     --color-foreground: var(--foreground);
 

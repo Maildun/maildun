@@ -7,7 +7,13 @@ export type AutomationTriggerKind =
     | 'subscriber.tagged'
     | 'api';
 
-export type AutomationActionKind = 'send_email' | 'add_tag' | 'remove_tag';
+export type AutomationActionKind =
+    'send_email' | 'add_tag' | 'remove_tag' | 'set_language';
+
+export type AutomationLanguageEmail = {
+    language: string | null;
+    transactional_email_uuid: string | null;
+};
 
 export type AutomationConditionKind =
     'has_tag' | 'is_subscribed' | 'source' | 'language';
@@ -25,7 +31,9 @@ export type AutomationTriggerData = {
 export type AutomationActionData = {
     kind: AutomationActionKind | '';
     transactional_email_uuid?: string | null;
+    language_emails?: AutomationLanguageEmail[];
     tag_uuid?: string | null;
+    language?: string | null;
 };
 
 export type AutomationDelayData = {

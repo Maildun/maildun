@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Concerns\SanitizesCsvCells;
+use App\Concerns\SanitizesSpreadsheetCells;
 use App\Enums\ContactImportIssue;
 use App\Enums\ContactImportStatus;
 use App\Enums\StorageBackend;
+use App\Enums\SubscriberLanguage;
+use App\Exceptions\ContactImportFailed;
 use App\Http\Requests\StartContactImportRequest;
 use App\Http\Requests\StoreContactImportRequest;
+use App\Http\Requests\UpdateContactImportDelimiterRequest;
 use App\Jobs\ProcessContactImport;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
@@ -16,6 +19,7 @@ use App\Models\ContactImport;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Services\ContactImportCsv;
+use Illuminate\Http\File;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -26,12 +30,11 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
-use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ContactImportController extends Controller
 {
-    use SanitizesCsvCells;
+    use SanitizesSpreadsheetCells;
 
     public function index(Team $currentTeam): Response
     {
@@ -73,18 +76,28 @@ class ContactImportController extends Controller
         $file = $request->file('file');
         $audience = $request->targetAudience();
 
-        try {
-            $analysis = $csv->analyze((string) $file->getRealPath());
-        } catch (RuntimeException $exception) {
-            throw ValidationException::withMessages(['file' => $exception->getMessage()]);
-        }
-
-        if ($analysis['total_rows'] === 0) {
-            throw ValidationException::withMessages(['file' => __('The CSV has a header row but no contacts.')]);
-        }
-
+        $uploadedPath = (string) $file->getRealPath();
         $disk = StorageBackend::current()->privateDisk();
-        $path = $file->store('contact-imports/'.$currentTeam->uuid, $disk);
+
+        try {
+            $normalized = $csv->normalize($uploadedPath);
+            $analysis = $csv->analyze($normalized['path'], $normalized['delimiter']);
+
+            if ($analysis['total_rows'] === 0) {
+                throw new ContactImportFailed(__('The CSV has a header row but no contacts.'));
+            }
+
+            $path = $normalized['path'] === $uploadedPath
+                ? $file->store('contact-imports/'.$currentTeam->uuid, $disk)
+                : Storage::disk($disk)->putFile('contact-imports/'.$currentTeam->uuid, new File($normalized['path']));
+        } catch (ContactImportFailed $exception) {
+            throw ValidationException::withMessages(['file' => $exception->getMessage()]);
+        } finally {
+            if (isset($normalized) && $normalized['path'] !== $uploadedPath) {
+                @unlink($normalized['path']);
+            }
+        }
+
         $attributeKeys = $audience?->audienceAttributes()->get(['key'])
             ->map(fn (AudienceAttribute $attribute): string => $attribute->key)
             ->values()
@@ -114,6 +127,8 @@ class ContactImportController extends Controller
         Gate::authorize('view', $contactImport);
         $contactImport->loadMissing(['audience:id,uuid,name,team_id', 'uploadedBy:id,name']);
         $isDraft = $contactImport->status === ContactImportStatus::Draft;
+        $fields = $isDraft ? $csv->fieldOptions($contactImport->audience) : [];
+        $fieldValues = array_column($fields, 'value');
 
         return Inertia::render('contacts/imports/show', [
             'contactImport' => fn (): array => $contactImport->fresh(['audience:id,uuid,name,team_id', 'uploadedBy:id,name'])?->toInertia() ?? $contactImport->toInertia(),
@@ -127,14 +142,67 @@ class ContactImportController extends Controller
             'mapping' => $isDraft ? [
                 'headers' => $contactImport->headers ?? [],
                 'sampleRows' => $contactImport->sample_rows ?? [],
-                'columnMap' => $contactImport->column_map ?? [],
-                'fields' => $csv->fieldOptions($contactImport->audience),
+                // A suggested field can disappear after upload (a deleted audience
+                // attribute), so offer it unmapped rather than as a value Start rejects.
+                'delimiter' => $contactImport->delimiter,
+                'delimiters' => $csv->delimiterOptions(),
+                'columnMap' => array_map(
+                    fn (?string $field): ?string => in_array($field, $fieldValues, true) ? $field : null,
+                    $contactImport->column_map ?? [],
+                ),
+                'fields' => $fields,
                 'tags' => $currentTeam->tags()->orderBy('name')->get(['uuid', 'name', 'color']),
+                'languages' => SubscriberLanguage::options(),
             ] : null,
             'canRetry' => $contactImport->status === ContactImportStatus::Failed
                 && Storage::disk($contactImport->disk)->exists($contactImport->path),
             'canManage' => Gate::allows('update', $contactImport),
         ]);
+    }
+
+    /**
+     * Re-read a draft with the delimiter the user picked when detection
+     * guessed wrong. The suggested mapping is rebuilt for the new columns.
+     */
+    public function delimiter(UpdateContactImportDelimiterRequest $request, Team $currentTeam, ContactImport $contactImport, ContactImportCsv $csv): RedirectResponse
+    {
+        abort_unless($contactImport->status === ContactImportStatus::Draft, 409);
+
+        $localPath = tempnam(sys_get_temp_dir(), 'contact-import');
+        $stream = Storage::disk($contactImport->disk)->readStream($contactImport->path);
+
+        try {
+            if ($localPath === false || ! is_resource($stream) || file_put_contents($localPath, $stream) === false) {
+                throw new ContactImportFailed(__('The uploaded CSV file could not be read.'));
+            }
+
+            $analysis = $csv->analyze($localPath, $request->validated('delimiter'));
+        } catch (ContactImportFailed $exception) {
+            throw ValidationException::withMessages(['delimiter' => $exception->getMessage()]);
+        } finally {
+            if (is_resource($stream)) {
+                fclose($stream);
+            }
+
+            if ($localPath !== false) {
+                @unlink($localPath);
+            }
+        }
+
+        $attributeKeys = $contactImport->audience?->audienceAttributes()->get(['key'])
+            ->map(fn (AudienceAttribute $attribute): string => $attribute->key)
+            ->values()
+            ->all() ?? [];
+
+        $contactImport->update([
+            'delimiter' => $analysis['delimiter'],
+            'headers' => $analysis['headers'],
+            'sample_rows' => $analysis['sample_rows'],
+            'column_map' => $csv->suggestMapping($analysis['headers'], $attributeKeys, $contactImport->audience_id !== null),
+            'total_rows' => $analysis['total_rows'],
+        ]);
+
+        return to_route('contacts.imports.show', [$currentTeam, $contactImport]);
     }
 
     public function start(StartContactImportRequest $request, Team $currentTeam, ContactImport $contactImport): RedirectResponse
@@ -149,6 +217,7 @@ class ContactImportController extends Controller
             'merge_strategy' => $request->validated('merge_strategy'),
             'tag_names' => array_values($request->validated('tags', [])),
             'resubscribe_unsubscribed' => $contactImport->audience_id !== null && $request->boolean('resubscribe_unsubscribed'),
+            'language' => $contactImport->audience_id === null ? null : $request->validated('language'),
             'review_options' => [
                 ...ContactImportIssue::defaultOptions(),
                 ...Arr::only($request->validated('review_options', []), array_keys(ContactImportIssue::defaultOptions())),
@@ -227,24 +296,60 @@ class ContactImportController extends Controller
                 return;
             }
 
+            // Excel only reads the file as UTF-8 with a byte order mark.
+            fwrite($stream, "\xEF\xBB\xBF");
             fputcsv($stream, ['row', 'email', 'outcome', 'detail'], escape: '');
 
-            foreach ($contactImport->rowErrors() as $error) {
-                fputcsv($stream, $this->sanitizeCsvRow([$error['row'], $error['email'], 'failed', $error['message']]), escape: '');
-            }
-
-            foreach ($contactImport->review_flags ?? [] as $flag) {
-                $issue = ContactImportIssue::tryFrom($flag['issue']);
-                fputcsv($stream, $this->sanitizeCsvRow([
-                    $flag['row'],
-                    $flag['email'],
-                    $flag['action'],
-                    trim(($issue?->label() ?? $flag['issue']).' '.($flag['detail'] ?? '')),
-                ]), escape: '');
+            // Emails and details come from the uploaded file, so neutralise formulas.
+            foreach ($this->reportRows($contactImport) as $row) {
+                fputcsv($stream, $this->sanitizeCsvRow($row), escape: '');
             }
 
             fclose($stream);
         }, $fileName, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    /**
+     * Every failed row, then every flagged row. Imports that ran before issues
+     * were stored row by row fall back to the preview kept on the import.
+     *
+     * @return iterable<int, array{0: int|null, 1: string|null, 2: string, 3: string}>
+     */
+    private function reportRows(ContactImport $contactImport): iterable
+    {
+        $issues = DB::table('contact_import_issues')->where('contact_import_id', $contactImport->id);
+
+        if (! $issues->exists()) {
+            foreach ($contactImport->rowErrors() as $error) {
+                yield [$error['row'], $error['email'], 'failed', $error['message']];
+            }
+
+            foreach ($contactImport->review_flags ?? [] as $flag) {
+                yield [$flag['row'], $flag['email'], $flag['action'], $this->flagDetail($flag['issue'], $flag['detail'])];
+            }
+
+            return;
+        }
+
+        foreach ([true, false] as $failed) {
+            $rows = $failed
+                ? (clone $issues)->whereNull('issue')->lazyById(1000)
+                : (clone $issues)->whereNotNull('issue')->lazyById(1000);
+
+            foreach ($rows as $row) {
+                yield [
+                    $row->row_number === null ? null : (int) $row->row_number,
+                    $row->email,
+                    $row->outcome,
+                    $failed ? (string) $row->detail : $this->flagDetail((string) $row->issue, $row->detail),
+                ];
+            }
+        }
+    }
+
+    private function flagDetail(string $issue, ?string $detail): string
+    {
+        return trim((ContactImportIssue::tryFrom($issue)?->label() ?? $issue).' '.($detail ?? ''));
     }
 
     /** @return Collection<int, Audience> */

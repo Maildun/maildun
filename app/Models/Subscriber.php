@@ -5,9 +5,11 @@ namespace App\Models;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
+use App\Models\Builders\SubscriberBuilder;
 use App\Services\DiceBearAvatarGenerator;
 use Database\Factories\SubscriberFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\UseEloquentBuilder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
@@ -38,6 +40,7 @@ use Illuminate\Support\Str;
  * @property string|null $consent_ip
  * @property Carbon|null $subscribed_at
  * @property Carbon|null $unsubscribed_at
+ * @property Carbon|null $resubscribe_requested_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Audience $audience
@@ -65,7 +68,9 @@ use Illuminate\Support\Str;
     'consent_ip',
     'subscribed_at',
     'unsubscribed_at',
+    'resubscribe_requested_at',
 ])]
+#[UseEloquentBuilder(SubscriberBuilder::class)]
 class Subscriber extends Model
 {
     /** @var list<string> */
@@ -73,6 +78,15 @@ class Subscriber extends Model
 
     /** @use HasFactory<SubscriberFactory> */
     use HasFactory;
+
+    public const MEMBERSHIP_SUBSCRIBED = 'subscribed';
+
+    public const MEMBERSHIP_PENDING = 'pending';
+
+    public const MEMBERSHIP_UNSUBSCRIBED = 'unsubscribed';
+
+    /** @var list<string> */
+    public const MEMBERSHIP_STATUSES = [self::MEMBERSHIP_SUBSCRIBED, self::MEMBERSHIP_PENDING, self::MEMBERSHIP_UNSUBSCRIBED];
 
     protected $attributes = [
         'status' => SubscriberStatus::Subscribed->value,
@@ -83,6 +97,33 @@ class Subscriber extends Model
     {
         static::creating(function (Subscriber $subscriber): void {
             $subscriber->uuid ??= (string) Str::uuid();
+
+            $optOut = AudienceOptOut::query()
+                ->where('audience_id', $subscriber->audience_id)
+                ->where('email', $subscriber->email)
+                ->first();
+
+            // An address whose membership was deleted after it opted out comes
+            // back unsubscribed, whatever path re-adds it, and with no consent
+            // record of its own.
+            if ($optOut instanceof AudienceOptOut) {
+                $subscriber->forceFill([
+                    'status' => SubscriberStatus::Unsubscribed,
+                    'unsubscribed_at' => $optOut->unsubscribed_at ?? now(),
+                    'subscribed_at' => null,
+                    'resubscribe_requested_at' => null,
+                    'consent_text' => null,
+                    'consented_at' => null,
+                    'consent_ip' => null,
+                ]);
+            }
+        });
+
+        static::created(function (Subscriber $subscriber): void {
+            AudienceOptOut::query()
+                ->where('audience_id', $subscriber->audience_id)
+                ->where('email', $subscriber->email)
+                ->delete();
         });
     }
 
@@ -145,8 +186,7 @@ class Subscriber extends Model
     public function scopeSendableFor(Builder $query, Team $team): void
     {
         $query
-            ->where('subscribers.status', SubscriberStatus::Subscribed)
-            ->whereNotNull('subscribers.subscribed_at')
+            ->optedIn()
             ->whereNotExists(
                 EmailAddressHealth::query()
                     ->suppressedFor($team)
@@ -155,11 +195,84 @@ class Subscriber extends Model
     }
 
     /**
+     * The one definition of a member who may be mailed: subscribed and, for
+     * double opt-in, confirmed, with no opt-out kept from a deleted membership
+     * of the same address. Campaign claims, retries and automations all
+     * use it (or isOptedIn() in memory) so they can never disagree.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeOptedIn(Builder $query): void
+    {
+        $query
+            ->where('subscribers.status', SubscriberStatus::Subscribed)
+            ->whereNotNull('subscribers.subscribed_at')
+            ->whereNotExists(
+                AudienceOptOut::query()
+                    ->whereColumn('audience_opt_outs.audience_id', 'subscribers.audience_id')
+                    ->whereColumn('audience_opt_outs.email', 'subscribers.email'),
+            );
+    }
+
+    /**
+     * Members waiting on a confirmation link: double opt-in signups who have
+     * not confirmed (isPendingConfirmation) and opted-out people who asked to
+     * rejoin (isPendingResubscription).
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopePendingConfirmation(Builder $query): void
+    {
+        $query->where(fn (Builder $pending) => $pending
+            ->where(fn (Builder $signup) => $signup
+                ->where('subscribers.status', SubscriberStatus::Subscribed)
+                ->whereNull('subscribers.subscribed_at'))
+            ->orWhere(fn (Builder $rejoin) => $rejoin
+                ->where('subscribers.status', SubscriberStatus::Unsubscribed)
+                ->whereNotNull('subscribers.resubscribe_requested_at')));
+    }
+
+    /**
+     * The membership states lists and segment rules filter on. "subscribed"
+     * means opted in, so pending members are not counted with them;
+     * "unsubscribed" keeps everyone who opted out, including those waiting
+     * to confirm a rejoin.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeWithMembershipStatus(Builder $query, string $status): void
+    {
+        match ($status) {
+            self::MEMBERSHIP_SUBSCRIBED => $query->optedIn(),
+            self::MEMBERSHIP_PENDING => $query->pendingConfirmation(),
+            default => $query->where('subscribers.status', SubscriberStatus::Unsubscribed),
+        };
+    }
+
+    /**
+     * The in-memory form of the optedIn scope.
+     */
+    public function isOptedIn(): bool
+    {
+        return $this->status === SubscriberStatus::Subscribed && $this->subscribed_at !== null;
+    }
+
+    /**
      * A double opt-in signup who has not clicked the confirmation link yet.
      */
     public function isPendingConfirmation(): bool
     {
         return $this->status === SubscriberStatus::Subscribed && $this->subscribed_at === null;
+    }
+
+    /**
+     * A person who opted out and then asked to rejoin from a form or the API.
+     * They stay unsubscribed until they click the confirmation link or a team
+     * member resubscribes them.
+     */
+    public function isPendingResubscription(): bool
+    {
+        return $this->status === SubscriberStatus::Unsubscribed && $this->resubscribe_requested_at !== null;
     }
 
     /** @return Attribute<string, string> */
@@ -192,6 +305,7 @@ class Subscriber extends Model
             'consented_at' => 'datetime',
             'subscribed_at' => 'datetime',
             'unsubscribed_at' => 'datetime',
+            'resubscribe_requested_at' => 'datetime',
         ];
     }
 

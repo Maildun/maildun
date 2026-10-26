@@ -21,6 +21,8 @@ import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ContactDialog } from '@/components/contact-dialog';
+import { SubscriberAttributesDialog } from '@/components/subscriber-attributes-dialog';
+import { SubscriberStatusBadge } from '@/components/subscriber-status-badge';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -55,7 +57,12 @@ import {
     EmptyMedia,
     EmptyTitle,
 } from '@/components/ui/empty';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
+import {
+    Field,
+    FieldDescription,
+    FieldError,
+    FieldLabel,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
     Select,
@@ -67,7 +74,7 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
-import { formatRelativeTime } from '@/lib/format';
+import { formatAttributeDate, formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
 import { cn } from '@/lib/utils';
 import { show as showAudience } from '@/routes/audiences';
@@ -95,7 +102,7 @@ type Props = {
     activity: ContactActivity;
     automations: ContactAutomation[];
     selectedAudienceUuid: string | null;
-    companies: CompanyOption[];
+    companies?: CompanyOption[];
     audiences: CompanyOption[];
     tags: Tag[];
     canManage: boolean;
@@ -116,7 +123,11 @@ export default function ContactShow({
     const { currentTeam } = usePage().props;
     const [editOpen, setEditOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
+    const [membershipToUnsubscribe, setMembershipToUnsubscribe] =
+        useState<ContactMembership | null>(null);
     const [membershipToResubscribe, setMembershipToResubscribe] =
+        useState<ContactMembership | null>(null);
+    const [membershipToRemove, setMembershipToRemove] =
         useState<ContactMembership | null>(null);
     const [openMemberships, setOpenMemberships] = useState<string[]>(() =>
         initialOpenMemberships(contact.memberships, selectedAudienceUuid),
@@ -124,7 +135,7 @@ export default function ContactShow({
     const [consentConfirmed, setConsentConfirmed] = useState(false);
     const addMembership = useForm({
         audience_uuid: '',
-        consent_confirmed: true,
+        consent_confirmed: false,
     });
     const deleteContact = useForm({ confirmation: '' });
 
@@ -181,16 +192,24 @@ export default function ContactShow({
                 contact.uuid,
                 membershipUuid,
             ]),
-            { preserveScroll: true },
+            {
+                preserveScroll: true,
+                onFinish: () => setMembershipToRemove(null),
+            },
         );
     };
 
-    const unsubscribeMembership = (membership: ContactMembership): void => {
+    const confirmUnsubscribe = (): void => {
+        if (!membershipToUnsubscribe) {
+            return;
+        }
+
         router.patch(
-            unsubscribe.url(membershipRouteArgs(membership)),
+            unsubscribe.url(membershipRouteArgs(membershipToUnsubscribe)),
             {},
             {
                 preserveScroll: true,
+                onSuccess: () => setMembershipToUnsubscribe(null),
             },
         );
     };
@@ -539,54 +558,107 @@ export default function ContactShow({
                         {canManage && availableAudiences.length ? (
                             <form
                                 onSubmit={submitMembership}
-                                className="flex w-full gap-2 sm:w-auto"
+                                className="flex w-full flex-col gap-3 sm:w-auto"
                             >
-                                <Select
-                                    value={
-                                        addMembership.data.audience_uuid || null
-                                    }
-                                    onValueChange={(value) =>
-                                        addMembership.setData(
-                                            'audience_uuid',
-                                            (value as string | null) ?? '',
-                                        )
-                                    }
-                                >
-                                    <SelectTrigger className="w-full sm:w-52">
-                                        <SelectValue placeholder="Choose audience" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectGroup>
-                                            {availableAudiences.map(
-                                                (audience) => (
-                                                    <SelectItem
-                                                        key={audience.uuid}
-                                                        value={audience.uuid}
-                                                    >
-                                                        {audience.name}
-                                                    </SelectItem>
-                                                ),
+                                <div className="flex gap-2">
+                                    <Select
+                                        value={
+                                            addMembership.data.audience_uuid ||
+                                            null
+                                        }
+                                        onValueChange={(value) =>
+                                            addMembership.setData({
+                                                audience_uuid:
+                                                    (value as string | null) ??
+                                                    '',
+                                                consent_confirmed: false,
+                                            })
+                                        }
+                                    >
+                                        <SelectTrigger className="w-full sm:w-52">
+                                            <SelectValue placeholder="Choose audience" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectGroup>
+                                                {availableAudiences.map(
+                                                    (audience) => (
+                                                        <SelectItem
+                                                            key={audience.uuid}
+                                                            value={
+                                                                audience.uuid
+                                                            }
+                                                        >
+                                                            {audience.name}
+                                                        </SelectItem>
+                                                    ),
+                                                )}
+                                            </SelectGroup>
+                                        </SelectContent>
+                                    </Select>
+                                    <Button
+                                        type="submit"
+                                        disabled={
+                                            !addMembership.data.audience_uuid ||
+                                            !addMembership.data
+                                                .consent_confirmed ||
+                                            addMembership.processing
+                                        }
+                                    >
+                                        {addMembership.processing ? (
+                                            <Spinner data-icon="inline-start" />
+                                        ) : (
+                                            <HugeiconsIcon
+                                                icon={Add01Icon}
+                                                data-icon="inline-start"
+                                            />
+                                        )}
+                                        Add
+                                    </Button>
+                                </div>
+                                {addMembership.data.audience_uuid ? (
+                                    <Field
+                                        orientation="horizontal"
+                                        data-invalid={Boolean(
+                                            addMembership.errors
+                                                .consent_confirmed,
+                                        )}
+                                        className="sm:max-w-80"
+                                    >
+                                        <Checkbox
+                                            id="membership-consent-confirmed"
+                                            checked={
+                                                addMembership.data
+                                                    .consent_confirmed
+                                            }
+                                            onCheckedChange={(checked) =>
+                                                addMembership.setData(
+                                                    'consent_confirmed',
+                                                    checked === true,
+                                                )
+                                            }
+                                            aria-invalid={Boolean(
+                                                addMembership.errors
+                                                    .consent_confirmed,
                                             )}
-                                        </SelectGroup>
-                                    </SelectContent>
-                                </Select>
-                                <Button
-                                    type="submit"
-                                    disabled={
-                                        !addMembership.data.audience_uuid ||
-                                        addMembership.processing
-                                    }
-                                >
-                                    {addMembership.processing ? (
-                                        <Spinner data-icon="inline-start" />
-                                    ) : (
-                                        <HugeiconsIcon
-                                            icon={Add01Icon}
-                                            data-icon="inline-start"
                                         />
-                                    )}
-                                    Add
-                                </Button>
+                                        <div className="flex flex-col gap-1">
+                                            <FieldLabel htmlFor="membership-consent-confirmed">
+                                                Marketing consent confirmed
+                                            </FieldLabel>
+                                            <FieldDescription>
+                                                I confirm this person gave
+                                                permission to receive marketing
+                                                email.
+                                            </FieldDescription>
+                                            <FieldError>
+                                                {
+                                                    addMembership.errors
+                                                        .consent_confirmed
+                                                }
+                                            </FieldError>
+                                        </div>
+                                    </Field>
+                                ) : null}
                             </form>
                         ) : null}
                     </div>
@@ -614,7 +686,7 @@ export default function ContactShow({
                                             }
                                             canManage={canManage}
                                             onUnsubscribe={() =>
-                                                unsubscribeMembership(
+                                                setMembershipToUnsubscribe(
                                                     membership,
                                                 )
                                             }
@@ -624,8 +696,8 @@ export default function ContactShow({
                                                 )
                                             }
                                             onRemove={() =>
-                                                removeMembership(
-                                                    membership.uuid,
+                                                setMembershipToRemove(
+                                                    membership,
                                                 )
                                             }
                                         />
@@ -836,6 +908,8 @@ export default function ContactShow({
                         <AlertDialogDescription>
                             This permanently removes the contact and every
                             audience membership. Past delivery snapshots remain.
+                            Opt-outs are kept, so if this person is added back
+                            they stay unsubscribed wherever they left.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <Field
@@ -880,6 +954,74 @@ export default function ContactShow({
                                 <Spinner data-icon="inline-start" />
                             ) : null}
                             Delete contact
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+            <AlertDialog
+                open={membershipToUnsubscribe !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setMembershipToUnsubscribe(null);
+                    }
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            Unsubscribe from{' '}
+                            {membershipToUnsubscribe?.audience.name}?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {contact.email} will stop receiving future marketing
+                            email from this audience. Bringing them back needs
+                            their renewed consent.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            type="button"
+                            variant="destructive"
+                            onClick={confirmUnsubscribe}
+                        >
+                            Unsubscribe
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+            <AlertDialog
+                open={membershipToRemove !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setMembershipToRemove(null);
+                    }
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            Remove from {membershipToRemove?.audience.name}?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This permanently deletes the membership and its
+                            consent record. The contact stays in your other
+                            audiences. To stop sending but keep the record,
+                            unsubscribe instead.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            type="button"
+                            variant="destructive"
+                            onClick={() => {
+                                if (membershipToRemove) {
+                                    removeMembership(membershipToRemove.uuid);
+                                }
+                            }}
+                        >
+                            Remove
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
@@ -968,6 +1110,10 @@ function MembershipPanel({
     onResubscribe: () => void;
     onRemove: () => void;
 }) {
+    const [attributesOpen, setAttributesOpen] = useState(false);
+    const canEditAttributes =
+        membership.can_manage && membership.attributes.length > 0;
+
     return (
         <Collapsible
             open={open}
@@ -987,17 +1133,10 @@ function MembershipPanel({
                 <span className="min-w-0 flex-1 truncate font-medium">
                     {membership.audience.name}
                 </span>
-                <Badge
-                    variant={
-                        membership.status === 'subscribed'
-                            ? 'success'
-                            : 'secondary'
-                    }
-                >
-                    {membership.status === 'subscribed'
-                        ? 'Subscribed'
-                        : 'Unsubscribed'}
-                </Badge>
+                <SubscriberStatusBadge
+                    status={membership.status}
+                    pendingConfirmation={membership.pending_confirmation}
+                />
                 <span
                     className="hidden shrink-0 text-muted-foreground sm:inline"
                     title={absoluteTime(membership.subscribed_at)}
@@ -1052,6 +1191,14 @@ function MembershipPanel({
                                 >
                                     View audience
                                 </DropdownMenuItem>
+                                {canEditAttributes ? (
+                                    <DropdownMenuItem
+                                        onClick={() => setAttributesOpen(true)}
+                                        data-test="edit-membership-attributes"
+                                    >
+                                        Edit attributes
+                                    </DropdownMenuItem>
+                                ) : null}
                                 {membership.can_manage ? (
                                     <DropdownMenuItem
                                         onClick={
@@ -1076,6 +1223,19 @@ function MembershipPanel({
                             </DropdownMenuGroup>
                         </DropdownMenuContent>
                     </DropdownMenu>
+                    {canEditAttributes ? (
+                        <SubscriberAttributesDialog
+                            open={attributesOpen}
+                            onOpenChange={setAttributesOpen}
+                            routeArgs={[
+                                teamSlug,
+                                membership.audience.uuid,
+                                membership.uuid,
+                            ]}
+                            audienceName={membership.audience.name}
+                            attributes={membership.attributes}
+                        />
+                    ) : null}
                 </div>
                 <Separator />
                 <NestedPanel
@@ -1084,9 +1244,11 @@ function MembershipPanel({
                 >
                     <PropertyList>
                         <PropertyRow label="Status" className="px-3">
-                            {membership.status === 'subscribed'
-                                ? 'Subscribed'
-                                : 'Unsubscribed'}
+                            {membership.pending_confirmation
+                                ? 'Pending confirmation'
+                                : membership.status === 'subscribed'
+                                  ? 'Subscribed'
+                                  : 'Unsubscribed'}
                         </PropertyRow>
                         <PropertyRow label="Source" className="px-3">
                             <span className="capitalize">
@@ -1290,9 +1452,7 @@ function formatAttributeValue(attribute: ContactAttribute): string {
     }
 
     if (attribute.type === 'date') {
-        return new Intl.DateTimeFormat(undefined, {
-            dateStyle: 'medium',
-        }).format(new Date(attribute.value));
+        return formatAttributeDate(attribute.value);
     }
 
     if (attribute.type === 'boolean') {

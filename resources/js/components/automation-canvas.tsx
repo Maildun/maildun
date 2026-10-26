@@ -3,6 +3,7 @@ import {
     FilterIcon,
     MailSend01Icon,
     Tag01Icon,
+    TranslateIcon,
     WorkflowSquare10Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -239,9 +240,10 @@ function TriggerNode({ id, data, selected }: NodeProps) {
 }
 
 function ActionNode({ id, data, selected }: NodeProps) {
-    const { actionLabels, emailName, tagName, testingNodeId } =
+    const { actionLabels, emailName, tagName, languageName, testingNodeId } =
         useAutomationCanvasContext();
     const action = data as AutomationActionData;
+    const languageVersionCount = action.language_emails?.length ?? 0;
     const iconClassName =
         action.kind === 'send_email'
             ? 'bg-info/15 text-info'
@@ -258,16 +260,28 @@ function ActionNode({ id, data, selected }: NodeProps) {
             />
             <NodeShell
                 tone="action"
-                icon={action.kind === 'send_email' ? MailSend01Icon : Tag01Icon}
+                icon={
+                    action.kind === 'send_email'
+                        ? MailSend01Icon
+                        : action.kind === 'set_language'
+                          ? TranslateIcon
+                          : Tag01Icon
+                }
                 iconClassName={iconClassName}
                 kicker="Then"
                 title={actionLabels[action.kind] ?? 'Choose an action'}
                 detail={
                     action.kind === 'send_email'
-                        ? emailName(action.transactional_email_uuid)
-                        : action.kind
-                          ? tagName(action.tag_uuid)
-                          : undefined
+                        ? `${emailName(action.transactional_email_uuid)}${
+                              languageVersionCount > 0
+                                  ? ` + ${languageVersionCount} ${languageVersionCount === 1 ? 'language' : 'languages'}`
+                                  : ''
+                          }`
+                        : action.kind === 'set_language'
+                          ? languageName(action.language)
+                          : action.kind
+                            ? tagName(action.tag_uuid)
+                            : undefined
                 }
                 selected={selected}
                 testing={testingNodeId === id}

@@ -15,6 +15,8 @@ use Illuminate\Support\Str;
  */
 trait FiltersCampaignRecipients
 {
+    use SearchesText;
+
     /**
      * @param  Builder<EmailDelivery>  $query
      * @return Builder<EmailDelivery>
@@ -40,12 +42,7 @@ trait FiltersCampaignRecipients
             return $query;
         }
 
-        $pattern = '%'.mb_strtolower($search).'%';
-
-        return $query->where(fn (Builder $matches) => $matches
-            ->whereRaw('LOWER(email_address) LIKE ?', [$pattern])
-            ->orWhereRaw('LOWER(first_name) LIKE ?', [$pattern])
-            ->orWhereRaw('LOWER(last_name) LIKE ?', [$pattern]));
+        return $this->whereAnyColumnContains($query, ['email_address', 'first_name', 'last_name'], $search);
     }
 
     protected function recipientSearch(Request $request): string

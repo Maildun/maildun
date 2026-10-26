@@ -43,6 +43,20 @@ return [
         'sns_topic_arn' => env('MAIL_SES_SNS_TOPIC_ARN'),
     ],
 
+    /*
+     * "Continue with Google" on the login, register, and confirm-password
+     * screens. Leave the client ID or secret empty to hide the button; every
+     * Google route then answers 404.
+     *
+     * Register {APP_URL}/auth/google/callback as an authorized redirect URI on
+     * the OAuth client in Google Cloud Console.
+     */
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI', rtrim((string) env('APP_URL', 'http://localhost'), '/').'/auth/google/callback'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

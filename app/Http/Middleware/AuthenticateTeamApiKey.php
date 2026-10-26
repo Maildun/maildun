@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Team;
 use App\Models\TeamApiKey;
 use Closure;
 use Illuminate\Http\Request;
@@ -18,7 +19,7 @@ class AuthenticateTeamApiKey
     {
         $apiKey = TeamApiKey::findToken($request->bearerToken());
 
-        if (! $apiKey instanceof TeamApiKey || $apiKey->team->trashed()) {
+        if (! $apiKey instanceof TeamApiKey || ! $apiKey->team instanceof Team || $apiKey->team->trashed()) {
             return response()->json([
                 'message' => __('Unauthenticated.'),
             ], Response::HTTP_UNAUTHORIZED);

@@ -1,13 +1,10 @@
-import {
-    Building06Icon,
-    UserGroupIcon,
-    UserIcon,
-} from '@hugeicons/core-free-icons';
+import { UserGroupIcon, UserIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
 import { CompanyDialog } from '@/components/company-dialog';
+import { CompanyFavicon } from '@/components/company-favicon';
 import { ContactDialog } from '@/components/contact-dialog';
 import { ContactHoverCard } from '@/components/contact-hover-card';
 import { FilterMenu } from '@/components/filter-menu';
@@ -39,6 +36,7 @@ import {
     EmptyMedia,
     EmptyTitle,
 } from '@/components/ui/empty';
+import { Spinner } from '@/components/ui/spinner';
 import {
     Table,
     TableBody,
@@ -62,11 +60,12 @@ import type { CompanyOption } from '@/types/contacts';
 
 type Props = {
     company: Company;
-    companies: CompanyOption[];
+    companies?: CompanyOption[];
     audiences: CompanyOption[];
     tags: Tag[];
     filters: CompanyContactFilters;
     canManage: boolean;
+    canManageContacts: boolean;
 };
 
 export default function CompanyShow({
@@ -76,10 +75,18 @@ export default function CompanyShow({
     tags,
     filters,
     canManage,
+    canManageContacts,
 }: Props) {
     const { currentTeam } = usePage().props;
     const [editOpen, setEditOpen] = useState(false);
+    const [editGeneration, setEditGeneration] = useState(0);
     const [deleteOpen, setDeleteOpen] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+
+    const openEdit = (): void => {
+        setEditGeneration((count) => count + 1);
+        setEditOpen(true);
+    };
     const { visit, clear, clearAll, searchKey } = useListFilters({
         url: currentTeam ? show.url([currentTeam.slug, company.uuid]) : '',
         filters,
@@ -93,6 +100,13 @@ export default function CompanyShow({
 
     const routeArgs: [string, string] = [currentTeam.slug, company.uuid];
 
+    const deleteCompany = (): void => {
+        router.delete(destroy.url(routeArgs), {
+            onStart: () => setDeleting(true),
+            onFinish: () => setDeleting(false),
+        });
+    };
+
     return (
         <>
             <Head title={company.name} />
@@ -100,34 +114,27 @@ export default function CompanyShow({
                 <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
                     <div className="flex items-center gap-3">
                         <div className="grid size-12 place-items-center rounded-lg bg-muted">
-                            {company.favicon ? (
-                                <img
-                                    src={company.favicon}
-                                    alt=""
-                                    className="size-12 rounded-lg bg-white object-contain p-1.5"
-                                />
-                            ) : (
-                                <HugeiconsIcon
-                                    icon={Building06Icon}
-                                    className="size-6"
-                                />
-                            )}
+                            <CompanyFavicon
+                                src={company.favicon}
+                                className="size-12 rounded-lg bg-white object-contain p-1.5"
+                                iconClassName="size-6"
+                            />
                         </div>
                         <div>
                             <h1 className="text-2xl font-semibold tracking-tight">
                                 {company.name}
                             </h1>
                             <p className="text-sm text-muted-foreground">
-                                {company.contacts_count} linked contacts
+                                {company.contacts_count} linked{' '}
+                                {company.contacts_count === 1
+                                    ? 'contact'
+                                    : 'contacts'}
                             </p>
                         </div>
                     </div>
                     {canManage ? (
                         <div className="flex gap-2">
-                            <Button
-                                variant="outline"
-                                onClick={() => setEditOpen(true)}
-                            >
+                            <Button variant="outline" onClick={openEdit}>
                                 Edit
                             </Button>
                             <Button
@@ -264,7 +271,7 @@ export default function CompanyShow({
                                         teamSlug={currentTeam.slug}
                                         companies={companies}
                                         tags={tags}
-                                        canManage={canManage}
+                                        canManageContacts={canManageContacts}
                                     />
                                 ))}
                             </TableBody>
@@ -274,6 +281,7 @@ export default function CompanyShow({
             </div>
             {canManage ? (
                 <CompanyDialog
+                    key={editGeneration}
                     teamSlug={currentTeam.slug}
                     company={company}
                     open={editOpen}
@@ -297,10 +305,12 @@ export default function CompanyShow({
                         <AlertDialogAction
                             type="button"
                             variant="destructive"
-                            onClick={() =>
-                                router.delete(destroy.url(routeArgs))
-                            }
+                            disabled={deleting}
+                            onClick={deleteCompany}
                         >
+                            {deleting ? (
+                                <Spinner data-icon="inline-start" />
+                            ) : null}
                             Delete company
                         </AlertDialogAction>
                     </AlertDialogFooter>
@@ -335,13 +345,13 @@ function CompanyContactRow({
     teamSlug,
     companies,
     tags,
-    canManage,
+    canManageContacts,
 }: {
     contact: CompanyContact;
     teamSlug: string;
-    companies: CompanyOption[];
+    companies?: CompanyOption[];
     tags: Tag[];
-    canManage: boolean;
+    canManageContacts: boolean;
 }) {
     const [hoverOpen, setHoverOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
@@ -365,8 +375,8 @@ function CompanyContactRow({
                 <ContactHoverCard
                     contact={contact}
                     href={href}
-                    canManage={canManage}
-                    onEdit={canManage ? openEdit : undefined}
+                    canManage={canManageContacts}
+                    onEdit={canManageContacts ? openEdit : undefined}
                     open={hoverOpen}
                     onOpenChange={(next) => {
                         if (editOpen) {
@@ -378,7 +388,7 @@ function CompanyContactRow({
                         setHoverOpen(next);
                     }}
                 />
-                {canManage && (
+                {canManageContacts && (
                     <ContactDialog
                         key={editGeneration}
                         teamSlug={teamSlug}

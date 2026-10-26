@@ -1,11 +1,13 @@
 <?php
 
 use App\Contracts\MailDomainLookup;
+use App\Enums\TeamPermission;
 use App\Models\Team;
 use App\Models\User;
 use App\Models\WorkspaceRole;
 use App\Services\SesFeedbackVerifier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /*
@@ -79,6 +81,27 @@ function assignViewerRole(Team $team, User $user): void
             'guard_name' => 'web',
         ],
     );
+
+    $team->memberships()
+        ->where('user_id', $user->id)
+        ->sole()
+        ->update(['role' => $role->name]);
+}
+
+/**
+ * Give an existing member a custom workspace role holding only the given permissions.
+ *
+ * @param  list<TeamPermission>  $permissions
+ */
+function assignCustomRole(Team $team, User $user, array $permissions): void
+{
+    $role = $team->workspaceRoles()->create([
+        'name' => 'custom-'.Str::lower(Str::random(8)),
+        'label' => 'Custom role',
+        'guard_name' => 'web',
+        'is_system' => false,
+    ]);
+    $role->syncPermissions(array_map(fn (TeamPermission $permission): string => $permission->value, $permissions));
 
     $team->memberships()
         ->where('user_id', $user->id)

@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Enums\AudienceAttributeType;
 use App\Enums\SubscriberLanguage;
-use App\Enums\SubscriberStatus;
 use App\Enums\TransactionalEmailStatus;
 use App\Http\Requests\SaveAudienceRequest;
 use App\Models\Audience;
@@ -29,7 +28,7 @@ class AudienceSettingsController extends Controller
 
         $audience->loadCount([
             'subscribers',
-            'subscribers as subscribed_count' => fn ($query) => $query->where('status', SubscriberStatus::Subscribed),
+            'subscribers as subscribed_count' => fn ($query) => $query->optedIn(),
             'segments',
             'subscribeForms',
         ]);

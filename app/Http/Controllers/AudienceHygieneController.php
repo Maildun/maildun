@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Audiences\ManageAudienceHygiene;
+use App\Http\Requests\AudienceHygieneCleanupRequest;
 use App\Models\Audience;
 use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
@@ -23,17 +24,18 @@ class AudienceHygieneController extends Controller
                 'avatar' => $audience->avatar,
             ],
             'counts' => $hygiene->handle($audience),
+            // Sent back with a cleanup so it removes only the counted set.
+            'countedAt' => now()->toISOString(),
         ]);
     }
 
     public function destroyUnconfirmed(
+        AudienceHygieneCleanupRequest $request,
         Team $currentTeam,
         Audience $audience,
         ManageAudienceHygiene $hygiene,
     ): RedirectResponse {
-        Gate::authorize('update', $audience);
-
-        $deleted = $hygiene->deleteUnconfirmed($audience);
+        $deleted = $hygiene->deleteUnconfirmed($audience, $request->countedAt(), $request->confirmedCount());
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -44,13 +46,12 @@ class AudienceHygieneController extends Controller
     }
 
     public function destroyInactive(
+        AudienceHygieneCleanupRequest $request,
         Team $currentTeam,
         Audience $audience,
         ManageAudienceHygiene $hygiene,
     ): RedirectResponse {
-        Gate::authorize('update', $audience);
-
-        $deleted = $hygiene->deleteInactive($audience);
+        $deleted = $hygiene->deleteInactive($audience, $request->countedAt(), $request->confirmedCount());
 
         Inertia::flash('toast', [
             'type' => 'success',

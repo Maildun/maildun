@@ -43,8 +43,8 @@ class CreateAudienceTool extends Tool
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
-            'first_name_mode' => ['nullable', Rule::enum(SubscribeFormFieldMode::class)],
-            'last_name_mode' => ['nullable', Rule::enum(SubscribeFormFieldMode::class)],
+            'first_name_mode' => ['sometimes', Rule::enum(SubscribeFormFieldMode::class)],
+            'last_name_mode' => ['sometimes', Rule::enum(SubscribeFormFieldMode::class)],
             ...$this->languageSettings->rules(),
             'from_name' => ['nullable', 'string', 'max:255'],
             'from_address' => ['nullable', 'email:rfc', 'max:255', new AuthorizedSenderAddress($team)],
@@ -53,7 +53,8 @@ class CreateAudienceTool extends Tool
             'unsubscribed_url' => ['nullable', 'url:http,https', 'max:2048'],
         ]);
 
-        $attributes = $this->context->blankStringsToNull($validated, [
+        $attributes = $this->context->trimStrings($validated, [
+            'name',
             'description',
             'from_name',
             'from_address',

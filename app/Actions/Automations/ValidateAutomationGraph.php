@@ -193,6 +193,9 @@ class ValidateAutomationGraph
         return match ($kind) {
             AutomationAction::SendEmail => $this->validateSendEmail($team, $data),
             AutomationAction::AddTag, AutomationAction::RemoveTag => $this->validateTagAction($team, $data),
+            AutomationAction::SetLanguage => SubscriberLanguage::tryFrom((string) ($data['language'] ?? '')) === null
+                ? [__('Choose a language to set.')]
+                : [],
         };
     }
 
@@ -202,8 +205,45 @@ class ValidateAutomationGraph
      */
     protected function validateSendEmail(Team $team, array $data): array
     {
-        $uuid = $data['transactional_email_uuid'] ?? null;
+        $errors = $this->validateEmailChoice($team, $data['transactional_email_uuid'] ?? null);
+        $variants = $data['language_emails'] ?? [];
 
+        if (! is_array($variants)) {
+            return [...$errors, __('Language versions are invalid.')];
+        }
+
+        $languages = [];
+
+        foreach ($variants as $variant) {
+            $language = is_array($variant) ? SubscriberLanguage::tryFrom((string) ($variant['language'] ?? '')) : null;
+
+            if ($language === null) {
+                $errors[] = __('Choose a language for each language version.');
+
+                continue;
+            }
+
+            if (in_array($language, $languages, true)) {
+                $errors[] = __(':language has more than one language version.', ['language' => $language->label()]);
+
+                continue;
+            }
+
+            $languages[] = $language;
+
+            foreach ($this->validateEmailChoice($team, $variant['transactional_email_uuid'] ?? null) as $error) {
+                $errors[] = $language->label().': '.$error;
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function validateEmailChoice(Team $team, mixed $uuid): array
+    {
         if (! is_string($uuid) || $uuid === '') {
             return [__('Choose a transactional email to send.')];
         }

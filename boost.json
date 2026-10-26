@@ -10,12 +10,14 @@
     "sail": false,
     "skills": [
         "infer-conventions",
+        "ai-sdk-development",
         "fortify-development",
         "laravel-best-practices",
         "testing-best-practices",
         "configuring-horizon",
         "mcp-development",
         "passport-development",
+        "socialite-development",
         "wayfinder-development",
         "inertia-react-development",
         "tailwindcss-development"

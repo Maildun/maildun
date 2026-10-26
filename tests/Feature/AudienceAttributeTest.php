@@ -107,6 +107,52 @@ test('deleting an attribute removes its stored subscriber values', function () {
     expect($subscriber->fresh()->attribute_values)->toBe(['plan' => 'pro']);
 });
 
+test('an attribute cannot become a date while members hold values that are not dates', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create([
+        'name' => 'Tier',
+        'key' => 'tier',
+        'type' => AudienceAttributeType::Text,
+    ]);
+    Subscriber::factory()->for($audience)->create(['attribute_values' => ['tier' => 'VIP']]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.attributes.update', [$team, $audience, $attribute]), [
+            'name' => 'Tier',
+            'key' => 'tier',
+            'type' => AudienceAttributeType::Date->value,
+        ])
+        ->assertSessionHasErrors([
+            'type' => 'Some subscribers have values that are not a valid date. Fix those values before changing the type.',
+        ]);
+
+    expect($attribute->fresh()->type)->toBe(AudienceAttributeType::Text);
+});
+
+test('an attribute can become a date when every stored value is a date', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create([
+        'name' => 'Renewal',
+        'key' => 'renewal',
+        'type' => AudienceAttributeType::Text,
+    ]);
+    Subscriber::factory()->for($audience)->create(['attribute_values' => ['renewal' => '2026-12-31']]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.attributes.update', [$team, $audience, $attribute]), [
+            'name' => 'Renewal',
+            'key' => 'renewal',
+            'type' => AudienceAttributeType::Date->value,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($attribute->fresh()->type)->toBe(AudienceAttributeType::Date);
+});
+
 test('team owners can configure the main subscriber fields in attribute settings', function () {
     $user = User::factory()->create();
     $team = $user->currentTeam;
@@ -191,6 +237,104 @@ test('reserved subscriber fields cannot be used as attribute keys', function (st
         ])
         ->assertInvalid('key');
 })->with(['Email', 'Language']);
+
+test('built-in merge tag names cannot be used as attribute keys', function (string $name) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->post(route('audiences.attributes.store', [$team, $audience]), [
+            'name' => $name,
+            'type' => AudienceAttributeType::Text->value,
+        ])
+        ->assertInvalid(['key' => 'That key is reserved for a built-in subscriber field or merge tag.']);
+
+    expect($audience->audienceAttributes()->count())->toBe(0);
+})->with(['Year', 'Unsubscribe URL', 'Web view URL']);
+
+test('team owners can reorder audience attributes', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $company = AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    $city = AudienceAttribute::factory()->for($audience)->create(['name' => 'City', 'key' => 'city']);
+    $plan = AudienceAttribute::factory()->for($audience)->create(['name' => 'Plan', 'key' => 'plan']);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.attributes.reorder', [$team, $audience]), [
+            'attributes' => [$plan->uuid, $company->uuid, $city->uuid],
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    expect($audience->audienceAttributes()->orderBy('position')->pluck('key')->all())
+        ->toBe(['plan', 'company', 'city']);
+});
+
+test('reordering attributes must list every field of the audience once', function (Closure $order) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $company = AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    $city = AudienceAttribute::factory()->for($audience)->create(['name' => 'City', 'key' => 'city']);
+    $foreign = AudienceAttribute::factory()->for(Audience::factory()->for($team))->create(['name' => 'Plan', 'key' => 'plan']);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.attributes.reorder', [$team, $audience]), [
+            'attributes' => $order($company, $city, $foreign),
+        ])
+        ->assertSessionHasErrors();
+
+    expect($audience->audienceAttributes()->orderBy('position')->pluck('key')->all())
+        ->toBe(['company', 'city']);
+})->with([
+    'missing a field' => [fn ($company, $city, $foreign): array => [$city->uuid]],
+    'repeating a field' => [fn ($company, $city, $foreign): array => [$city->uuid, $city->uuid]],
+    'another audience field' => [fn ($company, $city, $foreign): array => [$city->uuid, $foreign->uuid]],
+]);
+
+test('members cannot reorder audience attributes', function () {
+    $owner = User::factory()->create();
+    $member = User::factory()->create();
+    $team = Team::factory()->create();
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignViewerRole($team, $member);
+    $audience = Audience::factory()->for($team)->create();
+    $company = AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    $city = AudienceAttribute::factory()->for($audience)->create(['name' => 'City', 'key' => 'city']);
+
+    $this->actingAs($member)
+        ->patch(route('audiences.attributes.reorder', [$team, $audience]), [
+            'attributes' => [$city->uuid, $company->uuid],
+        ])
+        ->assertForbidden();
+
+    expect($audience->audienceAttributes()->orderBy('position')->pluck('key')->all())
+        ->toBe(['company', 'city']);
+});
+
+test('deleting an attribute removes its stored values from members', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    $member = Subscriber::factory()->for($audience)->create([
+        'attribute_values' => ['company' => 'Acme', 'city' => 'Paris'],
+    ]);
+    $otherAudienceMember = Subscriber::factory()->for(Audience::factory()->for($team))->create([
+        'attribute_values' => ['company' => 'Globex'],
+    ]);
+
+    $this->actingAs($user)
+        ->delete(route('audiences.attributes.destroy', [$team, $audience, $attribute]))
+        ->assertRedirect();
+
+    $this->assertModelMissing($attribute);
+    expect($member->fresh()->attribute_values)->toBe(['city' => 'Paris']);
+    expect($otherAudienceMember->fresh()->attribute_values)->toBe(['company' => 'Globex']);
+});
 
 test('members cannot manage audience attributes', function () {
     $owner = User::factory()->create();

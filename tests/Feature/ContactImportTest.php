@@ -4,6 +4,7 @@ use App\Actions\Audiences\AddContactToAudiences;
 use App\Enums\ContactImportMergeStrategy;
 use App\Enums\ContactImportStatus;
 use App\Enums\SubscriberLanguage;
+use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Events\SubscriberLifecycleOccurred;
@@ -11,13 +12,16 @@ use App\Jobs\ProcessContactImport;
 use App\Models\Audience;
 use App\Models\Contact;
 use App\Models\ContactImport;
+use App\Models\SubscribeForm;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\ContactImportCsv;
 use App\Services\ImportEmailReview;
 use App\Services\ManageContact;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -303,6 +307,43 @@ test('imports fail with a useful error and keep the file for retry when the emai
     Storage::disk('local')->assertExists($contactImport->path);
 });
 
+test('imports that fail on an unexpected error show a generic message instead of the raw error', function () {
+    Storage::fake('local');
+    $team = Team::factory()->create();
+    $contactImport = ContactImport::factory()->for($team)->create(['column_map' => ['email']]);
+    Storage::disk('local')->put($contactImport->path, "email\nsecret.person@example.com\n");
+    Contact::creating(fn () => DB::select('select * from contacts where missing_column = 1'));
+    $job = new ProcessContactImport($contactImport->id);
+
+    try {
+        $job->handle(app(ManageContact::class), app(AddContactToAudiences::class), app(ContactImportCsv::class), app(ImportEmailReview::class));
+    } catch (QueryException $exception) {
+        $job->failed($exception);
+    }
+
+    expect($contactImport->refresh()->status)->toBe(ContactImportStatus::Failed)
+        ->and($contactImport->failure_message)->toBe('The import could not be completed.');
+});
+
+test('an import queued for a workspace that was deleted is cancelled and its file removed', function () {
+    Storage::fake('local');
+    $team = Team::factory()->create();
+    $contactImport = ContactImport::factory()->for($team)->create([
+        'status' => ContactImportStatus::Pending,
+        'column_map' => ['email'],
+    ]);
+    Storage::disk('local')->put($contactImport->path, "email\nada@example.com\n");
+    DB::table('contact_import_emails')->insert(['contact_import_id' => $contactImport->id, 'email' => 'ada@example.com', 'row_number' => 2]);
+    $team->delete();
+
+    ProcessContactImport::dispatchSync($contactImport->id);
+
+    expect($contactImport->refresh()->status)->toBe(ContactImportStatus::Cancelled)
+        ->and(Contact::query()->where('team_id', $team->id)->exists())->toBeFalse()
+        ->and(DB::table('contact_import_emails')->where('contact_import_id', $contactImport->id)->exists())->toBeFalse();
+    Storage::disk('local')->assertMissing($contactImport->path);
+});
+
 test('imports reject files that are not CSV data', function () {
     Storage::fake('local');
 
@@ -396,4 +437,114 @@ test('an interrupted import retries the rolled back row without losing progress 
     expect($import->refresh()->status)->toBe(ContactImportStatus::Completed);
     expect($import->imported_contacts)->toBe(1);
     expect($import->duplicate_rows)->toBe(0);
+});
+
+test('the import language fills rows whose language cell is empty', function () {
+    Storage::fake('local');
+
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create(['default_language' => 'en', 'allowed_languages' => ['en', 'id', 'fr']]);
+    $contactImport = ContactImport::factory()->for($team)->for($audience)->create([
+        'column_map' => ['email', 'language'],
+        'language' => SubscriberLanguage::Indonesian,
+    ]);
+    Storage::disk('local')->put($contactImport->path, implode("\n", [
+        'email,language',
+        'blank@example.com,',
+        'french@example.com,fr',
+    ]));
+
+    (new ProcessContactImport($contactImport->id))->handle(
+        app(ManageContact::class),
+        app(AddContactToAudiences::class),
+        app(ContactImportCsv::class),
+        app(ImportEmailReview::class),
+    );
+
+    $languages = $audience->subscribers()->pluck('language', 'email')->map(fn (?SubscriberLanguage $language): ?string => $language?->value)->all();
+
+    expect($languages)->toBe([
+        'blank@example.com' => 'id',
+        'french@example.com' => 'fr',
+    ]);
+});
+
+test('audience imports leave a pending double opt-in membership and its form consent untouched', function () {
+    Storage::fake('local');
+
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create(['double_opt_in' => true]);
+    $form = SubscribeForm::factory()->for($audience)->create();
+    $pending = Subscriber::factory()->for($audience)->fromForm($form)->pendingConfirmation()->create([
+        'email' => 'pending@example.com',
+        'consent_text' => 'Yes, send me the newsletter.',
+        'consent_ip' => '203.0.113.9',
+    ]);
+    $contactImport = ContactImport::factory()->for($team)->for($audience)->create([
+        'consent_ip' => '198.51.100.1',
+    ]);
+    Storage::disk('local')->put($contactImport->path, "email\npending@example.com\n");
+    Event::fake([SubscriberLifecycleOccurred::class]);
+
+    (new ProcessContactImport($contactImport->id))->handle(
+        app(ManageContact::class),
+        app(AddContactToAudiences::class),
+        app(ContactImportCsv::class),
+        app(ImportEmailReview::class),
+    );
+
+    $pending->refresh();
+    $contactImport->refresh();
+
+    expect($pending->isPendingConfirmation())->toBeTrue()
+        ->and($pending->source)->toBe(SubscriberSource::Form)
+        ->and($pending->consent_text)->toBe('Yes, send me the newsletter.')
+        ->and($pending->consent_ip)->toBe('203.0.113.9');
+    expect($contactImport->imported_subscribers)->toBe(0)
+        ->and($contactImport->duplicate_rows)->toBe(1);
+    Event::assertNotDispatched(SubscriberLifecycleOccurred::class);
+});
+
+test('audience imports keep the language an existing member chose', function (string $state, array $columnMap, string $csv) {
+    Storage::fake('local');
+    $team = Team::factory()->create();
+    $audience = Audience::factory()->for($team)->create(['default_language' => 'en', 'double_opt_in' => $state === 'pendingConfirmation']);
+    $subscriber = Subscriber::factory()->for($audience)
+        ->for(Contact::factory()->for($team)->state(['email' => 'ada@example.com']))
+        ->{$state}()
+        ->create(['email' => 'ada@example.com', 'language' => SubscriberLanguage::French]);
+    $contactImport = ContactImport::factory()->for($team)->for($audience)->create([
+        'column_map' => $columnMap,
+        'resubscribe_unsubscribed' => true,
+        'language' => SubscriberLanguage::Indonesian,
+    ]);
+    Storage::disk('local')->put($contactImport->path, $csv);
+
+    ProcessContactImport::dispatchSync($contactImport->id);
+
+    expect($subscriber->refresh()->language)->toBe(SubscriberLanguage::French);
+})->with([
+    'resubscribed with the import language' => ['unsubscribed', ['email'], "email\nada@example.com\n"],
+    'resubscribed with a language column' => ['unsubscribed', ['email', 'language'], "email,language\nada@example.com,de\n"],
+    'pending double opt-in with a language column' => ['pendingConfirmation', ['email', 'language'], "email,language\nada@example.com,de\n"],
+]);
+
+test('imported memberships record the import that attested consent', function () {
+    Storage::fake('local');
+    $user = User::factory()->create(['name' => 'Grace Hopper']);
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    $contactImport = ContactImport::factory()->for($user->currentTeam)->for($audience)->create([
+        'uploaded_by' => $user->id,
+        'original_name' => 'webinar.csv',
+        'consent_ip' => '198.51.100.7',
+        'consent_confirmed_at' => '2026-10-01 09:30:00',
+    ]);
+    Storage::disk('local')->put($contactImport->path, "email\nada@example.com\n");
+
+    ProcessContactImport::dispatchSync($contactImport->id);
+
+    $subscriber = $audience->subscribers()->sole();
+    expect($subscriber->consent_text)->toBe("Marketing consent confirmed by Grace Hopper when importing webinar.csv (import {$contactImport->uuid}).")
+        ->and($subscriber->consented_at?->toDateTimeString())->toBe('2026-10-01 09:30:00')
+        ->and($subscriber->consent_ip)->toBe('198.51.100.7');
 });

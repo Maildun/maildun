@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Data\StorageMigrationReport;
+use App\Enums\ContactImportStatus;
 use App\Enums\StorageBackend;
+use App\Models\ContactImport;
 use App\Models\EmailAttachment;
 use App\Models\Media;
 use App\Models\SubscribeForm;
@@ -22,7 +24,8 @@ use Throwable;
  * Object keys are identical on both backends, so public assets need no database
  * change — their URL is derived from the active public disk at read time. Only
  * rows that name a concrete private disk (email attachments, media still
- * awaiting WebP conversion) are repointed.
+ * awaiting WebP conversion, contact imports that still need their CSV) are
+ * repointed.
  */
 class StorageBackendMigrator
 {
@@ -52,14 +55,16 @@ class StorageBackendMigrator
     }
 
     /**
-     * Uploads still mid-conversion. Their rows are repointed like any other, so
-     * the queued job follows them, but the old file must survive until the job
-     * runs — which is why a sync copies rather than moves.
+     * Uploads still mid-conversion and contact imports still running. Their rows
+     * are repointed like any other, so the queued job follows them, but the old
+     * file must survive until the job runs — which is why a sync copies rather
+     * than moves.
      */
     public function inFlightUploads(): int
     {
         return Media::query()->whereNotNull('upload_path')->count()
-            + SubscribeForm::query()->whereNotNull('image_upload_path')->count();
+            + SubscribeForm::query()->whereNotNull('image_upload_path')->count()
+            + ContactImport::query()->whereIn('status', [ContactImportStatus::Pending, ContactImportStatus::Processing])->count();
     }
 
     /**
@@ -184,6 +189,9 @@ class StorageBackendMigrator
             repointedSubscribeForms: $dryRun
                 ? $this->pendingSubscribeFormQuery($from)->count()
                 : $this->pendingSubscribeFormQuery($from)->update(['image_upload_disk' => $to->privateDisk()]),
+            repointedContactImports: $dryRun
+                ? $this->unfinishedContactImportQuery($from)->count()
+                : $this->unfinishedContactImportQuery($from)->update(['disk' => $to->privateDisk()]),
         );
     }
 
@@ -242,5 +250,23 @@ class StorageBackendMigrator
         return SubscribeForm::query()
             ->whereNotNull('image_upload_path')
             ->where('image_upload_disk', $from->privateDisk());
+    }
+
+    /**
+     * Contact imports that still read their uploaded CSV: drafts awaiting a
+     * mapping, running imports, and failed imports that can be retried.
+     *
+     * @return Builder<ContactImport>
+     */
+    private function unfinishedContactImportQuery(StorageBackend $from): Builder
+    {
+        return ContactImport::query()
+            ->where('disk', $from->privateDisk())
+            ->whereIn('status', [
+                ContactImportStatus::Draft,
+                ContactImportStatus::Pending,
+                ContactImportStatus::Processing,
+                ContactImportStatus::Failed,
+            ]);
     }
 }

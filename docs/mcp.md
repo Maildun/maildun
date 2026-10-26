@@ -78,7 +78,7 @@ The remote endpoint enforces OAuth, the `mcp:use` scope, and rate limits. An una
 
 ## Working with the server
 
-Start each session with `application-status`, then call `list-workspaces`. Workspace results include `uuid`, `name`, `slug`, and `email_editor`. Every other domain tool requires the slug in its `workspace` argument; get, update, and delete tools require the record's `uuid`. Use identifiers returned by the server rather than internal database IDs. `application-status` reports that the MCP tool is reachable; it does not test email delivery, queues, or storage.
+Start each session with `application-status`, then call `list-workspaces`. Workspace results include `uuid`, `name`, `slug`, and `email_editor`. Every other domain tool requires the slug in its `workspace` argument; get, update, and delete tools require the record's `uuid` (`get-contact` also accepts `email`). Use identifiers returned by the server rather than internal database IDs. `application-status` reports that the MCP tool is reachable; it does not test email delivery, queues, or storage.
 
 For example, a useful request to an MCP-capable AI client is:
 
@@ -102,31 +102,79 @@ To read it again, call `get-campaign` with `workspace` and the returned campaign
 
 ## Available tools
 
-| Area | Tools | Notes |
+| Area | Tool | Description |
 | --- | --- | --- |
-| Connection | `application-status` | Reports the server readiness and environment. |
+| Connection | `application-status` | Reports whether Maildun's MCP integration is ready and identifies the current application environment. |
 | Workspaces | `list-workspaces` | Lists the authenticated user's workspaces remotely; the trusted local server lists all workspaces. |
-| Audiences | `list-audiences`, `get-audience`, `create-audience`, `update-audience`, `delete-audience` | Lists include subscriber and segment counts. |
-| Campaigns | `list-campaigns`, `get-campaign`, `create-campaign`, `update-campaign`, `delete-campaign` | Creates drafts; updates are limited to drafts. |
-| Transactional email | `list-transactional-emails`, `get-transactional-email`, `create-transactional-email`, `update-transactional-email`, `delete-transactional-email` | Creates drafts and edits definitions and merge variables; a slug cannot change after first publication. |
-| Automations | `list-automations`, `get-automation` | Read-only; trigger secrets are never returned. |
-| Block email builder | `get-email-builder`, `edit-email-builder`, `check-email-builder` | Native block operations on campaign and transactional email designs, with revision checks and matching HTML rendering. |
+| Audiences | `list-audiences` | Lists audiences in a Maildun workspace, including subscriber and segment counts. |
+|  | `get-audience` | Gets one audience from a Maildun workspace by UUID, including its double opt-in setting and custom subscriber attributes. |
+|  | `create-audience` | Creates an audience in a Maildun workspace. |
+|  | `update-audience` | Updates selected fields on an audience in a Maildun workspace, including double opt-in. Turning double opt-in on needs a published transactional email to send the confirmation link. |
+|  | `delete-audience` | Permanently deletes an audience after its exact name is supplied as confirmation. Refused while a scheduled or sending campaign targets it; active automations it triggers are paused. |
+| Contacts | `list-contacts` | Lists contacts in a Maildun workspace with optional email or name search, tag, audience, and company filters. |
+|  | `get-contact` | Gets one contact by UUID or email, including tags, company, and every audience membership with its subscription status. |
+|  | `create-contact` | Creates a workspace contact and optionally subscribes it to audiences. An existing contact keeps its profile, company and tags and is only added to the audiences. Subscribing requires consent_confirmed, and people who unsubscribed are refused. |
+|  | `update-contact` | Updates selected fields on a contact. Profile changes apply to every audience membership; tags replaces the full tag set. company_uuid pins a company manually; company_assignment_mode automatic hands the company back to email-domain matching. |
+|  | `delete-contact` | Permanently deletes a contact and all of its audience memberships after its exact email is supplied as confirmation. |
+| Companies | `list-companies` | Lists the companies in a Maildun workspace with their email domains and contact counts. Contacts on a company domain are assigned to it automatically unless their company was set manually. |
+|  | `get-company` | Gets one company by UUID with its email domains and contact count. Use list-contacts with company to see its contacts. |
+|  | `create-company` | Creates a company with one or more email domains. Contacts on those domains are linked to it automatically in the background unless their company was set manually. Personal email providers and domains another company already owns are refused. |
+|  | `update-company` | Renames a company or replaces its email domains. domains is the complete set: omitted domains are removed. Contacts on added or removed domains are re-linked in the background; manually assigned contacts keep their company. |
+|  | `delete-company` | Permanently deletes a company and its domains after its exact name is supplied as confirmation. Its contacts are kept and lose the company; manually assigned ones return to email-domain matching and may join another company. |
+| Subscribers | `list-subscribers` | Lists the subscribers of one audience with optional status, search, tag, and segment filters. |
+|  | `add-subscriber` | Subscribes a person to an audience on a team member's confirmed consent, creating the workspace contact if needed. An existing contact keeps its profile and tags. People who unsubscribed are refused; use resubscribe-subscriber for them. |
+|  | `update-subscriber` | Updates an audience membership. Sets or clears the subscriber's language; the shared contact profile is changed with update-contact. |
+|  | `unsubscribe-subscriber` | Unsubscribes a subscriber from its audience. The membership and history are kept; it can only be restored with resubscribe-subscriber on renewed consent. |
+|  | `resubscribe-subscriber` | Resubscribes an unsubscribed subscriber. Only use this when the person has consented again; consent_confirmed is required. |
+|  | `remove-subscriber` | Permanently deletes one audience membership after its exact email is supplied as confirmation. The workspace contact is kept. Prefer unsubscribe-subscriber to honor an opt-out. |
+| Segments | `list-segments` | Lists the segments of one audience with their rules and matching subscriber counts. |
+|  | `get-segment` | Gets one segment by UUID with its rules and matching subscriber count. Use list-subscribers with segment_uuid to see its members. |
+|  | `create-segment` | Creates a rule-based segment in an audience and immediately computes its matching subscribers. |
+|  | `update-segment` | Updates selected fields on a segment and recomputes its matching subscribers. rules replaces the full rule list. |
+|  | `delete-segment` | Permanently deletes a segment after its exact name is supplied as confirmation. Subscribers are kept. Refused while a scheduled or sending campaign targets the segment. |
+| Tags | `list-tags` | Lists the workspace tags with how many contacts carry each. Contact and subscriber tools take tag names and create missing tags. |
+| Campaigns | `list-campaigns` | Lists email campaigns in a Maildun workspace with optional search and status filtering. |
+|  | `get-campaign` | Gets one email campaign from a Maildun workspace by UUID. |
+|  | `create-campaign` | Creates a draft email campaign in a Maildun workspace. |
+|  | `update-campaign` | Updates selected fields on a draft email campaign in a Maildun workspace. |
+|  | `delete-campaign` | Soft-deletes a campaign and removes its attachment files after exact-name confirmation. |
+|  | `send-test-campaign` | Queues one test copy of a draft campaign to a single email address, rendered with sample merge data. |
+|  | `send-campaign` | Immediately queues a draft campaign for delivery to every sendable recipient after exact-name confirmation. This cannot be undone; use send-test-campaign first and stop-campaign to halt it. |
+|  | `schedule-campaign` | Schedules a draft campaign to send automatically at a future time, or moves an existing schedule, after exact-name confirmation. Send readiness is checked now and again when the time comes. |
+|  | `unschedule-campaign` | Cancels the schedule of a draft campaign so it stays an unsent draft. |
+|  | `stop-campaign` | Stops a queued or sending campaign. Recipients not yet handed to the provider are cancelled; deliveries already sent cannot be recalled. |
+| Transactional email | `list-transactional-emails` | Lists transactional email definitions in a Maildun workspace. |
+|  | `get-transactional-email` | Gets one transactional email definition from a Maildun workspace by UUID. |
+|  | `create-transactional-email` | Creates a draft transactional email definition in a Maildun workspace. |
+|  | `update-transactional-email` | Updates selected fields on a transactional email definition in a Maildun workspace. |
+|  | `delete-transactional-email` | Soft-deletes a transactional email after exact-name confirmation. |
+| Automations | `list-automations` | Lists automations in a Maildun workspace without exposing trigger secrets. |
+|  | `get-automation` | Gets one automation and its workflow graph without exposing its trigger secret. |
+| Block email builder | `get-email-builder` | Reads a block email outline, its revision, and native agent tool schemas and instructions. Start here before editing; optionally request one block by block_id. |
+|  | `edit-email-builder` | Edits a block email using its native agent tools. Use get-email-builder for tool inputs and revision. Supports atomic apply_ops batches and dry_run previews; saves matching design and HTML together. |
+|  | `check-email-builder` | Validates and lints a block email and returns its warnings, outline, and plain text without saving. Pass include_html for the rendered HTML. |
+| Media | `list-media` | Lists ready images in the workspace media library, newest first, with absolute URLs, alt text and dimensions. Use the url and alt in email builder image, avatar and section params instead of placeholder URLs. |
+| Saved sections | `list-saved-sections` | Lists the workspace's saved sections (the author's own header, footer, logo …), newest first, with their blocks. Prefer them over building those parts again: insert one with edit-email-builder, tool insert_blocks and the section's blocks as input.blocks. |
 
-List tools support `search` and `limit` (default 20, from 1 to 100). Campaign, transactional-email, and automation lists also accept `status`; use the values advertised by each tool's schema. Lists return `count` for the returned records, not a total across all matches, and do not expose pagination arguments.
+Most list tools support `search` and `limit` (default 20, from 1 to 100). `list-saved-sections` accepts `search` but no `limit`, and `list-segments` and `list-tags` accept neither and return every record. `list-subscribers` and `list-segments` require an `audience_uuid`. Campaign, transactional-email, automation, and subscriber lists also accept `status`, and the contact and subscriber lists accept further filters such as `tag`; use the values advertised by each tool's schema. Lists return `count` for the returned records, not a total across all matches, and do not expose pagination arguments.
 
-Campaign and transactional-email tools accept content fields for the email's editor: `html`, editable `source` for Markdown or plain text, and `design` for the block builder. New emails take the workspace `email_editor`; updates keep the `editor` the email was created with, even after the workspace setting changes. A supplied design must include its `root` array. Creating a campaign requires only `workspace` and `name`; `subject` defaults to the name, and the body can be written later. Updates require at least one supported field to change. Sender addresses must already be authorized in the selected workspace. Campaign `audience_uuid` must belong to that workspace, and `segment_uuid` must belong to the selected audience.
+Campaign and transactional-email tools accept content fields for the email's editor: `html`, editable `source` for Markdown or plain text, and `design` for the block builder. New emails take the workspace `email_editor`; updates keep the `editor` the email was created with, even after the workspace setting changes. A supplied design must include its `root` array. Creating a campaign requires only `workspace` and `name`; `subject` defaults to the name, and the body can be written later. Updates require at least one supported field to change. Sender addresses must already be authorized in the selected workspace. Campaign `audience_uuid` must belong to that workspace, and `segment_uuid` must belong to the selected audience. A transactional email's slug cannot change after its first publication.
 
-These tools do not send or schedule campaigns, publish or send transactional emails, manage individual contacts or subscribers, or create, edit, or trigger automations. Use the web application or the [HTTP API](../API.md) for operations those interfaces support. The Maildun server currently exposes no MCP resources or prompts.
+Company tools follow the web company form. `create-company` requires `name` and 1 to 20 `domains`; `update-company` takes either or both. Domains are lowercased, and a URL scheme, trailing slash and leading `www.` are removed, so `https://www.Acme.com/` is stored as `acme.com`. Company names are unique in a workspace ignoring case, each domain can belong to only one company in the workspace, and personal email providers such as `gmail.com` are refused. The oldest domain supplies the company icon, which is looked up in the background. Contacts on added or removed domains are re-linked to the matching company by a queued job, so their company may update a moment after the tool returns. Creating, updating and deleting companies requires the `company:manage` workspace permission.
 
-Delete tools require `workspace`, `uuid`, and an exact `confirm_name`. They are destructive: an audience is permanently deleted, while campaigns and transactional emails are soft-deleted. A campaign cannot be deleted while it is sending, and a transactional email cannot be deleted while it is used for an audience's double opt-in confirmation. Ask the client to fetch and repeat the target name before deleting anything.
+To deliver a campaign, call `send-test-campaign` first, then `send-campaign` or `schedule-campaign`; both require the exact campaign name in `confirm_name`. A send cannot be undone: `stop-campaign` only cancels recipients not yet handed to the provider. Subscribing someone through `create-contact`, `add-subscriber`, or `resubscribe-subscriber` requires `consent_confirmed`. Never resubscribe a person who unsubscribed unless they have consented again.
+
+These tools do not publish or send transactional emails, upload media or save sections, or create, edit, or trigger automations. Use the web application or the [HTTP API](../API.md) for operations those interfaces support. The Maildun server currently exposes no MCP resources or prompts.
+
+Delete tools require `workspace`, `uuid`, and an exact confirmation: `confirm_name` for audiences, companies, segments, campaigns, and transactional emails, or `confirm_email` for `delete-contact` and `remove-subscriber`. They are destructive: audiences, companies, segments, contacts, and subscriber memberships are permanently deleted, while campaigns and transactional emails are soft-deleted. A campaign cannot be deleted while it is sending, a segment cannot be deleted while a scheduled or sending campaign targets it, and a transactional email cannot be deleted while it is used for an audience's double opt-in confirmation. Ask the client to fetch and repeat the target name or email before deleting anything.
 
 ## Native block editing
 
 Use the builder tools when the email's `editor` is `builder`. They support `target: "campaign"` and `target: "transactional_email"`, using the same workspace slug and record UUID as the existing domain tools. Create a draft with `create-campaign` or `create-transactional-email` in a workspace configured for the block builder before composing a new email.
 
-1. Call `get-email-builder` with `workspace`, `target`, and `uuid`. It returns a compact block outline, a `revision`, and the installed builder package's native tool schemas and instructions. Supply `block_id` to inspect one block and its children.
+1. Call `get-email-builder` with `workspace`, `target`, and `uuid`. It returns a compact block outline, a `revision`, and the installed builder package's native tool schemas and instructions. Supply `block_id` to inspect one block and its children. The schemas and instructions are large, so pass `include_reference: false` on later reads.
 2. Call `edit-email-builder` with those identifiers, the latest `revision`, a native `tool` name, and its `input` arguments. The edit saves design JSON and rendered delivery HTML together; campaign plain text and transactional merge variables are also updated.
-3. Call `check-email-builder` to read the rendered HTML, plain text, and validation warnings. Checking does not save or send anything.
+3. Call `check-email-builder` to read the plain text and validation warnings; pass `include_html: true` for the rendered HTML. Checking does not save or send anything. Campaigns warn when the design has no `{{ unsubscribe_url }}` link; Maildun still appends a generic footer link when sending, but an author-placed link is better for inbox placement.
 
 Available native edits are `insert_blocks`, `update_block`, `move_block`, `remove_block`, `duplicate_block`, `replace_block`, `insert_section`, `update_settings`, `update_theme`, `replace_document`, and `apply_ops`. Use the returned schemas for their input shapes. `apply_ops` applies a batch atomically: if any operation fails, none of the changes are saved.
 
@@ -147,7 +195,7 @@ For example, after reading a campaign's outline:
 }
 ```
 
-Use a block ID and properties appropriate to its type. A dry run returns the proposed outline and operations with `saved: false`; it leaves the email and revision unchanged. To apply the change, submit the edit with `dry_run: false`. Every saved edit returns a new revision for the next call. If the email changes between reading and saving, the edit is rejected; read it again before retrying. The revision is checked again after rendering, inside the save transaction.
+Use a block ID and properties appropriate to its type. A dry run returns the proposed outline, warnings, and `changes` (inserted, changed, and removed block IDs) with `saved: false`; it leaves the email and revision unchanged. To apply the change, submit the edit with `dry_run: false`. Every saved edit returns a new revision for the next call. If the email changes between reading and saving, the edit is rejected; read it again before retrying. The revision is checked again after rendering, inside the save transaction.
 
 Campaign edits are limited to drafts. Transactional definitions follow the existing update policy, including edits to published definitions; the tool does not change publication status. Read-only members can inspect and check designs but cannot edit them, including dry runs. Legacy EmailBuilder.js designs are converted in memory when read and stored in the current format on a successful edit. A builder email with no design preserves its existing HTML as an HTML block.
 
@@ -155,9 +203,9 @@ These tools use the installed `@maildun/email-builder` library, without an AI pr
 
 ## Authorization and safety
 
-Remote MCP access is tenant-scoped. The server only exposes workspaces in the authenticated user's memberships, and it checks Maildun's existing create, update, and delete policies for every write. If a tool returns `unauthorized`, use an account with the appropriate workspace role or ask a workspace administrator to perform the action.
+Remote MCP access is tenant-scoped. The server only exposes workspaces in the authenticated user's memberships, and it checks Maildun's existing create, update, delete, and send policies for every write. If a tool returns `unauthorized`, use an account with the appropriate workspace role or ask a workspace administrator to perform the action.
 
-Treat a remote MCP client as an actor with the same ability to change data as the signed-in user. Connect only clients you trust, review each requested mutation, and avoid giving a client sensitive material such as delivery credentials, trigger secrets, or database access. The server does not return automation trigger secrets.
+Treat a remote MCP client as an actor with the same ability to change data and send email as the signed-in user. Connect only clients you trust, review each requested mutation, and avoid giving a client sensitive material such as delivery credentials, trigger secrets, or database access. The server does not return automation trigger secrets.
 
 ## Troubleshooting
 

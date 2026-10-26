@@ -50,23 +50,50 @@ class EmailBuilderContext
         return hash('sha256', json_encode($record->getAttributes(), JSON_THROW_ON_ERROR));
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Read-only results drop the runtime's duplicate `result` echo, and the large
+     * tool reference and HTML only ship when asked, to keep agent context small.
+     *
+     * @return array<string, mixed>
+     */
     public function inspect(Request $request, string $tool): array
     {
         $record = $this->record($request);
-        $validated = $request->validate(['block_id' => ['nullable', 'string', 'max:255']]);
+        $validated = $request->validate([
+            'block_id' => ['nullable', 'string', 'max:255'],
+            'include_reference' => ['sometimes', 'boolean'],
+            'include_html' => ['sometimes', 'boolean'],
+        ]);
         $input = isset($validated['block_id']) && $tool === 'get_document' ? ['id' => $validated['block_id']] : [];
         $mergeTags = $this->mergeTags->handle($record);
-        $result = $this->agent->run($record->design, $record->html, $input === [] ? $tool : 'get_block', $input, $mergeTags);
+        $result = $this->agent->run($record->design, $record->html, $input === [] ? $tool : 'get_block', $input, $mergeTags, $record instanceof Email);
 
         if (isset($result['instructions'])) {
-            $result['instructions'] .= "\nMaildun exposes these native tools through wrappers: use get-email-builder for get_document, get-email-builder with block_id for get_block, and check-email-builder for check_email. For every write call edit-email-builder with workspace, target, uuid, revision, tool (the native name), and input (its arguments). Use the returned revision for the next write. dry_run=true previews without saving; reread after a revision conflict.";
+            $result['instructions'] .= "\nMaildun exposes these native tools through wrappers: use get-email-builder for get_document, get-email-builder with block_id for get_block, and check-email-builder for check_email. For every write call edit-email-builder with workspace, target, uuid, revision, tool (the native name), and input (its arguments). Use the returned revision for the next write. dry_run=true previews without saving; reread after a revision conflict. You already have this reference after the first read, so pass include_reference=false to get-email-builder on later reads. For images, call list-media with the workspace and use the returned url and alt rather than placeholder URLs.";
+
+            if ($record instanceof Email) {
+                $result['instructions'] .= "\nCampaigns need a visible {{ unsubscribe_url }} link, usually in the footer section. If it is missing, Maildun appends a generic footer link when sending, which is weaker for inbox placement, so place it yourself.";
+            }
         }
 
-        unset($result['document'], $result['ops']);
+        $block = $result['result']['data'] ?? null;
+        unset($result['document'], $result['ops'], $result['result']);
 
         if ($tool === 'get_document') {
             unset($result['html'], $result['text'], $result['warnings']);
+        }
+
+        if ($input !== []) {
+            unset($result['outline']);
+            $result['block'] = $block;
+        }
+
+        if (! ($validated['include_reference'] ?? true)) {
+            unset($result['tools'], $result['instructions']);
+        }
+
+        if (! ($validated['include_html'] ?? false)) {
+            unset($result['html']);
         }
 
         return ['target' => $request->get('target'), 'uuid' => $record->uuid, 'revision' => $this->revision($record), ...$result];
@@ -84,7 +111,7 @@ class EmailBuilderContext
             'dry_run' => ['sometimes', 'boolean'],
         ]);
         $this->assertRevision($record, $validated['revision']);
-        $result = $this->agent->run($record->design, $record->html, $validated['tool'], $validated['input']);
+        $result = $this->agent->run($record->design, $record->html, $validated['tool'], $validated['input'], requireUnsubscribe: $record instanceof Email);
         $dryRun = (bool) ($validated['dry_run'] ?? false);
 
         if (! $dryRun) {
@@ -114,7 +141,8 @@ class EmailBuilderContext
             });
         }
 
-        unset($result['document'], $result['html'], $result['text']);
+        $changes = $result['result']['data'] ?? null;
+        unset($result['document'], $result['html'], $result['text'], $result['ops'], $result['result']);
 
         return [
             'target' => $request->get('target'),
@@ -122,6 +150,7 @@ class EmailBuilderContext
             'revision' => $this->revision($record),
             'saved' => ! $dryRun,
             ...$result,
+            'changes' => $changes,
         ];
     }
 

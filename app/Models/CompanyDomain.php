@@ -51,8 +51,41 @@ class CompanyDomain extends Model
     protected function domain(): Attribute
     {
         return Attribute::make(
-            set: fn (string $value): string => Str::lower(Str::of($value)->trim()->toString()),
+            set: fn (string $value): string => self::normalize($value),
         );
+    }
+
+    /**
+     * Reduce what someone typed into a company domain to the ASCII email domain.
+     * "https://www.Acme.com/" and "acme.com" both become "acme.com", and
+     * "münchen.de" becomes its punycode form "xn--mnchen-3ya.de".
+     */
+    public static function normalize(string $value): string
+    {
+        $domain = Str::of($value)
+            ->trim()
+            ->lower()
+            ->replaceMatches('#^[a-z][a-z0-9+.\-]*://#', '')
+            ->rtrim('/')
+            ->replaceMatches('/^www\./', '')
+            ->toString();
+
+        return self::toAscii($domain);
+    }
+
+    /**
+     * Convert an internationalized domain to punycode so stored company domains and
+     * contact email domains compare in one form. Unconvertible input is returned as is.
+     */
+    public static function toAscii(string $domain): string
+    {
+        if ($domain === '' || preg_match('/^[\x00-\x7F]+$/', $domain) === 1) {
+            return $domain;
+        }
+
+        $ascii = idn_to_ascii($domain, IDNA_NONTRANSITIONAL_TO_ASCII, INTL_IDNA_VARIANT_UTS46);
+
+        return $ascii === false ? $domain : $ascii;
     }
 
     public function getRouteKeyName(): string
