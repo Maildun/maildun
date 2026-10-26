@@ -149,7 +149,9 @@ try {
             }),
         );
     } else {
-        const lint = { requireUnsubscribe: request.require_unsubscribe === true };
+        const lint = {
+            requireUnsubscribe: request.require_unsubscribe === true,
+        };
         const session = createAgentSession(validation.document, { lint });
         const result = runTool(
             session.tools,
