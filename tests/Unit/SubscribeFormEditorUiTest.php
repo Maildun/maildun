@@ -4,7 +4,7 @@ test('subscribe form editor uses a right inspector and style picker', function (
     $edit = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/subscribe-forms/edit.tsx');
     $view = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/subscribe-form-view.tsx');
     $artwork = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/subscribe-form-artwork.tsx');
-    $originKitDotMatrix = file_get_contents(dirname(__DIR__, 2).'/components/originkit/ui/hero-26/dotmatrix.tsx');
+    $dotBackground = file_get_contents(dirname(__DIR__, 2).'/resources/js/components/subscribe-form-dot-background.tsx');
     $public = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/subscribe-forms/public.tsx');
 
     expect($edit)->toBeString()
@@ -87,11 +87,9 @@ test('subscribe form editor uses a right inspector and style picker', function (
         ->toContain('Uploads are')
         ->toContain('optimized to WebP.')
         ->toContain('data-test="subscribe-form-artwork-type"')
-        ->toContain('data-test="subscribe-form-image-presets"')
+        ->not->toContain('image-preset')
         ->toContain('data-test="subscribe-form-background-presets"')
         ->toContain('handleArtworkTypeChange')
-        ->toContain('{imageArtworkPresets.length >')
-        ->toContain('value="image-preset"')
         ->toContain('value="background-preset"')
         ->toContain('<ArtworkPresetOption')
         ->toContain('usePoll(')
@@ -253,27 +251,28 @@ test('subscribe form editor uses a right inspector and style picker', function (
         ->not->toContain('subscribe-form-powered-by-success-position');
 
     expect($artwork)->toBeString()
-        ->toContain('../../../components/originkit/ui/hero-26/dotmatrix')
+        ->toContain("from '@/components/subscribe-form-dot-background'")
+        ->not->toContain('originkit')
         ->toContain('brandArtworkColors[theme.color]')
-        ->toContain("'image-pastel'")
-        ->toContain("'image-dunes'")
-        ->toContain("'image-shore'")
-        ->toContain("url('/assets/img/subscribe-form-presets/pastel.webp')")
-        ->toContain("url('/assets/img/subscribe-form-presets/shore.webp')")
+        ->not->toContain("'image-")
+        ->not->toContain('/assets/img/subscribe-form-presets/')
         ->toContain("preset === 'background-grid'")
         ->toContain("preset === 'background-orbit'")
         ->toContain("preset === 'background-glow'")
-        ->toContain('data-artwork-animation="originkit-hero-26"')
-        ->toContain('<DottedBackground')
+        ->toContain('data-artwork-animation="dot-background"')
+        ->toContain('<SubscribeFormDotBackground')
         ->toContain('createArtworkPalette(primary)')
         ->toContain('linear-gradient(145deg,')
         ->toContain('linear-gradient(to bottom,')
-        ->toContain('bgColor="transparent"')
         ->toContain('palette.highlight')
         ->toContain('data-artwork-preset={preset}');
 
-    expect($originKitDotMatrix)->toBeString()
+    expect($dotBackground)->toBeString()
         ->toContain("from 'ogl'")
-        ->toContain("matchMedia('(prefers-reduced-motion: reduce)')")
-        ->toContain('requestAnimationFrame(update)');
+        ->toContain("'(prefers-reduced-motion: reduce)'")
+        ->toContain('new ResizeObserver(')
+        ->toContain('new IntersectionObserver(')
+        ->toContain('requestAnimationFrame(tick)')
+        ->toContain('loseContext()')
+        ->toContain('canvas.remove()');
 });

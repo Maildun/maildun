@@ -1,43 +1,8 @@
-import type { CSSProperties } from 'react';
+import type { DotBackgroundPattern } from '@/components/subscribe-form-dot-background';
+import { SubscribeFormDotBackground } from '@/components/subscribe-form-dot-background';
 import { cn } from '@/lib/utils';
 import type { SubscribeFormArtworkPreset } from '@/types/audiences';
 import type { TeamBrandColor, TeamBrandTheme } from '@/types/teams';
-import DottedBackground from '../../../components/originkit/ui/hero-26/dotmatrix';
-
-const imagePresetStyles: Record<string, CSSProperties> = {
-    'image-pastel': {
-        backgroundColor: '#050505',
-        backgroundImage:
-            "url('/assets/img/subscribe-form-presets/pastel.webp')",
-    },
-    'image-ember': {
-        backgroundColor: '#050505',
-        backgroundImage: "url('/assets/img/subscribe-form-presets/ember.webp')",
-    },
-    'image-golden': {
-        backgroundColor: '#050505',
-        backgroundImage:
-            "url('/assets/img/subscribe-form-presets/golden.webp')",
-    },
-    'image-cumulus': {
-        backgroundColor: '#050505',
-        backgroundImage:
-            "url('/assets/img/subscribe-form-presets/cumulus.webp')",
-    },
-    'image-dunes': {
-        backgroundColor: '#050505',
-        backgroundImage: "url('/assets/img/subscribe-form-presets/dunes.webp')",
-    },
-    'image-meadow': {
-        backgroundColor: '#050505',
-        backgroundImage:
-            "url('/assets/img/subscribe-form-presets/meadow.webp')",
-    },
-    'image-shore': {
-        backgroundColor: '#050505',
-        backgroundImage: "url('/assets/img/subscribe-form-presets/shore.webp')",
-    },
-};
 
 const brandArtworkColors: Record<TeamBrandColor, string> = {
     blue: '#3b82f6',
@@ -94,62 +59,54 @@ function createArtworkPalette(primary: string): ArtworkPalette {
     };
 }
 
-type AnimatedBackgroundOptions = {
-    frequency: number;
-    speed: number;
-    cellSize: number;
-    gamma: number;
-    paletteBias: number;
-    useGlyphAtlas?: boolean;
-    characters?: string;
-    fontSizePx?: number;
-};
-
-function backgroundPresetOptions(
+function backgroundPresetPattern(
     preset: SubscribeFormArtworkPreset,
-): AnimatedBackgroundOptions {
+): DotBackgroundPattern {
     if (preset === 'background-grid') {
         return {
-            frequency: 2.2,
-            speed: 1.4,
-            cellSize: 6,
-            gamma: 4,
-            paletteBias: 2,
-            useGlyphAtlas: true,
-            characters: '+·',
-            fontSizePx: 18,
+            cellSize: 14,
+            scale: 2.2,
+            speed: 1.2,
+            contrast: 2.2,
+            shape: 'cross',
         };
     }
 
     if (preset === 'background-orbit') {
         return {
-            frequency: 0.8,
-            speed: 0.9,
             cellSize: 11,
-            gamma: 2.2,
-            paletteBias: 1,
+            scale: 0.8,
+            speed: 0.9,
+            contrast: 1.8,
+            shape: 'round',
+            orbit: 1,
         };
     }
 
     if (preset === 'background-glow') {
         return {
-            frequency: 3.5,
-            speed: 1.2,
             cellSize: 5,
-            gamma: 1.6,
-            paletteBias: 2,
+            scale: 3.2,
+            speed: 1.1,
+            contrast: 1.4,
+            shape: 'round',
+            haze: 0.5,
         };
     }
 
     return {
-        frequency: 1.5,
+        cellSize: 4,
+        scale: 1.5,
         speed: 0.65,
-        cellSize: 1,
-        gamma: 3,
-        paletteBias: 3,
+        contrast: 1.5,
+        shape: 'square',
     };
 }
 
+/**
+ * Brand-colored animated background for a subscribe form's artwork panel:
+ * a gradient base, the dot-matrix field for the chosen preset, and a fade.
+ */
 export function SubscribeFormArtworkVisual({
     preset,
     theme,
@@ -159,54 +116,38 @@ export function SubscribeFormArtworkVisual({
     theme: TeamBrandTheme;
     className?: string;
 }) {
-    const imageStyle = imagePresetStyles[preset];
-
-    if (!imageStyle) {
-        const primary = brandArtworkColors[theme.color];
-        const palette = createArtworkPalette(primary);
-        const options = backgroundPresetOptions(preset);
-        const baseGradient = `linear-gradient(145deg, ${palette.deep} 5%, ${palette.dark} 40%, ${palette.primary} 72%, ${palette.light})`;
-        const overlayGradient = `linear-gradient(to bottom, ${palette.deep}f2 0%, ${palette.dark}45 40%, transparent 65%, ${palette.highlight} 100%)`;
-
-        return (
-            <div
-                aria-hidden="true"
-                data-artwork-preset={preset}
-                data-artwork-animation="originkit-hero-26"
-                className={cn(
-                    'pointer-events-none relative size-full overflow-hidden',
-                    className,
-                )}
-                style={{
-                    backgroundColor: palette.deep,
-                    backgroundImage: baseGradient,
-                }}
-            >
-                <DottedBackground
-                    bgColor="transparent"
-                    colors={[
-                        palette.deep,
-                        palette.dark,
-                        palette.light,
-                        palette.highlight,
-                    ]}
-                    style={{ position: 'absolute', inset: 0 }}
-                    {...options}
-                />
-                <div
-                    className="absolute inset-0"
-                    style={{ backgroundImage: overlayGradient }}
-                />
-            </div>
-        );
-    }
+    const primary = brandArtworkColors[theme.color];
+    const palette = createArtworkPalette(primary);
+    const baseGradient = `linear-gradient(145deg, ${palette.deep} 5%, ${palette.dark} 40%, ${palette.primary} 72%, ${palette.light})`;
+    const overlayGradient = `linear-gradient(to bottom, ${palette.deep}f2 0%, ${palette.dark}45 40%, transparent 65%, ${palette.highlight} 100%)`;
 
     return (
         <div
             aria-hidden="true"
             data-artwork-preset={preset}
-            className={cn('size-full bg-cover bg-center', className)}
-            style={imageStyle}
-        />
+            data-artwork-animation="dot-background"
+            className={cn(
+                'pointer-events-none relative size-full overflow-hidden',
+                className,
+            )}
+            style={{
+                backgroundColor: palette.deep,
+                backgroundImage: baseGradient,
+            }}
+        >
+            <SubscribeFormDotBackground
+                pattern={backgroundPresetPattern(preset)}
+                palette={[
+                    palette.deep,
+                    palette.dark,
+                    palette.light,
+                    palette.highlight,
+                ]}
+            />
+            <div
+                className="absolute inset-0"
+                style={{ backgroundImage: overlayGradient }}
+            />
+        </div>
     );
 }
