@@ -16,6 +16,9 @@ info:
         browser application, public subscription forms, signed confirmation and
         unsubscribe links, OAuth authorization flow, and MCP transport are separate
         protocols and are not part of this OpenAPI contract.
+    license:
+        name: GNU Affero General Public License v3.0 only, with additional terms
+        identifier: AGPL-3.0-only
 
 servers:
     - url: /api

@@ -168,7 +168,11 @@ COPY --from=assets /app/public/build ./public/build
 
 # The email builder agent's runtime (see the assets stage): the Node binary
 # alone, without npm, corepack or headers, and the three packages it loads.
+# Node's license has to travel with its binary. The official image unpacks the
+# release tarball over /usr/local, which leaves it at /usr/local/LICENSE; the
+# three packages keep theirs inside their own directories.
 COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:22-bookworm-slim /usr/local/LICENSE /usr/local/share/doc/node/LICENSE
 COPY --from=assets /email-builder-runtime/node_modules ./node_modules
 
 # Directories Laravel writes to at runtime. docker-compose.yml mounts a volume

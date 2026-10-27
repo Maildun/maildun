@@ -1,10 +1,10 @@
 import type { SVGProps } from 'react';
 
 /**
- * The multicolor Google "G" mark for "Continue with Google". Hugeicons only
- * ships a single-color outline of it, and Google's sign-in branding asks for
- * the four brand colors, so it is hand-built on the same 24x24 grid as the
- * other local icons.
+ * Reproduces Google's multicolor "G" mark for the Sign in with Google button
+ * ("Continue with Google"), on the same 24x24 grid as the other local icons.
+ * Hugeicons only ships a single-color outline of it, and Google's sign-in
+ * branding asks for the four brand colors. The "G" mark belongs to Google LLC.
  */
 export function GoogleIcon(props: SVGProps<SVGSVGElement>) {
     return (

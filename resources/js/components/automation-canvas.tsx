@@ -649,13 +649,12 @@ export default function AutomationCanvas({
                 deleteKeyCode={readOnly ? null : ['Backspace', 'Delete']}
                 fitView
                 fitViewOptions={FIT_VIEW_OPTIONS}
-                proOptions={{ hideAttribution: true }}
                 defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
                 connectionLineStyle={{
                     stroke: 'var(--automation-connector)',
                     strokeWidth: 3,
                 }}
-                className="bg-muted [--automation-connector:var(--primary)] [--xy-background-color:var(--muted)] dark:[--automation-connector:var(--info)]"
+                className="bg-muted [--automation-connector:var(--primary)] [--xy-attribution-background-color:transparent] [--xy-background-color:var(--muted)] dark:[--automation-connector:var(--info)]"
                 data-test="automation-canvas"
             >
                 <FocusAddedStep ids={focusStepIds} />
