@@ -265,9 +265,6 @@ export default function SubscribeFormEdit({
           : subscribeForm.image_url;
     const usesArtwork =
         form.data.style === 'split' || form.data.style === 'cover';
-    const imageArtworkPresets = artworkPresets.filter(
-        (preset) => preset.artwork_type === 'image-preset',
-    );
     const backgroundArtworkPresets = artworkPresets.filter(
         (preset) => preset.artwork_type === 'background-preset',
     );
@@ -511,11 +508,7 @@ export default function SubscribeFormEdit({
             return;
         }
 
-        const availablePresets =
-            artworkType === 'image-preset'
-                ? imageArtworkPresets
-                : backgroundArtworkPresets;
-        const currentPresetMatches = availablePresets.some(
+        const currentPresetMatches = backgroundArtworkPresets.some(
             (preset) => preset.value === form.data.artwork_preset,
         );
 
@@ -524,7 +517,7 @@ export default function SubscribeFormEdit({
             artwork_type: artworkType,
             artwork_preset: currentPresetMatches
                 ? data.artwork_preset
-                : (availablePresets[0]?.value ?? null),
+                : (backgroundArtworkPresets[0]?.value ?? null),
         }));
     };
 
@@ -1390,18 +1383,6 @@ export default function SubscribeFormEdit({
                                                     >
                                                         Upload
                                                     </TabsTrigger>
-                                                    {imageArtworkPresets.length >
-                                                        0 && (
-                                                        <TabsTrigger
-                                                            className="flex-1"
-                                                            value="image-preset"
-                                                            disabled={
-                                                                !canManage
-                                                            }
-                                                        >
-                                                            Images
-                                                        </TabsTrigger>
-                                                    )}
                                                     <TabsTrigger
                                                         className="flex-1"
                                                         value="background-preset"
@@ -1499,69 +1480,6 @@ export default function SubscribeFormEdit({
                                             )}
 
                                             {form.data.artwork_type ===
-                                                'image-preset' && (
-                                                <Field
-                                                    data-invalid={Boolean(
-                                                        form.errors
-                                                            .artwork_preset,
-                                                    )}
-                                                >
-                                                    <FieldLabel>
-                                                        Image preset
-                                                    </FieldLabel>
-                                                    <RadioGroup
-                                                        className="grid grid-cols-2 gap-2"
-                                                        name="artwork_preset"
-                                                        value={
-                                                            form.data
-                                                                .artwork_preset ??
-                                                            undefined
-                                                        }
-                                                        onValueChange={(
-                                                            value,
-                                                        ) => {
-                                                            if (value) {
-                                                                form.setData(
-                                                                    'artwork_preset',
-                                                                    value as SubscribeFormArtworkPreset,
-                                                                );
-                                                            }
-                                                        }}
-                                                        disabled={!canManage}
-                                                        aria-label="Image preset"
-                                                        data-test="subscribe-form-image-presets"
-                                                    >
-                                                        {imageArtworkPresets.map(
-                                                            (preset) => (
-                                                                <ArtworkPresetOption
-                                                                    key={
-                                                                        preset.value
-                                                                    }
-                                                                    preset={
-                                                                        preset
-                                                                    }
-                                                                    theme={
-                                                                        previewTheme
-                                                                    }
-                                                                />
-                                                            ),
-                                                        )}
-                                                    </RadioGroup>
-                                                    <FieldDescription>
-                                                        Fixed artwork made to
-                                                        work across every brand
-                                                        theme.
-                                                    </FieldDescription>
-                                                    <FieldError>
-                                                        {
-                                                            form.errors
-                                                                .artwork_preset
-                                                        }
-                                                    </FieldError>
-                                                </Field>
-                                            )}
-
-                                            {form.data.artwork_type ===
                                                 'background-preset' && (
                                                 <Field
                                                     data-invalid={Boolean(
@@ -1606,7 +1524,6 @@ export default function SubscribeFormEdit({
                                                                     theme={
                                                                         previewTheme
                                                                     }
-                                                                    dense
                                                                 />
                                                             ),
                                                         )}
@@ -2209,11 +2126,9 @@ function AudienceFieldRow({
 function ArtworkPresetOption({
     preset,
     theme,
-    dense = false,
 }: {
     preset: SubscribeFormArtworkPresetOption;
     theme: TeamBrandTheme;
-    dense?: boolean;
 }) {
     return (
         <Tooltip>
@@ -2223,10 +2138,7 @@ function ArtworkPresetOption({
                         value={preset.value}
                         aria-label={preset.label}
                         data-test={`subscribe-form-artwork-preset-${preset.value}`}
-                        className={cn(
-                            'group relative min-w-0 cursor-pointer overflow-hidden rounded-lg border p-1 transition-[border-color,box-shadow,transform] outline-none hover:border-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring/50 data-[checked]:border-foreground data-[checked]:ring-1 data-[checked]:ring-foreground data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
-                            dense ? 'aspect-square' : 'aspect-video',
-                        )}
+                        className="group relative aspect-square min-w-0 cursor-pointer overflow-hidden rounded-lg border p-1 transition-[border-color,box-shadow,transform] outline-none hover:border-muted-foreground/50 focus-visible:ring-2 focus-visible:ring-ring/50 data-[checked]:border-foreground data-[checked]:ring-1 data-[checked]:ring-foreground data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
                     />
                 }
             >
@@ -2235,11 +2147,6 @@ function ArtworkPresetOption({
                     theme={theme}
                     className="rounded-md"
                 />
-                {!dense && (
-                    <span className="absolute right-1.5 bottom-1.5 left-1.5 truncate rounded bg-background/85 px-1.5 py-0.5 text-left text-[10px] font-medium backdrop-blur-sm">
-                        {preset.label}
-                    </span>
-                )}
             </TooltipTrigger>
             <TooltipContent>
                 <p>{preset.label}</p>

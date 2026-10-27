@@ -3,7 +3,8 @@ Copyright (C) 2026 Dunn
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU Affero General Public License, version 3, as published by
-the Free Software Foundation, subject to the additional terms stated below.
+the Free Software Foundation, together with the additional terms and the
+additional permission stated below.
 
 This program is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
@@ -14,31 +15,25 @@ PARTICULAR PURPOSE.  See the GNU Affero General Public License for more details.
 ADDITIONAL TERMS UNDER SECTION 7 OF THE GNU AFFERO GENERAL PUBLIC LICENSE
 ===============================================================================
 
-These additional terms are added under section 7 of the GNU Affero General
-Public License, version 3, by Dunn, the copyright holder of Maildun.
-They apply to Maildun as a whole and to every modified version and derivative
-work of it. They are conditions of this license: under section 8, failing to
-comply with them terminates the rights granted to you.
+Dunn, the copyright holder of Maildun, adds the following terms under section 7
+of the GNU Affero General Public License, version 3. Each is a kind of term that
+section 7 permits, under the paragraph named in its heading. They apply to
+Maildun's own material in every copy and every modified version of it.
 
-1. ATTRIBUTION (section 7(b))
+1. AUTHOR ATTRIBUTION (section 7(b))
 
-   Every user-facing interface of Maildun, and of any modified version or
-   derivative work of it, must display the notice
+   You must preserve the author attribution
 
-       Powered by Maildun
+       Maildun, Copyright (C) 2026 Dunn
 
-   as a hyperlink to the complete corresponding source code of the version
-   being run, legibly and with reasonable prominence, on both:
+   in the Appropriate Legal Notices displayed by Maildun and by any work that
+   contains it. Maildun displays its Appropriate Legal Notices on its About
+   page. A modified version may move, restyle, or reword that page, but the
+   Appropriate Legal Notices it displays must keep this attribution.
 
-     a) the authenticated application interface; and
-
-     b) every page served to the public, including subscription forms,
-        subscription confirmation pages, and unsubscribe pages.
-
-   The notice may be restyled to suit the surrounding design. It may not be
-   removed, hidden, obscured, made illegible, rendered smaller than the
-   surrounding body text, or placed where a user of that interface would not
-   reasonably find it.
+   The "Powered by Maildun" link that Maildun shows by default is not required
+   by this term. If you run a modified version for users over a network,
+   section 13 still requires you to offer them its Corresponding Source.
 
 2. ORIGIN (section 7(c))
 
@@ -48,15 +43,36 @@ comply with them terminates the rights granted to you.
 
 3. TRADEMARKS (section 7(e))
 
-   No rights are granted under trademark law to the name "Maildun", the Maildun
-   logo, or any confusingly similar name or mark. This does not restrict the
-   attribution notice required by term 1, nor accurate statements that a work
-   is derived from Maildun. Modified versions conveyed or offered to the public
-   must be offered under a different name.
+   No rights are granted under trademark law for use of the name "Maildun", the
+   Maildun logo, or any confusingly similar name or mark. This does not limit
+   the attribution in term 1, or accurate statements that a work is based on
+   Maildun. TRADEMARKS.md describes how the name and logo may be used.
 
-These additional terms are non-permissive terms within the meaning of section
-7, and may not be removed by a recipient. Only the copyright holder can waive
-them, under a separate written commercial license. Enquiries: werk@abduns.com
+
+===============================================================================
+ADDITIONAL PERMISSION UNDER SECTION 7
+===============================================================================
+
+If you build Maildun with its icon package replaced by a separately licensed
+Hugeicons Pro package, selected through the HUGEICONS_ICON_STYLE setting, you
+may convey the resulting work, and offer it under section 13, without that
+package being part of the Corresponding Source. The Hugeicons license for that
+package still applies to you in full. You may remove this permission from
+copies you convey.
+
+
+===============================================================================
+SCOPE AND OTHER LICENSES
+===============================================================================
+
+Third-party material in this repository keeps its own license and notices; see
+THIRD_PARTY_NOTICES.md. The package in packages/abduns/laravel-db-backup is
+licensed separately under the MIT License.
+
+The copyright holder also offers Maildun under separate commercial terms, for
+example to keep modifications private or to omit the author attribution. A
+commercial license covers only Maildun's own code, never third-party material.
+Enquiries: werk@abduns.com
 
 The full, unmodified text of the GNU Affero General Public License, version 3,
 follows.

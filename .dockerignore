@@ -38,7 +38,9 @@ storage/*.key
 database/*.sqlite
 *.mmdb
 
-# Tooling and docs that do not affect the runtime image.
+# Tooling and docs that do not affect the runtime image. LICENSE is never
+# excluded, and the notices that travel with it are re-included below, so
+# every published image carries its license terms.
 .agents
 .ai
 .claude
@@ -58,6 +60,8 @@ tests
 docs
 *.md
 !README.md
+!THIRD_PARTY_NOTICES.md
+!TRADEMARKS.md
 Dockerfile
 docker-compose.yml
 .dockerignore

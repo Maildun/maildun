@@ -137,7 +137,7 @@ pnpm audit --audit-level=high
 
 - **Bugs and feature requests** — open a [GitHub issue](https://github.com/Maildun/maildun/issues/new/choose).
 - **Security vulnerabilities** — use [private vulnerability reporting](https://github.com/Maildun/maildun/security/advisories/new), never a public issue. See [SECURITY.md](SECURITY.md).
-- **Commercial licensing** — see [Removing the attribution](#removing-the-attribution) below.
+- **Commercial licensing** — see [Commercial licensing](#commercial-licensing) below.
 
 ## Responsible use
 
@@ -147,19 +147,21 @@ Operators are responsible for consent, unsubscribe handling, sender identity, re
 
 Copyright (C) 2026 Dunn.
 
-Maildun is free software licensed under the [GNU Affero General Public License, version 3](LICENSE) (AGPL-3.0-only), **with additional terms under section 7** stated at the top of [LICENSE](LICENSE).
+Maildun is free software licensed under the [GNU Affero General Public License, version 3](LICENSE) (AGPL-3.0-only), **with additional terms under section 7** stated at the top of [LICENSE](LICENSE). This summary is only a guide; LICENSE is what applies.
 
 You may run, study, modify, and redistribute Maildun, including commercially. Hosting it for other people is allowed. The conditions are:
 
-- **Keep the attribution.** Every interface must show a "Powered by Maildun" link to the source of the version you are running — in the app itself and on every public page (subscription forms, confirmation pages, unsubscribe pages). You may restyle it; you may not remove or hide it.
-- **Publish your changes.** If you modify Maildun and let anyone use it over a network, section 13 requires you to offer those users the complete corresponding source of the version you are running. Point `APP_SOURCE_URL` at it.
-- **Do not pass it off as your own.** Modified versions must be marked as different from the original and offered under a different name. No rights are granted to the Maildun name or logo.
-- **Derivative works stay under the AGPL.**
+- **Keep the author attribution.** "Maildun, Copyright (C) 2026 Dunn" must stay in the legal notices on the About page, or wherever a modified version shows its legal notices. The "Powered by Maildun" link shown elsewhere is a default, not a requirement.
+- **Offer your source to network users.** If you modify Maildun and let people use it over a network, section 13 requires you to offer those users the complete corresponding source of the version you run. Point `APP_SOURCE_URL` at it; the About page and the "Powered by Maildun" link use it.
+- **Pass the license on when you redistribute.** When you give someone a copy, a Docker image included, include LICENSE and THIRD_PARTY_NOTICES.md, and for a modified version provide its corresponding source (sections 4 to 6).
+- **Mark modified versions.** They must be marked as different from the original and must not be presented as the original.
+- **Use your own name for modified versions.** The license grants no rights to the Maildun name or logo. [TRADEMARKS.md](TRADEMARKS.md) explains when you can use them; in short, a modified version you distribute or offer to others needs its own name.
+- **Modified versions stay under the same license**, additional terms included.
 
-Running an unmodified Maildun — for your own organization or as a hosted service for others — obliges you only to leave the attribution in place.
+Running an unmodified Maildun, for your own organization or as a hosted service for others, only requires that you keep the About page attribution.
 
-### Removing the attribution
+### Commercial licensing
 
-The attribution and naming conditions are the only things standing between Maildun and a white-labeled resale of it. If you want to ship Maildun under your own brand, with the notice removed, that needs a separate commercial license: **werk@abduns.com**.
+If you need other terms, for example to keep your modifications private while offering Maildun over a network, or to ship it without the author attribution, a separate commercial license is available: **werk@abduns.com**. It covers Maildun's own code only.
 
-Third-party packages, artwork, and trademarks remain subject to their own terms; see [Third-party notices](THIRD_PARTY_NOTICES.md).
+Third-party packages, artwork, and trademarks remain subject to their own terms; see [Third-party notices](THIRD_PARTY_NOTICES.md). The bundled `packages/abduns/laravel-db-backup` package is MIT licensed.

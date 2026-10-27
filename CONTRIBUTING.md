@@ -81,6 +81,10 @@ Do not commit `.env`, credentials, API keys, database files, generated frontend 
 
 ## Licensing of contributions
 
-Maildun is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). By submitting a pull request, you agree that your contribution is licensed under the same terms (inbound = outbound), and that you have the right to license it that way.
+Maildun is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only), with additional terms under section 7 stated at the top of [LICENSE](LICENSE). By submitting a pull request, you agree that:
 
-Do not paste code from projects under an incompatible license. Permissively licensed code (MIT, BSD, Apache-2.0) may be incorporated when its notices are preserved and the addition is documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- your contribution is licensed under those same terms, additional terms included (inbound = outbound);
+- you also grant Dunn, the copyright holder of Maildun, a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, modify, and sublicense your contribution under any terms, including the commercial licenses described in the [README](README.md#license). This is what lets Maildun keep offering one license for the whole codebase. You keep the copyright in your contribution; and
+- you wrote the contribution, or otherwise have the right to license it this way.
+
+Do not paste code from projects under an incompatible license. Permissively licensed code (MIT, BSD, Apache-2.0) may be incorporated when its notices are preserved and the addition is documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The same applies to images, fonts, icons, and data files: do not add one unless you can say where it came from and under what license.

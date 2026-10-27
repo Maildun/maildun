@@ -128,7 +128,7 @@ test('owners can create edit publish unpublish and soft delete subscribe forms',
             ->where('attributes.0.uuid', $attribute->uuid)
             ->where('attributes.0.key', 'company')
             ->has('styles', 4)
-            ->has('artworkPresets', 11)
+            ->has('artworkPresets', 4)
             ->has('brandColors', 15)
             ->has('brandFonts', 8)
             ->has('brandInputStyles', 3));
@@ -395,15 +395,15 @@ test('owners can choose artwork presets without deleting an uploaded image', fun
     $this->actingAs($user)
         ->patch(route('audiences.subscribe_forms.update', [$team, $audience, $subscribeForm]), subscribeFormPayload([
             'style' => 'cover',
-            'artwork_type' => SubscribeFormArtworkType::ImagePreset->value,
-            'artwork_preset' => SubscribeFormArtworkPreset::ImageShore->value,
+            'artwork_type' => SubscribeFormArtworkType::BackgroundPreset->value,
+            'artwork_preset' => SubscribeFormArtworkPreset::BackgroundOrbit->value,
         ]))
         ->assertRedirect()
         ->assertSessionHasNoErrors();
 
     expect($subscribeForm->fresh())
-        ->artwork_type->toBe(SubscribeFormArtworkType::ImagePreset)
-        ->artwork_preset->toBe(SubscribeFormArtworkPreset::ImageShore)
+        ->artwork_type->toBe(SubscribeFormArtworkType::BackgroundPreset)
+        ->artwork_preset->toBe(SubscribeFormArtworkPreset::BackgroundOrbit)
         ->image_path->toBe('subscribe-form-images/hero.webp');
     Storage::disk('public')->assertExists('subscribe-form-images/hero.webp');
 
@@ -411,40 +411,44 @@ test('owners can choose artwork presets without deleting an uploaded image', fun
         ->get(route('audiences.subscribe_forms.edit', [$team, $audience, $subscribeForm]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('subscribeForm.artwork_type', 'image-preset')
-            ->where('subscribeForm.artwork_preset', 'image-shore')
-            ->has('artworkPresets', 11)
+            ->where('subscribeForm.artwork_type', 'background-preset')
+            ->where('subscribeForm.artwork_preset', 'background-orbit')
+            ->has('artworkPresets', 4)
             ->where('artworkPresets.0', [
-                'value' => 'image-pastel',
-                'label' => 'Pastel',
-                'artwork_type' => 'image-preset',
+                'value' => 'background-matrix',
+                'label' => 'Matrix',
+                'artwork_type' => 'background-preset',
             ])
-            ->where('artworkPresets.4', [
-                'value' => 'image-dunes',
-                'label' => 'Dunes',
-                'artwork_type' => 'image-preset',
-            ])
-            ->where('artworkPresets.6', [
-                'value' => 'image-shore',
-                'label' => 'Shore',
-                'artwork_type' => 'image-preset',
+            ->where('artworkPresets.3', [
+                'value' => 'background-glow',
+                'label' => 'Glow',
+                'artwork_type' => 'background-preset',
             ]));
 });
 
-test('artwork presets must match the selected artwork type', function () {
+test('withdrawn image preset artwork can no longer be saved', function (array $artwork, string $invalidField) {
     $user = User::factory()->create();
     $team = $user->currentTeam;
     $audience = Audience::factory()->for($team)->create();
     $subscribeForm = SubscribeForm::factory()->for($audience)->create();
 
     $this->actingAs($user)
-        ->patch(route('audiences.subscribe_forms.update', [$team, $audience, $subscribeForm]), subscribeFormPayload([
-            'artwork_type' => SubscribeFormArtworkType::ImagePreset->value,
-            'artwork_preset' => SubscribeFormArtworkPreset::BackgroundGrid->value,
-        ]))
-        ->assertSessionHasErrors([
-            'artwork_preset' => 'The selected artwork preset does not match its type.',
-        ]);
+        ->patch(route('audiences.subscribe_forms.update', [$team, $audience, $subscribeForm]), subscribeFormPayload($artwork))
+        ->assertSessionHasErrors([$invalidField]);
+
+    expect($subscribeForm->fresh())
+        ->artwork_type->toBe(SubscribeFormArtworkType::Upload)
+        ->artwork_preset->toBeNull();
+})->with([
+    'image preset type' => [['artwork_type' => 'image-preset', 'artwork_preset' => 'background-glow'], 'artwork_type'],
+    'image preset value' => [['artwork_type' => 'background-preset', 'artwork_preset' => 'image-shore'], 'artwork_preset'],
+]);
+
+test('background artwork requires a preset', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscribeForm = SubscribeForm::factory()->for($audience)->create();
 
     $this->actingAs($user)
         ->patch(route('audiences.subscribe_forms.update', [$team, $audience, $subscribeForm]), subscribeFormPayload([

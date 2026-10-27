@@ -141,7 +141,7 @@ function hugeiconsPerIconImports(freeIconPackage: string): Plugin {
     };
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, isSsrBuild }) => {
     const { HUGEICONS_ICON_STYLE: iconStyle = 'free-stroke-rounded' } = loadEnv(
         mode,
         process.cwd(),
@@ -158,6 +158,17 @@ export default defineConfig(({ mode }) => {
              */
             assetsInlineLimit: (filePath: string) =>
                 filePath.includes('flag-icons/flags/') ? false : undefined,
+            /**
+             * Write the licenses of every third-party package bundled into
+             * the client build to public/build, where the About page links
+             * to it (AboutController::BUNDLED_LICENSES_PATH). A .txt name so
+             * any web server serves it as plain text, and outside .vite/ so
+             * it is not hidden as a dot directory. The SSR bundle never
+             * reaches a browser, so it skips the file.
+             */
+            license: isSsrBuild
+                ? false
+                : { fileName: 'third-party-licenses.txt' },
         },
         resolve: {
             alias: [

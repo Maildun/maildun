@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import type { PropsWithChildren } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
+import { AttributionFooter } from '@/components/attribution-footer';
 import {
     Card,
     CardContent,
@@ -42,6 +43,8 @@ export default function AuthCardLayout({
                         </CardContent>
                     </Card>
                 </div>
+
+                <AttributionFooter />
             </div>
         </div>
     );

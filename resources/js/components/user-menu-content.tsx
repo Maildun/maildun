@@ -4,6 +4,7 @@ import {
     BubbleChatQuestionIcon,
     ComputerIcon,
     GithubIcon,
+    InformationCircleIcon,
     Logout02Icon,
     Moon02Icon,
     Settings01Icon,
@@ -28,7 +29,7 @@ import { UserInfo } from '@/components/user-info';
 import type { Appearance } from '@/hooks/use-appearance';
 import { useAppearance } from '@/hooks/use-appearance';
 import { useMobileNavigation } from '@/hooks/use-mobile-navigation';
-import { logout } from '@/routes';
+import { about, logout } from '@/routes';
 import { edit } from '@/routes/profile';
 import type { User } from '@/types';
 
@@ -151,6 +152,19 @@ export function UserMenuContent({ user }: Props) {
                         icon={ArrowUpRight01Icon}
                         className="motion-safe:transition-transform motion-safe:duration-200 motion-safe:group-hover:translate-x-0.5 motion-safe:group-hover:-translate-y-0.5"
                     />
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                    data-test="about-link"
+                    render={
+                        <Link
+                            className="block w-full cursor-pointer"
+                            href={about()}
+                            onClick={cleanup}
+                        />
+                    }
+                >
+                    <HugeiconsIcon icon={InformationCircleIcon} />
+                    About Maildun
                 </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />

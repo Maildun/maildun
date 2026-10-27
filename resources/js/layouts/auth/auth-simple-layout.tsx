@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import { AnimatePresence, motion } from 'motion/react';
 import AppLogoIcon from '@/components/app-logo-icon';
+import { AttributionFooter } from '@/components/attribution-footer';
 import { cn } from '@/lib/utils';
 import { home } from '@/routes';
 import type { AuthLayoutProps } from '@/types';
@@ -15,8 +16,8 @@ export default function AuthSimpleLayout({
     const isLogin = component === 'auth/login';
 
     return (
-        <main className="grainy relative flex min-h-svh flex-col items-center justify-center bg-muted/50 p-6 md:p-10">
-            <div className="w-full max-w-sm">
+        <main className="grainy relative flex min-h-svh flex-col items-center bg-muted/50 p-6 md:p-10">
+            <div className="flex w-full max-w-sm flex-1 flex-col justify-center">
                 <div className="flex flex-col gap-8">
                     <div className="mx-auto flex w-80 max-w-full flex-col gap-8">
                         <Link
@@ -58,6 +59,7 @@ export default function AuthSimpleLayout({
                     </div>
                 </div>
             </div>
+            <AttributionFooter className="pt-8" />
         </main>
     );
 }

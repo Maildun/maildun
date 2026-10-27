@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\AboutController;
+use App\Http\Controllers\AboutDocumentController;
 use App\Http\Controllers\AudienceAttributeController;
 use App\Http\Controllers\AudienceController;
 use App\Http\Controllers\AudienceHygieneController;
@@ -107,6 +109,18 @@ Route::get('auth/google/callback', [GoogleAuthController::class, 'callback'])
 Route::get('user/confirm-password/google', [GoogleAuthController::class, 'confirm'])
     ->middleware(['auth', 'throttle:google'])
     ->name('google.confirm');
+
+// Maildun's Appropriate Legal Notices, which term 1 of the additional terms in
+// LICENSE points at. Public, so guests and every signed-in user can read them.
+Route::get('about', AboutController::class)
+    ->middleware('throttle:60,1')
+    ->name('about');
+Route::get('about/license', [AboutDocumentController::class, 'license'])
+    ->middleware('throttle:60,1')
+    ->name('about.license');
+Route::get('about/notices', [AboutDocumentController::class, 'notices'])
+    ->middleware('throttle:60,1')
+    ->name('about.notices');
 
 Route::get('forms/{subscribeForm}', [PublicSubscribeFormController::class, 'show'])
     ->name('public.subscribe_forms.show');

@@ -177,4 +177,4 @@ vendor/bin/pest
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).

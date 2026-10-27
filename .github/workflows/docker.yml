@@ -16,8 +16,14 @@ on:
 permissions:
   contents: read
 
+# GitHub cannot match LICENSE to a known license because of the additional
+# terms at its top, so metadata-action would label the image NOASSERTION, and
+# the vendor label would otherwise be inherited from the FrankenPHP base image.
+# Both are set explicitly, on each platform's image and on the index.
 env:
   IMAGE: ghcr.io/maildun/maildun
+  IMAGE_LICENSES: AGPL-3.0-only
+  IMAGE_VENDOR: Maildun
 
 jobs:
   build:
@@ -57,6 +63,9 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+          labels: |
+            org.opencontainers.image.licenses=${{ env.IMAGE_LICENSES }}
+            org.opencontainers.image.vendor=${{ env.IMAGE_VENDOR }}
 
       - name: Setup Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -133,6 +142,7 @@ jobs:
 
       # The source annotation links the multi-platform image to this
       # repository on GitHub, as the label does for each platform's image.
+      # The license and vendor annotations repeat the labels set at build.
       - name: Tag the multi-platform image
         working-directory: ${{ runner.temp }}/digests
         env:
@@ -140,6 +150,8 @@ jobs:
         run: |
           docker buildx imagetools create \
             --annotation "index:org.opencontainers.image.source=$SOURCE" \
+            --annotation "index:org.opencontainers.image.licenses=$IMAGE_LICENSES" \
+            --annotation "index:org.opencontainers.image.vendor=$IMAGE_VENDOR" \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf "$IMAGE@sha256:%s " *)
 

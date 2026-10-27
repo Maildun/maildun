@@ -75,8 +75,8 @@ class EmailWebViewController extends Controller
      * Serve author-supplied markup as a page of its own.
      *
      * Scripts are refused by policy because the body is authored by workspace
-     * members and served on the application origin. The attribution notice is
-     * a license condition on every public page; see LICENSE.
+     * members and served on the application origin. The default "Powered by
+     * Maildun" credit is appended, linking to the source code.
      */
     private function page(string $html): Response
     {
