@@ -121,6 +121,16 @@ Every sending workspace must configure and test one connection under **Settings 
 
 For SES feedback, the application must be reachable by HTTPS and the SNS topic, region, and configuration set must match the workspace connection. Maildun verifies signed SNS messages; do not bypass that validation at a reverse proxy.
 
+## License obligations
+
+Maildun is licensed under the GNU AGPL version 3 with additional terms; see [License](../README.md#license).
+
+- An unmodified installation only has to keep the author attribution, "Maildun, Copyright (C) 2026 Dunn", in the legal notices on the About page. The "Powered by Maildun" notice is a default credit, not a requirement.
+- If you modify Maildun and let users reach it over a network, section 13 of the AGPL requires you to offer them the complete corresponding source of your version. Publish it and set `APP_SOURCE_URL` to its address, so the source links in Maildun point there. The About page attribution still applies.
+- If you redistribute copies or container images, include `LICENSE` and `THIRD_PARTY_NOTICES.md`; Docker images built from this repository contain both. For a modified version, also provide its corresponding source (sections 4 to 6).
+
+Modified versions must be marked as changed and must not be presented as the original. [TRADEMARKS.md](../TRADEMARKS.md) explains how the Maildun name and logo may be used.
+
 ## Security checklist
 
 - Keep public registration closed unless it is monitored and intentional.

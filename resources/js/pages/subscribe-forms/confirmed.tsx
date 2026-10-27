@@ -1,7 +1,6 @@
 /**
- * Renders the attribution notice required by the additional terms in LICENSE,
- * added under section 7(b) of the GNU Affero General Public License. Removing
- * or hiding it terminates the rights granted by that license.
+ * Renders the default "Powered by Maildun" credit, which also links to the
+ * source code. LICENSE does not require it; see attribution-badge.tsx.
  */
 import {
     CheckmarkCircle02Icon,

@@ -29,12 +29,13 @@ test('the attribution badge credits Maildun regardless of the configured app nam
     expect($badge)->toBeString()
         ->toContain("const PRODUCT_NAME = 'Maildun';")
         ->toContain('Powered by')
-        ->toContain('section 7(b)')
+        ->toContain('section 13')
+        ->not->toContain('section 7(b)')
         ->not->toContain('app.name')
         ->not->toContain('props.name');
 });
 
-test('the attribution badge renders on every public page', function () {
+test('public pages show the attribution badge by default', function () {
     $root = dirname(__DIR__, 2);
 
     $surfaces = [
@@ -58,13 +59,46 @@ test('the attribution badge renders on every public page', function () {
         ->toContain('enabled={!completed}');
 });
 
+test('the about page shows the attribution and license notices under the Maildun name', function () {
+    expect(file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/about.tsx'))
+        ->toBeString()
+        ->toContain("const PRODUCT_NAME = 'Maildun';")
+        ->toContain('{copyright}')
+        ->toContain('NO WARRANTY')
+        ->toContain('href: license.url()')
+        ->toContain('href: sourceUrl')
+        ->toContain('href: notices.url()');
+});
+
+test('the auth layout shows the attribution badge and links the about page', function () {
+    $root = dirname(__DIR__, 2);
+
+    expect(file_get_contents($root.'/resources/js/layouts/auth/auth-simple-layout.tsx'))
+        ->toBeString()
+        ->toContain("import { AttributionFooter } from '@/components/attribution-footer';")
+        ->toContain('<AttributionFooter');
+
+    expect(file_get_contents($root.'/resources/js/components/attribution-footer.tsx'))
+        ->toBeString()
+        ->toContain("import { AttributionBadge } from '@/components/attribution-badge';")
+        ->toContain('<AttributionBadge />')
+        ->toContain('href={about()}');
+});
+
+test('the user menu links the about page', function () {
+    expect(file_get_contents(dirname(__DIR__, 2).'/resources/js/components/user-menu-content.tsx'))
+        ->toBeString()
+        ->toContain('href={about()}')
+        ->toContain('About Maildun');
+});
+
 test('the license keeps the AGPL section 7 additional terms above a verbatim AGPL', function () {
     $license = file_get_contents(dirname(__DIR__, 2).'/LICENSE');
 
     expect($license)->toBeString()
         ->toContain('ADDITIONAL TERMS UNDER SECTION 7')
-        ->toContain('Powered by Maildun')
-        ->toContain('Copyright (C) 2026 Dunn');
+        ->toContain('Maildun, Copyright (C) 2026 Dunn')
+        ->toContain('Appropriate Legal Notices');
 
     $agpl = substr($license, strpos($license, '                    GNU AFFERO GENERAL PUBLIC LICENSE'));
 

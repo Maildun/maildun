@@ -10,6 +10,7 @@ Copy `.env.example` to `.env` and treat the resulting file as a secret. This pag
 | `APP_PREVIOUS_KEYS` | Former `APP_KEY` values kept as decryption fallbacks | Set during a rotation so encrypted workspace credentials keep working |
 | `APP_URL` | Canonical origin for signed links and the passkey relying party | Use the public HTTPS origin |
 | `APP_DEBUG` | Detailed exception output | Always `false` in production |
+| `APP_SOURCE_URL` | Where the "Powered by Maildun" notice links | Leave the default on an unmodified copy; if you run a modified version for users over a network, point it at your own complete corresponding source (see [License obligations](production.md#license-obligations)) |
 | `PASSKEYS_USER_HANDLE_SECRET` | Derives the WebAuthn user handle | Set it once to its own random, stable value; when empty or absent it falls back to `APP_KEY` |
 | `REGISTRATION_ENABLED` | Allows public account creation | Prefer `false` unless open registration is intentional |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Enables "Continue with Google" | Leave empty to hide the button; set both from a Google Cloud OAuth client |

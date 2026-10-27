@@ -1,14 +1,13 @@
 /**
- * Attribution notice required by the additional terms in LICENSE, added under
- * section 7(b) of the GNU Affero General Public License. See LICENSE for the
- * terms that apply to this file.
+ * The "Powered by Maildun" credit Maildun shows by default. LICENSE does not
+ * require it: term 1 of the additional terms only asks that the author
+ * attribution stay in the Appropriate Legal Notices on the About page.
  *
- * This notice is a license condition, not decoration. It must stay legible and
- * reasonably prominent on the authenticated application and on every hosted
- * page served to the public. Restyling it to suit a surrounding design is
- * allowed; removing it, hiding it, or renaming the product it credits
- * terminates the rights granted by LICENSE. An unbranded deployment needs a
- * separate commercial license from the copyright holder.
+ * It links to config('attribution.source_url'), so it doubles as the source
+ * offer that section 13 of the GNU Affero General Public License requires of
+ * anyone running a modified version for users over a network. Such a version
+ * should point that URL at its own source, and needs another way to offer
+ * that source if it drops the badge.
  */
 import { usePage } from '@inertiajs/react';
 import { AppLogoWordmark } from '@/components/app-logo-icon';
