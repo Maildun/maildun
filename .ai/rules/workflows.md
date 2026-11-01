@@ -19,5 +19,5 @@ If you ever edit `require.php`, refresh the lock with `composer update --lock --
 ## pnpm audit runs at --audit-level=high
 CI runs `pnpm audit --audit-level=high`. The one known moderate advisory, GHSA-w455-mfq9-hf74 (ReDoS in `insane`, reached through the former vendored Waypoint editor), no longer applies since the editor moved to `@maildun/email-builder`.
 
-## braces stays ignored in pnpm audit until it ships a fix
-The only ignored advisory is GHSA-vfj7-8cjw-p6xm (braces <=3.0.3, no patched release on npm), listed under `audit.ignore` in `pnpm-workspace.yaml` so local `pnpm audit` and CI agree. braces is reached only through the shadcn CLI (fast-glob > micromatch), which is development tooling and never bundled. Remove the entry once braces 3.0.4 ships; do not ignore other advisories without the same justification here and in SECURITY.md "Known issues".
+## pnpm audit has no ignored advisories
+`pnpm-workspace.yaml` has no `audit.ignore`. The shadcn CLI is not a dependency (run it with `pnpm dlx shadcn@latest`), which removed braces and deepmerge, the two advisories with no patched release. Lift transitive packages with an `overrides` floor and a comment naming the advisory. Do not add an ignore without the same justification here and in SECURITY.md "Known issues".
