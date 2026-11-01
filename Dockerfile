@@ -103,6 +103,7 @@ RUN rm -f /usr/local/bin/yarn /usr/local/bin/yarnpkg \
     && pnpm --version
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY patches ./patches
 RUN --mount=type=cache,target=/pnpm-store \
     pnpm config set store-dir /pnpm-store \
     && pnpm install --frozen-lockfile

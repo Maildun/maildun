@@ -1,8 +1,9 @@
 import js from '@eslint/js';
+import react from '@eslint-react/eslint-plugin';
 import stylistic from '@stylistic/eslint-plugin';
 import prettier from 'eslint-config-prettier/flat';
-import importPlugin from 'eslint-plugin-import';
-import react from 'eslint-plugin-react';
+import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
+import { createNodeResolver, importX } from 'eslint-plugin-import-x';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import typescript from 'typescript-eslint';
@@ -24,42 +25,65 @@ const paddingAroundControl = [
     ]),
 ];
 
+/**
+ * Hook rules @eslint-react also ships. eslint-plugin-react-hooks stays the
+ * source of truth for these, so the duplicates are switched off.
+ */
+const reactHookDuplicates = Object.fromEntries(
+    [
+        'error-boundaries',
+        'exhaustive-deps',
+        'globals',
+        'immutability',
+        'purity',
+        'refs',
+        'rules-of-hooks',
+        'set-state-in-effect',
+        'set-state-in-render',
+        'static-components',
+        'unsupported-syntax',
+        'use-memo',
+    ].map((rule) => [`@eslint-react/${rule}`, 'off']),
+);
+
 /** @type {import('eslint').Linter.Config[]} */
 export default [
     js.configs.recommended,
     reactHooks.configs.flat['recommended-latest'],
     ...typescript.configs.recommended,
     {
-        ...react.configs.flat.recommended,
-        ...react.configs.flat['jsx-runtime'],
+        ...react.configs['recommended-typescript'],
         languageOptions: {
+            ...react.configs['recommended-typescript'].languageOptions,
             globals: {
                 ...globals.browser,
             },
         },
         rules: {
-            'react/react-in-jsx-scope': 'off',
-            'react/prop-types': 'off',
-            'react/no-unescaped-entities': 'off',
-        },
-        settings: {
-            react: {
-                version: 'detect',
-            },
+            ...react.configs['recommended-typescript'].rules,
+            ...reactHookDuplicates,
+            '@eslint-react/dom-no-dangerously-set-innerhtml': 'off',
+            '@eslint-react/naming-convention-ref-name': 'off',
+            '@eslint-react/no-array-index-key': 'off',
+            '@eslint-react/no-context-provider': 'off',
+            '@eslint-react/no-use-context': 'off',
+            '@eslint-react/use-state': 'off',
+            '@eslint-react/web-api-no-leaked-event-listener': 'off',
+            '@eslint-react/web-api-no-leaked-timeout': 'off',
         },
     },
     {
         plugins: {
-            import: importPlugin,
+            'import-x': importX,
         },
         settings: {
-            'import/resolver': {
-                typescript: {
+            'import-x/resolver-next': [
+                createTypeScriptImportResolver({
                     alwaysTryTypes: true,
                     project: './tsconfig.json',
-                },
-                node: true,
-            },
+                }),
+                createNodeResolver(),
+            ],
         },
         rules: {
             '@typescript-eslint/no-explicit-any': 'off',
@@ -70,7 +94,7 @@ export default [
                     fixStyle: 'separate-type-imports',
                 },
             ],
-            'import/order': [
+            'import-x/order': [
                 'error',
                 {
                     groups: [
@@ -84,7 +108,7 @@ export default [
                     alphabetize: { order: 'asc', caseInsensitive: true },
                 },
             ],
-            'import/consistent-type-specifier-style': [
+            'import-x/consistent-type-specifier-style': [
                 'error',
                 'prefer-top-level',
             ],
