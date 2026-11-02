@@ -22,9 +22,13 @@ import {
     useForm,
     useHttp,
 } from '@inertiajs/react';
-import type { EmailEditorHandle } from '@maildun/email-builder/editor';
+import type {
+    EmailEditorHandle,
+    MergeTag,
+} from '@maildun/email-builder/editor';
 import type { FormEvent } from 'react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AddMergeFieldDialog } from '@/components/add-merge-field-dialog';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteEmailModal from '@/components/delete-email-modal';
 import { DesignAssistant } from '@/components/design-assistant';
@@ -98,6 +102,7 @@ import {
 import { readStoredModel } from '@/lib/assistant-model';
 import {
     BUILDER_MERGE_TAGS,
+    builderConditions,
     EMPTY_BUILDER_DOCUMENT,
     getChildrenIds,
     htmlToBuilderDocument,
@@ -134,6 +139,7 @@ import type {
     SendReadiness,
     Team,
 } from '@/types';
+import type { AudienceAttributeTypeOption } from '@/types/audiences';
 
 type Props = {
     email: EmailDetail;
@@ -147,6 +153,9 @@ type Props = {
     savedSections: SavedSection[];
     sendReadiness: SendReadiness;
     assistantModels: AssistantModel[];
+    canAddFields: boolean;
+    attributeTypes: AudienceAttributeTypeOption[];
+    tags: { uuid: string; name: string }[];
 };
 
 /** The Select primitive has no "empty" value, so absence gets its own key. */
@@ -243,6 +252,9 @@ export default function EmailEdit({
     savedSections,
     sendReadiness,
     assistantModels,
+    canAddFields,
+    attributeTypes,
+    tags,
 }: Props) {
     const [view, setView] = useState<'hub' | 'design'>('hub');
     const [assistantOpen, setAssistantOpen] = useState(false);
@@ -335,6 +347,29 @@ export default function EmailEdit({
         uploadTeamSlug:
             canManage && mediaLibrary?.canUpload ? currentTeam.slug : null,
     });
+    const [addFieldOpen, setAddFieldOpen] = useState(false);
+    const addFieldResolve = useRef<((tag: MergeTag | null) => void) | null>(
+        null,
+    );
+
+    useEffect(() => {
+        return () => addFieldResolve.current?.(null);
+    }, []);
+
+    const createMergeField = (): Promise<MergeTag | null> => {
+        addFieldResolve.current?.(null);
+
+        return new Promise((resolve) => {
+            addFieldResolve.current = resolve;
+            setAddFieldOpen(true);
+        });
+    };
+
+    const finishAddField = (tag: MergeTag | null) => {
+        addFieldResolve.current?.(tag);
+        addFieldResolve.current = null;
+        setAddFieldOpen(false);
+    };
 
     const uploadAttachments = (files: FileList) => {
         if (files.length === 0 || uploadingAttachments) {
@@ -845,6 +880,17 @@ export default function EmailEdit({
                                                         ? writePreheader
                                                         : undefined
                                                 }
+                                                conditions={builderConditions(
+                                                    selectedAudience?.segments ??
+                                                        [],
+                                                    tags,
+                                                )}
+                                                onCreateMergeTag={
+                                                    canAddFields &&
+                                                    selectedAudience
+                                                        ? createMergeField
+                                                        : undefined
+                                                }
                                                 paletteGroups={paletteGroups}
                                                 assistantOpen={
                                                     assistantAvailable &&
@@ -1274,6 +1320,21 @@ export default function EmailEdit({
                     onOpenChange={changeMediaDialogOpen}
                     onInsert={canManage && designing ? insertMedia : undefined}
                     insertDisabled={form.processing}
+                />
+            ) : null}
+
+            {selectedAudience ? (
+                <AddMergeFieldDialog
+                    teamSlug={currentTeam.slug}
+                    audience={selectedAudience}
+                    types={attributeTypes}
+                    open={addFieldOpen}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            finishAddField(null);
+                        }
+                    }}
+                    onCreated={finishAddField}
                 />
             ) : null}
 

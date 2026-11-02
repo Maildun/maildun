@@ -3,6 +3,7 @@
 namespace App\Actions\Automations;
 
 use App\Actions\Emails\RenderCampaignContent;
+use App\Actions\Emails\ResolveConditionalSections;
 use App\Mail\AutomationEmail;
 use App\Models\AutomationEmailDelivery;
 use App\Models\Subscriber;
@@ -39,6 +40,7 @@ class BuildAutomationMergeData
             // the opt-out or browser copy links with a value of its own.
             'unsubscribe_url' => AutomationEmail::unsubscribeUrl($subscriber),
             'web_view_url' => self::webViewUrl($delivery),
+            ResolveConditionalSections::DATA_KEY => ResolveConditionalSections::memberships($subscriber),
         ];
     }
 

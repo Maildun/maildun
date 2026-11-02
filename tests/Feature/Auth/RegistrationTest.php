@@ -73,3 +73,18 @@ test('new users can register', function () {
     expect($user->hasVerifiedEmail())->toBeFalse();
     Notification::assertSentTo($user, VerifyEmail::class);
 });
+
+test('registering with an email that already has an account is rejected', function () {
+    $existing = User::factory()->create(['email' => 'taken@example.com']);
+
+    $response = $this->post(route('register.store'), [
+        'name' => 'Second User',
+        'email' => 'taken@example.com',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+    ]);
+
+    $response->assertSessionHasErrors(['email' => 'The email has already been taken.']);
+    $this->assertGuest();
+    expect(User::query()->where('email', $existing->email)->count())->toBe(1);
+});

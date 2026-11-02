@@ -615,3 +615,17 @@ test('viewers can drill into the people of a follow-up group', function (string 
     'opened but did not click' => ['opened_not_clicked', 'opened@example.com', 0],
     'not engaged' => ['not_engaged', 'quiet@example.com', 0],
 ]);
+
+test('a campaign cannot be removed through a series it does not belong to', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $campaignSeries = CampaignSeries::factory()->for($team)->create();
+    $otherSeries = CampaignSeries::factory()->for($team)->create();
+    $campaign = Email::factory()->for($team)->for($otherSeries, 'campaignSeries')->create();
+
+    $this->actingAs($user)
+        ->delete(route('campaign_series.campaigns.destroy', [$team, $campaignSeries, $campaign]))
+        ->assertNotFound();
+
+    expect($campaign->fresh()->campaign_series_id)->toBe($otherSeries->id);
+});

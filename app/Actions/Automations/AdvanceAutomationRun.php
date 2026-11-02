@@ -6,6 +6,7 @@ use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Actions\Emails\ConvertHtmlToText;
 use App\Actions\Emails\InsertPreheader;
 use App\Actions\Emails\RecordEmailAddressHealth;
+use App\Actions\Emails\ResolveConditionalSections;
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\AutomationAction;
 use App\Enums\AutomationCondition;
@@ -41,6 +42,7 @@ class AdvanceAutomationRun
         private InsertPreheader $insertPreheader,
         private BuildTrackedEmailHtml $trackedHtml,
         private ConvertHtmlToText $htmlToText,
+        private ResolveConditionalSections $conditions,
     ) {}
 
     public function handle(AutomationRun $run, ?string $nodeId = null): void
@@ -255,8 +257,9 @@ class AdvanceAutomationRun
         );
 
         // Automation mail is marketing mail, so it gets the campaign's visible
-        // opt-out unless the author already placed {{ unsubscribe_url }}.
-        if (! $this->trackedHtml->authorPlacedUnsubscribe($email->html ?? '')) {
+        // opt-out unless the author already placed {{ unsubscribe_url }} in a
+        // section this subscriber sees.
+        if (! $this->trackedHtml->authorPlacedUnsubscribe($this->conditions->handle($email->html ?? '', $merge))) {
             $html = $this->trackedHtml->withUnsubscribeFooter($html, (string) $merge['unsubscribe_url']);
         }
 

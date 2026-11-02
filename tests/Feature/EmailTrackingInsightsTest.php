@@ -208,3 +208,34 @@ test('the campaign report exposes filtered insights and privacy details', functi
             ->where('insights.privacy.event_retention_days', 90)
             ->where('insights.attribution.label', 'DB-IP Lite'));
 });
+
+test('the campaign report lists countries, email clients and devices for the insights map', function () {
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 2,
+        'send_started_at' => now()->subMinute(),
+    ]);
+
+    foreach ([['US', 'Chrome', 'desktop'], ['DE', 'Apple Mail', 'mobile']] as [$country, $client, $device]) {
+        $event = EmailTrackingEvent::factory()->for(EmailDelivery::factory()->for($email), 'delivery')->create([
+            'classification' => EmailTrackingClassification::Human,
+            'classification_reason' => 'recognized_browser',
+            'client_family' => $client,
+            'device_type' => $device,
+            'is_bot' => false,
+            'is_proxy' => false,
+            'country_code' => $country,
+        ]);
+        app()->call([(new ProcessEmailTrackingEvent($event->id)), 'handle']);
+    }
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$user->currentTeam, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('emails/show')
+            ->has('insights.locations.countries', 2)
+            ->where('insights.locations.countries', fn ($rows): bool => collect($rows)->pluck('key')->sort()->values()->all() === ['DE', 'US'])
+            ->where('insights.clients', fn ($rows): bool => collect($rows)->pluck('label')->sort()->values()->all() === ['Apple Mail', 'Chrome'])
+            ->where('insights.devices', fn ($rows): bool => collect($rows)->pluck('key')->sort()->values()->all() === ['desktop', 'mobile']));
+});

@@ -89,3 +89,22 @@ test('deleting an account leaves no team role assignments behind', function () {
         'model_type' => User::class,
     ]);
 });
+
+test('a member deleting their account leaves the team with its owner', function () {
+    $owner = User::factory()->create();
+    $member = User::factory()->create();
+    $team = Team::factory()->create();
+
+    joinTeamAt($team, $owner, TeamRole::Owner, 30);
+    joinTeamAt($team, $member, TeamRole::Member, 10);
+
+    $this->actingAs($member)
+        ->delete(route('profile.destroy'), ['password' => 'password'])
+        ->assertRedirect('/');
+
+    $team->refresh();
+
+    expect($team->trashed())->toBeFalse()
+        ->and($team->owner()?->is($owner))->toBeTrue()
+        ->and($team->memberships()->pluck('user_id')->all())->toBe([$owner->id]);
+});

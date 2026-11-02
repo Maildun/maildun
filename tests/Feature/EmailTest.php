@@ -5,6 +5,7 @@ use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
+use App\Enums\TeamPermission;
 use App\Enums\TeamRole;
 use App\Jobs\SendCampaignTestEmail;
 use App\Mail\ComposedEmailTest;
@@ -17,6 +18,7 @@ use App\Models\Media;
 use App\Models\Segment;
 use App\Models\SubscribeForm;
 use App\Models\Subscriber;
+use App\Models\Tag;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
@@ -1382,3 +1384,151 @@ test('the campaign index shows progress for campaigns that are still sending', f
             ->where('emails.data', fn ($rows) => collect($rows)->firstWhere('uuid', $sending->uuid)['progress'] === 25
                 && collect($rows)->firstWhere('status', 'draft')['progress'] === null));
 });
+
+test('the campaign editor offers Add a field only to people who manage audiences', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $tag = Tag::factory()->for($team)->create(['name' => 'VIP']);
+    $campaigner = User::factory()->create();
+    $team->members()->attach($campaigner, ['role' => TeamRole::Member->value]);
+    assignCustomRole($team, $campaigner, [TeamPermission::ManageCampaign]);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => Audience::factory()->for($team)->create()->id,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('emails.edit', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('canAddFields', true)
+            ->where('attributeTypes.0', ['value' => 'text', 'label' => 'Text'])
+            ->where('tags', [['uuid' => $tag->uuid, 'name' => 'VIP']]));
+
+    $this->actingAs($campaigner)
+        ->get(route('emails.edit', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('canManage', true)
+            ->where('canAddFields', false));
+});
+
+test('the compose preview searches recipients and steps between them', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $ada = Subscriber::factory()->for($audience)->create(['email' => 'ada@example.com', 'first_name' => 'Ada']);
+    $grace = Subscriber::factory()->for($audience)->create(['email' => 'grace@example.com', 'first_name' => 'Grace']);
+    $linus = Subscriber::factory()->for($audience)->create(['email' => 'linus@example.com', 'first_name' => 'Linus']);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'subject' => 'Hello {{ first_name }}',
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('emails.compose-preview', [$team, $email, 'recipient' => $grace->uuid]))
+        ->assertOk()
+        ->assertJsonPath('subject', 'Hello Grace')
+        ->assertJsonPath('navigation.previous', $ada->uuid)
+        ->assertJsonPath('navigation.next', $linus->uuid)
+        ->assertJsonPath('navigation.position', 2)
+        ->assertJsonCount(3, 'recipients');
+
+    $this->actingAs($user)
+        ->getJson(route('emails.compose-preview', [$team, $email, 'recipient' => $grace->uuid, 'q' => 'linus']))
+        ->assertOk()
+        ->assertJsonCount(1, 'recipients')
+        ->assertJsonPath('recipients.0.uuid', $linus->uuid);
+});
+
+test('the compose preview applies the campaign query string to its links', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<a href="https://example.com/launch">Launch</a>',
+        'query_string' => 'utm_source=maildun',
+    ]);
+
+    expect($this->actingAs($user)
+        ->getJson(route('emails.compose-preview', [$team, $email]))
+        ->assertOk()
+        ->json('html'))->toContain('https://example.com/launch?utm_source=maildun');
+});
+
+test('an html campaign save rejects invalid content without changing the draft', function (array $override, string $field) {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->create(['html' => '<p>Original</p>']);
+
+    $this->actingAs($user)
+        ->patch(route('emails.update', [$team, $email]), [
+            'name' => $email->name,
+            'subject' => $email->subject,
+            'html' => '<p>Updated</p>',
+            ...$override,
+        ])
+        ->assertInvalid($field);
+
+    expect($email->refresh()->html)->toBe('<p>Original</p>');
+})->with([
+    'missing html' => [['html' => ''], 'html'],
+    'html over two million characters' => [['html' => str_repeat('a', 2000001)], 'html'],
+    'missing subject' => [['subject' => ''], 'subject'],
+    'query string with spaces' => [['query_string' => 'utm source=launch'], 'query_string'],
+    'query string with a fragment' => [['query_string' => 'utm_source=launch#top'], 'query_string'],
+]);
+
+test('an html draft reopens in the editor with its saved markup', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $email = Email::factory()->for($team)->create();
+
+    $this->actingAs($user)
+        ->patch(route('emails.update', [$team, $email]), [
+            'name' => $email->name,
+            'subject' => $email->subject,
+            'html' => '<table><tr><td><h1>Launch</h1></td></tr></table>',
+        ])
+        ->assertRedirect();
+
+    $this->actingAs($user)
+        ->get(route('emails.edit', [$team, $email]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('email.editor', EmailEditor::Html->value)
+            ->where('email.html', '<table><tr><td><h1>Launch</h1></td></tr></table>')
+            ->where('email.design', null)
+            ->where('mediaLibrary', null));
+});
+
+test('a test copy can only be sent from a draft', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->create();
+    $email = Email::factory()->for($user->currentTeam)->create(['status' => EmailStatus::Sending]);
+
+    $this->actingAs($user)
+        ->post(route('emails.test', [$user->currentTeam, $email]), ['to' => 'reviewer@example.com'])
+        ->assertConflict();
+
+    Queue::assertNothingPushed();
+    expect($email->fresh()->last_test_status)->toBeNull();
+});
+
+test('a test copy goes to exactly one address', function (string $to) {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->create();
+    $email = Email::factory()->for($user->currentTeam)->create();
+
+    $this->actingAs($user)
+        ->post(route('emails.test', [$user->currentTeam, $email]), ['to' => $to])
+        ->assertInvalid('to');
+
+    Queue::assertNothingPushed();
+})->with([
+    'a list of addresses' => ['one@example.com, two@example.com'],
+    'an address over 255 characters' => [str_repeat('a', 250).'@example.com'],
+]);

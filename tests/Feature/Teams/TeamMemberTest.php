@@ -530,3 +530,47 @@ test('the members page only offers password generation for members confined to t
             ->where('members.data.1.can_generate_password', true),
         );
 });
+
+test('plain members cannot manage other members', function (string $method, string $routeName, array $payload) {
+    $owner = User::factory()->create();
+    $member = User::factory()->create();
+    $colleague = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $team->members()->attach($colleague, ['role' => TeamRole::Member->value]);
+
+    $this
+        ->actingAs($member)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->{$method}(route($routeName, [$team, $colleague]), $payload)
+        ->assertForbidden();
+
+    expect($colleague->fresh()->teamRole($team))->toBe(TeamRole::Member->value);
+})->with([
+    'change role' => ['patch', 'teams.members.update', ['role' => TeamRole::Admin->value]],
+    'remove' => ['delete', 'teams.members.destroy', []],
+    'generate password' => ['post', 'teams.members.generate-password', []],
+    'send reset link' => ['post', 'teams.members.send-password-reset-link', []],
+]);
+
+test('users outside the selected team cannot be updated or removed', function (string $method, string $routeName, array $payload) {
+    $owner = User::factory()->create();
+    $outsider = User::factory()->create();
+    $team = Team::factory()->create();
+    $otherTeam = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $otherTeam->members()->attach($outsider, ['role' => TeamRole::Member->value]);
+
+    $this
+        ->actingAs($owner)
+        ->{$method}(route($routeName, [$team, $outsider]), $payload)
+        ->assertNotFound();
+
+    expect($outsider->fresh()->teamRole($otherTeam))->toBe(TeamRole::Member->value);
+})->with([
+    'change role' => ['patch', 'teams.members.update', ['role' => TeamRole::Admin->value]],
+    'remove' => ['delete', 'teams.members.destroy', []],
+]);

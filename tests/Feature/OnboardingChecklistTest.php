@@ -4,6 +4,7 @@ use App\Models\Audience;
 use App\Models\Automation;
 use App\Models\Email;
 use App\Models\Subscriber;
+use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSenderDomain;
 use App\Models\User;
@@ -138,4 +139,32 @@ test('another team activity never completes the checklist', function () {
     $this->actingAs($user)
         ->get(route('dashboard'))
         ->assertInertia(fn (Assert $page) => $page->where('onboarding.completed', 0));
+});
+
+test('each workspace step ticks off on its own', function (string $step, Closure $completeStep) {
+    $user = User::factory()->create();
+    $completeStep($user->currentTeam);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('onboarding.completed', 1)
+            ->where('onboarding.steps', collect(['delivery', 'sender', 'audience', 'subscribers', 'campaign', 'automation'])
+                ->map(fn (string $key): array => ['key' => $key, 'completed' => $key === $step])
+                ->all()));
+})->with([
+    'audience' => ['audience', fn (Team $team) => Audience::factory()->create(['team_id' => $team->id])],
+    'campaign' => ['campaign', fn (Team $team) => Email::factory()->create(['team_id' => $team->id, 'sent_at' => now()])],
+    'automation' => ['automation', fn (Team $team) => Automation::factory()->create(['team_id' => $team->id])],
+]);
+
+test('a deleted automation does not complete the automation step', function () {
+    $user = User::factory()->create();
+    Automation::factory()->create(['team_id' => $user->currentTeam->id])->delete();
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('onboarding.completed', 0)
+            ->where('onboarding.steps.5.completed', false));
 });

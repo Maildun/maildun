@@ -149,3 +149,27 @@ test('retrying the failed deliveries of a stopped campaign keeps it stopped', fu
 
     expect($email->fresh()->status)->toBe(EmailStatus::Stopped);
 });
+
+test('a queued campaign can be stopped before any delivery is claimed, and only once', function () {
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::Queued,
+        'recipient_count' => 2,
+    ]);
+    $deliveries = EmailDelivery::factory()->count(2)->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+
+    $this->actingAs($user)
+        ->post(route('emails.stop', [$user->currentTeam, $email]))
+        ->assertRedirect()
+        ->assertInertiaFlash('toast', [
+            'type' => 'success',
+            'message' => 'Sending stopped. 2 recipients will not receive this campaign.',
+        ]);
+
+    expect($email->fresh()->status)->toBe(EmailStatus::Stopped)
+        ->and($deliveries->map->fresh()->pluck('status')->unique()->all())->toBe([EmailDeliveryStatus::Cancelled]);
+
+    $this->actingAs($user)
+        ->post(route('emails.stop', [$user->currentTeam, $email]))
+        ->assertInvalid(['email' => 'This campaign is not sending.']);
+});

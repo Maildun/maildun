@@ -59,8 +59,9 @@ class BuildTrackedEmailHtml
         $email = $delivery->email;
         $links = $email->links->keyBy('url_hash');
         $mergeData = Arr::except($delivery->merge_data ?? [], self::LINK_KEYS);
+        $body = $this->renderer->html($email->html ?? '', $mergeData);
         $html = $this->insertPreheader->handle(
-            $this->renderer->html($email->html ?? '', $mergeData),
+            $body,
             $this->renderer->text($email->preheader ?? '', $mergeData),
         );
         $html = $this->appendQueryString($html, $email->query_string);
@@ -119,8 +120,9 @@ class BuildTrackedEmailHtml
 
         // Every campaign needs a visible opt-out, but an author who placed the
         // merge tag in the body has already chosen where it goes. The hidden
-        // preheader does not count as a place.
-        if (! $this->authorPlacedUnsubscribe($email->html ?? '')) {
+        // preheader does not count as a place, nor does a personalized
+        // section this recipient does not see.
+        if (! $this->authorPlacedUnsubscribe($body)) {
             $appended = $this->unsubscribeFooter($unsubscribeUrl).$appended;
         }
 

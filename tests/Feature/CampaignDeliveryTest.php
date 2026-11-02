@@ -23,6 +23,7 @@ use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
 use App\Models\EmailSendRun;
+use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
@@ -1738,4 +1739,158 @@ test('the campaign report does not count a recipient who was already unsubscribe
     $this->actingAs($user)
         ->get(route('emails.show', [$user->currentTeam, $email]))
         ->assertInertia(fn (Assert $page) => $page->where('metrics.unsubscribed', 0));
+});
+
+test('a segment campaign previews and sends to the same recipients after exclusions', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->create();
+    $audience = Audience::factory()->for($team)->create();
+    $reader = Subscriber::factory()->for($audience)->create(['email' => 'reader@example.com']);
+    $unsubscribed = Subscriber::factory()->for($audience)->unsubscribed()->create();
+    $suppressed = Subscriber::factory()->for($audience)->create(['email' => 'bounced@example.com']);
+    $pending = Subscriber::factory()->for($audience)->pendingConfirmation()->create();
+    Subscriber::factory()->for($audience)->create(['email' => 'outside@example.com']);
+    EmailAddressHealth::factory()->for($team)->suppressed()->create(['email' => 'bounced@example.com']);
+    $segment = Segment::factory()->for($audience)->create();
+    $segment->subscribers()->sync([$reader->id, $unsubscribed->id, $suppressed->id, $pending->id]);
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'segment_id' => $segment->id,
+        'html' => '<p>Hello {{ unsubscribe_url }}</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('emails.preview-and-send', [$team, $email]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('recipientCount', 1)
+            ->where('suppressedRecipients.count', 1)
+            ->where('unconfirmedRecipients', 1));
+
+    $this->actingAs($user)
+        ->post(route('emails.send', [$team, $email]))
+        ->assertRedirect(route('emails.show', [$team, $email]));
+
+    [$loader] = (new PrepareEmailSendChunk($email->id))->withFakeBatch();
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    expect($email->fresh()->recipient_count)->toBe(1)
+        ->and($email->deliveries()->pluck('email_address')->all())->toBe(['reader@example.com']);
+});
+
+test('sending now moves a campaign from draft through sending to sent and refuses a second send', function () {
+    Bus::fake();
+    Mail::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->ses()->create();
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->count(2)->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.send', [$team, $email]))
+        ->assertRedirect(route('emails.show', [$team, $email]));
+
+    expect($email->fresh()->status)->toBe(EmailStatus::Queued);
+
+    [$loader] = (new PrepareEmailSendChunk($email->id))->withFakeBatch();
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    $email->deliveries()->pluck('id')->each(function (int $deliveryId) use ($email): void {
+        app()->call([new SendEmailDelivery($deliveryId), 'handle']);
+
+        expect($email->fresh()->status)->toBe(EmailStatus::Sending);
+    });
+
+    (new FinalizeEmailSend($email->id))();
+
+    expect($email->fresh())
+        ->status->toBe(EmailStatus::Sent)
+        ->sent_at->not->toBeNull();
+    Mail::assertSentCount(2);
+
+    $this->actingAs($user)
+        ->post(route('emails.send', [$team, $email]))
+        ->assertInvalid(['email' => 'This campaign has already been queued.']);
+
+    Bus::assertBatchCount(1);
+    expect($email->deliveries()->count())->toBe(2);
+});
+
+test('failed deliveries cannot be retried before the campaign has finished sending', function (EmailStatus $status, string $message) {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'status' => $status,
+        'recipient_count' => 1,
+    ]);
+    $failed = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Failed]);
+
+    $this->actingAs($user)
+        ->post(route('emails.retry', [$user->currentTeam, $email]))
+        ->assertInvalid(['email' => $message]);
+
+    $this->actingAs($user)
+        ->post(route('emails.deliveries.retry', [$user->currentTeam, $email, $failed]))
+        ->assertInvalid(['email' => $message]);
+
+    Bus::assertNothingBatched();
+    expect($email->fresh()->status)->toBe($status)
+        ->and($failed->fresh()->status)->toBe(EmailDeliveryStatus::Failed);
+})->with([
+    'draft' => [EmailStatus::Draft, 'This campaign has not been sent.'],
+    'queued' => [EmailStatus::Queued, 'Wait until this campaign finishes sending before retrying.'],
+    'sending' => [EmailStatus::Sending, 'Wait until this campaign finishes sending before retrying.'],
+]);
+
+test('remaining recipients cannot be queued while the campaign is still sending', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->create();
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->count(2)->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 2,
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('emails.queue-remaining', [$team, $email]))
+        ->assertInvalid('email');
+
+    Bus::assertNothingBatched();
+    expect($email->fresh()->status)->toBe(EmailStatus::Sending)
+        ->and($email->sendRuns()->count())->toBe(0);
+});
+
+test('members who cannot send campaigns cannot queue the remaining recipients', function () {
+    Bus::fake();
+
+    $member = User::factory()->create();
+    $team = Team::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignViewerRole($team, $member);
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::Failed,
+        'recipient_count' => 3,
+    ]);
+
+    $this->actingAs($member)
+        ->post(route('emails.queue-remaining', [$team, $email]))
+        ->assertForbidden();
+
+    Bus::assertNothingBatched();
 });

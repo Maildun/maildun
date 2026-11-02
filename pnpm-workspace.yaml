@@ -38,3 +38,6 @@ overrides:
 # objects instead, with the same result.
 patchedDependencies:
   eslint-plugin-import-x@4.17.1: patches/eslint-plugin-import-x@4.17.1.patch
+
+minimumReleaseAgeExclude:
+  - '@maildun/email-builder@0.6.0'

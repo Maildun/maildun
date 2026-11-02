@@ -167,3 +167,42 @@ test('correct password must be provided to delete account', function () {
 
     expect($user->fresh())->not->toBeNull();
 });
+
+test('a changed email address must be verified again before verified pages open', function () {
+    Notification::fake();
+
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'new-address@example.com',
+        ])
+        ->assertSessionHasNoErrors();
+
+    $this->get(route('dashboard'))->assertRedirect(route('verification.notice'));
+
+    $this->post(route('verification.send'))->assertSessionHasNoErrors();
+
+    Notification::assertSentTo(
+        $user->refresh(),
+        VerifyEmail::class,
+        fn (VerifyEmail $notification, array $channels, User $notifiable): bool => $notifiable->email === 'new-address@example.com',
+    );
+});
+
+test('profile update rejects an email address another account already uses', function () {
+    $other = User::factory()->create(['email' => 'taken@example.com']);
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->from(route('profile.edit'))
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => $other->email,
+        ])
+        ->assertRedirect(route('profile.edit'))
+        ->assertSessionHasErrors(['email' => 'The email has already been taken.']);
+
+    expect($user->refresh()->email)->not->toBe('taken@example.com');
+});

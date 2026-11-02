@@ -6,6 +6,7 @@ use App\Models\Team;
 use App\Models\TeamApiKey;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Inertia\Support\SessionKey;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('team members can open api key settings and managers can create keys', function () {
@@ -97,4 +98,56 @@ test('managers can revoke only keys owned by the selected team', function () {
 
     $this->assertModelMissing($apiKey);
     $this->assertModelExists($otherKey);
+});
+
+test('the plaintext key is shown once after creation and never on the key list', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+
+    $this->actingAs($owner)
+        ->post(route('teams.api.store', $team), ['name' => 'Production'])
+        ->assertRedirect()
+        ->assertInertiaFlash('apiKey.token');
+
+    $token = session(SessionKey::FLASH_DATA)['apiKey']['token'];
+    $apiKey = $team->apiKeys()->sole();
+
+    $this->actingAs($owner)
+        ->get(route('teams.api.index', $team))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->hasFlash('apiKey.token', $token));
+
+    $this->actingAs($owner)
+        ->get(route('teams.api.index', $team))
+        ->assertOk()
+        ->assertDontSee($token, escape: false)
+        ->assertInertia(fn (Assert $page) => $page
+            ->missingFlash('apiKey')
+            ->has('apiKeys', 1, fn (Assert $key) => $key
+                ->where('uuid', $apiKey->uuid)
+                ->where('name', 'Production')
+                ->where('prefix', TeamApiKey::TOKEN_PREFIX.$apiKey->prefix.'_••••••••')
+                ->etc()));
+});
+
+test('a key revoked from settings is refused by the v1 api', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $issued = TeamApiKey::issue($team, 'Production');
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), ['email' => 'ada@example.com'])
+        ->assertSuccessful();
+
+    $this->actingAs($owner)
+        ->delete(route('teams.api.destroy', [$team, $issued['key']]))
+        ->assertRedirect();
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.audiences.subscribers.store', $audience->uuid), ['email' => 'grace@example.com'])
+        ->assertUnauthorized()
+        ->assertExactJson(['message' => 'Unauthenticated.']);
+
+    expect($audience->subscribers()->pluck('email')->all())->toBe(['ada@example.com']);
 });

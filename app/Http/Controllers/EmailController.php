@@ -16,6 +16,7 @@ use App\Actions\Emails\StopEmailSend;
 use App\Actions\Media\BuildMediaLibrary;
 use App\Concerns\FiltersCampaignRecipients;
 use App\Concerns\SearchesText;
+use App\Enums\AudienceAttributeType;
 use App\Enums\EmailAddressHealthReason;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailEditor;
@@ -24,6 +25,7 @@ use App\Enums\EmailProvider;
 use App\Enums\EmailSendRunKind;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
+use App\Enums\TeamPermission;
 use App\Http\Requests\ScheduleEmailRequest;
 use App\Http\Requests\SendTestEmailRequest;
 use App\Http\Requests\StoreEmailRequest;
@@ -42,6 +44,7 @@ use App\Models\EmailTrackingAggregate;
 use App\Models\SavedSection;
 use App\Models\Segment;
 use App\Models\Subscriber;
+use App\Models\Tag;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
@@ -228,8 +231,14 @@ class EmailController extends Controller
         return to_route('emails.edit', ['current_team' => $currentTeam, 'email' => $email]);
     }
 
-    public function edit(Team $currentTeam, Email $email, BuildSendReadiness $sendReadiness, BuildMediaLibrary $mediaLibrary, AssistantModels $assistantModels): Response|RedirectResponse
-    {
+    public function edit(
+        Request $request,
+        Team $currentTeam,
+        Email $email,
+        BuildSendReadiness $sendReadiness,
+        BuildMediaLibrary $mediaLibrary,
+        AssistantModels $assistantModels,
+    ): Response|RedirectResponse {
         Gate::authorize('view', $email);
 
         if ($email->status !== EmailStatus::Draft) {
@@ -345,6 +354,14 @@ class EmailController extends Controller
                 'reply_to' => $currentTeam->email_reply_to,
             ],
             'canManage' => Gate::allows('update', $email),
+            'canAddFields' => Gate::allows('update', $email)
+                && $request->user()?->hasTeamPermission($currentTeam, TeamPermission::ManageAudience) === true,
+            'attributeTypes' => AudienceAttributeType::options(),
+            'tags' => $currentTeam->tags()
+                ->orderByRaw('LOWER(name)')
+                ->get(['uuid', 'name'])
+                ->map(fn (Tag $tag): array => ['uuid' => $tag->uuid, 'name' => $tag->name])
+                ->values(),
             'assistantModels' => Gate::allows('update', $email) ? $assistantModels->options() : [],
             'mediaLibrary' => fn (): ?array => $email->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)

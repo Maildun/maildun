@@ -12,6 +12,8 @@ use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Email;
 use App\Models\EmailTemplate;
+use App\Models\Segment;
+use App\Models\Tag;
 use App\Models\TransactionalEmail;
 use App\Models\User;
 use App\Services\EmailBuilderAgent;
@@ -52,6 +54,30 @@ test('reads the native agent reference and individual blocks without changing th
         ->assertStructuredContent(fn (AssertableJson $json) => $json->where('block.type', 'text')->missing('outline')->etc());
 
     expect($email->refresh()->getAttributes())->toBe($before);
+});
+
+test('tells agents which segments and tags a personalized section may target', function () {
+    $audience = Audience::factory()->create();
+    $segment = Segment::factory()->for($audience)->create(['name' => 'Pro customers']);
+    $tag = Tag::factory()->for($audience->team)->create(['name' => 'VIP']);
+    $campaign = Email::factory()->builder()->for($audience->team)->create(['audience_id' => $audience->id]);
+    $transactional = TransactionalEmail::factory()->for($audience->team)->create([
+        'editor' => EmailEditor::Builder,
+        'design' => $campaign->design,
+    ]);
+
+    MaildunServer::tool(GetEmailBuilderTool::class, emailBuilderArguments($campaign))
+        ->assertOk()
+        ->assertStructuredContent(fn (AssertableJson $json) => $json
+            ->where('instructions', fn (string $instructions): bool => str_contains($instructions, "\"segment:{$segment->uuid}\" (Pro customers)")
+                && str_contains($instructions, "\"tag:{$tag->uuid}\" (VIP)"))
+            ->etc());
+
+    MaildunServer::tool(GetEmailBuilderTool::class, emailBuilderArguments($transactional))
+        ->assertOk()
+        ->assertStructuredContent(fn (AssertableJson $json) => $json
+            ->where('instructions', fn (string $instructions): bool => str_contains($instructions, 'Do not set props.visibleIf'))
+            ->etc());
 });
 
 test('omits the native tool reference on rereads when the agent already has it', function () {

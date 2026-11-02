@@ -5,6 +5,7 @@ use App\Enums\TeamRole;
 use App\Models\Team;
 use App\Models\TeamInvitation;
 use App\Models\User;
+use Illuminate\Support\Facades\Notification;
 
 function gatedWorkspaceActions(): array
 {
@@ -150,3 +151,31 @@ test('changing a membership role re-synchronizes all permissions', function () {
         expect($user->hasTeamPermission($team, $permission))->toBeTrue();
     }
 });
+
+dataset('gated workspace actions', gatedWorkspaceActions());
+
+test('a restricted member is refused an action until their role grants its permission', function (TeamPermission $permission, Closure $action) {
+    Notification::fake();
+
+    $owner = User::factory()->create();
+    $member = User::factory()->create();
+    $other = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $team->members()->attach($other, ['role' => TeamRole::Member->value]);
+
+    assignCustomRole($team, $member, array_values(array_filter(
+        TeamPermission::cases(),
+        fn (TeamPermission $case): bool => $case !== $permission,
+    )));
+
+    [$method, $url, $data] = $action($team, $other);
+
+    $this->actingAs($member)->{$method}($url, $data)->assertForbidden();
+
+    assignCustomRole($team, $member, [$permission]);
+
+    $this->actingAs($member)->{$method}($url, $data)->assertRedirect();
+})->with('gated workspace actions');

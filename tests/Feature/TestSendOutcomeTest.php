@@ -4,6 +4,7 @@ use App\Enums\TestSendStatus;
 use App\Exceptions\EmailTransportException;
 use App\Jobs\SendCampaignTestEmail;
 use App\Jobs\SendTransactionalEmailTest;
+use App\Mail\TransactionalEmailTest as TransactionalEmailTestMail;
 use App\Models\Email;
 use App\Models\TeamEmailIntegration;
 use App\Models\TransactionalEmail;
@@ -103,4 +104,23 @@ test('the transactional editor shows the last test outcome', function () {
         ->assertInertia(fn (Assert $page) => $page
             ->where('email.last_test.status', 'failed')
             ->where('email.last_test.error', 'The SMTP server refused the sender.'));
+});
+
+test('a delivered transactional test copy goes to the reviewer with its rendered subject and is recorded as sent', function () {
+    $user = User::factory()->create();
+    $email = TransactionalEmail::factory()->for($user->currentTeam)->create([
+        'last_test_status' => TestSendStatus::Queued,
+        'last_test_recipient' => 'reviewer@example.com',
+    ]);
+    mock(TeamMailer::class)->shouldReceive('send')->once()->withArgs(
+        fn ($team, string $recipient, TransactionalEmailTestMail $mail): bool => $team->is($user->currentTeam)
+            && $recipient === 'reviewer@example.com'
+            && $mail->envelope()->subject === '[Test] Hi Ada',
+    );
+
+    app()->call([new SendTransactionalEmailTest($email->id, 'reviewer@example.com', 'Hi Ada', '<p>Hello Ada</p>'), 'handle']);
+
+    expect($email->fresh())
+        ->last_test_status->toBe(TestSendStatus::Sent)
+        ->last_tested_at->not->toBeNull();
 });

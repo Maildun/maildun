@@ -14,6 +14,8 @@ class SendTeamSenderVerification implements ShouldQueue
 {
     use Queueable;
 
+    public int $timeout = 45;
+
     public int $tries = 3;
 
     /** @var list<int> */

@@ -17,7 +17,15 @@ import {
     UserRemove01Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Form, Head, Link, router, useForm, usePage } from '@inertiajs/react';
+import {
+    Form,
+    Head,
+    Link,
+    router,
+    useForm,
+    usePage,
+    usePoll,
+} from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { ActiveFilters } from '@/components/active-filters';
 import { BulkSubscriberTagsDialog } from '@/components/bulk-subscriber-tags-dialog';
@@ -93,6 +101,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/toast';
 import { useClipboard } from '@/hooks/use-clipboard';
 import { useListFilters } from '@/hooks/use-list-filters';
+import { useReloadOnFocus } from '@/hooks/use-reload-on-focus';
 import { formatRelativeTime } from '@/lib/format';
 import { tagBadgeVariant } from '@/lib/tags';
 import { edit, show } from '@/routes/audiences';
@@ -226,6 +235,15 @@ export default function AudienceShow(props: Props) {
         },
         searchField: 'search',
     });
+
+    // Subscribers also arrive from public forms, the API and queued imports,
+    // so keep the table and stats current while the page stays open.
+    usePoll(
+        30000,
+        { only: ['subscribers', 'subscriberStats'] },
+        { mode: 'rest' },
+    );
+    useReloadOnFocus(['subscribers', 'subscriberStats', 'segments', 'forms']);
 
     if (!currentTeam) {
         return null;

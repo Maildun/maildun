@@ -2,6 +2,7 @@
 
 namespace App\Mcp\Support;
 
+use App\Actions\Emails\ResolveBuilderConditions;
 use App\Actions\Emails\ResolveBuilderMergeTags;
 use App\Actions\Transactional\RenderTransactionalContent;
 use App\Enums\EmailEditor;
@@ -28,6 +29,7 @@ class EmailBuilderContext
         private EmailBuilderAgent $agent,
         private RenderTransactionalContent $renderer,
         private ResolveBuilderMergeTags $mergeTags,
+        private ResolveBuilderConditions $conditions,
     ) {}
 
     public function record(Request $request): Email|TransactionalEmail
@@ -66,7 +68,7 @@ class EmailBuilderContext
         ]);
         $input = isset($validated['block_id']) && $tool === 'get_document' ? ['id' => $validated['block_id']] : [];
         $mergeTags = $this->mergeTags->handle($record);
-        $result = $this->agent->run($record->design, $record->html, $input === [] ? $tool : 'get_block', $input, $mergeTags, $record instanceof Email);
+        $result = $this->agent->run($record->design, $record->html, $input === [] ? $tool : 'get_block', $input, $mergeTags, $record instanceof Email, $this->conditions->handle($record));
 
         if (isset($result['instructions'])) {
             $result['instructions'] .= "\nMaildun exposes these native tools through wrappers: use get-email-builder for get_document, get-email-builder with block_id for get_block, and check-email-builder for check_email. For every write call edit-email-builder with workspace, target, uuid, revision, tool (the native name), and input (its arguments). Use the returned revision for the next write. dry_run=true previews without saving; reread after a revision conflict. You already have this reference after the first read, so pass include_reference=false to get-email-builder on later reads. For images, call list-media with the workspace and use the returned url and alt rather than placeholder URLs.";

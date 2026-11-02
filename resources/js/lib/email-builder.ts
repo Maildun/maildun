@@ -10,7 +10,11 @@ import {
     fromEmailBuilderJs,
     isEmailBuilderJsDocument,
 } from '@maildun/email-builder/compat';
-import type { EditorStore, MergeTag } from '@maildun/email-builder/editor';
+import type {
+    ConditionOption,
+    EditorStore,
+    MergeTag,
+} from '@maildun/email-builder/editor';
 import type {
     EmailBuilderDocument,
     EmailEditorMode,
@@ -96,6 +100,31 @@ export const BUILDER_MERGE_TAGS: MergeTag[] = [
     { key: 'unsubscribe_url', label: 'Unsubscribe link' },
     { key: 'subscribe_url', label: 'Subscribe link' },
 ];
+
+/** A segment or tag a personalized section can target. */
+type ConditionGroup = { uuid: string; name: string };
+
+/**
+ * The reader groups personalized sections can target, with the ids the
+ * server resolves per recipient (see ResolveConditionalSections).
+ */
+export function builderConditions(
+    segments: ConditionGroup[],
+    tags: ConditionGroup[],
+): ConditionOption[] {
+    return [
+        ...segments.map((segment) => ({
+            id: `segment:${segment.uuid}`,
+            label: segment.name,
+            group: 'Segments',
+        })),
+        ...tags.map((tag) => ({
+            id: `tag:${tag.uuid}`,
+            label: tag.name,
+            group: 'Tags',
+        })),
+    ];
+}
 
 /**
  * The app types blocks loosely (see EmailBuilderDocument), so the document is

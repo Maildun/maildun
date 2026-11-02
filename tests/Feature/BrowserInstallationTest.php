@@ -230,3 +230,26 @@ test('the database completion marker keeps the installer closed without users', 
 
     $this->get($url)->assertNotFound();
 });
+
+test('the system test requires a signed deployment link', function () {
+    $this->post(route('install.system.run'))->assertForbidden();
+});
+
+test('an existing user closes every installer route on an upgraded deployment', function () {
+    $this->seed(InstallSeeder::class);
+    User::factory()->create();
+    $installUrl = secureBrowserInstallationUrl();
+    $systemUrl = secureSystemInstallationUrl();
+
+    $this->get($installUrl)->assertNotFound();
+    $this->post($installUrl, [
+        'name' => 'Grace Hopper',
+        'email' => 'grace@example.com',
+        'password' => 'correct-horse-battery-staple',
+        'password_confirmation' => 'correct-horse-battery-staple',
+    ])->assertNotFound();
+    $this->get($systemUrl)->assertNotFound();
+    $this->post($systemUrl)->assertNotFound();
+    expect(User::query()->count())->toBe(1)
+        ->and(DB::table('installations')->count())->toBe(0);
+});

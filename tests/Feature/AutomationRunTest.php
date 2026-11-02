@@ -355,6 +355,36 @@ test('an automation email whose author placed the opt-out gets no second footer'
         && ! str_contains($mail->htmlBody, '>Unsubscribe</a>'));
 });
 
+test('an automation email adds the footer when the author placed the opt-out in a section the subscriber does not see', function () {
+    Mail::fake();
+
+    $automation = Automation::factory()->active()->create();
+    TeamEmailIntegration::factory()->for($automation->team)->ses()->create();
+    $tag = Tag::factory()->for($automation->team)->create(['name' => 'VIP']);
+    $email = TransactionalEmail::factory()->for($automation->team)->published()->create([
+        'preheader' => null,
+        'html' => '<p>Hi</p><!--meb:if:b_vip {"conditions":[{"id":"tag:'.$tag->uuid.'"}]}-->'
+            .'<a href="{{ unsubscribe_url }}">Leave</a><!--meb:endif:b_vip-->',
+    ]);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($automation->team))->create();
+
+    $run = automationRun(
+        nodes: [['id' => 'send', 'type' => 'action', 'data' => [
+            'kind' => AutomationAction::SendEmail->value,
+            'transactional_email_uuid' => $email->uuid,
+        ]]],
+        edges: [['source' => 'trigger', 'target' => 'send']],
+        subscriber: $subscriber,
+        automation: $automation,
+    );
+
+    app(AdvanceAutomationRun::class)->handle($run);
+    runQueuedAutomationSends();
+
+    Mail::assertSent(AutomationEmail::class, fn (AutomationEmail $mail): bool => ! str_contains($mail->htmlBody, '>Leave</a>')
+        && str_contains($mail->htmlBody, '>Unsubscribe</a>'));
+});
+
 test('only one worker can advance a run', function () {
     Mail::fake();
 
@@ -897,3 +927,26 @@ test('a run whose current step vanished from the graph logs the failure', functi
     expect($run->status)->toBe(AutomationRunStatus::Failed)
         ->and($run->steps()->where('node_id', 'gone')->value('status'))->toBe('failed');
 });
+
+test('a delay waits the configured number of minutes, hours or days', function (AutomationDelayUnit $unit, int $amount, int $expectedMinutes) {
+    $this->freezeTime();
+    $run = automationRun(
+        nodes: [
+            ['id' => 'wait', 'type' => 'delay', 'data' => ['amount' => $amount, 'unit' => $unit->value]],
+            ['id' => 'after', 'type' => 'action', 'data' => ['kind' => AutomationAction::AddTag->value, 'tag_uuid' => 'x']],
+        ],
+        edges: [
+            ['source' => 'trigger', 'target' => 'wait'],
+            ['source' => 'wait', 'target' => 'after'],
+        ],
+    );
+
+    app(AdvanceAutomationRun::class)->handle($run);
+
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Waiting)
+        ->and($run->scheduled_at->toDateTimeString())->toBe(now()->addMinutes($expectedMinutes)->toDateTimeString());
+})->with([
+    '30 minutes' => [AutomationDelayUnit::Minutes, 30, 30],
+    '3 hours' => [AutomationDelayUnit::Hours, 3, 180],
+    '2 days' => [AutomationDelayUnit::Days, 2, 2880],
+]);

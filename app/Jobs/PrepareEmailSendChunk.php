@@ -13,6 +13,7 @@ use App\Services\TeamMailer;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Str;
 use Throwable;
@@ -137,7 +138,12 @@ class PrepareEmailSendChunk implements ShouldQueue
 
         return $relation
             ->getQuery()
-            ->with('contact:id')
+            ->with([
+                'contact:id',
+                // Personalized sections read each recipient's segments and tags.
+                'segments' => fn (Relation $query) => $query->select(['segments.id', 'segments.uuid']),
+                'tags' => fn (Relation $query) => $query->select(['tags.id', 'tags.uuid']),
+            ])
             ->select('subscribers.*')
             ->sendableFor($email->team)
             ->where('subscribers.id', '>', $this->afterSubscriberId)

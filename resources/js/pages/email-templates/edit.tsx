@@ -57,6 +57,7 @@ import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 import { readStoredModel } from '@/lib/assistant-model';
 import {
     BUILDER_MERGE_TAGS,
+    builderConditions,
     EMPTY_BUILDER_DOCUMENT,
     getChildrenIds,
     htmlToBuilderDocument,
@@ -90,6 +91,7 @@ type Props = {
     assistantModels: AssistantModel[];
     mediaLibrary: MediaLibraryData | null;
     savedSections: SavedSection[];
+    tags: { uuid: string; name: string }[];
 };
 
 type SectionValue = 'details' | 'subject' | 'design';
@@ -156,6 +158,7 @@ export default function EmailTemplatesEdit({
     assistantModels,
     mediaLibrary,
     savedSections,
+    tags,
 }: Props) {
     const { currentTeam } = usePage().props;
     const [view, setView] = useState<'hub' | 'design'>('hub');
@@ -517,6 +520,10 @@ export default function EmailTemplatesEdit({
                                                 disabled={!canManage}
                                                 fill
                                                 mergeTags={BUILDER_MERGE_TAGS}
+                                                conditions={builderConditions(
+                                                    [],
+                                                    tags,
+                                                )}
                                                 onChange={(design) =>
                                                     form.setData(
                                                         'design',

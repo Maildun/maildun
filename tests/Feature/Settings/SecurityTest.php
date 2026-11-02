@@ -157,3 +157,19 @@ test('correct password must be provided to update password', function () {
         ->assertSessionHasErrors('current_password')
         ->assertRedirect(route('security.edit'));
 });
+
+test('password update rejects a confirmation that does not match', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->from(route('security.edit'))
+        ->put(route('user-password.update'), [
+            'current_password' => 'password',
+            'password' => 'new-password',
+            'password_confirmation' => 'different-password',
+        ])
+        ->assertRedirect(route('security.edit'))
+        ->assertSessionHasErrors(['password' => 'The password field confirmation does not match.']);
+
+    expect(Hash::check('password', $user->refresh()->password))->toBeTrue();
+});

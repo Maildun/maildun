@@ -11,6 +11,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import type { EmailEditorHandle } from '@maildun/email-builder/editor';
 import type { RefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
+import { AssistantMarkdown } from '@/components/assistant-markdown';
 import { DesignAssistantActivity } from '@/components/design-assistant-activity';
 import type { AssistantStep } from '@/components/design-assistant-activity';
 import { DesignAssistantIcon } from '@/components/design-assistant-icon';
@@ -160,32 +161,6 @@ function campaignContext(
     }
 
     return Object.keys(context).length > 0 ? context : undefined;
-}
-
-/**
- * Assistant copy resolves word by word out of a blur as it streams in. Each
- * word animates once, when it first arrives; later chunks leave earlier words
- * alone because their keys stay put.
- */
-function AssistantReply({ content }: { content: string }) {
-    const parts = content.split(/(\s+)/);
-
-    return (
-        <p className="whitespace-pre-wrap">
-            {parts.map((part, index) =>
-                part.trim() === '' ? (
-                    part
-                ) : (
-                    <span
-                        key={index}
-                        className="inline-block motion-safe:animate-word-in motion-reduce:animate-none"
-                    >
-                        {part}
-                    </span>
-                ),
-            )}
-        </p>
-    );
 }
 
 /** The send or stop icon: the shown one slides in, the hidden one slides out (or just stays hidden before any swap). */
@@ -500,7 +475,7 @@ export function DesignAssistant({
                                         }
                                     />
                                     {message.content !== '' && (
-                                        <AssistantReply
+                                        <AssistantMarkdown
                                             content={message.content}
                                         />
                                     )}
