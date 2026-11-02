@@ -422,6 +422,28 @@ test('audience show page returns subscriber stats', function () {
             ->has('subscribers.data.0.avatar'));
 });
 
+test('reloading the audience subscriber props picks up subscribers added after the page loaded', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->create();
+
+    $this->actingAs($user)
+        ->get(route('audiences.show', [$team, $audience]))
+        ->assertOk()
+        ->assertInertia(function (Assert $page) use ($audience) {
+            $page->has('subscribers.data', 1)->where('subscriberStats.total.value', 1);
+
+            $arrived = Subscriber::factory()->for($audience)->create();
+
+            $page->reloadOnly(['subscribers', 'subscriberStats'], fn (Assert $reload) => $reload
+                ->has('subscribers.data', 2)
+                ->where('subscribers.data.0.uuid', $arrived->uuid)
+                ->where('subscriberStats.total.value', 2)
+                ->missing('segments'));
+        });
+});
+
 test('audience subscriber stats compare this week with the previous week', function () {
     $this->travelTo('2026-08-19 12:00:00');
 

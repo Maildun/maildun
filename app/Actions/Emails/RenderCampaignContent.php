@@ -13,7 +13,10 @@ class RenderCampaignContent
 {
     public const string PATTERN = '/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/';
 
-    public function __construct(private readonly ConvertHtmlToText $htmlToText = new ConvertHtmlToText) {}
+    public function __construct(
+        private readonly ConvertHtmlToText $htmlToText = new ConvertHtmlToText,
+        private readonly ResolveConditionalSections $conditions = new ResolveConditionalSections,
+    ) {}
 
     /**
      * Every audience field is seeded with a blank so a subscriber with no
@@ -43,6 +46,7 @@ class RenderCampaignContent
             'month' => $date->format('m'),
             'month_name' => $date->format('F'),
             'year' => $date->format('Y'),
+            ResolveConditionalSections::DATA_KEY => ResolveConditionalSections::memberships($subscriber),
         ];
     }
 
@@ -120,9 +124,10 @@ class RenderCampaignContent
      */
     public function plainText(Email $email, array $data): string
     {
+        // Resolve personalized sections before stripping tags, which drops their markers.
         $content = filled($email->plain_text)
             ? (string) $email->plain_text
-            : $this->htmlToText->handle($email->html ?? '');
+            : $this->htmlToText->handle($this->conditions->handle($email->html ?? '', $data));
 
         $content = $this->decodeEncodedTags($content);
 
@@ -136,6 +141,7 @@ class RenderCampaignContent
     /** @param array<string, mixed> $data */
     private function replace(string $content, array $data, bool $escape): string
     {
+        $content = $this->resolveConditions($content, $data, $escape);
         $content = $this->decodeEncodedTags($content);
 
         // Only markup gets anchors; a text part keeps the author's link text.
@@ -182,5 +188,22 @@ class RenderCampaignContent
             '{{ $1 }}',
             $content,
         );
+    }
+
+    /**
+     * Drop the personalized sections this recipient does not pass. A removed
+     * section leaves its surrounding blank lines behind in plain text.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function resolveConditions(string $content, array $data, bool $escape): string
+    {
+        if (! str_contains($content, ResolveConditionalSections::MARKER)) {
+            return $content;
+        }
+
+        $content = $this->conditions->handle($content, $data);
+
+        return $escape ? $content : (string) preg_replace('/\n{3,}/', "\n\n", $content);
     }
 }

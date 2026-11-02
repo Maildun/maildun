@@ -29,6 +29,7 @@ class DesignSession
     /**
      * @param  array<string, mixed>  $document
      * @param  list<string>  $mergeTags
+     * @param  list<array{id: string, label: string, group?: string}>  $conditions  Reader groups personalized sections may target.
      */
     public function __construct(
         private array $document,
@@ -38,6 +39,7 @@ class DesignSession
         private readonly EmailBuilderAgent $agent,
         private readonly SearchReadyTeamMedia $media,
         private readonly ResourcePayload $payload,
+        private readonly array $conditions = [],
     ) {}
 
     /**
@@ -49,7 +51,7 @@ class DesignSession
     public function run(string $tool, array $input = []): string
     {
         try {
-            $result = $this->agent->run($this->document, null, $tool, $input, $this->mergeTags, $this->requireUnsubscribe);
+            $result = $this->agent->run($this->document, null, $tool, $input, $this->mergeTags, $this->requireUnsubscribe, $this->conditions);
         } catch (ValidationException $exception) {
             return implode("\n", $exception->validator->errors()->all());
         }
@@ -72,7 +74,7 @@ class DesignSession
      */
     public function reference(): string
     {
-        $result = $this->agent->run($this->document, null, 'get_document', [], $this->mergeTags, $this->requireUnsubscribe);
+        $result = $this->agent->run($this->document, null, 'get_document', [], $this->mergeTags, $this->requireUnsubscribe, $this->conditions);
 
         return $result['instructions']."\n\n## Current email\n".$result['outline'];
     }

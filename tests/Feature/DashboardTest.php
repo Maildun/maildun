@@ -360,3 +360,133 @@ test('sending is reported as paused only when the delivery connection fails its 
     'a tested connection' => ['tested', false],
     'a connection that needs a new test' => ['untested', true],
 ]);
+
+test('dashboard shows zeroed stats and empty lists for a workspace with no data', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('dashboard')
+            ->where('dashboard.overview', [
+                'subscribers' => 0,
+                'newSubscribers' => 0,
+                'deliveryRate' => null,
+                'openRate' => null,
+                'clickRate' => null,
+            ])
+            ->where('dashboard.deliveryIssues', ['failed' => 0, 'bounced' => 0, 'complained' => 0])
+            ->has('dashboard.performance', 30)
+            ->where('dashboard.performance', fn ($points) => collect($points)->every(
+                fn (array $point): bool => $point['subscribers'] === 0
+                    && $point['sent'] === 0
+                    && $point['opens'] === 0
+                    && $point['clicks'] === 0,
+            ))
+            ->where('dashboard.draftCampaigns', [])
+            ->where('dashboard.recentCampaigns', []));
+});
+
+test('dashboard chart buckets activity by day and leaves out activity before the period', function () {
+    $this->travelTo('2026-10-20 12:00:00');
+    $user = User::factory()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    Subscriber::factory()->for($audience)->create(['subscribed_at' => '2026-10-18 08:00:00']);
+    Subscriber::factory()->for($audience)->create(['subscribed_at' => '2026-10-18 20:00:00']);
+    Subscriber::factory()->for($audience)->create(['subscribed_at' => '2026-10-13 23:00:00']);
+    $campaign = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 2,
+        'send_started_at' => '2026-10-19 09:00:00',
+        'sent_at' => '2026-10-19 09:00:00',
+    ]);
+    EmailDelivery::factory()->for($campaign)->create([
+        'sent_at' => '2026-10-19 09:00:00',
+        'first_opened_at' => '2026-10-20 07:00:00',
+        'first_clicked_at' => '2026-10-20 07:05:00',
+    ]);
+    EmailDelivery::factory()->for($campaign)->create([
+        'sent_at' => '2026-10-13 09:00:00',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard', ['period' => 7]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('dashboard.overview.newSubscribers', 2)
+            ->where('dashboard.overview.subscribers', 3)
+            ->where('dashboard.overview.openRate', 100)
+            ->has('dashboard.performance', 7)
+            ->where('dashboard.performance.0', ['date' => '2026-10-14', 'subscribers' => 0, 'sent' => 0, 'opens' => 0, 'clicks' => 0])
+            ->where('dashboard.performance.4', ['date' => '2026-10-18', 'subscribers' => 2, 'sent' => 0, 'opens' => 0, 'clicks' => 0])
+            ->where('dashboard.performance.5', ['date' => '2026-10-19', 'subscribers' => 0, 'sent' => 1, 'opens' => 0, 'clicks' => 0])
+            ->where('dashboard.performance.6', ['date' => '2026-10-20', 'subscribers' => 0, 'sent' => 0, 'opens' => 1, 'clicks' => 1]));
+});
+
+test('dashboard leaves out campaigns and deliveries from other workspaces', function () {
+    $user = User::factory()->create();
+    $otherTeam = User::factory()->create()->currentTeam;
+    $otherCampaign = Email::factory()->for($otherTeam)->create([
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 1,
+        'send_started_at' => now()->subDay(),
+        'sent_at' => now()->subDay(),
+    ]);
+    EmailDelivery::factory()->for($otherCampaign)->create([
+        'provider' => EmailProvider::AmazonSes,
+        'status' => EmailDeliveryStatus::Bounced,
+        'sent_at' => now()->subDay(),
+        'bounced_at' => now()->subDay(),
+    ]);
+    Email::factory()->for($otherTeam)->create(['status' => EmailStatus::Draft]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard', $user->currentTeam))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('dashboard.overview.openRate', null)
+            ->where('dashboard.deliveryIssues.bounced', 0)
+            ->where('dashboard.draftCampaigns', [])
+            ->where('dashboard.recentCampaigns', []));
+});
+
+test('dashboard lists the four latest drafts and the five latest sent campaigns', function () {
+    $user = User::factory()->create();
+    $drafts = Email::factory()->for($user->currentTeam)->count(5)->sequence(
+        fn ($sequence) => ['status' => EmailStatus::Draft, 'updated_at' => now()->subDays($sequence->index)],
+    )->create();
+    $sent = Email::factory()->for($user->currentTeam)->count(6)->sequence(
+        fn ($sequence) => [
+            'status' => EmailStatus::Sent,
+            'send_started_at' => now()->subDays($sequence->index + 1),
+            'sent_at' => now()->subDays($sequence->index + 1),
+        ],
+    )->create();
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('dashboard.draftCampaigns', fn ($items) => collect($items)->pluck('uuid')->all() === $drafts->take(4)->pluck('uuid')->all())
+            ->where('dashboard.recentCampaigns', fn ($items) => collect($items)->pluck('uuid')->all() === $sent->take(5)->pluck('uuid')->all()));
+});
+
+test('view-only members see the dashboard without campaign management', function () {
+    $owner = User::factory()->create();
+    $team = $owner->currentTeam;
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignViewerRole($team, $member);
+
+    $this->actingAs($member)
+        ->get(route('dashboard', $team))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('dashboard')
+            ->where('canManageCampaigns', false));
+});
+
+test('users cannot open the dashboard of a workspace they do not belong to', function () {
+    $user = User::factory()->create();
+    $otherTeam = User::factory()->create()->currentTeam;
+
+    $this->actingAs($user)
+        ->get(route('dashboard', $otherTeam))
+        ->assertForbidden();
+});

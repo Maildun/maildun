@@ -2,6 +2,8 @@
 
 namespace App\Actions\Transactional;
 
+use App\Actions\Emails\ResolveConditionalSections;
+
 class RenderTransactionalContent
 {
     /**
@@ -16,6 +18,10 @@ class RenderTransactionalContent
      * @var list<string>
      */
     public const array SYSTEM_KEYS = ['web_view_url', 'unsubscribe_url'];
+
+    public function __construct(
+        private readonly ResolveConditionalSections $conditions = new ResolveConditionalSections,
+    ) {}
 
     /**
      * Replace merge tags in HTML, escaping values so caller-supplied data cannot
@@ -108,6 +114,8 @@ class RenderTransactionalContent
      */
     protected function replace(string $content, array $data, bool $escape): string
     {
+        $content = $this->conditions->handle($content, $data);
+
         if ($escape) {
             $content = $this->restoreMarkdownMergeTags($content);
         }

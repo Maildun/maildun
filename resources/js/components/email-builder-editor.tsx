@@ -1,6 +1,7 @@
 import { AiEditingIcon } from '@hugeicons/core-free-icons';
 import { EmailEditor } from '@maildun/email-builder/editor';
 import type {
+    ConditionOption,
     EditorClassNames,
     EditorIcons,
     EmailEditorHandle,
@@ -76,11 +77,15 @@ type Props = {
     disabled?: boolean;
     fill?: boolean;
     mergeTags?: MergeTag[];
+    /** Segments and tags personalized sections can target; turns personalization on. */
+    conditions?: ConditionOption[];
     ref?: Ref<EmailEditorHandle>;
     onPickImage?: () => Promise<ImageResult | null>;
     onUploadImage?: (file: File) => Promise<ImageResult>;
     /** Writes a preheader for the design; shows the generate button on the preheader field. */
     onGeneratePreheader?: (document: EmailBuilderDocument) => Promise<string>;
+    /** Creates a merge field; shows "Add a field" in the "/" menu. */
+    onCreateMergeTag?: () => Promise<MergeTag | null>;
     paletteGroups?: PaletteGroup[];
     /** The design assistant panel is open beside the editor. */
     assistantOpen?: boolean;
@@ -92,10 +97,12 @@ export function EmailBuilderEditor({
     disabled = false,
     fill = false,
     mergeTags = BUILDER_MERGE_TAGS,
+    conditions,
     ref,
     onPickImage,
     onUploadImage,
     onGeneratePreheader,
+    onCreateMergeTag,
     paletteGroups,
     assistantOpen = false,
 }: Props) {
@@ -185,9 +192,11 @@ export function EmailBuilderEditor({
                     onChange={onChange}
                     readOnly={disabled}
                     mergeTags={mergeTags}
+                    conditions={conditions}
                     onPickImage={onPickImage}
                     onUploadImage={onUploadImage}
                     onGeneratePreheader={onGeneratePreheader}
+                    onCreateMergeTag={onCreateMergeTag}
                     paletteGroups={paletteGroups}
                     classNames={EDITOR_CLASS_NAMES}
                     icons={EDITOR_ICONS}

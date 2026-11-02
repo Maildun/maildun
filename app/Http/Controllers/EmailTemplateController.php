@@ -8,6 +8,7 @@ use App\Enums\EmailEditor;
 use App\Http\Requests\SaveEmailTemplateRequest;
 use App\Models\EmailTemplate;
 use App\Models\SavedSection;
+use App\Models\Tag;
 use App\Models\Team;
 use App\Services\AssistantModels;
 use Illuminate\Http\RedirectResponse;
@@ -92,6 +93,11 @@ class EmailTemplateController extends Controller
             'templates' => $this->templatesFor($currentTeam),
             'defaultEditor' => $currentTeam->email_editor->value,
             'canManage' => Gate::allows('update', $emailTemplate),
+            'tags' => $currentTeam->tags()
+                ->orderByRaw('LOWER(name)')
+                ->get(['uuid', 'name'])
+                ->map(fn (Tag $tag): array => ['uuid' => $tag->uuid, 'name' => $tag->name])
+                ->values(),
             'assistantModels' => $assistantModels->options(),
             'mediaLibrary' => fn (): ?array => $emailTemplate->editor === EmailEditor::Builder
                 ? $mediaLibrary->handle($currentTeam)

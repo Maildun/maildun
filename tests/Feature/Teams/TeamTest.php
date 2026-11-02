@@ -698,3 +698,38 @@ test('switching workspaces from the roles page sends an admin to the dashboard',
         ->post(route('teams.switch', $team))
         ->assertRedirect(route('dashboard', ['current_team' => $team]));
 });
+
+test('a workspace cannot be renamed to a reserved name', function () {
+    $user = User::factory()->create();
+    $team = Team::factory()->create(['name' => 'Original Name']);
+
+    $team->members()->attach($user, ['role' => TeamRole::Owner->value]);
+
+    $this
+        ->actingAs($user)
+        ->patch(route('teams.update', $team), [
+            'name' => 'Settings',
+        ])
+        ->assertInvalid(['name' => 'This team name is reserved and cannot be used.']);
+
+    expect($team->fresh()->name)->toBe('Original Name');
+});
+
+test('a deleted workspace can no longer be opened by its former members', function () {
+    $owner = User::factory()->create();
+    $member = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+
+    $this
+        ->actingAs($owner)
+        ->delete(route('teams.destroy', $team), ['name' => $team->name])
+        ->assertRedirect(route('teams.edit', $owner->personalTeam()));
+
+    $this
+        ->actingAs($member)
+        ->get(route('dashboard', ['current_team' => $team->slug]))
+        ->assertNotFound();
+});

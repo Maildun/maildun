@@ -137,3 +137,46 @@ test('changing the password ends every other session', function () {
     $this->get(route('dashboard'))->assertRedirect(route('login'));
     $this->assertGuest();
 });
+
+test('an invalid password returns the failed login message on the email field', function () {
+    $user = User::factory()->create();
+
+    $response = $this->from(route('login'))->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => 'wrong-password',
+    ]);
+
+    $response
+        ->assertRedirect(route('login'))
+        ->assertSessionHasErrors(['email' => __('auth.failed')]);
+    $this->assertGuest();
+});
+
+test('the sixth login attempt in a minute returns 429 even with the right password', function () {
+    $user = User::factory()->create();
+
+    foreach (range(1, 5) as $attempt) {
+        $this->post(route('login.store'), [
+            'email' => $user->email,
+            'password' => 'wrong-password',
+        ]);
+    }
+
+    $response = $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => 'password',
+    ]);
+
+    $response->assertTooManyRequests();
+    $this->assertGuest();
+});
+
+test('logging out invalidates the session so it cannot be reused', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->withSession(['marker' => 'kept'])->post(route('logout'));
+
+    $this->assertGuest();
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
+    expect(session('marker'))->toBeNull();
+});

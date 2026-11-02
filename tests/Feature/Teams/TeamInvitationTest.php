@@ -516,3 +516,41 @@ test('the assignable roles can still be invited', function (string $role) {
         'role' => $role,
     ]);
 })->with([TeamRole::Member->value, TeamRole::Admin->value]);
+
+test('team invitations cannot be cancelled by members', function () {
+    $owner = User::factory()->create();
+    $member = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'invited_by' => $owner->id,
+    ]);
+
+    $this
+        ->actingAs($member)
+        ->delete(route('teams.invitations.destroy', [$team, $invitation]))
+        ->assertForbidden();
+
+    $this->assertDatabaseHas('team_invitations', ['id' => $invitation->id]);
+});
+
+test('an invitation of another workspace cannot be cancelled through this one', function () {
+    $owner = User::factory()->create();
+    $team = Team::factory()->create();
+    $otherTeam = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+
+    $invitation = TeamInvitation::factory()->create(['team_id' => $otherTeam->id]);
+
+    $this
+        ->actingAs($owner)
+        ->delete(route('teams.invitations.destroy', [$team, $invitation]))
+        ->assertNotFound();
+
+    $this->assertDatabaseHas('team_invitations', ['id' => $invitation->id]);
+});

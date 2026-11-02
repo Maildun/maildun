@@ -3,6 +3,7 @@
 use App\Models\User;
 use App\Notifications\ResetPassword;
 use Illuminate\Notifications\SendQueuedNotifications;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Queue;
@@ -156,4 +157,69 @@ test('password cannot be reset with invalid token', function () {
     ]);
 
     $response->assertSessionHasErrors('email');
+});
+
+test('a reset password lets the user sign in with the new password and not the old one', function () {
+    Notification::fake();
+
+    $user = User::factory()->create();
+
+    $this->post(route('password.email'), ['email' => $user->email])
+        ->assertSessionHas('status', __('passwords.sent'));
+
+    $token = null;
+    Notification::assertSentTo($user, ResetPassword::class, function (ResetPassword $notification) use (&$token): bool {
+        $token = $notification->token;
+
+        return true;
+    });
+
+    $this->post(route('password.update'), [
+        'token' => $token,
+        'email' => $user->email,
+        'password' => 'new-secret-password',
+        'password_confirmation' => 'new-secret-password',
+    ])->assertRedirect(route('login'));
+
+    expect(Hash::check('new-secret-password', $user->fresh()->password))->toBeTrue();
+
+    $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => 'password',
+    ])->assertSessionHasErrors('email');
+    $this->assertGuest();
+
+    $this->post(route('login.store'), [
+        'email' => $user->email,
+        'password' => 'new-secret-password',
+    ])->assertRedirect(route('dashboard'));
+    $this->assertAuthenticatedAs($user);
+});
+
+test('a reset token cannot be used twice', function () {
+    Notification::fake();
+
+    $user = User::factory()->create();
+
+    $this->post(route('password.email'), ['email' => $user->email]);
+
+    $token = null;
+    Notification::assertSentTo($user, ResetPassword::class, function (ResetPassword $notification) use (&$token): bool {
+        $token = $notification->token;
+
+        return true;
+    });
+
+    $payload = [
+        'token' => $token,
+        'email' => $user->email,
+        'password' => 'new-secret-password',
+        'password_confirmation' => 'new-secret-password',
+    ];
+
+    $this->post(route('password.update'), $payload)->assertSessionHasNoErrors();
+
+    $this->post(route('password.update'), [...$payload, 'password' => 'another-password', 'password_confirmation' => 'another-password'])
+        ->assertSessionHasErrors('email');
+    expect(Hash::check('new-secret-password', $user->fresh()->password))->toBeTrue();
 });

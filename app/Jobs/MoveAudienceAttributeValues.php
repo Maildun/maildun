@@ -18,12 +18,19 @@ use Illuminate\Support\Facades\DB;
  * queued, so two quick renames land on the final key whichever job runs
  * first. Each row is re-read under a lock, and a value already stored under
  * the destination (a signup that arrived after the rename) wins.
+ *
+ * The timeout stays under the Redis queue's retry_after (90s) so a slow run is
+ * never handed to a second worker while it is still going. Each row commits on
+ * its own and only rows still holding the old key are read, so a run that
+ * times out resumes where it stopped on its next try.
  */
 class MoveAudienceAttributeValues implements ShouldQueue
 {
     use Queueable;
 
-    public int $timeout = 600;
+    public int $tries = 5;
+
+    public int $timeout = 60;
 
     /**
      * @param  int|null  $attributeId  The renamed attribute; null when it was deleted.
@@ -46,7 +53,7 @@ class MoveAudienceAttributeValues implements ShouldQueue
 
         Subscriber::query()
             ->where('audience_id', $this->audienceId)
-            ->whereNotNull('attribute_values')
+            ->whereJsonContainsKey('attribute_values->'.$this->fromKey)
             ->select('id')
             ->chunkById(500, function ($subscribers) use ($toKey): void {
                 foreach ($subscribers as $subscriber) {

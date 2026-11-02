@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Emails\ConsumeAssistantRequest;
+use App\Actions\Emails\ResolveBuilderConditions;
 use App\Actions\Emails\ResolveBuilderMergeTags;
 use App\Actions\Media\SearchReadyTeamMedia;
 use App\Ai\Agents\DesignAssistant;
@@ -31,6 +32,7 @@ class DesignAssistantController extends Controller
     public function __construct(
         private readonly AssistantModels $models,
         private readonly ResolveBuilderMergeTags $mergeTags,
+        private readonly ResolveBuilderConditions $conditions,
         private readonly EmailBuilderAgent $builder,
         private readonly SearchReadyTeamMedia $media,
         private readonly ResourcePayload $payload,
@@ -80,6 +82,7 @@ class DesignAssistantController extends Controller
             $this->builder,
             $this->media,
             $this->payload,
+            $this->conditions->handle($record),
         );
         $prompt = $request->validated('prompt');
         $history = $request->history();

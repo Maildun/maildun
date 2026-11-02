@@ -5,18 +5,24 @@ use App\Actions\Emails\RenderCampaignContent;
 use App\Actions\Emails\StartEmailSend;
 use App\Actions\Emails\StoreEmailAttachments;
 use App\Contracts\DnsResolver;
+use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailStatus;
 use App\Enums\SubscriberLanguage;
+use App\Enums\TeamRole;
 use App\Jobs\PrepareEmailSendChunk;
 use App\Jobs\SendCampaignTestEmail;
+use App\Jobs\SendEmailDelivery;
+use App\Mail\CampaignEmail;
 use App\Mail\ComposedEmailTest;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Email;
 use App\Models\EmailAttachment;
 use App\Models\EmailDelivery;
+use App\Models\Segment;
 use App\Models\SubscribeForm;
 use App\Models\Subscriber;
+use App\Models\Tag;
 use App\Models\TeamEmailIntegration;
 use App\Models\User;
 use App\Services\TeamMailer;
@@ -272,6 +278,55 @@ test('campaigns send an audience field with no stored value as a blank', functio
     expect(app(BuildTrackedEmailHtml::class)->build($delivery))->toContain('<p>Hi Ada from </p>');
     expect(app(RenderCampaignContent::class)->text($email->subject, $delivery->merge_data ?? []))
         ->toBe('News from ');
+});
+
+test('campaigns send personalized sections by each subscriber\'s segments and tags', function () {
+    Bus::fake();
+
+    $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    $pro = Subscriber::factory()->for($audience)->create(['email' => 'pro@example.com']);
+    $vip = Subscriber::factory()->for($audience)->create(['email' => 'vip@example.com']);
+    Subscriber::factory()->for($audience)->create(['email' => 'reader@example.com']);
+    $segment = Segment::factory()->for($audience)->create(['name' => 'Pro customers']);
+    $segment->subscribers()->attach($pro);
+    $tag = Tag::factory()->for($user->currentTeam)->create(['name' => 'VIP']);
+    $vip->tags()->attach($tag);
+    $proSection = '<!--meb:if:b_pro {"conditions":[{"id":"segment:'.$segment->uuid.'"}]}-->'
+        .'<p>Pro perks, <a href="{{ unsubscribe_url }}">opt out</a></p>'
+        .'<!--meb:endif:b_pro-->';
+    $vipSection = '<!--meb:if:b_vip {"conditions":[{"id":"tag:'.$tag->uuid.'","not":true}]}-->'
+        .'<p>Become a VIP</p>'
+        .'<!--meb:endif:b_vip-->';
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'audience_id' => $audience->id,
+        'html' => "<html><body><p>News for everyone</p>{$proSection}{$vipSection}</body></html>",
+        'plain_text' => null,
+    ]);
+
+    app(StartEmailSend::class)->handle($email);
+    [$loader] = (new PrepareEmailSendChunk($email->id))->withFakeBatch();
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    $deliveries = $email->deliveries()->with('subscriber')->get()->keyBy('subscriber.email');
+    $builder = app(BuildTrackedEmailHtml::class);
+    $renderer = app(RenderCampaignContent::class);
+    $proHtml = $builder->build($deliveries['pro@example.com']);
+    $vipHtml = $builder->build($deliveries['vip@example.com']);
+
+    expect($proHtml)->toContain('Pro perks')
+        ->and($proHtml)->toContain('Become a VIP')
+        ->and($proHtml)->not->toContain('meb:')
+        ->and($vipHtml)->toContain('News for everyone')
+        ->and($vipHtml)->not->toContain('Pro perks')
+        ->and($vipHtml)->not->toContain('Become a VIP')
+        // The hidden section held the author's opt-out link, so the footer one is added.
+        ->and($vipHtml)->toContain('/unsubscribe/')
+        ->and($renderer->plainText($email, $deliveries['vip@example.com']->merge_data ?? []))
+        ->toBe('News for everyone')
+        ->and($renderer->plainText($email, $deliveries['reader@example.com']->merge_data ?? []))
+        ->toBe("News for everyone\nBecome a VIP");
 });
 
 test('disabled tracking keeps tagged links direct and does not count opens', function () {
@@ -561,4 +616,221 @@ test('a send replaces the subscribe tag with the published form url', function (
         ->toContain(route('public.subscribe_forms.show', $form))
         ->toContain('Subscribe here')
         ->not->toContain('{{ subscribe_url }}');
+});
+
+test('campaign attachments reject files over 10 MB', function () {
+    Storage::fake('local');
+
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create();
+
+    $this->actingAs($user)
+        ->post(route('emails.attachments.store', [$user->currentTeam, $email]), [
+            'attachments' => [
+                UploadedFile::fake()->create('brochure.pdf', 10241, 'application/pdf'),
+            ],
+        ])
+        ->assertInvalid('attachments.0');
+
+    expect($email->attachments()->count())->toBe(0);
+});
+
+test('a campaign holds at most 10 attachments counting the ones already uploaded', function () {
+    Storage::fake('local');
+
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create();
+    EmailAttachment::factory()->count(9)->for($email)->create();
+
+    $this->actingAs($user)
+        ->post(route('emails.attachments.store', [$user->currentTeam, $email]), [
+            'attachments' => [
+                UploadedFile::fake()->create('one.pdf', 10, 'application/pdf'),
+                UploadedFile::fake()->create('two.pdf', 10, 'application/pdf'),
+            ],
+        ])
+        ->assertInvalid(['attachments' => 'up to 10 attachments']);
+
+    expect($email->attachments()->count())->toBe(9)
+        ->and(Storage::disk('local')->allFiles())->toBeEmpty();
+});
+
+test('campaign attachments cannot be added or removed once the campaign is queued', function () {
+    Storage::fake('local');
+
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create(['status' => EmailStatus::Sending]);
+    $attachment = EmailAttachment::factory()->for($email)->create();
+    Storage::disk('local')->put($attachment->path, 'pdf');
+
+    $this->actingAs($user)
+        ->post(route('emails.attachments.store', [$user->currentTeam, $email]), [
+            'attachments' => [UploadedFile::fake()->create('late.pdf', 10, 'application/pdf')],
+        ])
+        ->assertConflict();
+
+    $this->actingAs($user)
+        ->delete(route('emails.attachments.destroy', [$user->currentTeam, $email, $attachment]))
+        ->assertConflict();
+
+    expect($email->attachments()->count())->toBe(1);
+    Storage::disk('local')->assertExists($attachment->path);
+});
+
+test('removing a draft attachment deletes its stored file', function () {
+    Storage::fake('local');
+
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create();
+    $attachment = EmailAttachment::factory()->for($email)->create();
+    Storage::disk('local')->put($attachment->path, 'pdf');
+
+    $this->actingAs($user)
+        ->delete(route('emails.attachments.destroy', [$user->currentTeam, $email, $attachment]))
+        ->assertRedirect();
+
+    expect($attachment->fresh())->toBeNull();
+    Storage::disk('local')->assertMissing($attachment->path);
+});
+
+test('an attachment cannot be removed through another campaign', function () {
+    Storage::fake('local');
+
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create();
+    $otherAttachment = EmailAttachment::factory()
+        ->for(Email::factory()->for($user->currentTeam))
+        ->create();
+
+    $this->actingAs($user)
+        ->delete(route('emails.attachments.destroy', [$user->currentTeam, $email, $otherAttachment]))
+        ->assertNotFound();
+
+    expect($otherAttachment->fresh())->not->toBeNull();
+});
+
+test('members who cannot edit campaigns cannot add or remove attachments', function () {
+    Storage::fake('local');
+
+    $owner = User::factory()->create();
+    $member = User::factory()->create();
+    $team = $owner->currentTeam;
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignViewerRole($team, $member);
+    $email = Email::factory()->for($team)->create();
+    $attachment = EmailAttachment::factory()->for($email)->create();
+
+    $this->actingAs($member)
+        ->post(route('emails.attachments.store', [$team, $email]), [
+            'attachments' => [UploadedFile::fake()->create('guide.pdf', 10, 'application/pdf')],
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($member)
+        ->delete(route('emails.attachments.destroy', [$team, $email, $attachment]))
+        ->assertForbidden();
+
+    expect($email->attachments()->count())->toBe(1);
+});
+
+test('campaign attachments go out with every delivered campaign message', function () {
+    Storage::fake('local');
+    Mail::fake();
+
+    $email = Email::factory()->create(['status' => EmailStatus::Sending]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $attachment = EmailAttachment::factory()->for($email)->create([
+        'original_name' => 'price-list.pdf',
+        'mime_type' => 'application/pdf',
+    ]);
+    Storage::disk('local')->put($attachment->path, 'pdf');
+    $delivery = EmailDelivery::factory()->for($email)->create([
+        'email_address' => 'reader@example.com',
+        'status' => EmailDeliveryStatus::Queued,
+    ]);
+
+    app()->call([new SendEmailDelivery($delivery->id), 'handle']);
+
+    Mail::assertSent(CampaignEmail::class, fn (CampaignEmail $mail): bool => $mail->hasTo('reader@example.com')
+        && $mail->hasAttachment(
+            Attachment::fromStorageDisk('local', $attachment->path)
+                ->as('price-list.pdf')
+                ->withMime('application/pdf'),
+        ));
+});
+
+test('the link checker gives up on a redirect chain longer than five hops', function () {
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://loop.example/*' => Http::response('', 302, ['Location' => 'https://loop.example/again']),
+    ]);
+
+    $resolver = Mockery::mock(DnsResolver::class);
+    $resolver->shouldReceive('resolve')->with('loop.example')->andReturn(['93.184.216.34']);
+    $this->app->instance(DnsResolver::class, $resolver);
+
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'html' => '<a href="https://loop.example/start">Loop</a>',
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('emails.check-links', [$user->currentTeam, $email]))
+        ->assertOk()
+        ->assertJsonPath('broken.0.url', 'https://loop.example/start')
+        ->assertJsonPath('broken.0.status', null)
+        ->assertJsonPath('broken.0.reason', 'Redirects more than 5 times.');
+
+    Http::assertSentCount(6);
+});
+
+test('the link checker only requests web links, with the campaign query string applied', function () {
+    Http::preventStrayRequests();
+    Http::fake(['https://shop.example/*' => Http::response('', 200)]);
+
+    $resolver = Mockery::mock(DnsResolver::class);
+    $resolver->shouldReceive('resolve')->with('shop.example')->andReturn(['93.184.216.34']);
+    $this->app->instance(DnsResolver::class, $resolver);
+
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'html' => <<<'HTML'
+            <a href="https://shop.example/sale">Sale</a>
+            <a href="https://shop.example/sale">Sale again</a>
+            <a href="mailto:hello@example.com">Mail us</a>
+            <a href="{{ unsubscribe_url }}">Unsubscribe</a>
+            HTML,
+        'query_string' => 'utm_source=maildun',
+    ]);
+
+    $this->actingAs($user)
+        ->getJson(route('emails.check-links', [$user->currentTeam, $email]))
+        ->assertOk()
+        ->assertJsonPath('checked', 1)
+        ->assertJsonCount(0, 'broken');
+
+    Http::assertSent(fn ($request): bool => $request->url() === 'https://shop.example/sale?utm_source=maildun');
+    Http::assertSentCount(1);
+});
+
+test('links can only be checked on a draft by someone who can edit it', function () {
+    Http::preventStrayRequests();
+
+    $owner = User::factory()->create();
+    $member = User::factory()->create();
+    $team = $owner->currentTeam;
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    assignViewerRole($team, $member);
+    $draft = Email::factory()->for($team)->create(['html' => '<a href="https://example.com">Go</a>']);
+    $sent = Email::factory()->for($team)->create(['status' => EmailStatus::Sent]);
+
+    $this->actingAs($member)
+        ->getJson(route('emails.check-links', [$team, $draft]))
+        ->assertForbidden();
+
+    $this->actingAs($owner)
+        ->getJson(route('emails.check-links', [$team, $sent]))
+        ->assertConflict();
+
+    Http::assertNothingSent();
 });

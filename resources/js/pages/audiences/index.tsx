@@ -65,6 +65,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useListFilters } from '@/hooks/use-list-filters';
+import { useReloadOnFocus } from '@/hooks/use-reload-on-focus';
 import { formatRelativeTime } from '@/lib/format';
 import { index, show, store, update } from '@/routes/audiences';
 import type {
@@ -123,6 +124,8 @@ export default function AudiencesIndex({
         empty: { search: '', filter: 'all' },
         searchField: 'search',
     });
+
+    useReloadOnFocus(['audiences', 'hasAudiences']);
 
     if (!currentTeam) {
         return null;

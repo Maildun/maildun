@@ -476,3 +476,24 @@ test('unknown gallery filter values fall back to no filter', function () {
             ->where('filters.type', '')
             ->has('templates', 4));
 });
+
+test('a team template can be duplicated with its content', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $original = EmailTemplate::factory()->for($team)->builder()->create([
+        'name' => 'Welcome',
+        'subject' => 'Hello there',
+        'preheader' => 'Glad you are here',
+    ]);
+
+    $response = $this->actingAs($user)
+        ->post(route('email_templates.duplicate', [$team, $original]));
+
+    $copy = $team->emailTemplates()->where('name', 'Welcome copy')->firstOrFail();
+    $response->assertRedirect(route('email_templates.edit', [$team, $copy]));
+    expect($copy->editor)->toBe($original->editor)
+        ->and($copy->design)->toBe($original->design)
+        ->and($copy->subject)->toBe('Hello there')
+        ->and($copy->preheader)->toBe('Glad you are here')
+        ->and($original->fresh()->name)->toBe('Welcome');
+});

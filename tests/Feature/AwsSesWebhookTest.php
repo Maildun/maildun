@@ -64,7 +64,7 @@ function createSesTransactionalDelivery(array $attributes = []): TransactionalEm
  * @param  array<string, mixed>  $payload
  * @return array{certificate: string, certificate_url: string, envelope: array<string, string>}
  */
-function signedSnsNotification(string $topicArn, string $messageId, array $payload): array
+function signedSnsNotification(string $topicArn, string $messageId, array $payload, array $envelopeOverrides = []): array
 {
     $privateKey = openssl_pkey_new([
         'private_key_bits' => 2048,
@@ -91,6 +91,7 @@ function signedSnsNotification(string $topicArn, string $messageId, array $paylo
         'SignatureVersion' => '2',
         'Signature' => '',
         'SigningCertURL' => $certificateUrl,
+        ...$envelopeOverrides,
     ];
     $message = new Message($envelope);
     $content = (new MessageValidator)->getStringToSign($message);
@@ -746,4 +747,61 @@ test('a permanent bounce on a transactional delivery suppresses the recipient', 
     expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Bounced)
         ->and($delivery->fresh()->bounced_at)->not->toBeNull()
         ->and($health?->status)->toBe(EmailAddressHealthStatus::Suppressed);
+});
+
+test('the webhook rejects a message from a registered topic whose signature does not match', function () {
+    $signedMessage = signedSnsNotification(
+        sesFeedbackTopic(),
+        'sns-tampered',
+        ['eventType' => 'Delivery', 'mail' => ['timestamp' => now()->toISOString()]],
+    );
+    $signedMessage['envelope']['Message'] = json_encode(['eventType' => 'Complaint', 'mail' => []]);
+    Http::preventStrayRequests();
+    Http::fake([
+        $signedMessage['certificate_url'] => Http::response($signedMessage['certificate']),
+    ]);
+
+    $this->postJson(route('webhooks.aws.ses'), $signedMessage['envelope'])
+        ->assertForbidden();
+
+    expect(EmailProviderEvent::query()->count())->toBe(0);
+});
+
+test('the webhook confirms a signed SNS subscription for a registered topic', function () {
+    $subscribeUrl = 'https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&Token=token';
+    $signedMessage = signedSnsNotification(sesFeedbackTopic(), 'sns-subscription', [], [
+        'Type' => 'SubscriptionConfirmation',
+        'Message' => 'You have chosen to subscribe to the topic.',
+        'SubscribeURL' => $subscribeUrl,
+        'Token' => 'token',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        $signedMessage['certificate_url'] => Http::response($signedMessage['certificate']),
+        'sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription*' => Http::response('<ConfirmSubscriptionResponse/>'),
+    ]);
+
+    $this->postJson(route('webhooks.aws.ses'), $signedMessage['envelope'])
+        ->assertNoContent();
+
+    Http::assertSent(fn ($request): bool => $request->url() === $subscribeUrl);
+    expect(EmailProviderEvent::query()->count())->toBe(0);
+});
+
+test('the webhook refuses to follow a subscription URL outside Amazon SNS', function () {
+    $signedMessage = signedSnsNotification(sesFeedbackTopic(), 'sns-subscription-elsewhere', [], [
+        'Type' => 'SubscriptionConfirmation',
+        'Message' => 'You have chosen to subscribe to the topic.',
+        'SubscribeURL' => 'https://attacker.example.com/confirm',
+        'Token' => 'token',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        $signedMessage['certificate_url'] => Http::response($signedMessage['certificate']),
+    ]);
+
+    $this->postJson(route('webhooks.aws.ses'), $signedMessage['envelope'])
+        ->assertUnprocessable();
+
+    Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'attacker.example.com'));
 });

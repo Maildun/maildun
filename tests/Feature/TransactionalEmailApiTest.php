@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\TeamRole;
 use App\Jobs\SendTransactionalEmailDelivery;
 use App\Mail\AutomationEmail;
 use App\Mail\TransactionalEmailMessage;
@@ -11,6 +12,7 @@ use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
 use App\Models\TransactionalEmail;
 use App\Models\TransactionalEmailDelivery;
+use App\Models\User;
 use App\Services\TeamMailer;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
@@ -308,4 +310,24 @@ test('an api key can check the status of a message its workspace sent', function
     $this->withToken($issued['token'])
         ->getJson(route('api.v1.transactional-deliveries.show', 'not-a-uuid'))
         ->assertNotFound();
+});
+
+test('a revoked api key returns 401 on the send and status endpoints', function () {
+    Queue::fake();
+    $email = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create();
+    $owner = User::factory()->create();
+    $email->team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $issued = TeamApiKey::issue($email->team, 'Production');
+    $this->actingAs($owner)->delete(route('teams.api.destroy', [$email->team, $issued['key']]))->assertRedirect();
+
+    $this->withToken($issued['token'])
+        ->postJson(route('api.v1.transactional-emails.send', $email->slug), ['to' => 'ada@example.com'])
+        ->assertUnauthorized();
+    $this->withToken($issued['token'])
+        ->getJson(route('api.v1.transactional-deliveries.show', $delivery->uuid))
+        ->assertUnauthorized();
+
+    expect(TransactionalEmailDelivery::query()->count())->toBe(1);
+    Queue::assertNothingPushed();
 });

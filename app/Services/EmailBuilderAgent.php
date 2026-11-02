@@ -57,9 +57,10 @@ class EmailBuilderAgent
      * @param  array<string, mixed>  $input
      * @param  list<string>  $mergeTags
      * @param  bool  $requireUnsubscribe  Lint for a missing {{ unsubscribe_url }} link, as marketing email needs one.
+     * @param  list<array{id: string, label: string, group?: string}>  $conditions  Reader groups personalized sections may target.
      * @return array<string, mixed>
      */
-    public function run(?array $document, ?string $html, string $tool, array $input = [], array $mergeTags = [], bool $requireUnsubscribe = false): array
+    public function run(?array $document, ?string $html, string $tool, array $input = [], array $mergeTags = [], bool $requireUnsubscribe = false, array $conditions = []): array
     {
         $payload = json_encode([
             'document' => $document,
@@ -68,6 +69,7 @@ class EmailBuilderAgent
             'input' => (object) $input,
             'merge_tags' => $mergeTags,
             'require_unsubscribe' => $requireUnsubscribe,
+            'conditions' => $conditions,
         ], JSON_THROW_ON_ERROR);
 
         if (strlen($payload) > 4_000_000) {

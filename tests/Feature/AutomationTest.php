@@ -570,3 +570,22 @@ test('send email language versions need a unique language and a published email'
     $response->assertSessionHasErrors('graph');
     expect($automation->refresh()->status)->toBe(AutomationStatus::Draft);
 })->with(['valid', 'duplicate language', 'missing language', 'draft email']);
+
+test('resubscribing starts the resubscribed automations', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscriber = Subscriber::factory()->for($audience)->pendingResubscription()->create();
+
+    $resubscribed = lifecycleAutomation($team, AutomationTrigger::Resubscribed);
+    $subscribed = lifecycleAutomation($team, AutomationTrigger::Subscribed);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.subscribers.resubscribe', [$team, $audience, $subscriber]), ['consent_confirmed' => true])
+        ->assertRedirect();
+
+    expect($resubscribed->runs()->sole()->subscriber_id)->toBe($subscriber->id)
+        ->and($subscribed->runs()->count())->toBe(0);
+});

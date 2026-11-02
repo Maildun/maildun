@@ -163,7 +163,8 @@ try {
             process.stdout.write(JSON.stringify({ ok: false, result }));
         } else {
             const next = session.getDocument();
-            const rendered = renderEmail(next);
+            // Maildun resolves personalized sections per recipient when it sends.
+            const rendered = renderEmail(next, { personalization: 'markers' });
             const output = {
                 ok: true,
                 document: next,
@@ -185,6 +186,7 @@ try {
                 output.tools = toMcpTools(session.tools);
                 output.instructions = buildSystemPrompt({
                     mergeTags: request.merge_tags,
+                    conditions: request.conditions,
                 });
             }
 

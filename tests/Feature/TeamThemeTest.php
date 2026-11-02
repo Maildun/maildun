@@ -4,6 +4,9 @@ use App\Enums\TeamBrandColor;
 use App\Enums\TeamBrandFont;
 use App\Enums\TeamBrandInputStyle;
 use App\Enums\TeamRole;
+use App\Models\Audience;
+use App\Models\Email;
+use App\Models\SubscribeForm;
 use App\Models\Team;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -129,4 +132,79 @@ test('the current team shared prop includes its brand theme', function () {
         ->get(route('teams.edit', $user->currentTeam))
         ->assertInertia(fn (Assert $page) => $page
             ->where('currentTeam.brandTheme.color', TeamBrandColor::Emerald->value));
+});
+
+test('saving the team theme returns to the page with a success toast', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->from(route('teams.theme.edit', $team))
+        ->patch(route('teams.theme.update', $team), [
+            'brand_color' => TeamBrandColor::Rose->value,
+            'brand_font' => TeamBrandFont::Mono->value,
+            'brand_input_style' => TeamBrandInputStyle::Underline->value,
+        ])
+        ->assertRedirect(route('teams.theme.edit', $team))
+        ->assertInertiaFlash('toast.type', 'success')
+        ->assertInertiaFlash('toast.message', 'Form theme defaults updated.');
+});
+
+test('team theme requires a color, font and input style', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->patch(route('teams.theme.update', $team), [])
+        ->assertInvalid([
+            'brand_color' => 'The brand color field is required.',
+            'brand_font' => 'The brand font field is required.',
+            'brand_input_style' => 'The brand input style field is required.',
+        ]);
+
+    expect($team->fresh()->brand_color)->toBe(TeamBrandColor::Blue);
+});
+
+test('changing the team theme leaves existing subscribe forms on their own theme', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $subscribeForm = SubscribeForm::factory()->for($audience)->create([
+        'brand_color' => TeamBrandColor::Emerald,
+        'brand_font' => TeamBrandFont::Inter,
+        'brand_input_style' => TeamBrandInputStyle::Default,
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('teams.theme.update', $team), [
+            'brand_color' => TeamBrandColor::Rose->value,
+            'brand_font' => TeamBrandFont::Mono->value,
+            'brand_input_style' => TeamBrandInputStyle::Underline->value,
+        ]);
+
+    expect($subscribeForm->fresh())
+        ->brand_color->toBe(TeamBrandColor::Emerald)
+        ->brand_font->toBe(TeamBrandFont::Inter)
+        ->brand_input_style->toBe(TeamBrandInputStyle::Default);
+});
+
+test('the email editor receives the saved team theme for the apply theme action', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $team->update([
+        'brand_color' => TeamBrandColor::Orange,
+        'brand_font' => TeamBrandFont::InstrumentSans,
+        'brand_input_style' => TeamBrandInputStyle::Soft,
+    ]);
+    $email = Email::factory()->for($team)->builder()->create();
+
+    $this->actingAs($user)
+        ->get(route('emails.edit', [$team, $email]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('emails/edit')
+            ->where('currentTeam.brandTheme', [
+                'color' => TeamBrandColor::Orange->value,
+                'font' => TeamBrandFont::InstrumentSans->value,
+                'inputStyle' => TeamBrandInputStyle::Soft->value,
+            ]));
 });
