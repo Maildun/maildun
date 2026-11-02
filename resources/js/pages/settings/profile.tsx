@@ -140,8 +140,15 @@ export default function Profile({
                             }
                         }}
                         onProgress={(event) => uploadToast.setProgress(event)}
-                        onSuccess={() => {
+                        onSuccess={(page) => {
                             uploadToast.dismiss();
+
+                            // A Google-only account changing its email is sent
+                            // to confirm first, and nothing is saved yet.
+                            if (page.component !== 'settings/profile') {
+                                return;
+                            }
+
                             setAvatarPreview(undefined);
                             toast.add({
                                 type: 'success',

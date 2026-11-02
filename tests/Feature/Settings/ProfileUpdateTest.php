@@ -272,7 +272,9 @@ test('an account without a password must confirm recently before changing its em
         ->assertSessionHasNoErrors()
         ->assertRedirect(route('profile.edit'));
 
-    expect($user->refresh()->email)->toBe('new-address@example.com');
+    expect($user->refresh()->email)->toBe('new-address@example.com')
+        ->and($user->email_verified_at)->toBeNull();
+    Notification::assertSentTo($user, VerifyEmail::class);
 });
 
 test('a new email address is stored lowercased', function () {
@@ -324,4 +326,22 @@ test('saving an email stored in mixed case keeps it verified and needs no passwo
     expect($user->refresh()->email)->toBe('mixed.case@example.com')
         ->and($user->email_verified_at)->not->toBeNull();
     Notification::assertNothingSent();
+});
+
+test('an account sharing its address in another case with an older account can still update its name', function () {
+    $first = User::factory()->create(['email' => 'ops@example.com']);
+    DB::table('users')->where('id', $first->id)->update(['email' => 'Ops@Example.com']);
+    $second = User::factory()->create(['email' => 'ops@example.com']);
+
+    $this->actingAs($first->refresh())
+        ->patch(route('profile.update'), [
+            'name' => 'Renamed',
+            'email' => 'Ops@Example.com',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($first->refresh())
+        ->name->toBe('Renamed')
+        ->email->toBe('Ops@Example.com')
+        ->and($second->refresh()->email)->toBe('ops@example.com');
 });

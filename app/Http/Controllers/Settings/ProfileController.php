@@ -44,7 +44,11 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
-        if ($request->changesEmail() && ! $user->hasPassword() && ! $this->passwordRecentlyConfirmed($request)) {
+        // Decided before fill(): the request compares against the same User
+        // instance, which holds the new address once filled.
+        $emailChanged = $request->changesEmail();
+
+        if ($emailChanged && ! $user->hasPassword() && ! $this->passwordRecentlyConfirmed($request)) {
             return $this->redirectToPasswordConfirmation(route('profile.edit'));
         }
 
@@ -53,9 +57,13 @@ class ProfileController extends Controller
 
         unset($validated['avatar'], $validated['current_password']);
 
-        $user->fill($validated);
+        if (! $emailChanged && $request->normalizedEmailBelongsToAnotherAccount()) {
+            // A legacy case-variant duplicate: lowercasing this row would
+            // collide with the other account, so the stored address is kept.
+            unset($validated['email']);
+        }
 
-        $emailChanged = $request->changesEmail();
+        $user->fill($validated);
 
         if ($emailChanged) {
             $user->email_verified_at = null;

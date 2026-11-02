@@ -4,6 +4,7 @@ namespace App\Http\Requests\Settings;
 
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
+use App\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
@@ -28,11 +29,33 @@ class ProfileUpdateRequest extends FormRequest
     {
         $rules = $this->profileRules($this->user()->id);
 
-        if ($this->changesEmail() && $this->user()->hasPassword()) {
+        if (! $this->changesEmail()) {
+            // Keeping the address is always allowed, even for an account that
+            // predates case-insensitive uniqueness and shares its address with
+            // a case-variant account; ProfileController leaves that one as is.
+            $rules['email'] = array_values(array_filter($rules['email'], is_string(...)));
+
+            return $rules;
+        }
+
+        if ($this->user()->hasPassword()) {
             $rules['current_password'] = $this->currentPasswordRules();
         }
 
         return $rules;
+    }
+
+    /**
+     * Determine whether another account already holds the submitted address
+     * in some letter case, which only happens to accounts created before
+     * emails were stored lowercased.
+     */
+    public function normalizedEmailBelongsToAnotherAccount(): bool
+    {
+        return User::query()
+            ->whereRaw('LOWER(email) = ?', [Str::lower((string) $this->input('email'))])
+            ->whereKeyNot($this->user()->id)
+            ->exists();
     }
 
     /**
