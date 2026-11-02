@@ -14,12 +14,20 @@
 #   docker compose up -d
 #   docker compose exec app php artisan app:install --no-interaction \
 #       --admin-name="Your Name" --admin-email=you@example.com \
-#       --admin-password='a-strong-password' --registration=closed
+#       --admin-password='<12+ chars: upper, lower, number, symbol>' --registration=closed
 
 name: maildun
 
 x-app-env: &app-env
   # Overrides .env, which points at a developer's own machine.
+  #
+  # .env.example is written for local development (APP_ENV=local,
+  # APP_DEBUG=true). This stack serves the application on a published port,
+  # so it always runs in production mode: debug pages would leak secrets in
+  # stack traces. These are fixed values rather than ${APP_ENV:-...} because
+  # compose interpolates from the same .env and would pick up "local".
+  APP_ENV: production
+  APP_DEBUG: "false"
   DB_CONNECTION: pgsql
   DB_HOST: postgres
   DB_PORT: 5432

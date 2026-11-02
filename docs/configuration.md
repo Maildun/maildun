@@ -100,7 +100,7 @@ Geolocation uses local DB-IP Lite `.mmdb` files configured with `MAIL_TRACKING_C
 
 ## Horizon access and alerts
 
-Outside local development, `/horizon` is limited to the comma-separated accounts in `HORIZON_ALLOWED_EMAILS`. Leave no production dashboard accidentally public.
+`/horizon` is limited to verified accounts whose email is in the comma-separated `HORIZON_ALLOWED_EMAILS`, in every environment including `local`. Add your own address there to use Horizon in development.
 
 Set `HORIZON_NOTIFICATION_EMAIL` to receive long-wait alerts and keep the scheduled `horizon:snapshot` command running for metrics.
 

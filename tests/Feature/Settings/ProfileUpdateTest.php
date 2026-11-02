@@ -4,6 +4,7 @@ use App\Models\User;
 use App\Notifications\VerifyEmail;
 use App\Services\DiceBearAvatarGenerator;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
@@ -28,6 +29,7 @@ test('profile information can be updated', function () {
         ->patch(route('profile.update'), [
             'name' => 'Test User',
             'email' => 'test@example.com',
+            'current_password' => 'password',
         ]);
 
     $response
@@ -72,6 +74,7 @@ test('changing the email address sends a verification link to the new address', 
         ->patch(route('profile.update'), [
             'name' => $user->name,
             'email' => 'new-address@example.com',
+            'current_password' => 'password',
         ])
         ->assertSessionHasNoErrors();
 
@@ -177,6 +180,7 @@ test('a changed email address must be verified again before verified pages open'
         ->patch(route('profile.update'), [
             'name' => $user->name,
             'email' => 'new-address@example.com',
+            'current_password' => 'password',
         ])
         ->assertSessionHasNoErrors();
 
@@ -200,9 +204,124 @@ test('profile update rejects an email address another account already uses', fun
         ->patch(route('profile.update'), [
             'name' => $user->name,
             'email' => $other->email,
+            'current_password' => 'password',
         ])
         ->assertRedirect(route('profile.edit'))
         ->assertSessionHasErrors(['email' => 'The email has already been taken.']);
 
     expect($user->refresh()->email)->not->toBe('taken@example.com');
+});
+
+test('changing the email address requires the current password', function (?string $password) {
+    Notification::fake();
+
+    $user = User::factory()->create();
+    $originalEmail = $user->email;
+
+    $this->actingAs($user)
+        ->from(route('profile.edit'))
+        ->patch(route('profile.update'), array_filter([
+            'name' => $user->name,
+            'email' => 'attacker@example.com',
+            'current_password' => $password,
+        ]))
+        ->assertRedirect(route('profile.edit'))
+        ->assertSessionHasErrors('current_password');
+
+    expect($user->refresh()->email)->toBe($originalEmail)
+        ->and($user->email_verified_at)->not->toBeNull();
+    Notification::assertNothingSent();
+})->with([
+    'missing' => [null],
+    'wrong' => ['wrong-password'],
+]);
+
+test('updating only the name needs no password', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => 'Renamed',
+            'email' => $user->email,
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($user->refresh()->name)->toBe('Renamed');
+});
+
+test('an account without a password must confirm recently before changing its email', function () {
+    Notification::fake();
+
+    $user = User::factory()->withoutPassword()->withGoogle()->create();
+    $originalEmail = $user->email;
+
+    $this->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'attacker@example.com',
+        ])
+        ->assertRedirect(route('password.confirm'));
+
+    expect($user->refresh()->email)->toBe($originalEmail);
+
+    $this->withSession(['auth.password_confirmed_at' => time()])
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'new-address@example.com',
+        ])
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('profile.edit'));
+
+    expect($user->refresh()->email)->toBe('new-address@example.com');
+});
+
+test('a new email address is stored lowercased', function () {
+    Notification::fake();
+
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => '  New-Address@Example.COM ',
+            'current_password' => 'password',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($user->refresh()->email)->toBe('new-address@example.com');
+});
+
+test('profile update rejects a case variant of an email another account already uses', function () {
+    $other = User::factory()->create();
+    DB::table('users')->where('id', $other->id)->update(['email' => 'Ops@Example.com']);
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->from(route('profile.edit'))
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'OPS@example.com',
+            'current_password' => 'password',
+        ])
+        ->assertSessionHasErrors(['email' => 'The email has already been taken.']);
+
+    expect($user->refresh()->email)->not->toBe('ops@example.com');
+});
+
+test('saving an email stored in mixed case keeps it verified and needs no password', function () {
+    Notification::fake();
+
+    $user = User::factory()->create();
+    DB::table('users')->where('id', $user->id)->update(['email' => 'Mixed.Case@Example.com']);
+
+    $this->actingAs($user->refresh())
+        ->patch(route('profile.update'), [
+            'name' => 'Renamed',
+            'email' => 'Mixed.Case@Example.com',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($user->refresh()->email)->toBe('mixed.case@example.com')
+        ->and($user->email_verified_at)->not->toBeNull();
+    Notification::assertNothingSent();
 });

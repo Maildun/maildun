@@ -128,6 +128,24 @@ class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable,
     }
 
     /**
+     * Store the email trimmed and lowercased on every write.
+     *
+     * Fortify lowercases the address it looks up at sign-in and password
+     * reset, so a mixed-case stored email is locked out on case-sensitive
+     * databases (PostgreSQL, SQLite). Normalizing here also keeps
+     * email-based checks such as the Horizon allowlist from being satisfied
+     * by a case variant of someone else's address.
+     *
+     * @return Attribute<string, string>
+     */
+    protected function email(): Attribute
+    {
+        return Attribute::make(
+            set: fn (string $value): string => Str::lower(Str::of($value)->trim()->toString()),
+        );
+    }
+
+    /**
      * Get the public URL for the user's uploaded or generated avatar.
      *
      * @return Attribute<string, never>

@@ -93,7 +93,7 @@ docker compose run --rm --entrypoint php app artisan key:generate --show   # pas
 docker compose up -d
 docker compose exec app php artisan app:install --no-interaction \
     --admin-name="Your Name" --admin-email=you@example.com \
-    --admin-password='a-strong-password' --registration=closed
+    --admin-password='<12+ chars: upper, lower, number, symbol>' --registration=closed
 ```
 
 See the [installation guide](docs/installation.md) for system mail configuration, a manual setup, demo data, and common problems.

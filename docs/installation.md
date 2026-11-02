@@ -89,9 +89,16 @@ docker compose up -d
 docker compose exec app php artisan app:install --no-interaction \
     --admin-name="Your Name" \
     --admin-email=you@example.com \
-    --admin-password='a-strong-password' \
+    --admin-password='<12+ chars: upper, lower, number, symbol>' \
     --registration=closed
 ```
+
+The compose stack always runs with `APP_ENV=production` and `APP_DEBUG=false`,
+whatever `.env` says, so debug pages and the development-only defaults stay off.
+In production the administrator password must be at least 12 characters with
+upper- and lowercase letters, a number, and a symbol, and must not appear in a
+known breach. To open `/horizon`, add your verified address to
+`HORIZON_ALLOWED_EMAILS`.
 
 The application listens on port 80 by default; set `APP_PORT` to change it.
 Terminate TLS in front of the container and keep `APP_URL` on `https://`, since

@@ -32,13 +32,18 @@ class ResetUserPassword implements ResetsUserPasswords
     }
 
     /**
-     * Drop the passkeys and two-factor secret of an account nobody has proven they own.
+     * Drop the passkeys, two-factor secret, and Google link of an account
+     * nobody has proven they own.
      *
      * Someone who signs up with another person's address can enrol these
      * before the real owner ever sees the account, and the owner's only way
      * in is this reset. The reset link is the first proof of the inbox, so
-     * nothing added before it is trusted. A real but unverified user cannot
-     * reach the security settings, so this rarely touches their own data.
+     * nothing added before it is trusted. A linked Google identity counts
+     * too: Google sign-in finds the account by google_id before it looks at
+     * the email, so a link planted before the address changed hands would
+     * keep letting its creator in. A real but unverified user cannot reach
+     * the security settings, so this rarely touches their own data, and the
+     * owner can link Google again by signing in with it.
      */
     private function forgetUnprovenCredentials(User $user): void
     {
@@ -48,6 +53,7 @@ class ResetUserPassword implements ResetsUserPasswords
             'two_factor_secret' => null,
             'two_factor_recovery_codes' => null,
             'two_factor_confirmed_at' => null,
+            'google_id' => null,
         ]);
     }
 }

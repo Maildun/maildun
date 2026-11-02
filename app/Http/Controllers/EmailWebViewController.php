@@ -72,17 +72,27 @@ class EmailWebViewController extends Controller
     }
 
     /**
-     * Serve author-supplied markup as a page of its own.
-     *
-     * Scripts are refused by policy because the body is authored by workspace
-     * members and served on the application origin. The default "Powered by
-     * Maildun" credit is appended, linking to the source code.
+     * The body is authored by workspace members and served on the application
+     * origin, where a signed-in viewer's session cookie is in scope. Blocking
+     * scripts alone is not enough: Laravel accepts a same-origin form post
+     * without a CSRF token, so an authored form could change the viewer's
+     * account. The page therefore refuses scripts and form submissions,
+     * cannot be framed, and runs sandboxed as an opaque origin (which also
+     * stops meta refresh redirects). Popups stay allowed, unsandboxed, so
+     * target="_blank" links keep working.
+     */
+    public const CONTENT_SECURITY_POLICY = "default-src 'none'; img-src * data:; style-src * 'unsafe-inline'; font-src * data:; media-src *; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; sandbox allow-popups allow-popups-to-escape-sandbox";
+
+    /**
+     * Serve author-supplied markup as a page of its own, under
+     * CONTENT_SECURITY_POLICY. The default "Powered by Maildun" credit is
+     * appended, linking to the source code.
      */
     private function page(string $html): Response
     {
         return response($this->withAttribution($html))
             ->header('Content-Type', 'text/html; charset=UTF-8')
-            ->header('Content-Security-Policy', "default-src 'none'; img-src * data:; style-src * 'unsafe-inline'; font-src * data:; media-src *; base-uri 'none'")
+            ->header('Content-Security-Policy', self::CONTENT_SECURITY_POLICY)
             ->header('X-Robots-Tag', 'noindex, nofollow');
     }
 

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import DeleteUser from '@/components/delete-user';
+import PasswordInput from '@/components/password-input';
 import { SettingsPageHeader } from '@/components/settings-page-header';
 import { SettingsPanel } from '@/components/settings-panel';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -49,9 +50,14 @@ export default function Profile({
     const avatarInput = useRef<HTMLInputElement>(null);
     const [avatarPreview, setAvatarPreview] = useState<string | undefined>();
     const [isCopied, setIsCopied] = useState(false);
+    const [emailDraft, setEmailDraft] = useState(auth.user.email);
     const uploadToast = useUploadToast();
     const displayedAvatar = avatarPreview ?? auth.user.avatar;
     const isEmailVerified = auth.user.email_verified_at !== null;
+    // Mirrors ProfileUpdateRequest::changesEmail(): only a different address,
+    // not a change of case, asks the user to prove who they are.
+    const isChangingEmail =
+        emailDraft.trim().toLowerCase() !== auth.user.email.toLowerCase();
 
     useEffect(() => {
         return () => {
@@ -299,6 +305,11 @@ export default function Profile({
                                             placeholder="email@example.com"
                                             aria-label="Email"
                                             aria-invalid={Boolean(errors.email)}
+                                            onChange={(event) =>
+                                                setEmailDraft(
+                                                    event.target.value,
+                                                )
+                                            }
                                         />
                                         <FieldError>{errors.email}</FieldError>
                                         {mustVerifyEmail &&
@@ -330,6 +341,52 @@ export default function Profile({
                                             )}
                                     </div>
                                 </Field>
+
+                                {isChangingEmail && hasPassword ? (
+                                    <Field
+                                        orientation="responsive"
+                                        data-invalid={Boolean(
+                                            errors.current_password,
+                                        )}
+                                        className="gap-4 px-6 py-5 sm:px-7 @md/field-group:justify-between"
+                                    >
+                                        <FieldContent>
+                                            <FieldLabel htmlFor="current_password">
+                                                Current password
+                                            </FieldLabel>
+                                            <FieldDescription className="text-xs">
+                                                Required to change the email
+                                                address on your account.
+                                            </FieldDescription>
+                                        </FieldContent>
+                                        <div className="flex w-full flex-col gap-2 @md/field-group:max-w-xs">
+                                            <PasswordInput
+                                                id="current_password"
+                                                name="current_password"
+                                                required
+                                                autoComplete="current-password"
+                                                placeholder="Current password"
+                                                aria-invalid={Boolean(
+                                                    errors.current_password,
+                                                )}
+                                            />
+                                            <FieldError>
+                                                {errors.current_password}
+                                            </FieldError>
+                                        </div>
+                                    </Field>
+                                ) : null}
+
+                                {isChangingEmail && !hasPassword ? (
+                                    <p
+                                        className="px-6 py-5 text-xs text-muted-foreground sm:px-7"
+                                        data-test="email-change-confirmation-notice"
+                                    >
+                                        To change your email, you will be asked
+                                        to confirm with your Google account
+                                        first.
+                                    </p>
+                                ) : null}
 
                                 <Field
                                     orientation="responsive"

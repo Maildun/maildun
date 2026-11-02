@@ -32,6 +32,19 @@ test('reset password link can be requested', function () {
     });
 });
 
+test('the queued reset link is encrypted so its token never sits in plain text', function () {
+    Queue::fake();
+
+    $user = User::factory()->create();
+
+    $this->post(route('password.email'), ['email' => $user->email]);
+
+    Queue::assertPushed(
+        SendQueuedNotifications::class,
+        fn (SendQueuedNotifications $job): bool => $job->notification instanceof ResetPassword && $job->shouldBeEncrypted,
+    );
+});
+
 test('reset password screen can be rendered', function () {
     Notification::fake();
 
@@ -71,8 +84,8 @@ test('password can be reset with valid token', function () {
     });
 });
 
-test('resetting an unverified account removes its passkeys and two factor authentication', function () {
-    $user = User::factory()->unverified()->withTwoFactor()->create();
+test('resetting an unverified account removes its passkeys, two factor authentication, and google link', function () {
+    $user = User::factory()->unverified()->withTwoFactor()->withGoogle()->create();
     $user->passkeys()->create([
         'name' => 'Planted key',
         'credential_id' => 'planted-credential',
@@ -91,11 +104,12 @@ test('resetting an unverified account removes its passkeys and two factor authen
     expect($user->passkeys()->exists())->toBeFalse()
         ->and($user->two_factor_secret)->toBeNull()
         ->and($user->two_factor_recovery_codes)->toBeNull()
-        ->and($user->two_factor_confirmed_at)->toBeNull();
+        ->and($user->two_factor_confirmed_at)->toBeNull()
+        ->and($user->google_id)->toBeNull();
 });
 
-test('resetting a verified account keeps its passkeys and two factor authentication', function () {
-    $user = User::factory()->withTwoFactor()->create();
+test('resetting a verified account keeps its passkeys, two factor authentication, and google link', function () {
+    $user = User::factory()->withTwoFactor()->withGoogle()->create();
     $passkey = $user->passkeys()->create([
         'name' => 'Owner key',
         'credential_id' => 'owner-credential',
@@ -114,7 +128,8 @@ test('resetting a verified account keeps its passkeys and two factor authenticat
     expect($user->passkeys()->whereKey($passkey->id)->exists())->toBeTrue()
         ->and($user->two_factor_secret)->not->toBeNull()
         ->and($user->two_factor_recovery_codes)->not->toBeNull()
-        ->and($user->two_factor_confirmed_at)->not->toBeNull();
+        ->and($user->two_factor_confirmed_at)->not->toBeNull()
+        ->and($user->google_id)->not->toBeNull();
 });
 
 test('resetting a password signs out the account\'s other sessions', function (bool $browsedAfterSigningIn) {

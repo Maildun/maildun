@@ -34,18 +34,28 @@ class ProfileController extends Controller
 
     /**
      * Update the user's profile information.
+     *
+     * A new email address needs proof of identity: password accounts type
+     * their current password (ProfileUpdateRequest), and an account that
+     * signed up with Google must have confirmed recently, which it does
+     * through the connected Google account.
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
         $user = $request->user();
+
+        if ($request->changesEmail() && ! $user->hasPassword() && ! $this->passwordRecentlyConfirmed($request)) {
+            return $this->redirectToPasswordConfirmation(route('profile.edit'));
+        }
+
         $validated = $request->validated();
         $oldAvatarPath = null;
 
-        unset($validated['avatar']);
+        unset($validated['avatar'], $validated['current_password']);
 
         $user->fill($validated);
 
-        $emailChanged = $user->isDirty('email');
+        $emailChanged = $request->changesEmail();
 
         if ($emailChanged) {
             $user->email_verified_at = null;

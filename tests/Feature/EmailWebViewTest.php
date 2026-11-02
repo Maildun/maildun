@@ -3,6 +3,7 @@
 use App\Actions\Automations\AdvanceAutomationRun;
 use App\Actions\Emails\BuildTrackedEmailHtml;
 use App\Enums\AutomationAction;
+use App\Http\Controllers\EmailWebViewController;
 use App\Mail\AutomationEmail;
 use App\Models\Audience;
 use App\Models\Automation;
@@ -224,5 +225,25 @@ test('the test web view link opens a placeholder page without signing', function
         ->assertOk()
         ->assertSee('This is a test email.')
         ->assertHeader('X-Robots-Tag', 'noindex, nofollow')
-        ->assertHeader('Content-Security-Policy', "default-src 'none'; img-src * data:; style-src * 'unsafe-inline'; font-src * data:; media-src *; base-uri 'none'");
+        ->assertHeader('Content-Security-Policy', EmailWebViewController::CONTENT_SECURITY_POLICY);
 });
+
+test('an authored form in a web view cannot post to the application', function (string $kind) {
+    $html = '<html><body><form method="POST" action="/settings/profile"><input type="hidden" name="_method" value="PATCH"><button>Read more</button></form></body></html>';
+
+    $url = match ($kind) {
+        'campaign' => BuildTrackedEmailHtml::webViewUrl(webViewCampaignDelivery($html)),
+        'transactional' => URL::signedRoute('public.web_view.transactional.show', [
+            'delivery' => TransactionalEmailDelivery::factory()->create(['html' => $html]),
+        ]),
+    };
+
+    $policy = $this->get($url)->assertOk()->headers->get('Content-Security-Policy');
+
+    expect($policy)->toContain("form-action 'none'")
+        ->and($policy)->toContain("frame-ancestors 'none'")
+        ->and($policy)->toMatch('/(^|;\s*)sandbox( [a-z-]+)*\s*(;|$)/')
+        ->and($policy)->not->toContain('allow-forms')
+        ->and($policy)->not->toContain('allow-same-origin')
+        ->and($policy)->not->toContain('allow-scripts');
+})->with(['campaign', 'transactional']);
