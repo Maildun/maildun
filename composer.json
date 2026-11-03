@@ -21,7 +21,7 @@
     },
     "require": {
         "php": "^8.4",
-        "abduns/laravel-db-backup": "@dev",
+        "abduns/laravel-db-backup": "^1.0",
         "aws/aws-php-sns-message-validator": "^1.10",
         "aws/aws-sdk-php": "^3.393",
         "dicebear/core": "^10.6",
@@ -137,16 +137,5 @@
         }
     },
     "minimum-stability": "stable",
-    "prefer-stable": true,
-    "repositories": [{
-        "name": "db-backup",
-        "type": "path",
-        "url": "packages/abduns/laravel-db-backup",
-        "options": {
-            "symlink": true,
-            "versions": {
-                "abduns/laravel-db-backup": "dev-main"
-            }
-        }
-    }]
+    "prefer-stable": true
 }

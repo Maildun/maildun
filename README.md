@@ -164,4 +164,4 @@ Running an unmodified Maildun, for your own organization or as a hosted service 
 
 If you need other terms, for example to keep your modifications private while offering Maildun over a network, or to ship it without the author attribution, a separate commercial license is available: **werk@abduns.com**. It covers Maildun's own code only.
 
-Third-party packages, artwork, and trademarks remain subject to their own terms; see [Third-party notices](THIRD_PARTY_NOTICES.md). The bundled `packages/abduns/laravel-db-backup` package is MIT licensed.
+Third-party packages, artwork, and trademarks remain subject to their own terms; see [Third-party notices](THIRD_PARTY_NOTICES.md).

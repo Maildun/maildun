@@ -66,8 +66,7 @@ SCOPE AND OTHER LICENSES
 ===============================================================================
 
 Third-party material in this repository keeps its own license and notices; see
-THIRD_PARTY_NOTICES.md. The package in packages/abduns/laravel-db-backup is
-licensed separately under the MIT License.
+THIRD_PARTY_NOTICES.md.
 
 The copyright holder also offers Maildun under separate commercial terms, for
 example to keep modifications private or to omit the author attribution. A

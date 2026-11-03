@@ -125,7 +125,7 @@ The animated background presets (Matrix, Grid, Orbit, Glow) are drawn by Maildun
 
 ## Database backup package
 
-`packages/abduns/laravel-db-backup` is a separate package by Maildun's copyright holder, licensed under the MIT License (see its `LICENSE`), not under Maildun's AGPL terms.
+Maildun depends on [`abduns/laravel-db-backup`](https://github.com/abduns/laravel-db-backup), a separate package by Maildun's copyright holder, installed through Composer and licensed under the MIT License, not under Maildun's AGPL terms.
 
 ## Developer tooling
 
