@@ -38,3 +38,17 @@ updates:
       github-actions:
         patterns:
           - "*"
+
+  # Pins the base images in the Dockerfile and docker-compose.yml to a digest
+  # and bumps them; the Docker job in the tests workflow proves each bump
+  # still builds and boots.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    cooldown:
+      default-days: 5
+    groups:
+      docker:
+        patterns:
+          - "*"
