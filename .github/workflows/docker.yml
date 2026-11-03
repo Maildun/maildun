@@ -148,6 +148,7 @@ jobs:
         env:
           SOURCE: ${{ github.server_url }}/${{ github.repository }}
         run: |
+          # shellcheck disable=SC2046 # each expansion must split into separate arguments
           docker buildx imagetools create \
             --annotation "index:org.opencontainers.image.source=$SOURCE" \
             --annotation "index:org.opencontainers.image.licenses=$IMAGE_LICENSES" \
