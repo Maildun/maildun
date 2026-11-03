@@ -98,7 +98,7 @@ Losing `APP_KEY` makes encrypted workspace provider settings and tokens unreadab
 
 ### Database backups
 
-Maildun bundles `abduns/laravel-db-backup`, which is off by default. To let the scheduler back up the database, set:
+Maildun ships with [`abduns/laravel-db-backup`](https://github.com/abduns/laravel-db-backup), which is off by default. To let the scheduler back up the database, set:
 
 ```dotenv
 DB_BACKUP_SCHEDULE=true
