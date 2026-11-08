@@ -5,6 +5,7 @@ use App\Models\Team;
 use App\Models\TeamInvitation;
 use App\Models\User;
 use App\Notifications\VerifyEmail;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -87,4 +88,20 @@ test('registering with an email that already has an account is rejected', functi
     $response->assertSessionHasErrors(['email' => 'The email has already been taken.']);
     $this->assertGuest();
     expect(User::query()->where('email', $existing->email)->count())->toBe(1);
+});
+
+test('registering with another spelling of an existing account address is rejected', function () {
+    $existing = User::factory()->create();
+    DB::table('users')->where('id', $existing->id)->update(['email' => 'Taken@Example.com']);
+
+    $response = $this->post(route('register.store'), [
+        'name' => 'Second User',
+        'email' => 'taken@example.com',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+    ]);
+
+    $response->assertSessionHasErrors(['email' => 'The email has already been taken.']);
+    $this->assertGuest();
+    expect(User::query()->count())->toBe(1);
 });

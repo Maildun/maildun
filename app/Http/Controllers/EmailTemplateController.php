@@ -42,11 +42,13 @@ class EmailTemplateController extends Controller
                 'name' => $template->name,
                 'description' => $template->description,
                 'editor' => $template->editor->value,
-                'subject' => $template->subject,
-                'preheader' => $template->preheader,
                 'html' => $template->html,
-                'source' => $template->source,
-                'design' => $template->design,
+                // Cards preview the stored html. Block starters and block
+                // templates never saved from the editor have none yet, so
+                // only those send the design for the client to render.
+                'design' => $template->editor === EmailEditor::Builder && blank($template->html)
+                    ? $template->design
+                    : null,
                 'is_starter' => $template->isStarter(),
                 'updated_at' => $template->updated_at?->toISOString(),
             ]);

@@ -202,3 +202,34 @@ test('activity for another team is not reachable', function () {
         ->get(route('automations.activity', [$user->currentTeam, $automation]))
         ->assertNotFound();
 });
+
+test('the activity page explains a send skipped as a duplicate and a tag that hit the chain limit', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $automation = Automation::factory()->active()->for($team)->create();
+    $tag = Tag::factory()->for($team)->create(['name' => 'VIP']);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->create();
+    $run = $automation->runs()->create([
+        'subscriber_id' => $subscriber->id,
+        'status' => AutomationRunStatus::Completed,
+        'graph' => [
+            'nodes' => [
+                ['id' => 'send', 'type' => 'action', 'data' => ['kind' => AutomationAction::SendEmail->value]],
+                ['id' => 'tag', 'type' => 'action', 'data' => ['kind' => AutomationAction::AddTag->value, 'tag_uuid' => $tag->uuid]],
+            ],
+            'edges' => [],
+        ],
+    ]);
+    $run->steps()->create(['node_id' => 'send', 'status' => 'skipped', 'result' => ['reason' => 'duplicate']]);
+    $run->steps()->create([
+        'node_id' => 'tag',
+        'status' => 'completed',
+        'result' => ['tag_uuid' => $tag->uuid, 'added' => true, 'trigger_chain_limit' => true],
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('automations.activity', [$team, $automation]))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('runs.data.0.steps.0.detail', 'Skipped: the contact already got this email from this automation through another audience')
+            ->where('runs.data.0.steps.1.detail', 'VIP (tagged automations were not started: too many automations in a row started one another)'));
+});

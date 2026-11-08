@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
 use App\Services\AppUpdateChecker;
 use App\Services\InstallationState;
 use Illuminate\Http\RedirectResponse;
@@ -12,6 +11,14 @@ use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
 
+/**
+ * Deployment diagnostics for the instance operator.
+ *
+ * These checks describe the whole installation, not a workspace, so they
+ * are limited to the accounts in HORIZON_ALLOWED_EMAILS through the
+ * viewSystemCheck gate. Owning a workspace proves nothing here: every
+ * account owns its personal one.
+ */
 class SystemCheckController extends Controller
 {
     private const string STORAGE_PROBE_KEY = 'system-check.storage-probe';
@@ -21,7 +28,7 @@ class SystemCheckController extends Controller
      */
     public function show(Request $request, InstallationState $installation, AppUpdateChecker $updates): Response
     {
-        $this->authorizeOwner($request);
+        Gate::authorize('viewSystemCheck');
 
         // Only the storage round-trip is remembered from the last system
         // test; queue, Horizon, scheduler and send health stay live.
@@ -44,7 +51,7 @@ class SystemCheckController extends Controller
      */
     public function test(Request $request, InstallationState $installation): RedirectResponse
     {
-        $this->authorizeOwner($request);
+        Gate::authorize('viewSystemCheck');
 
         $storageProbe = collect($installation->systemChecks(probeStorage: true))
             ->firstWhere('key', 'storage-round-trip');
@@ -57,9 +64,9 @@ class SystemCheckController extends Controller
     /**
      * Fetch the release manifest immediately without installing anything.
      */
-    public function refreshUpdate(Request $request, AppUpdateChecker $updates): RedirectResponse
+    public function refreshUpdate(AppUpdateChecker $updates): RedirectResponse
     {
-        $this->authorizeOwner($request);
+        Gate::authorize('viewSystemCheck');
 
         if ($updates->refresh()) {
             Inertia::flash('toast', ['type' => 'success', 'message' => __('Maildun update status refreshed.')]);
@@ -68,17 +75,5 @@ class SystemCheckController extends Controller
         }
 
         return to_route('system-check.show');
-    }
-
-    /**
-     * Restrict deployment diagnostics to the active workspace owner.
-     */
-    private function authorizeOwner(Request $request): void
-    {
-        $user = $request->user();
-
-        abort_unless($user instanceof User && $user->currentTeam !== null, 403);
-
-        Gate::authorize('viewSystemCheck', $user->currentTeam);
     }
 }

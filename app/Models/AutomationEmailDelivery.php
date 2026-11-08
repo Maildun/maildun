@@ -18,6 +18,7 @@ use Illuminate\Support\Str;
  * @property int $team_id
  * @property int|null $automation_run_id
  * @property int|null $automation_run_step_id
+ * @property string|null $dedupe_key
  * @property int|null $transactional_email_id
  * @property int|null $subscriber_id
  * @property string|null $subscriber_uuid
@@ -44,7 +45,7 @@ use Illuminate\Support\Str;
  * @property-read Audience|null $audience
  */
 #[Fillable([
-    'team_id', 'automation_run_id', 'automation_run_step_id', 'transactional_email_id', 'subscriber_id',
+    'team_id', 'automation_run_id', 'automation_run_step_id', 'dedupe_key', 'transactional_email_id', 'subscriber_id',
     'subscriber_uuid', 'audience_id', 'contact_id',
     'to_address', 'status', 'provider', 'provider_message_id', 'failure_reason',
     'ses_configuration_set', 'ses_sns_topic_arn_hash', 'send_attempted_at',

@@ -14,6 +14,7 @@ use App\Enums\EmailStatus;
 use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Exceptions\EmailTransportException;
+use App\Jobs\PrepareEmailRetryChunk;
 use App\Jobs\PrepareEmailSendChunk;
 use App\Jobs\SendEmailDelivery;
 use App\Mail\CampaignEmail;
@@ -32,9 +33,11 @@ use App\Services\ResolvedEmailTransport;
 use App\Services\TeamMailer;
 use Illuminate\Bus\Batch;
 use Illuminate\Bus\PendingBatch;
+use Illuminate\Queue\CallQueuedHandler;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Symfony\Component\Mailer\Header\MetadataHeader;
 
@@ -1893,4 +1896,141 @@ test('members who cannot send campaigns cannot queue the remaining recipients', 
         ->assertForbidden();
 
     Bus::assertNothingBatched();
+});
+
+test('a throttled campaign waits to load more recipients while minutes of sending are already queued', function () {
+    // One bulk slot a second, so five minutes of sending is 300 deliveries.
+    config()->set('delivery.rate_limit.per_second', 2);
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 301,
+        'send_started_at' => now(),
+    ]);
+    EmailDelivery::factory()->for($email)->count(300)->create([
+        'subscriber_id' => null,
+        'status' => EmailDeliveryStatus::Queued,
+    ]);
+    [$loader, $batch] = (new PrepareEmailSendChunk($email->id))->withFakeQueueInteractions()->withFakeBatch();
+
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    $loader->assertReleased(PrepareEmailSendChunk::PACING_DELAY_SECONDS);
+    expect($batch->added)->toBeEmpty()
+        ->and($email->deliveries()->count())->toBe(300)
+        ->and($loader->retryUntil())->not->toBeNull();
+});
+
+test('deliveries queued past the stall window do not hold a throttled campaign back', function () {
+    config()->set('delivery.rate_limit.per_second', 2);
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    $recipient = Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 301,
+        'send_started_at' => now()->subHour(),
+    ]);
+    EmailDelivery::factory()->for($email)->count(300)->create([
+        'subscriber_id' => null,
+        'status' => EmailDeliveryStatus::Queued,
+        'updated_at' => now()->subMinutes(30),
+    ]);
+    [$loader, $batch] = (new PrepareEmailSendChunk($email->id))->withFakeQueueInteractions()->withFakeBatch();
+
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    $loader->assertNotReleased();
+    expect($batch->added)->toHaveCount(1)
+        ->and($email->deliveries()->where('subscriber_id', $recipient->id)->exists())->toBeTrue();
+});
+
+test('a large retry re-arms one page in the request and pages through the rest in the background', function () {
+    Bus::fake();
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'status' => EmailStatus::Failed,
+        'recipient_count' => 201,
+    ]);
+    Subscriber::factory()->for($audience)->count(201)->create()->each(
+        fn (Subscriber $subscriber) => EmailDelivery::factory()->for($email)->for($subscriber)->create([
+            'email_address' => $subscriber->email,
+            'status' => EmailDeliveryStatus::Failed,
+        ]),
+    );
+
+    app(RetryEmailDeliveries::class)->handle($email);
+
+    $nextPage = null;
+    Bus::assertBatched(function (PendingBatch $batch) use (&$nextPage): bool {
+        $nextPage = $batch->jobs->last();
+
+        return $batch->jobs->whereInstanceOf(SendEmailDelivery::class)->count() === 200
+            && $nextPage instanceof PrepareEmailRetryChunk;
+    });
+    $retryRun = $email->sendRuns()->sole();
+    expect($email->deliveries()->where('status', EmailDeliveryStatus::Queued)->count())->toBe(200)
+        ->and($retryRun->recipient_count)->toBe(201)
+        ->and($email->fresh()->status)->toBe(EmailStatus::Sending);
+
+    [$nextPage, $batch] = $nextPage->withFakeBatch();
+    $nextPage->handle(app(RetryEmailDeliveries::class));
+
+    expect($batch->added)->toHaveCount(1)
+        ->and($batch->added[0])->toBeInstanceOf(SendEmailDelivery::class)
+        ->and($email->deliveries()->where('status', EmailDeliveryStatus::Queued)->where('email_send_run_id', $retryRun->id)->count())->toBe(201);
+});
+
+test('a retry whose jobs finish before the request records its batch still closes the campaign', function () {
+    Mail::fake();
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->ses()->create();
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::Failed,
+        'recipient_count' => 1,
+        'html' => '<p>Hello</p>',
+    ]);
+    $failed = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Failed]);
+
+    // The sync queue runs the batch, and its finally callback, during dispatch.
+    app(RetryEmailDeliveries::class)->handle($email);
+
+    expect($failed->fresh()->status)->toBe(EmailDeliveryStatus::Sent)
+        ->and($email->fresh()->status)->toBe(EmailStatus::Sent);
+});
+
+test('a loader that fails for good leaves its queued deliveries sending and the campaign failed once they finish', function () {
+    Mail::fake();
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->ses()->create();
+    $email = Email::factory()->for($team)->create([
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 3,
+        'html' => '<p>Hello</p>',
+        'send_started_at' => now(),
+    ]);
+    $queued = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+
+    app(CallQueuedHandler::class)->failed(
+        ['command' => serialize(new PrepareEmailSendChunk($email->id, $queued->subscriber_id))],
+        new RuntimeException('The loader ran out of attempts.'),
+        (string) Str::uuid(),
+    );
+
+    expect($email->fresh()->status)->toBe(EmailStatus::Sending);
+
+    app()->call([new SendEmailDelivery($queued->id), 'handle']);
+    (new FinalizeEmailSend($email->id))();
+
+    expect($queued->fresh()->status)->toBe(EmailDeliveryStatus::Sent)
+        ->and($email->fresh()->status)->toBe(EmailStatus::Failed);
 });

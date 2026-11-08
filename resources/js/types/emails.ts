@@ -55,6 +55,17 @@ export type EmailTemplateDetail = EmailTemplateSummary & {
     updated_at: string | null;
 };
 
+/**
+ * A templates gallery card. It previews the stored html; `design` is only
+ * sent for a block template with no stored html yet (the starters, or one
+ * never saved from the editor).
+ */
+export type EmailTemplateGalleryItem = EmailTemplateSummary & {
+    html: string | null;
+    design: EmailBuilderDocument | null;
+    updated_at: string | null;
+};
+
 export type EmailRecipientRef = {
     uuid: string;
     name: string;

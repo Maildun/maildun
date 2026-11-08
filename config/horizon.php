@@ -85,6 +85,17 @@ return [
 
     'middleware' => ['web'],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Instance Operators
+    |--------------------------------------------------------------------------
+    |
+    | Accounts with one of these verified addresses may open Horizon outside
+    | local development and the System Check settings page, which shows the
+    | deployment diagnostics and the Maildun update status.
+    |
+    */
+
     'allowed_emails' => array_values(array_filter(array_map(
         fn (string $email): string => Str::lower(trim($email)),
         explode(',', (string) env('HORIZON_ALLOWED_EMAILS', '')),

@@ -20,9 +20,6 @@ class TeamMailer
 {
     public const string MAILER_NAME = 'team-email-integration';
 
-    /** Named limiter holding outbound sends to the configured rate. */
-    public const string RATE_LIMITER = 'email-delivery';
-
     public function __construct(private readonly PublicSmtpHostGuard $publicSmtpHostGuard) {}
 
     public function send(

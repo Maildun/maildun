@@ -434,3 +434,34 @@ test('a branch that fails while the email is in flight keeps the step it cancell
         ->and($run->refresh()->status)->toBe(AutomationRunStatus::Failed)
         ->and($run->failure_reason)->toBe('Sibling failed.');
 });
+
+test('a queued email whose subscriber was deleted is cancelled', function () {
+    Queue::fake([SendAutomationEmailDelivery::class, ProcessAutomationRun::class]);
+    Mail::fake();
+
+    [$run, $delivery] = queuedAutomationSend();
+    $run->subscriber->delete();
+
+    app()->call([new SendAutomationEmailDelivery($delivery->id), 'handle']);
+
+    Mail::assertNothingSent();
+    expect($delivery->refresh()->status)->toBe(EmailDeliveryStatus::Cancelled)
+        ->and($delivery->failure_reason)->toBe('The subscriber was deleted before this email was sent.');
+});
+
+test('a queued email of a deleted workspace is cancelled with its run', function () {
+    Queue::fake([SendAutomationEmailDelivery::class, ProcessAutomationRun::class]);
+    Mail::fake();
+
+    [$run, $delivery] = queuedAutomationSend();
+    $run->automation->team->delete();
+
+    app()->call([new SendAutomationEmailDelivery($delivery->id), 'handle']);
+
+    Mail::assertNothingSent();
+    expect($delivery->refresh()->status)->toBe(EmailDeliveryStatus::Cancelled)
+        ->and($delivery->failure_reason)->toBe('The workspace was deleted before this email was sent.')
+        ->and($run->refresh()->status)->toBe(AutomationRunStatus::Cancelled)
+        ->and($run->failure_reason)->toBe('The workspace was deleted.')
+        ->and($run->steps()->where('node_id', 'send')->value('status'))->toBe('cancelled');
+});

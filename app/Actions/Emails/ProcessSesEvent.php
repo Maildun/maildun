@@ -26,15 +26,66 @@ class ProcessSesEvent
         private ResolveCampaignOutcome $campaignOutcome,
     ) {}
 
-    /** @param array<string, mixed> $payload */
+    /**
+     * Store a verified notification and apply it straight away. The webhook
+     * stores and processes separately, so feedback survives a failed
+     * processing attempt; this is the same flow in one call.
+     *
+     * @param  array<string, mixed>  $payload
+     */
     public function handle(string $eventId, array $payload, string $topicArn): void
     {
-        $topicArnHash = hash('sha256', trim($topicArn));
+        $this->process($this->record($eventId, $payload, $topicArn)->id);
+    }
+
+    /**
+     * Durably store a notification whose signature and topic checked out,
+     * before anything is derived from it. SNS redelivers a message under the
+     * same id, so a redelivery returns the event already stored.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function record(string $eventId, array $payload, string $topicArn): EmailProviderEvent
+    {
+        $type = (string) ($payload['eventType'] ?? $payload['notificationType'] ?? 'Unknown');
+
+        return EmailProviderEvent::query()->firstOrCreate(
+            ['event_id' => $eventId],
+            [
+                'provider' => EmailProvider::AmazonSes->value,
+                'ses_sns_topic_arn_hash' => hash('sha256', trim($topicArn)),
+                'type' => $type,
+                'payload' => $payload,
+                'occurred_at' => $this->eventTimestamp($payload, $type),
+                'processed_at' => null,
+            ],
+        );
+    }
+
+    /**
+     * Apply a stored notification exactly once. The event row is locked and
+     * marked processed in the same transaction as every change it makes, so a
+     * failure rolls the whole attempt back and leaves the event pending for
+     * the next try, and a duplicate run finds it processed and does nothing.
+     */
+    public function process(int $providerEventId): void
+    {
         $unsubscribed = null;
 
-        DB::transaction(function () use ($eventId, $payload, $topicArnHash, &$unsubscribed): void {
+        DB::transaction(function () use ($providerEventId, &$unsubscribed): void {
             $unsubscribed = null;
-            $type = (string) ($payload['eventType'] ?? $payload['notificationType'] ?? 'Unknown');
+            $event = EmailProviderEvent::query()
+                ->whereKey($providerEventId)
+                ->lockForUpdate()
+                ->first();
+
+            if ($event === null || $event->processed_at !== null) {
+                return;
+            }
+
+            $payload = $event->payload;
+            $type = $event->type;
+            $topicArnHash = (string) $event->ses_sns_topic_arn_hash;
             $mail = is_array($payload['mail'] ?? null) ? $payload['mail'] : [];
             $attempt = $this->findAttempt($mail, $topicArnHash);
             $transactionalDelivery = $attempt === null
@@ -52,23 +103,17 @@ class ProcessSesEvent
                 ? $attempt->email_delivery_id
                 : $legacyDelivery?->id;
 
-            $event = EmailProviderEvent::query()->firstOrCreate(
-                ['event_id' => $eventId],
-                [
-                    'provider' => EmailProvider::AmazonSes->value,
-                    'ses_sns_topic_arn_hash' => $topicArnHash,
-                    'email_delivery_id' => $deliveryId,
-                    'email_delivery_attempt_id' => $attempt?->id,
-                    'transactional_email_delivery_id' => $transactionalDelivery?->id,
-                    'automation_email_delivery_id' => $automationDelivery?->id,
-                    'type' => $type,
-                    'payload' => $payload,
-                    'occurred_at' => $this->eventTimestamp($payload, $type),
-                    'processed_at' => now(),
-                ],
-            );
+            $event->forceFill([
+                'email_delivery_id' => $deliveryId,
+                'email_delivery_attempt_id' => $attempt?->id,
+                'transactional_email_delivery_id' => $transactionalDelivery?->id,
+                'automation_email_delivery_id' => $automationDelivery?->id,
+                'processed_at' => now(),
+                'processing_attempts' => $event->processing_attempts + 1,
+                'last_error' => null,
+            ])->save();
 
-            if (! $event->wasRecentlyCreated || ! in_array($type, ['Delivery', 'Bounce', 'Complaint', 'Reject'], true)) {
+            if (! in_array($type, ['Delivery', 'Bounce', 'Complaint', 'Reject'], true)) {
                 return;
             }
 

@@ -21,10 +21,13 @@ class AuthenticateAutomationTrigger
     {
         $automation = $request->route('automation');
 
+        // A deleted workspace keeps its rows until it is purged, but its
+        // automations are as gone as a deleted one.
         abort_unless(
             $automation instanceof Automation
                 && $automation->status === AutomationStatus::Active
-                && $automation->trigger === AutomationTrigger::Api,
+                && $automation->trigger === AutomationTrigger::Api
+                && $automation->team()->exists(),
             Response::HTTP_NOT_FOUND,
         );
 

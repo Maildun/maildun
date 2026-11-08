@@ -206,3 +206,50 @@ test('profile update rejects an email address another account already uses', fun
 
     expect($user->refresh()->email)->not->toBe('taken@example.com');
 });
+
+test('profile update rejects another spelling of an address another account already uses', function () {
+    User::factory()->create(['email' => 'ops@example.com']);
+    $user = User::factory()->create(['email' => 'attacker@example.com']);
+
+    $this->actingAs($user)
+        ->from(route('profile.edit'))
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'Ops@Example.com',
+        ])
+        ->assertRedirect(route('profile.edit'))
+        ->assertSessionHasErrors(['email' => 'The email has already been taken.']);
+
+    expect($user->refresh()->email)->toBe('attacker@example.com');
+});
+
+test('profile update stores the email address lowercased', function () {
+    Notification::fake();
+
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'New-Address@Example.COM',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($user->refresh()->email)->toBe('new-address@example.com');
+});
+
+test('changing only the case of the email address keeps it verified', function () {
+    Notification::fake();
+
+    $user = User::factory()->create(['email' => 'person@example.com']);
+
+    $this->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'Person@Example.com',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($user->refresh()->email_verified_at)->not->toBeNull();
+    Notification::assertNothingSent();
+});

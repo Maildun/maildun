@@ -19,12 +19,17 @@ class FinalizeEmailSend
      * The batch argument is what Bus passes to a finally callback. It is
      * nullable so emails:resume can finalize a campaign whose batch record is
      * already gone, which is exactly the case that strands a campaign.
+     *
+     * Only the campaign's current batch may close it. A stopped batch keeps
+     * running out its leftover jobs after a retry has started a new one, and
+     * its finally callback must not fail the retry's queued and in-flight
+     * deliveries.
      */
     public function __invoke(?Batch $batch = null): void
     {
         $email = Email::query()->find($this->emailId);
 
-        if ($email === null) {
+        if ($email === null || ($batch !== null && $batch->id !== $email->batch_id)) {
             return;
         }
 

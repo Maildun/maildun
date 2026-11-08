@@ -1,5 +1,4 @@
 import { lazy, Suspense, useCallback, useState } from 'react';
-import { CampaignInsightsMapFallback } from '@/components/campaign-insights-map-fallback';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMounted } from '@/hooks/use-mounted';
 import type { CampaignInsightRow } from './campaign-insights';
@@ -8,6 +7,16 @@ export type CampaignInsightMetric = 'opens' | 'clicks';
 
 const InteractiveMap = lazy(
     () => import('@/components/campaign-insights-map-interactive'),
+);
+
+/**
+ * Only shown when MapLibre cannot start, so its ~140 KB of country paths
+ * load on that path alone.
+ */
+const FallbackMap = lazy(() =>
+    import('@/components/campaign-insights-map-fallback').then((module) => ({
+        default: module.CampaignInsightsMapFallback,
+    })),
 );
 
 export function CampaignInsightsMap({
@@ -20,6 +29,12 @@ export function CampaignInsightsMap({
     const mounted = useMounted();
     const [unavailable, setUnavailable] = useState(false);
     const showFallback = useCallback(() => setUnavailable(true), []);
+    const placeholder = (
+        <Skeleton
+            className="h-full min-h-64 flex-1 rounded-lg"
+            aria-label="Loading engagement map"
+        />
+    );
 
     if (unavailable) {
         return (
@@ -27,20 +42,12 @@ export function CampaignInsightsMap({
                 <p className="text-xs text-muted-foreground" role="status">
                     Interactive map unavailable. Showing the country overview.
                 </p>
-                <CampaignInsightsMapFallback
-                    countries={countries}
-                    metric={metric}
-                />
+                <Suspense fallback={placeholder}>
+                    <FallbackMap countries={countries} metric={metric} />
+                </Suspense>
             </div>
         );
     }
-
-    const placeholder = (
-        <Skeleton
-            className="h-full min-h-64 flex-1 rounded-lg"
-            aria-label="Loading engagement map"
-        />
-    );
 
     return mounted ? (
         <Suspense fallback={placeholder}>

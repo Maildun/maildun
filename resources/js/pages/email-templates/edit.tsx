@@ -11,17 +11,20 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { Head, Link, setLayoutProps, useForm, usePage } from '@inertiajs/react';
 import type { EmailEditorHandle } from '@maildun/email-builder/editor';
 import type { FormEvent } from 'react';
-import { useMemo, useRef, useState } from 'react';
+import { Suspense, useMemo, useRef, useState } from 'react';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteEmailTemplateModal from '@/components/delete-email-template-modal';
-import { DesignAssistant } from '@/components/design-assistant';
 import type { AssistantModel } from '@/components/design-assistant';
 import { DesignAssistantIcon } from '@/components/design-assistant-icon';
 import { EmailBuilderActions } from '@/components/email-builder-actions';
-import { EmailBuilderEditor } from '@/components/email-builder-editor';
-import { EmailHtmlEditor } from '@/components/email-html-editor';
-import { EmailSourceEditor } from '@/components/email-source-editor';
 import EmailTemplatePicker from '@/components/email-template-picker';
+import {
+    DesignAssistant,
+    EmailBuilderEditor,
+    EmailEditorFallback,
+    EmailHtmlEditor,
+    EmailSourceEditor,
+} from '@/components/lazy-email-editors';
 import MediaLibraryDialog from '@/components/media-library-dialog';
 import PersonalizationTagsDialog from '@/components/personalization-tags-dialog';
 import { useSavedSectionsGroup } from '@/components/saved-sections-group';
@@ -489,101 +492,117 @@ export default function EmailTemplatesEdit({
                             </div>
                         </header>
                         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                            {template.editor === 'builder' ? (
-                                <>
-                                    <div className="flex min-h-0 min-w-0 flex-1">
-                                        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                                            <EmailBuilderEditor
-                                                ref={builderRef}
-                                                onPickImage={
-                                                    mediaLibrary
-                                                        ? pickBuilderImage
-                                                        : undefined
-                                                }
-                                                onUploadImage={
-                                                    uploadBuilderImage
-                                                }
-                                                onGeneratePreheader={
-                                                    assistantAvailable
-                                                        ? writePreheader
-                                                        : undefined
-                                                }
-                                                paletteGroups={paletteGroups}
-                                                assistantOpen={
-                                                    assistantAvailable &&
-                                                    assistantOpen
-                                                }
-                                                document={
-                                                    form.data.design ??
-                                                    EMPTY_BUILDER_DOCUMENT
-                                                }
-                                                disabled={!canManage}
-                                                fill
-                                                mergeTags={BUILDER_MERGE_TAGS}
-                                                conditions={builderConditions(
-                                                    [],
-                                                    tags,
-                                                )}
-                                                onChange={(design) =>
-                                                    form.setData(
-                                                        'design',
-                                                        design,
-                                                    )
-                                                }
-                                            />
+                            <Suspense fallback={<EmailEditorFallback />}>
+                                {template.editor === 'builder' ? (
+                                    <>
+                                        <div className="flex min-h-0 min-w-0 flex-1">
+                                            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                                                <EmailBuilderEditor
+                                                    ref={builderRef}
+                                                    onPickImage={
+                                                        mediaLibrary
+                                                            ? pickBuilderImage
+                                                            : undefined
+                                                    }
+                                                    onUploadImage={
+                                                        uploadBuilderImage
+                                                    }
+                                                    onGeneratePreheader={
+                                                        assistantAvailable
+                                                            ? writePreheader
+                                                            : undefined
+                                                    }
+                                                    paletteGroups={
+                                                        paletteGroups
+                                                    }
+                                                    assistantOpen={
+                                                        assistantAvailable &&
+                                                        assistantOpen
+                                                    }
+                                                    document={
+                                                        form.data.design ??
+                                                        EMPTY_BUILDER_DOCUMENT
+                                                    }
+                                                    disabled={!canManage}
+                                                    fill
+                                                    mergeTags={
+                                                        BUILDER_MERGE_TAGS
+                                                    }
+                                                    conditions={builderConditions(
+                                                        [],
+                                                        tags,
+                                                    )}
+                                                    onChange={(design) =>
+                                                        form.setData(
+                                                            'design',
+                                                            design,
+                                                        )
+                                                    }
+                                                />
+                                            </div>
+                                            {assistantAvailable ? (
+                                                <Suspense fallback={null}>
+                                                    <DesignAssistant
+                                                        url={designAssistant.url(
+                                                            [
+                                                                currentTeam.slug,
+                                                                template.uuid,
+                                                            ],
+                                                        )}
+                                                        models={assistantModels}
+                                                        editor={builderRef}
+                                                        open={assistantOpen}
+                                                        onStreamingChange={
+                                                            setAssistantWorking
+                                                        }
+                                                        onClose={() =>
+                                                            setAssistantOpen(
+                                                                false,
+                                                            )
+                                                        }
+                                                    />
+                                                </Suspense>
+                                            ) : null}
                                         </div>
-                                        {assistantAvailable ? (
-                                            <DesignAssistant
-                                                url={designAssistant.url([
-                                                    currentTeam.slug,
-                                                    template.uuid,
-                                                ])}
-                                                models={assistantModels}
-                                                editor={builderRef}
-                                                open={assistantOpen}
-                                                onStreamingChange={
-                                                    setAssistantWorking
-                                                }
-                                                onClose={() =>
-                                                    setAssistantOpen(false)
-                                                }
-                                            />
-                                        ) : null}
-                                    </div>
-                                    <FieldError>
-                                        {form.errors.design}
-                                    </FieldError>
-                                </>
-                            ) : template.editor === 'html' ? (
-                                <>
-                                    <EmailHtmlEditor
-                                        value={form.data.html}
-                                        disabled={!canManage}
-                                        aria-invalid={Boolean(form.errors.html)}
-                                        onChange={(html) =>
-                                            form.setData('html', html)
-                                        }
-                                    />
-                                    <FieldError>{form.errors.html}</FieldError>
-                                </>
-                            ) : (
-                                <>
-                                    <EmailSourceEditor
-                                        editor={template.editor}
-                                        value={form.data.source}
-                                        disabled={!canManage}
-                                        aria-invalid={Boolean(
-                                            form.errors.source,
-                                        )}
-                                        onChange={(source) =>
-                                            form.setData('source', source)
-                                        }
-                                    />
-                                    <FieldError>
-                                        {form.errors.source}
-                                    </FieldError>
-                                </>
-                            )}
+                                        <FieldError>
+                                            {form.errors.design}
+                                        </FieldError>
+                                    </>
+                                ) : template.editor === 'html' ? (
+                                    <>
+                                        <EmailHtmlEditor
+                                            value={form.data.html}
+                                            disabled={!canManage}
+                                            aria-invalid={Boolean(
+                                                form.errors.html,
+                                            )}
+                                            onChange={(html) =>
+                                                form.setData('html', html)
+                                            }
+                                        />
+                                        <FieldError>
+                                            {form.errors.html}
+                                        </FieldError>
+                                    </>
+                                ) : (
+                                    <>
+                                        <EmailSourceEditor
+                                            editor={template.editor}
+                                            value={form.data.source}
+                                            disabled={!canManage}
+                                            aria-invalid={Boolean(
+                                                form.errors.source,
+                                            )}
+                                            onChange={(source) =>
+                                                form.setData('source', source)
+                                            }
+                                        />
+                                        <FieldError>
+                                            {form.errors.source}
+                                        </FieldError>
+                                    </>
+                                )}
+                            </Suspense>
                         </div>
                     </>
                 ) : (

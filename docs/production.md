@@ -134,7 +134,7 @@ Modified versions must be marked as changed and must not be presented as the ori
 ## Security checklist
 
 - Keep public registration closed unless it is monitored and intentional.
-- Allowlist Horizon accounts with `HORIZON_ALLOWED_EMAILS`.
+- Allowlist the operators' verified accounts with `HORIZON_ALLOWED_EMAILS`; it grants Horizon and System Check.
 - Use narrowly scoped trusted proxy addresses.
 - Restrict database, Redis, and object storage to the application network.
 - Apply operating-system, PHP, Composer, and npm security updates.

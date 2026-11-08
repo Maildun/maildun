@@ -10,14 +10,26 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
+ * One SES notification, stored as soon as its signature checks out. The
+ * delivery references and processed_at are filled in when the queued
+ * processor applies it; until then it is pending.
+ *
  * @property int $id
  * @property string $provider
+ * @property string|null $ses_sns_topic_arn_hash
  * @property string $event_id
  * @property int|null $email_delivery_id
+ * @property int|null $email_delivery_attempt_id
+ * @property int|null $transactional_email_delivery_id
+ * @property int|null $automation_email_delivery_id
  * @property string $type
  * @property array<string, mixed> $payload
  * @property Carbon|null $occurred_at
- * @property Carbon $processed_at
+ * @property Carbon|null $processed_at
+ * @property Carbon|null $last_dispatched_at
+ * @property int $processing_attempts
+ * @property string|null $last_error
+ * @property Carbon|null $created_at
  */
 #[Fillable([
     'provider',
@@ -65,6 +77,12 @@ class EmailProviderEvent extends Model
 
     protected function casts(): array
     {
-        return ['payload' => 'array', 'occurred_at' => 'datetime', 'processed_at' => 'datetime'];
+        return [
+            'payload' => 'array',
+            'occurred_at' => 'datetime',
+            'processed_at' => 'datetime',
+            'last_dispatched_at' => 'datetime',
+            'processing_attempts' => 'integer',
+        ];
     }
 }

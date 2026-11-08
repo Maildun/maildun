@@ -52,7 +52,7 @@ was left blank, also keep working.
 
 ## Database, Redis, and queues
 
-SQLite is convenient locally and is the default. PostgreSQL and MySQL/MariaDB are also supported — set `DB_CONNECTION` and uncomment the connection details in `.env.example`. Use a managed or operationally backed-up database for production workloads.
+Maildun supports PostgreSQL and SQLite. SQLite is convenient locally and is the default; use PostgreSQL for production — set `DB_CONNECTION=pgsql` and uncomment the connection details in `.env.example`. MySQL and MariaDB are not supported. Use a managed or operationally backed-up database for production workloads.
 
 Maildun defaults to Redis for cache and queues. Horizon consumes four queue groups:
 
@@ -71,7 +71,7 @@ The application-wide `MAIL_*` values are used for system notifications, never as
 
 See [Amazon SES](email-delivery/amazon-ses.md) and [SMTP](email-delivery/smtp.md).
 
-Set `MAIL_RATE_LIMIT_PER_SECOND` to a value within the provider's accepted send rate. The limit is shared by campaign, transactional and automation email. A value of `0` disables application-side limiting. `MAIL_RATE_LIMIT_RELEASE_AFTER` controls how many seconds a send job waits before asking for a slot again.
+Set `MAIL_RATE_LIMIT_PER_SECOND` to a value within the provider's accepted send rate. A value of `0` disables application-side limiting. `MAIL_RATE_LIMIT_TRANSACTIONAL_SHARE` (default `20`) reserves that percentage of the rate for transactional email, rounded down but never below one message per second; campaigns and automations share the rest, so the two never exceed the configured rate together. Transactional email is capped at its share even when no campaign is sending, so raise it if your API sends arrive in bursts. A rate of `1`, or a share of `0`, puts every send on one shared limit. While a limit is on, campaigns load recipients a few minutes ahead of sending rather than all at once. `MAIL_RATE_LIMIT_RELEASE_AFTER` controls how many seconds a send job waits before asking for a slot again.
 
 ## Storage
 
@@ -101,6 +101,8 @@ Geolocation uses local DB-IP Lite `.mmdb` files configured with `MAIL_TRACKING_C
 ## Horizon access and alerts
 
 Outside local development, `/horizon` is limited to the comma-separated accounts in `HORIZON_ALLOWED_EMAILS`. Leave no production dashboard accidentally public.
+
+These addresses also define the instance operators: only they see **Settings → System Check**, which runs the deployment diagnostics and the storage test and shows and refreshes the Maildun update status. Workspace owners do not get it, because every account owns its personal workspace. An address counts only once its account has verified it, so add the operators' own addresses and have them verify before relying on either page. The list is case-insensitive.
 
 Set `HORIZON_NOTIFICATION_EMAIL` to receive long-wait alerts and keep the scheduled `horizon:snapshot` command running for metrics.
 

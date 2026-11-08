@@ -16,7 +16,11 @@ use Illuminate\Support\Facades\Queue;
 
 beforeEach(fn () => Queue::fake());
 
-function parkedRun(AutomationRunStatus $status, ?string $scheduledAt): AutomationRun
+/**
+ * A run parked at a delay node. $movedAt is when its step last changed; a
+ * sweep only re-queues branches that have not moved for its stall window.
+ */
+function parkedRun(AutomationRunStatus $status, ?string $scheduledAt, ?string $movedAt = null): AutomationRun
 {
     $automation = Automation::factory()->active()->create();
     $subscriber = Subscriber::factory()->for(Audience::factory()->for($automation->team))->create();
@@ -39,7 +43,7 @@ function parkedRun(AutomationRunStatus $status, ?string $scheduledAt): Automatio
         'scheduled_at' => $scheduledAt,
     ]);
 
-    $run->steps()->create([
+    $step = $run->steps()->create([
         'node_id' => 'wait',
         'status' => match ($status) {
             AutomationRunStatus::Pending => 'pending',
@@ -52,11 +56,15 @@ function parkedRun(AutomationRunStatus $status, ?string $scheduledAt): Automatio
         'scheduled_at' => $scheduledAt,
     ]);
 
+    if ($movedAt !== null) {
+        $step->forceFill(['updated_at' => $movedAt])->saveQuietly();
+    }
+
     return $run;
 }
 
 test('a run whose delay is due is put back on the queue', function () {
-    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
+    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString(), now()->subHours(2)->toDateTimeString());
 
     $this->artisan('automations:resume')->assertSuccessful();
 
@@ -68,7 +76,7 @@ test('a run whose delay is due is put back on the queue', function () {
 });
 
 test('a due branch of a paused automation stays parked', function () {
-    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
+    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString(), now()->subHours(2)->toDateTimeString());
     $run->automation->update(['status' => AutomationStatus::Paused]);
 
     $this->artisan('automations:resume')->assertSuccessful();
@@ -77,7 +85,7 @@ test('a due branch of a paused automation stays parked', function () {
 });
 
 test('a run whose delay has not arrived is left parked', function () {
-    parkedRun(AutomationRunStatus::Waiting, now()->addHour()->toDateTimeString());
+    parkedRun(AutomationRunStatus::Waiting, now()->addHour()->toDateTimeString(), now()->subHours(2)->toDateTimeString());
 
     $this->artisan('automations:resume')->assertSuccessful();
 
@@ -85,7 +93,7 @@ test('a run whose delay has not arrived is left parked', function () {
 });
 
 test('pending branches are put back on the queue', function () {
-    $run = parkedRun(AutomationRunStatus::Pending, null);
+    $run = parkedRun(AutomationRunStatus::Pending, null, now()->subHour()->toDateTimeString());
 
     $this->artisan('automations:resume')->assertSuccessful();
 
@@ -109,7 +117,7 @@ test('branches that are not ready to resume are left alone', function () {
     }
 
     // A waiting run with no scheduled time was never parked on a delay.
-    parkedRun(AutomationRunStatus::Waiting, null);
+    parkedRun(AutomationRunStatus::Waiting, null, now()->subHours(2)->toDateTimeString());
 
     $this->artisan('automations:resume')->assertSuccessful();
 
@@ -119,8 +127,8 @@ test('branches that are not ready to resume are left alone', function () {
 test('branches of a paused automation are left parked', function () {
     // Re-queuing these would only hand the engine work it skips, every sweep.
     foreach ([
-        parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString()),
-        parkedRun(AutomationRunStatus::Pending, null),
+        parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString(), now()->subHours(2)->toDateTimeString()),
+        parkedRun(AutomationRunStatus::Pending, null, now()->subHour()->toDateTimeString()),
     ] as $run) {
         $run->automation->update(['status' => AutomationStatus::Paused]);
     }
@@ -131,7 +139,7 @@ test('branches of a paused automation are left parked', function () {
 });
 
 test('a resumed run walks on from the step it was parked at', function () {
-    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
+    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString(), now()->subHours(2)->toDateTimeString());
 
     $this->artisan('automations:resume')->assertSuccessful();
 
@@ -143,7 +151,7 @@ test('a resumed run walks on from the step it was parked at', function () {
 });
 
 test('a paused automation holds its parked runs instead of resuming them', function () {
-    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
+    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString(), now()->subHours(2)->toDateTimeString());
     $run->automation->update(['status' => AutomationStatus::Paused]);
 
     $this->artisan('automations:resume')->assertSuccessful();
@@ -156,7 +164,7 @@ test('a paused automation holds its parked runs instead of resuming them', funct
 });
 
 test('reactivating a paused automation resumes the runs it held', function () {
-    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
+    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString(), now()->subHours(2)->toDateTimeString());
     $run->automation->update(['status' => AutomationStatus::Paused]);
     app(AdvanceAutomationRun::class)->handle($run);
 
@@ -171,9 +179,10 @@ test('reactivating a paused automation resumes the runs it held', function () {
 });
 
 test('a duplicate sweep cannot double-advance the same run', function () {
-    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString());
+    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString(), now()->subHours(2)->toDateTimeString());
 
     $this->artisan('automations:resume')->assertSuccessful();
+    $this->travel(16)->minutes();
     $this->artisan('automations:resume')->assertSuccessful();
 
     Queue::assertPushed(ProcessAutomationRun::class, 2);
@@ -326,4 +335,92 @@ test('a queued email of a throttled send is treated as lost only after its retry
 })->with([
     'still inside the retry window' => [60, 0],
     'past the retry window' => [380, 1],
+]);
+
+test('a branch whose job may still be on its way is not queued again', function (AutomationRunStatus $status, ?int $dueMinutesAgo, int $movedMinutesAgo) {
+    $this->freezeTime();
+    parkedRun(
+        $status,
+        $dueMinutesAgo === null ? null : now()->subMinutes($dueMinutesAgo)->toDateTimeString(),
+        now()->subMinutes($movedMinutesAgo)->toDateTimeString(),
+    );
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertNothingPushed();
+})->with([
+    'pending, queued moments ago' => [AutomationRunStatus::Pending, null, 2],
+    'a delay that came due moments ago' => [AutomationRunStatus::Waiting, 2, 120],
+]);
+
+test('a re-queued branch is not queued again until it has stalled for another window', function () {
+    $this->freezeTime();
+    $run = parkedRun(AutomationRunStatus::Pending, null, now()->subHour()->toDateTimeString());
+
+    $this->artisan('automations:resume')->assertSuccessful();
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertPushed(ProcessAutomationRun::class, 1);
+
+    $this->travel(16)->minutes();
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertPushed(
+        ProcessAutomationRun::class,
+        fn (ProcessAutomationRun $job): bool => $job->automationRunId === $run->id && $job->nodeId === 'wait',
+    );
+    Queue::assertPushed(ProcessAutomationRun::class, 2);
+});
+
+test('branches of a deleted workspace are left parked', function () {
+    $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString(), now()->subHours(2)->toDateTimeString());
+    $run->automation->team->delete();
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertNothingPushed();
+});
+
+test('an open run left with no open branch is closed', function () {
+    $this->freezeTime();
+    $run = parkedRun(AutomationRunStatus::Running, null);
+    $run->steps()->update(['status' => 'completed', 'updated_at' => now()->subHour()]);
+    $run->forceFill(['updated_at' => now()->subHour()])->saveQuietly();
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Completed)
+        ->and($run->completed_at)->not->toBeNull();
+    Queue::assertNothingPushed();
+});
+
+test('a queued email nothing will send any more is cancelled', function (Closure $orphan, string $reason) {
+    $this->freezeTime();
+    $run = parkedRun(AutomationRunStatus::Running, null);
+    $step = $run->steps()->where('node_id', 'wait')->sole();
+    $delivery = AutomationEmailDelivery::factory()->create([
+        'automation_run_id' => $run->id,
+        'automation_run_step_id' => $step->id,
+        'subscriber_id' => $run->subscriber_id,
+        'team_id' => $run->automation->team_id,
+        'status' => EmailDeliveryStatus::Queued,
+        'sent_at' => null,
+        'updated_at' => now()->subHour(),
+    ]);
+    $orphan($run);
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    expect($delivery->refresh()->status)->toBe(EmailDeliveryStatus::Cancelled)
+        ->and($delivery->failure_reason)->toBe($reason);
+    Queue::assertNotPushed(SendAutomationEmailDelivery::class);
+})->with([
+    'its run was cancelled' => [
+        fn (AutomationRun $run) => app(AdvanceAutomationRun::class)->cancel($run, 'Stopped.'),
+        'The automation run ended before this email was sent.',
+    ],
+    'its subscriber was deleted' => [
+        fn (AutomationRun $run) => $run->subscriber->delete(),
+        'The subscriber was deleted before this email was sent.',
+    ],
 ]);

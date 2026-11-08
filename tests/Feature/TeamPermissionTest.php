@@ -65,7 +65,7 @@ test('changing a membership role changes its team permissions', function () {
         ->update(['role' => TeamRole::Admin]);
 
     expect($user->hasTeamPermission($team, TeamPermission::UpdateTeam))->toBeTrue()
-        ->and($user->hasTeamPermission($team, TeamPermission::DeleteTeam))->toBeTrue();
+        ->and($user->hasTeamPermission($team, TeamPermission::DeleteTeam))->toBeFalse();
 });
 
 test('media management is granted to owners, admins, and members', function () {
@@ -107,7 +107,10 @@ test('starter roles provision the requested permission sets', function () {
 
     foreach ([
         [$owner, TeamPermission::cases()],
-        [$admin, TeamPermission::cases()],
+        [$admin, array_values(array_filter(
+            TeamPermission::cases(),
+            fn (TeamPermission $permission): bool => $permission !== TeamPermission::DeleteTeam,
+        ))],
         [$member, $memberPermissions],
     ] as [$user, $permissions]) {
         foreach (TeamPermission::cases() as $permission) {

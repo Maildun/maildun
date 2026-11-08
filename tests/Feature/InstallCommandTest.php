@@ -104,6 +104,24 @@ test('it is safe to re-run from a deploy script', function () {
         ->and(Permission::query()->count())->toBe(count(TeamPermission::cases()));
 });
 
+test('a re-run recognises the administrator whatever the case of the email', function () {
+    $options = [
+        '--admin-name' => 'Ada Lovelace',
+        '--admin-email' => 'Ada@Example.com',
+        '--admin-password' => 'correct-horse-battery-staple',
+        '--skip-storage' => true,
+        '--no-interaction' => true,
+    ];
+
+    $this->artisan('app:install', $options)->assertSuccessful()->run();
+    $this->artisan('app:install', $options)
+        ->expectsOutputToContain('already exists')
+        ->assertSuccessful()
+        ->run();
+
+    expect(User::query()->where('email', 'ada@example.com')->count())->toBe(1);
+});
+
 test('it refuses an administrator whose details do not validate', function () {
     $this->artisan('app:install', [
         '--admin-name' => 'Ada Lovelace',

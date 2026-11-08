@@ -547,13 +547,13 @@ test('personal teams cannot be deleted', function () {
     ]);
 });
 
-test('teams cannot be deleted by non owners', function () {
+test('teams cannot be deleted by non owners', function (TeamRole $role) {
     $owner = User::factory()->create();
     $member = User::factory()->create();
     $team = Team::factory()->create();
 
     $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
-    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $team->members()->attach($member, ['role' => $role->value]);
 
     $response = $this
         ->actingAs($member)
@@ -562,7 +562,11 @@ test('teams cannot be deleted by non owners', function () {
         ]);
 
     $response->assertForbidden();
-});
+    $this->assertNotSoftDeleted($team);
+})->with([
+    'admin' => TeamRole::Admin,
+    'member' => TeamRole::Member,
+]);
 
 test('users can switch teams', function () {
     $user = User::factory()->create();

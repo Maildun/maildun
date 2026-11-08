@@ -24,6 +24,10 @@ Schedule::command('app:check-for-updates')->daily()->withoutOverlapping()->onOne
 // The database event is durable even if Redis is flushed or unavailable.
 Schedule::command('emails:dispatch-tracking-events')->everyMinute()->withoutOverlapping()->onOneServer();
 
+// SES feedback is stored before it is processed, so a bounce or complaint whose
+// job was lost or failed is queued again instead of being dropped.
+Schedule::command('emails:dispatch-provider-events')->everyMinute()->withoutOverlapping()->onOneServer();
+
 // Detailed events expire; durable campaign aggregates remain available.
 Schedule::command('emails:prune-tracking')->daily()->withoutOverlapping()->onOneServer();
 
@@ -51,7 +55,7 @@ Schedule::command('emails:resume')->everyFiveMinutes()->withoutOverlapping()->on
 Schedule::command('contacts:resume-imports')->everyFiveMinutes()->withoutOverlapping()->onOneServer();
 
 // Starts campaigns whose scheduled time has come. withoutOverlapping plus the
-// per-campaign claim in ScheduleEmailSend::claimDue mean each starts once.
+// locked due-check in StartEmailSend::startScheduled mean each starts once.
 Schedule::command('emails:send-scheduled')->everyMinute()->withoutOverlapping(10)->onOneServer();
 
 // Freezes each audience's member counts for the subscriber chart. Hourly so

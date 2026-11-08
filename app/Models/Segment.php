@@ -22,7 +22,7 @@ use Illuminate\Support\Str;
  * @property string $name
  * @property string|null $description
  * @property SegmentMatchType $match_type
- * @property list<array{field: string, operator: string, value: string}> $rules
+ * @property list<array{field: string, operator: string, value: string, attribute?: string}> $rules
  * @property Carbon|null $rules_synced_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at

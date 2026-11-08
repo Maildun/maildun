@@ -1,31 +1,39 @@
 <?php
 
 use App\Actions\Automations\AdvanceAutomationRun;
+use App\Actions\Automations\DispatchTaggedTriggers;
 use App\Actions\Automations\StartAutomationRun;
 use App\Enums\AutomationAction;
 use App\Enums\AutomationCondition;
 use App\Enums\AutomationDelayUnit;
 use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationTrigger;
+use App\Enums\ContactImportMergeStrategy;
 use App\Enums\EmailAddressHealthReason;
+use App\Enums\EmailDeliveryStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Jobs\ProcessAutomationRun;
+use App\Jobs\ProcessContactImport;
 use App\Jobs\SendAutomationEmailDelivery;
 use App\Mail\AutomationEmail;
 use App\Models\Audience;
 use App\Models\Automation;
 use App\Models\AutomationEmailDelivery;
 use App\Models\AutomationRun;
+use App\Models\ContactImport;
 use App\Models\EmailAddressHealth;
 use App\Models\Subscriber;
 use App\Models\Tag;
+use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\TransactionalEmail;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 
 // The engine hands the next step to the queue. Faking it keeps each test to the
 // single step under assertion instead of walking the whole graph inline.
@@ -62,6 +70,48 @@ function automationRun(array $nodes, array $edges, ?Subscriber $subscriber = nul
 function runQueuedAutomationSends(): void
 {
     Queue::pushed(SendAutomationEmailDelivery::class)->each(fn (SendAutomationEmailDelivery $job) => app()->call([$job, 'handle']));
+}
+
+/**
+ * Run every branch job on the faked queue, including the ones they queue in
+ * turn, as a worker would. Stops after 100 jobs so a loop fails the test
+ * instead of hanging it.
+ */
+function runQueuedAutomationBranches(): void
+{
+    $handled = 0;
+
+    while (($jobs = Queue::pushed(ProcessAutomationRun::class))->count() > $handled && $handled < 100) {
+        $jobs->slice($handled)->each(fn (ProcessAutomationRun $job) => $job->handle(app(AdvanceAutomationRun::class)));
+        $handled = $jobs->count();
+    }
+}
+
+/**
+ * An active automation started when the tag is added, walking the nodes in
+ * order after its trigger.
+ *
+ * @param  list<array<string, mixed>>  $nodes
+ */
+function taggedAutomation(Team $team, Tag $tag, array $nodes): Automation
+{
+    $ids = ['trigger', ...array_column($nodes, 'id')];
+    $automation = Automation::factory()->for($team)->active()->triggeredBy(AutomationTrigger::Tagged)->create([
+        'graph' => [
+            'nodes' => [
+                ['id' => 'trigger', 'type' => 'trigger', 'data' => ['kind' => AutomationTrigger::Tagged->value, 'tag_uuid' => $tag->uuid]],
+                ...$nodes,
+            ],
+            'edges' => array_map(
+                fn (string $source, string $target): array => ['source' => $source, 'target' => $target],
+                array_slice($ids, 0, -1),
+                array_slice($ids, 1),
+            ),
+        ],
+    ]);
+    $automation->update(['trigger_config' => ['audience_uuid' => null, 'tag_uuid' => $tag->uuid]]);
+
+    return $automation;
 }
 
 test('a condition only follows the branch it took', function () {
@@ -950,3 +1000,151 @@ test('a delay waits the configured number of minutes, hours or days', function (
     '3 hours' => [AutomationDelayUnit::Hours, 3, 180],
     '2 days' => [AutomationDelayUnit::Days, 2, 2880],
 ]);
+
+test('a contact tagged once gets a tagged automation email once across their audiences', function () {
+    Mail::fake();
+
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->ses()->create();
+    $email = TransactionalEmail::factory()->for($team)->published()->create();
+    $tag = Tag::factory()->for($team)->create();
+    $automation = taggedAutomation($team, $tag, [
+        ['id' => 'send', 'type' => 'action', 'data' => ['kind' => AutomationAction::SendEmail->value, 'transactional_email_uuid' => $email->uuid]],
+    ]);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->create();
+    Subscriber::factory()->for(Audience::factory()->for($team))->create(['email' => $subscriber->email]);
+
+    app(DispatchTaggedTriggers::class)->handle($subscriber->contact, [$tag->uuid]);
+    runQueuedAutomationBranches();
+    runQueuedAutomationSends();
+
+    Mail::assertSentCount(1);
+    expect($automation->runs()->pluck('status')->all())
+        ->toBe([AutomationRunStatus::Completed, AutomationRunStatus::Completed])
+        ->and($automation->runs()->join('automation_run_steps', 'automation_runs.id', '=', 'automation_run_steps.automation_run_id')
+            ->where('automation_run_steps.node_id', 'send')
+            ->orderBy('automation_run_steps.status')
+            ->pluck('automation_run_steps.status')
+            ->all())->toBe(['completed', 'skipped'])
+        ->and(AutomationEmailDelivery::query()->count())->toBe(1);
+    expect($automation->runs()->get()->flatMap->steps->firstWhere('status', 'skipped')->result)
+        ->toBe(['reason' => 'duplicate']);
+});
+
+test('a later tagging of the same contact gets the email again', function () {
+    Mail::fake();
+
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->ses()->create();
+    $email = TransactionalEmail::factory()->for($team)->published()->create();
+    $tag = Tag::factory()->for($team)->create();
+    taggedAutomation($team, $tag, [
+        ['id' => 'send', 'type' => 'action', 'data' => ['kind' => AutomationAction::SendEmail->value, 'transactional_email_uuid' => $email->uuid]],
+    ]);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->create();
+
+    foreach ([1, 2] as $tagging) {
+        app(DispatchTaggedTriggers::class)->handle($subscriber->contact, [$tag->uuid]);
+        runQueuedAutomationBranches();
+        runQueuedAutomationSends();
+        Queue::fake();
+    }
+
+    Mail::assertSentCount(2);
+});
+
+test('an import that tags a contact emails them once across their audiences', function () {
+    Mail::fake();
+    Storage::fake('local');
+    fakeMailDomains();
+
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->ses()->create();
+    $email = TransactionalEmail::factory()->for($team)->published()->create();
+    $tag = Tag::factory()->for($team)->create(['name' => 'Webinar']);
+    taggedAutomation($team, $tag, [
+        ['id' => 'send', 'type' => 'action', 'data' => ['kind' => AutomationAction::SendEmail->value, 'transactional_email_uuid' => $email->uuid]],
+    ]);
+    Subscriber::factory()->for(Audience::factory()->for($team))->create(['email' => 'ada@example.com']);
+    Subscriber::factory()->for(Audience::factory()->for($team))->create(['email' => 'ada@example.com']);
+    $contactImport = ContactImport::factory()->for($team)->create([
+        'headers' => ['email'],
+        'column_map' => ['email'],
+        'tag_names' => ['Webinar'],
+        'merge_strategy' => ContactImportMergeStrategy::FillBlanks,
+    ]);
+    Storage::disk('local')->put($contactImport->path, "email\nada@example.com\n");
+
+    app()->call([new ProcessContactImport($contactImport->id), 'handle']);
+    runQueuedAutomationBranches();
+    runQueuedAutomationSends();
+
+    Mail::assertSentCount(1);
+    expect(AutomationEmailDelivery::query()->count())->toBe(1);
+});
+
+test('the database lets one delivery at a time hold a send dedupe key', function () {
+    $key = str_repeat('a', 64);
+    $run = AutomationRun::factory()->create();
+    $queued = ['automation_run_id' => $run->id, 'dedupe_key' => $key, 'status' => EmailDeliveryStatus::Queued];
+    $first = AutomationEmailDelivery::factory()->create($queued);
+
+    // Two runs reaching the send step together both pass any read-first
+    // check, so assert the constraint itself.
+    expect(fn () => DB::transaction(fn () => AutomationEmailDelivery::factory()->create($queued)))
+        ->toThrow(UniqueConstraintViolationException::class);
+
+    // A delivery that never reached the contact gives the key back.
+    $first->update(['status' => EmailDeliveryStatus::Cancelled]);
+    AutomationEmailDelivery::factory()->create($queued);
+
+    expect(AutomationEmailDelivery::query()->where('dedupe_key', $key)->count())->toBe(2);
+});
+
+test('a run is cancelled when its workspace is deleted', function () {
+    $automation = Automation::factory()->active()->create();
+    $tag = Tag::factory()->for($automation->team)->create();
+    $run = automationRun(
+        nodes: [['id' => 'tag', 'type' => 'action', 'data' => ['kind' => AutomationAction::AddTag->value, 'tag_uuid' => $tag->uuid]]],
+        edges: [['source' => 'trigger', 'target' => 'tag']],
+        automation: $automation,
+    );
+    $run->steps()->create(['node_id' => 'tag', 'status' => 'pending']);
+    $automation->team->delete();
+
+    app(AdvanceAutomationRun::class)->handle($run, 'tag');
+
+    expect($run->refresh()->status)->toBe(AutomationRunStatus::Cancelled)
+        ->and($run->failure_reason)->toBe('The workspace was deleted.')
+        ->and($run->steps()->where('node_id', 'tag')->value('status'))->toBe('cancelled')
+        ->and($run->subscriber->tags()->exists())->toBeFalse();
+    Queue::assertNothingPushed();
+});
+
+test('automations that keep tagging each other stop after the chain limit', function () {
+    $team = Team::factory()->create();
+    $first = Tag::factory()->for($team)->create();
+    $second = Tag::factory()->for($team)->create();
+    $ping = taggedAutomation($team, $first, [
+        ['id' => 'untag', 'type' => 'action', 'data' => ['kind' => AutomationAction::RemoveTag->value, 'tag_uuid' => $first->uuid]],
+        ['id' => 'tag', 'type' => 'action', 'data' => ['kind' => AutomationAction::AddTag->value, 'tag_uuid' => $second->uuid]],
+    ]);
+    $pong = taggedAutomation($team, $second, [
+        ['id' => 'untag', 'type' => 'action', 'data' => ['kind' => AutomationAction::RemoveTag->value, 'tag_uuid' => $second->uuid]],
+        ['id' => 'tag', 'type' => 'action', 'data' => ['kind' => AutomationAction::AddTag->value, 'tag_uuid' => $first->uuid]],
+    ]);
+    $subscriber = Subscriber::factory()->for(Audience::factory()->for($team))->create();
+    $subscriber->tags()->attach($first->id);
+
+    app(DispatchTaggedTriggers::class)->handle($subscriber->contact, [$first->uuid]);
+    runQueuedAutomationBranches();
+
+    $lastRun = $pong->runs()->latest('id')->firstOrFail();
+
+    expect($ping->runs()->count())->toBe(3)
+        ->and($pong->runs()->count())->toBe(3)
+        ->and($lastRun->context['trigger_depth'])->toBe(DispatchTaggedTriggers::MAX_TRIGGER_DEPTH)
+        ->and($lastRun->status)->toBe(AutomationRunStatus::Completed)
+        ->and($lastRun->steps()->where('node_id', 'tag')->value('result'))
+        ->toBe(['tag_uuid' => $first->uuid, 'added' => true, 'trigger_chain_limit' => true]);
+});

@@ -107,7 +107,7 @@ export function SegmentRuleFields({
                 <FieldError>{errors?.description}</FieldError>
             </Field>
             <Field data-invalid={Boolean(errors?.match_type)}>
-                <FieldLabel>Match</FieldLabel>
+                <FieldLabel htmlFor={`${idPrefix}-match`}>Match</FieldLabel>
                 <Select
                     value={data.match_type}
                     onValueChange={(value) => {
@@ -117,7 +117,10 @@ export function SegmentRuleFields({
                     }}
                     disabled={disabled}
                 >
-                    <SelectTrigger aria-invalid={Boolean(errors?.match_type)}>
+                    <SelectTrigger
+                        id={`${idPrefix}-match`}
+                        aria-invalid={Boolean(errors?.match_type)}
+                    >
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

@@ -19,6 +19,7 @@ dataset('scheduled commands', [
     'automations:resume' => ['automations:resume', '*/5 * * * *'],
     'contacts:resume-imports' => ['contacts:resume-imports', '*/5 * * * *'],
     'emails:dispatch-tracking-events' => ['emails:dispatch-tracking-events', '* * * * *'],
+    'emails:dispatch-provider-events' => ['emails:dispatch-provider-events', '* * * * *'],
     'emails:prune-tracking' => ['emails:prune-tracking', '0 0 * * *'],
     'contacts:prune-imports' => ['contacts:prune-imports', '0 0 * * *'],
     'passport:purge' => ['passport:purge --hours=168', '0 0 * * *'],

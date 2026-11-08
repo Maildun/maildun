@@ -19,13 +19,19 @@ enum TeamRole: string
     /**
      * Get all the permissions for this role.
      *
+     * Admins run the workspace and its members, but deleting the workspace
+     * is left to its owner.
+     *
      * @return array<TeamPermission>
      */
     public function permissions(): array
     {
         return match ($this) {
             self::Owner => TeamPermission::cases(),
-            self::Admin => TeamPermission::cases(),
+            self::Admin => array_values(array_filter(
+                TeamPermission::cases(),
+                fn (TeamPermission $permission): bool => $permission !== TeamPermission::DeleteTeam,
+            )),
             self::Member => [
                 TeamPermission::ManageContact,
                 TeamPermission::ManageAudience,

@@ -286,3 +286,16 @@ test('a regenerated token takes over and the old one is refused', function () {
 
     expect($automation->runs()->count())->toBe(1);
 });
+
+test('an automation of a deleted workspace is not reachable', function () {
+    [$automation, $subscriber] = apiAutomation();
+    $automation->team->delete();
+
+    $this->postJson(
+        route('automations.trigger', $automation),
+        ['email' => $subscriber->email],
+        ['X-Automation-Token' => $automation->trigger_token],
+    )->assertNotFound();
+
+    expect($automation->runs()->exists())->toBeFalse();
+});

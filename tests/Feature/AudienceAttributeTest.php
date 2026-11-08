@@ -7,11 +7,16 @@ use App\Enums\TeamRole;
 use App\Jobs\MoveAudienceAttributeValues;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
+use App\Models\AudienceAttributeMove;
+use App\Models\Segment;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('team owners can create rename and delete audience attributes', function () {
@@ -434,4 +439,94 @@ test('attribute and sender settings pages receive their own props', function () 
             ->where('senders.0.uuid', $sender->uuid)
             ->where('senders.0.name', 'Maildun News')
             ->where('senders.0.email', 'news@example.com'));
+});
+
+test('an attribute cannot change type while a segment has a rule the new type cannot evaluate', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $score = AudienceAttribute::factory()->number()->for($audience)->create(['name' => 'Score', 'key' => 'score']);
+    Segment::factory()->for($audience)->create([
+        'name' => 'High scorers',
+        'rules' => [['field' => 'attribute', 'attribute' => $score->uuid, 'operator' => 'greater_than', 'value' => '50']],
+    ]);
+    Segment::factory()->for($audience)->create([
+        'name' => 'Exactly ten',
+        'rules' => [['field' => 'attribute', 'attribute' => $score->uuid, 'operator' => 'equals', 'value' => '10']],
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.attributes.update', [$team, $audience, $score]), [
+            'name' => 'Score',
+            'key' => 'score',
+            'type' => AudienceAttributeType::Text->value,
+        ])
+        ->assertSessionHasErrors([
+            'type' => 'These segments have rules a text field cannot evaluate: High scorers. Change those rules before changing the type.',
+        ]);
+
+    expect($score->fresh()->type)->toBe(AudienceAttributeType::Number);
+});
+
+test('a key cannot be taken while the values of a deleted field are still being removed from it', function () {
+    Queue::fake([MoveAudienceAttributeValues::class]);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    $subscriber = Subscriber::factory()->for($audience)->create(['attribute_values' => ['company' => 'Acme']]);
+    $this->actingAs($user)->delete(route('audiences.attributes.destroy', [$team, $audience, $attribute]));
+
+    $this->actingAs($user)
+        ->post(route('audiences.attributes.store', [$team, $audience]), ['name' => 'Company', 'type' => AudienceAttributeType::Text->value])
+        ->assertSessionHasErrors(['key' => 'Values of a renamed or deleted field are still being moved off this key. Try again in a few minutes.']);
+
+    Queue::pushed(MoveAudienceAttributeValues::class)->each(fn (MoveAudienceAttributeValues $job) => $job->handle());
+
+    $this->actingAs($user)
+        ->post(route('audiences.attributes.store', [$team, $audience]), ['name' => 'Company', 'type' => AudienceAttributeType::Text->value])
+        ->assertSessionHasNoErrors();
+
+    expect($audience->audienceAttributes()->pluck('key')->all())->toBe(['company'])
+        ->and($subscriber->fresh()->attribute_values)->toBe([]);
+});
+
+test('a field can be renamed back to the key its values are still moving off', function () {
+    Queue::fake([MoveAudienceAttributeValues::class]);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create(['name' => 'Company', 'key' => 'company']);
+    $subscriber = Subscriber::factory()->for($audience)->create(['attribute_values' => ['company' => 'Acme']]);
+    $rename = fn (string $key) => $this->actingAs($user)->patch(
+        route('audiences.attributes.update', [$team, $audience, $attribute]),
+        ['name' => 'Company', 'key' => $key, 'type' => AudienceAttributeType::Text->value],
+    );
+    $rename('company_name')->assertSessionHasNoErrors();
+
+    $rename('company')->assertSessionHasNoErrors();
+    Queue::pushed(MoveAudienceAttributeValues::class)->each(fn (MoveAudienceAttributeValues $job) => $job->handle());
+
+    expect($subscriber->fresh()->attribute_values)->toBe(['company' => 'Acme'])
+        ->and(AudienceAttributeMove::query()->exists())->toBeFalse();
+});
+
+test('renaming a key moves the values of an audience larger than one chunk', function () {
+    $audience = Audience::factory()->create();
+    $attribute = AudienceAttribute::factory()->for($audience)->create(['key' => 'employer']);
+    $now = now()->toDateTimeString();
+    DB::table('subscribers')->insert(array_map(fn (int $number): array => [
+        'uuid' => (string) Str::uuid(),
+        'audience_id' => $audience->id,
+        'email' => "user{$number}@example.com",
+        'attribute_values' => json_encode(['company' => "Company {$number}"]),
+        'created_at' => $now,
+        'updated_at' => $now,
+    ], range(1, 1201)));
+
+    (new MoveAudienceAttributeValues($audience->id, 'company', $attribute->id))->handle();
+
+    expect(Subscriber::query()->whereJsonContainsKey('attribute_values->company')->exists())->toBeFalse()
+        ->and(Subscriber::query()->where('attribute_values->employer', 'Company 1201')->exists())->toBeTrue()
+        ->and(Subscriber::query()->whereJsonContainsKey('attribute_values->employer')->count())->toBe(1201);
 });

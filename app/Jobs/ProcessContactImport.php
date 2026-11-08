@@ -3,14 +3,13 @@
 namespace App\Jobs;
 
 use App\Actions\Audiences\AddContactToAudiences;
+use App\Actions\Automations\DispatchTaggedTriggers;
 use App\Enums\AudienceAttributeType;
-use App\Enums\AutomationTrigger;
 use App\Enums\ContactImportIssue;
 use App\Enums\ContactImportMergeStrategy;
 use App\Enums\ContactImportStatus;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberStatus;
-use App\Events\SubscriberLifecycleOccurred;
 use App\Exceptions\ContactImportFailed;
 use App\Models\AudienceAttribute;
 use App\Models\Contact;
@@ -588,18 +587,16 @@ class ProcessContactImport implements ShouldQueue
         return [$values, null];
     }
 
-    /** @param list<string> $tagUuids */
+    /**
+     * Offer the row's new tags to tagged automations through the same path a
+     * person tagging the contact takes, so the runs started across the
+     * contact's memberships share one trigger event and email them once.
+     *
+     * @param  list<string>  $tagUuids
+     */
     private function dispatchTagged(Contact $contact, array $tagUuids): void
     {
-        if ($tagUuids === []) {
-            return;
-        }
-
-        foreach ($contact->subscribers()->get() as $subscriber) {
-            foreach ($tagUuids as $tagUuid) {
-                event(new SubscriberLifecycleOccurred(AutomationTrigger::Tagged, $subscriber, ['tag_uuid' => $tagUuid]));
-            }
-        }
+        app(DispatchTaggedTriggers::class)->handle($contact, $tagUuids);
     }
 
     /**

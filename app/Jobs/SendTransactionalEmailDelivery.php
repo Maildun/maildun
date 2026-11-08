@@ -6,6 +6,7 @@ use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Concerns\ThrottlesEmailDelivery;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailProvider;
+use App\Enums\EmailSendLane;
 use App\Exceptions\EmailAddressSuppressedException;
 use App\Exceptions\EmailTransportException;
 use App\Mail\TransactionalEmailMessage;
@@ -128,6 +129,15 @@ class SendTransactionalEmailDelivery implements ShouldQueue
     public function tags(): array
     {
         return ['transactional-delivery:'.$this->deliveryId];
+    }
+
+    /**
+     * Transactional mail waits on its reserved share of the send rate, so a
+     * campaign or automation in flight never holds it back.
+     */
+    protected function sendLane(): EmailSendLane
+    {
+        return EmailSendLane::Transactional;
     }
 
     private function claim(TransactionalEmailDelivery $delivery): bool

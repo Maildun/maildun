@@ -5,6 +5,7 @@ namespace App\Actions\Audiences;
 use App\Enums\EmailStatus;
 use App\Enums\SegmentMatchType;
 use App\Models\Segment;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class EnsureSegmentRulesCanChange
@@ -50,12 +51,17 @@ class EnsureSegmentRulesCanChange
     }
 
     /**
-     * @return list<array{field: string, operator: string, value: string}>
+     * The parts of each rule that decide who matches, including which custom
+     * field an attribute rule reads (compared ignoring case, as the rule
+     * engine does).
+     *
+     * @return list<array{field: string, attribute: string, operator: string, value: string}>
      */
     private function normalize(mixed $rules): array
     {
         return array_values(array_map(fn (mixed $rule): array => [
             'field' => (string) ($rule['field'] ?? ''),
+            'attribute' => Str::lower((string) ($rule['attribute'] ?? '')),
             'operator' => (string) ($rule['operator'] ?? ''),
             'value' => (string) ($rule['value'] ?? ''),
         ], is_array($rules) ? $rules : []));

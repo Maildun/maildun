@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Throwable;
 
 #[Signature('app:install
@@ -238,7 +239,7 @@ class InstallCommand extends Command
         $email = $this->option('admin-email');
         $email = is_string($email) ? $email : null;
 
-        if ($email !== null && User::query()->where('email', $email)->exists()) {
+        if ($email !== null && User::query()->whereRaw('LOWER(email) = ?', [Str::lower(trim($email))])->exists()) {
             $this->components->twoColumnDetail('Administrator', $email.' <fg=green>already exists</>');
 
             return;

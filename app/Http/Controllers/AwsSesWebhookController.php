@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Emails\DispatchEmailProviderEvent;
 use App\Actions\Emails\ProcessSesEvent;
 use App\Enums\EmailProvider;
 use App\Models\AutomationEmailDelivery;
@@ -20,7 +21,14 @@ use RuntimeException;
 
 class AwsSesWebhookController extends Controller
 {
-    public function __invoke(Request $request, ProcessSesEvent $processor): Response
+    /**
+     * A notification is stored as soon as its signature and topic check out,
+     * and only then queued for processing. SNS gives up redelivering within
+     * minutes, so processing inline would lose a bounce or complaint to any
+     * failure; once stored, the queue and emails:dispatch-provider-events keep
+     * trying, and the event id still de-duplicates redeliveries.
+     */
+    public function __invoke(Request $request, ProcessSesEvent $processor, DispatchEmailProviderEvent $dispatchEvent): Response
     {
         try {
             $message = Message::fromJsonString($request->getContent());
@@ -52,7 +60,11 @@ class AwsSesWebhookController extends Controller
         } elseif ($message['Type'] === 'Notification') {
             $payload = json_decode((string) $message['Message'], true, flags: JSON_THROW_ON_ERROR);
             abort_unless(is_array($payload), 422);
-            $processor->handle((string) $message['MessageId'], $payload, $topicArn);
+            $event = $processor->record((string) $message['MessageId'], $payload, $topicArn);
+
+            if ($event->processed_at === null) {
+                $dispatchEvent->handle($event);
+            }
         }
 
         return response()->noContent();

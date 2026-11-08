@@ -3,6 +3,7 @@
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PreserveDesignEmptyStrings;
+use App\Http\Middleware\PreventCrossOriginFraming;
 use App\Http\Middleware\RequireVerifiedEmailForOAuth;
 use App\Http\Middleware\SetTeamUrlDefaults;
 use App\Http\Middleware\ValidateInboxSignature;
@@ -57,6 +58,9 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
             SetTeamUrlDefaults::class,
+            // Clickjacking: only this origin may frame a page, except the
+            // hosted subscribe form, which customers embed on their sites.
+            PreventCrossOriginFraming::class,
         ]);
 
         $middleware->alias([

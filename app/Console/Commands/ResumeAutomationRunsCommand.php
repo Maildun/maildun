@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Actions\Automations\AdvanceAutomationRun;
 use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationStatus;
 use App\Enums\EmailDeliveryStatus;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 #[Signature('automations:resume')]
-#[Description('Re-dispatch pending automation branches, branches whose delay is due, and automation emails whose send job was lost')]
+#[Description('Re-dispatch automation branches and emails whose job was lost, and close runs and emails nothing will finish')]
 class ResumeAutomationRunsCommand extends Command
 {
     /**
@@ -28,10 +29,12 @@ class ResumeAutomationRunsCommand extends Command
      *
      * Re-dispatching is safe because AdvanceAutomationRun claims each step, and
      * the send job each delivery, with a conditional update before doing the
-     * work. Steps of a paused automation are left parked until it is activated
-     * again.
+     * work. Only work that has not moved for the stall window goes back on the
+     * queue, and it is touched when it does, so a branch still waiting in a
+     * busy queue is not pushed again every five minutes. Steps of a paused
+     * automation, and of a deleted workspace, are left parked.
      */
-    public function handle(): int
+    public function handle(AdvanceAutomationRun $advance): int
     {
         $resumed = 0;
 
@@ -93,17 +96,53 @@ class ResumeAutomationRunsCommand extends Command
                 }
             });
 
+        // A queued email whose step is no longer running, or is gone with its
+        // deleted subscriber, will never be sent. Its job closes it when it
+        // runs; this closes the ones whose job was lost too.
+        foreach ([
+            __('The subscriber was deleted before this email was sent.') => fn ($deliveries) => $deliveries->whereNull('subscriber_id'),
+            __('The automation run ended before this email was sent.') => fn ($deliveries) => $deliveries->whereNotNull('subscriber_id'),
+        ] as $reason => $whose) {
+            AutomationEmailDelivery::query()
+                ->where('status', EmailDeliveryStatus::Queued)
+                ->whereNull('send_attempted_at')
+                ->where('updated_at', '<=', $lostBefore)
+                ->whereDoesntHave('step', fn ($steps) => $steps->where('status', 'running'))
+                ->where($whose)
+                ->update([
+                    'status' => EmailDeliveryStatus::Cancelled,
+                    'failure_reason' => $reason,
+                ]);
+        }
+
         // A paused automation holds its branches until it is activated again,
         // which re-dispatches them itself. Branches of a deleted automation
-        // still go out so the engine can cancel them.
+        // still go out so the engine can cancel them; those of a deleted
+        // workspace do not, because its automations must stop running.
         AutomationRunStep::query()
             ->dueForDispatch()
+            ->stalledSince($staleBefore)
             ->whereDoesntHave('run.automation', fn ($query) => $query->where('status', '!=', AutomationStatus::Active))
+            ->whereDoesntHave('run.automation.team', fn ($query) => $query->onlyTrashed())
             ->orderBy('id')
             ->chunkById(100, function ($steps) use (&$resumed): void {
                 foreach ($steps as $step) {
                     ProcessAutomationRun::dispatch($step->automation_run_id, $step->node_id);
+                    $step->touch();
                     $resumed++;
+                }
+            });
+
+        // An open run with no open branch has nothing left to close it, and
+        // the open-run index keeps its subscriber out of the automation.
+        AutomationRun::query()
+            ->whereIn('status', AutomationRunStatus::open())
+            ->where('updated_at', '<=', $staleBefore)
+            ->whereDoesntHave('steps', fn ($steps) => $steps->whereIn('status', ['pending', 'running', 'waiting']))
+            ->select('id')
+            ->chunkById(100, function ($runs) use ($advance): void {
+                foreach ($runs as $run) {
+                    $advance->synchronizeRun($run);
                 }
             });
 

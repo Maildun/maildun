@@ -57,7 +57,7 @@ Adding a sender or provider in workspace settings does not configure system emai
 | Node.js   | 22                                                        |
 | pnpm      | 11                                                        |
 | Redis     | any supported release                                     |
-| Database  | any database supported by Laravel; SQLite is the default for local development |
+| Database  | PostgreSQL; SQLite for local development (the default) |
 
 ## Quick start
 
@@ -93,8 +93,10 @@ docker compose run --rm --entrypoint php app artisan key:generate --show   # pas
 docker compose up -d
 docker compose exec app php artisan app:install --no-interaction \
     --admin-name="Your Name" --admin-email=you@example.com \
-    --admin-password='a-strong-password' --registration=closed
+    --admin-password='Replace-With-A-Str0ng-Passphrase!' --registration=closed
 ```
+
+The containers always run with `APP_ENV=production` and `APP_DEBUG=false`, whatever `.env` says, because `.env.example` is written for local development. Set `DOCKER_APP_ENV` or `DOCKER_APP_DEBUG` in `.env` only to change that deliberately. Production password rules apply to the administrator: at least 12 characters with upper- and lowercase letters, a number, and a symbol.
 
 See the [installation guide](docs/installation.md) for system mail configuration, a manual setup, demo data, and common problems.
 

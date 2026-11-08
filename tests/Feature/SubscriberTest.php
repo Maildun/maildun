@@ -324,7 +324,7 @@ test('owners can bulk add and remove tags on selected subscribers', function () 
 
     Event::assertDispatched(SubscriberLifecycleOccurred::class, fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Tagged
         && $event->subscriber->is($selected)
-        && $event->context === ['tag_uuid' => $vip->uuid]);
+        && ($event->context['tag_uuid'] ?? null) === $vip->uuid);
 
     $this->actingAs($user)
         ->patch(route('audiences.subscribers.bulk-tags', [$team, $audience]), [

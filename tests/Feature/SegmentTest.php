@@ -8,6 +8,7 @@ use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
 use App\Models\Audience;
+use App\Models\AudienceAttribute;
 use App\Models\Email;
 use App\Models\Segment;
 use App\Models\SubscribeForm;
@@ -357,6 +358,49 @@ test('segments sync command keeps syncing after one segment fails', function () 
     expect($broken->refresh()->rules_synced_at)->toBeNull()
         ->and($healthy->refresh()->rules_synced_at)->not->toBeNull()
         ->and($healthy->subscribers()->pluck('subscribers.id')->all())->toBe([$matching->id]);
+});
+
+test('a sync started from an outdated copy of the segment applies its current rules', function () {
+    $audience = Audience::factory()->create();
+    $english = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::English]);
+    $french = Subscriber::factory()->for($audience)->create(['language' => SubscriberLanguage::French]);
+    $segment = Segment::factory()->for($audience)->create([
+        'rules' => [['field' => 'language', 'operator' => 'equals', 'value' => 'en']],
+    ]);
+    // segments:sync loads its chunk before the user saves new rules.
+    $loadedBeforeTheEdit = Segment::query()->findOrFail($segment->id);
+    $segment->update(['rules' => [['field' => 'language', 'operator' => 'equals', 'value' => 'fr']]]);
+
+    app(SyncSegmentSubscribers::class)->handle($loadedBeforeTheEdit);
+
+    expect($segment->subscribers()->pluck('subscribers.id')->all())->toBe([$french->id])
+        ->and($segment->subscribers()->whereKey($english->id)->exists())->toBeFalse();
+});
+
+test('a rule cannot switch which custom field it reads while a campaign to the segment is in flight', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    $plan = AudienceAttribute::factory()->for($audience)->create();
+    $tier = AudienceAttribute::factory()->for($audience)->create();
+    $rules = [['field' => 'attribute', 'attribute' => $plan->uuid, 'operator' => 'equals', 'value' => 'gold']];
+    $segment = Segment::factory()->for($audience)->create(['name' => 'Gold', 'rules' => $rules]);
+    Email::factory()->for($team)->create([
+        'name' => 'Launch',
+        'audience_id' => $audience->id,
+        'segment_id' => $segment->id,
+        'status' => EmailStatus::Sending,
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('audiences.segments.update', [$team, $audience, $segment]), [
+            'name' => 'Gold',
+            'match_type' => 'all',
+            'rules' => [['field' => 'attribute', 'attribute' => $tier->uuid, 'operator' => 'equals', 'value' => 'gold']],
+        ])
+        ->assertSessionHasErrors(['rules' => 'The rules cannot change while these campaigns are sending: Launch.']);
+
+    expect($segment->refresh()->rules)->toBe($rules);
 });
 
 test('segment rule engine supports every phase one operator', function (string $field, string $operator, string $value, string $expectedEmail) {

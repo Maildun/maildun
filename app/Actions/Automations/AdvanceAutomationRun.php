@@ -61,6 +61,14 @@ class AdvanceAutomationRun
             return;
         }
 
+        // A deleted workspace keeps its rows until it is purged, but its runs
+        // must stop tagging, waiting and sending.
+        if (! $run->automation->team()->exists()) {
+            $this->cancel($run, __('The workspace was deleted.'));
+
+            return;
+        }
+
         // Pausing holds every open branch where it is. The step stays pending
         // or waiting, and activating the automation dispatches it again.
         if ($run->automation->status !== AutomationStatus::Active) {
@@ -330,21 +338,39 @@ class AdvanceAutomationRun
 
         // A workspace with no usable connection fails the run here, as before.
         $transport = $this->teamMailer->resolve($run->automation->team);
-        $delivery = AutomationEmailDelivery::query()->create([
-            'team_id' => $run->automation->team_id,
-            'automation_run_id' => $run->id,
-            'automation_run_step_id' => $step->id,
-            'transactional_email_id' => $sendable->id,
-            'subscriber_id' => $subscriber->id,
-            'subscriber_uuid' => $subscriber->uuid,
-            'audience_id' => $subscriber->audience_id,
-            'contact_id' => $subscriber->contact_id,
-            'to_address' => $subscriber->email,
-            'status' => EmailDeliveryStatus::Queued,
-            'provider' => $transport->provider,
-            'ses_configuration_set' => $transport->sesConfigurationSet,
-            'ses_sns_topic_arn_hash' => $transport->sesSnsTopicArnHash,
-        ]);
+        $dedupeKey = $this->dedupeKey($run, $step);
+
+        // Only the insert is in a transaction: inside a caller's transaction it
+        // becomes a savepoint, so losing the dedupe claim does not abort it on
+        // Postgres.
+        try {
+            $delivery = DB::transaction(fn (): AutomationEmailDelivery => AutomationEmailDelivery::query()->create([
+                'team_id' => $run->automation->team_id,
+                'automation_run_id' => $run->id,
+                'automation_run_step_id' => $step->id,
+                'transactional_email_id' => $sendable->id,
+                'subscriber_id' => $subscriber->id,
+                'subscriber_uuid' => $subscriber->uuid,
+                'audience_id' => $subscriber->audience_id,
+                'contact_id' => $subscriber->contact_id,
+                'to_address' => $subscriber->email,
+                'status' => EmailDeliveryStatus::Queued,
+                'provider' => $transport->provider,
+                'ses_configuration_set' => $transport->sesConfigurationSet,
+                'ses_sns_topic_arn_hash' => $transport->sesSnsTopicArnHash,
+                'dedupe_key' => $dedupeKey,
+            ]));
+        } catch (UniqueConstraintViolationException $exception) {
+            if ($dedupeKey === null) {
+                throw $exception;
+            }
+
+            return [
+                'status' => 'skipped',
+                'result' => ['reason' => 'duplicate'],
+                'handle' => null,
+            ];
+        }
 
         return [
             'status' => 'running',
@@ -352,6 +378,24 @@ class AdvanceAutomationRun
             'handle' => null,
             'deliveryId' => $delivery->id,
         ];
+    }
+
+    /**
+     * One tagging of a contact starts a run per audience membership, and each
+     * reaches the same send step. Their deliveries share this key, and a
+     * partial unique index lets only one of them be queued, sending or sent;
+     * the others skip as duplicates. Runs started any other way, or by a later
+     * tagging, get their own email.
+     */
+    protected function dedupeKey(AutomationRun $run, AutomationRunStep $step): ?string
+    {
+        $event = $run->context['trigger_event_uuid'] ?? null;
+
+        if (! is_string($event) || $event === '') {
+            return null;
+        }
+
+        return hash('sha256', implode('|', [$run->automation_id, $event, $step->node_id]));
     }
 
     /**
@@ -419,12 +463,15 @@ class AdvanceAutomationRun
         }
 
         $subscriber = $run->subscriber()->firstOrFail();
+        $result = ['tag_uuid' => $tag->uuid, 'added' => $add];
 
         if ($add) {
             $attached = $subscriber->tags()->syncWithoutDetaching([$tag->id])['attached'];
 
-            if ($attached !== [] && $subscriber->contact !== null) {
-                $this->dispatchTaggedTriggers->handle($subscriber->contact, [$tag->uuid], $run->automation);
+            if ($attached !== []
+                && $subscriber->contact !== null
+                && ! $this->dispatchTaggedTriggers->handle($subscriber->contact, [$tag->uuid], $run)) {
+                $result['trigger_chain_limit'] = true;
             }
         } else {
             $subscriber->tags()->detach($tag->id);
@@ -432,7 +479,7 @@ class AdvanceAutomationRun
 
         return [
             'status' => 'completed',
-            'result' => ['tag_uuid' => $tag->uuid, 'added' => $add],
+            'result' => $result,
             'handle' => null,
         ];
     }
@@ -567,44 +614,61 @@ class AdvanceAutomationRun
         return $queuedNodeIds;
     }
 
-    protected function synchronizeRun(AutomationRun $run): void
+    /**
+     * Derive the run's status from its open steps.
+     *
+     * The run row is locked while its steps are read and the status written.
+     * Unlocked, a branch that read its sibling as still open could write
+     * Running after that sibling had already closed the run, leaving it open
+     * with no step left to finish it, and the open-run unique index would then
+     * keep the subscriber out of the automation for good.
+     */
+    public function synchronizeRun(AutomationRun $run): void
     {
-        $run->refresh();
+        $synchronized = DB::transaction(function () use ($run): ?AutomationRun {
+            $locked = AutomationRun::query()->lockForUpdate()->find($run->id);
 
-        if (! $run->status->isOpen()) {
-            return;
-        }
+            if ($locked === null || ! $locked->status->isOpen()) {
+                return $locked;
+            }
 
-        $openSteps = $run->steps()
-            ->whereIn('status', ['pending', 'running', 'waiting'])
-            ->orderBy('id')
-            ->get(['node_id', 'status', 'scheduled_at']);
+            $openSteps = $locked->steps()
+                ->whereIn('status', ['pending', 'running', 'waiting'])
+                ->orderBy('id')
+                ->get(['node_id', 'status', 'scheduled_at']);
 
-        if ($openSteps->isEmpty()) {
-            $run->update([
-                'status' => AutomationRunStatus::Completed,
-                'current_node_id' => null,
-                'scheduled_at' => null,
-                'completed_at' => now(),
+            if ($openSteps->isEmpty()) {
+                $locked->update([
+                    'status' => AutomationRunStatus::Completed,
+                    'current_node_id' => null,
+                    'scheduled_at' => null,
+                    'completed_at' => now(),
+                ]);
+
+                return $locked;
+            }
+
+            $status = match (true) {
+                $openSteps->contains('status', 'running') => AutomationRunStatus::Running,
+                $openSteps->contains('status', 'pending') => AutomationRunStatus::Pending,
+                default => AutomationRunStatus::Waiting,
+            };
+            $scheduledAt = $status === AutomationRunStatus::Waiting
+                ? $openSteps->min('scheduled_at')
+                : null;
+
+            $locked->update([
+                'status' => $status,
+                'current_node_id' => $openSteps->count() === 1 ? $openSteps->first()->node_id : null,
+                'scheduled_at' => $scheduledAt,
             ]);
 
-            return;
+            return $locked;
+        });
+
+        if ($synchronized !== null) {
+            $run->setRawAttributes($synchronized->getAttributes(), sync: true);
         }
-
-        $status = match (true) {
-            $openSteps->contains('status', 'running') => AutomationRunStatus::Running,
-            $openSteps->contains('status', 'pending') => AutomationRunStatus::Pending,
-            default => AutomationRunStatus::Waiting,
-        };
-        $scheduledAt = $status === AutomationRunStatus::Waiting
-            ? $openSteps->min('scheduled_at')
-            : null;
-
-        $run->update([
-            'status' => $status,
-            'current_node_id' => $openSteps->count() === 1 ? $openSteps->first()->node_id : null,
-            'scheduled_at' => $scheduledAt,
-        ]);
     }
 
     protected function fail(AutomationRun $run, AutomationRunStep $step, string $reason): void
@@ -634,7 +698,11 @@ class AdvanceAutomationRun
         ]);
     }
 
-    protected function cancel(AutomationRun $run, string $reason): void
+    /**
+     * Close every open branch of the run and the run itself, as deleting its
+     * automation or workspace does.
+     */
+    public function cancel(AutomationRun $run, string $reason): void
     {
         $run->steps()
             ->whereIn('status', ['pending', 'running', 'waiting'])

@@ -56,7 +56,9 @@ class HandleInertiaRequests extends Middleware
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'currentTeam' => fn () => $user?->currentTeam ? $user->toUserTeam($user->currentTeam) : null,
             'teams' => fn () => $user?->toUserTeams(includeCurrent: true) ?? [],
-            'appUpdate' => fn () => $user?->currentTeam && $user->ownsTeam($user->currentTeam)
+            // Instance-wide, so only operators see it, through the same gate as
+            // System check. The settings nav reads it to show that page.
+            'appUpdate' => fn () => $user !== null && $user->can('viewSystemCheck')
                 ? $this->updates->status()
                 : null,
             // A connection exists but no longer passes its test (credentials

@@ -23,6 +23,8 @@ use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Middleware\Skip;
+use Illuminate\Queue\Middleware\SkipIfBatchCancelled;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -213,6 +215,37 @@ class SendEmailDelivery implements ShouldQueue
     }
 
     /**
+     * A stopped campaign can leave hundreds of thousands of these jobs queued.
+     * Each would take a send slot and then find nothing to claim, starving
+     * every other send for hours, so drop them before the throttle: a job
+     * from a cancelled batch, or one whose delivery can no longer be claimed.
+     *
+     * @return list<object>
+     */
+    protected function middlewareBeforeSendSlot(): array
+    {
+        return [
+            new SkipIfBatchCancelled,
+            Skip::unless(fn (): bool => $this->claimableDelivery()->exists()),
+        ];
+    }
+
+    /**
+     * The delivery, while it is still waiting for its first claim and its
+     * campaign is still sending.
+     *
+     * @return Builder<EmailDelivery>
+     */
+    private function claimableDelivery(): Builder
+    {
+        return EmailDelivery::query()
+            ->whereKey($this->deliveryId)
+            ->where('status', EmailDeliveryStatus::Queued)
+            ->whereNull('send_attempted_at')
+            ->whereIn('email_id', Email::query()->whereIn('status', EmailStatus::active())->select('id'));
+    }
+
+    /**
      * Take ownership of the delivery immediately before handing it to the mail
      * transport. Only one attempt can win, so a retry that lands here after the
      * transport already accepted the message stops instead of sending again.
@@ -224,11 +257,7 @@ class SendEmailDelivery implements ShouldQueue
         // either wins (and sends) or sees the stop (and sends nothing). The
         // recipient must also still be opted in: an unsubscribe or a deleted
         // membership after the row was queued means nobody is mailed.
-        $claimed = EmailDelivery::query()
-            ->whereKey($delivery->id)
-            ->where('status', EmailDeliveryStatus::Queued)
-            ->whereNull('send_attempted_at')
-            ->whereIn('email_id', Email::query()->whereIn('status', EmailStatus::active())->select('id'))
+        $claimed = $this->claimableDelivery()
             ->whereExists($this->optedInRecipient())
             ->update([
                 'status' => EmailDeliveryStatus::Sending,

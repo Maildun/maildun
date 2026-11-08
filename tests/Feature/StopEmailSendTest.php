@@ -173,3 +173,31 @@ test('a queued campaign can be stopped before any delivery is claimed, and only 
         ->post(route('emails.stop', [$user->currentTeam, $email]))
         ->assertInvalid(['email' => 'This campaign is not sending.']);
 });
+
+test('only the current batch can close a campaign, so a stopped batch finishing mid-retry leaves the retry alone', function (
+    string $finishedBatchId,
+    EmailStatus $campaignStatus,
+    EmailDeliveryStatus $requeuedStatus,
+    EmailDeliveryStatus $inFlightStatus,
+) {
+    $email = Email::factory()->create([
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 2,
+        'batch_id' => 'retry-batch',
+    ]);
+    $requeued = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+    $inFlight = EmailDelivery::factory()->for($email)->create([
+        'status' => EmailDeliveryStatus::Sending,
+        'send_attempted_at' => now(),
+    ]);
+    [, $finishedBatch] = (new SendEmailDelivery($requeued->id))->withFakeBatch($finishedBatchId);
+
+    (new FinalizeEmailSend($email->id))($finishedBatch);
+
+    expect($email->fresh()->status)->toBe($campaignStatus)
+        ->and($requeued->fresh()->status)->toBe($requeuedStatus)
+        ->and($inFlight->fresh()->status)->toBe($inFlightStatus);
+})->with([
+    'the stopped batch' => ['stopped-batch', EmailStatus::Sending, EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending],
+    'the retry batch' => ['retry-batch', EmailStatus::Failed, EmailDeliveryStatus::Failed, EmailDeliveryStatus::Failed],
+]);

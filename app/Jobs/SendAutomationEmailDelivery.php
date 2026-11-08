@@ -55,7 +55,17 @@ class SendAutomationEmailDelivery implements ShouldQueue
             'run.automation.team',
         ])->find($this->deliveryId);
 
-        if ($delivery === null || $delivery->step === null || $delivery->run === null) {
+        if ($delivery === null) {
+            return;
+        }
+
+        // Deleting the subscriber deletes their runs and steps with them, which
+        // leaves nothing to report this email's outcome to.
+        if ($delivery->step === null || $delivery->run === null) {
+            $this->close($delivery, EmailDeliveryStatus::Cancelled, $delivery->subscriber_id === null
+                ? __('The subscriber was deleted before this email was sent.')
+                : __('The automation run ended before this email was sent.'));
+
             return;
         }
 
@@ -80,6 +90,14 @@ class SendAutomationEmailDelivery implements ShouldQueue
 
         if ($step->status !== 'running' || ! $run->status->isOpen()) {
             $this->close($delivery, EmailDeliveryStatus::Cancelled, __('The automation run ended before this email was sent.'));
+
+            return;
+        }
+
+        if (! $delivery->team()->exists()) {
+            if ($this->close($delivery, EmailDeliveryStatus::Cancelled, __('The workspace was deleted before this email was sent.'))) {
+                $advance->cancel($run, __('The workspace was deleted.'));
+            }
 
             return;
         }
@@ -195,7 +213,10 @@ class SendAutomationEmailDelivery implements ShouldQueue
             return;
         }
 
-        $delivery = AutomationEmailDelivery::query()->with(['team', 'step'])->find($this->deliveryId);
+        // A workspace deleted mid-send still owns the address history.
+        $delivery = AutomationEmailDelivery::query()
+            ->with(['team' => fn ($query) => $query->withTrashed(), 'step'])
+            ->find($this->deliveryId);
 
         if ($delivery === null) {
             return;

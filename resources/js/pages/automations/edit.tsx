@@ -59,6 +59,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 import {
     AUTOMATION_STEP_DRAG_TYPE,
     automationConnectionError,
@@ -329,6 +330,19 @@ export default function AutomationEdit({
         [catalog.delayUnits],
     );
 
+    /** Strip the view-only keys ReactFlow adds so the saved graph stays the contract. */
+    const graphPayload = toGraphPayload(nodes, edges);
+    const savedGraphPayload = toGraphPayload(
+        automation.graph.nodes,
+        automation.graph.edges,
+    );
+    const hasUnsavedChanges =
+        name !== automation.name ||
+        description !== (automation.description ?? '') ||
+        JSON.stringify(graphPayload) !== JSON.stringify(savedGraphPayload);
+
+    useUnsavedChanges(hasUnsavedChanges);
+
     if (!currentTeam) {
         return null;
     }
@@ -459,17 +473,6 @@ export default function AutomationEdit({
                 return `${data.amount ?? 1} ${delayUnitLabels[String(data.unit)] ?? 'minutes'}`;
         }
     };
-
-    /** Strip the view-only keys ReactFlow adds so the saved graph stays the contract. */
-    const graphPayload = toGraphPayload(nodes, edges);
-    const savedGraphPayload = toGraphPayload(
-        automation.graph.nodes,
-        automation.graph.edges,
-    );
-    const hasUnsavedChanges =
-        name !== automation.name ||
-        description !== (automation.description ?? '') ||
-        JSON.stringify(graphPayload) !== JSON.stringify(savedGraphPayload);
 
     const save = () =>
         router.put(

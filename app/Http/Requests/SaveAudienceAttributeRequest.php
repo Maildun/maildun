@@ -2,14 +2,20 @@
 
 namespace App\Http\Requests;
 
+use App\Actions\Audiences\ValidateSegmentRules;
 use App\Enums\AudienceAttributeType;
+use App\Enums\SegmentRuleField;
+use App\Enums\SegmentRuleOperator;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
+use App\Models\AudienceAttributeMove;
+use App\Models\Segment;
 use App\Models\Subscriber;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -77,23 +83,59 @@ class SaveAudienceAttributeRequest extends FormRequest
     }
 
     /**
-     * A field cannot become a Number or Date while members still hold values
-     * that do not fit that type, or profiles and merge tags would break.
+     * A key still being moved off by a renamed or deleted field cannot be
+     * taken yet. A field cannot become a Number or Date while members still
+     * hold values that do not fit that type, or profiles and merge tags would
+     * break, nor change type while a segment has a rule the new type cannot
+     * evaluate.
      *
      * @return array<int, Closure(Validator): void>
      */
-    public function after(): array
+    public function after(ValidateSegmentRules $validateSegmentRules): array
     {
         return [
             function (Validator $validator): void {
+                $audience = $this->route('audience');
+                $attribute = $this->route('audience_attribute');
+                $key = $this->string('key')->toString();
+
+                if (! $audience instanceof Audience
+                    || $validator->errors()->has('key')
+                    || ($attribute instanceof AudienceAttribute && $attribute->key === $key)) {
+                    return;
+                }
+
+                $held = AudienceAttributeMove::query()
+                    ->holdingKey($audience->id, $key, $attribute instanceof AudienceAttribute ? $attribute : null)
+                    ->exists();
+
+                if ($held) {
+                    $validator->errors()->add('key', __('Values of a renamed or deleted field are still being moved off this key. Try again in a few minutes.'));
+                }
+            },
+            function (Validator $validator) use ($validateSegmentRules): void {
                 $attribute = $this->route('audience_attribute');
                 $type = AudienceAttributeType::tryFrom($this->string('type')->toString());
 
                 if (! $attribute instanceof AudienceAttribute
                     || $validator->errors()->isNotEmpty()
                     || $type === null
-                    || $type === $attribute->type
-                    || $type === AudienceAttributeType::Text) {
+                    || $type === $attribute->type) {
+                    return;
+                }
+
+                $segments = $this->segmentsWithRulesTheTypeCannotEvaluate($validateSegmentRules, $attribute, $type);
+
+                if ($segments->isNotEmpty()) {
+                    $validator->errors()->add('type', __('These segments have rules a :type field cannot evaluate: :segments. Change those rules before changing the type.', [
+                        'type' => Str::lower($type->name),
+                        'segments' => $segments->join(', '),
+                    ]));
+
+                    return;
+                }
+
+                if ($type === AudienceAttributeType::Text) {
                     return;
                 }
 
@@ -118,6 +160,27 @@ class SaveAudienceAttributeRequest extends FormRequest
                 }
             },
         ];
+    }
+
+    /**
+     * Names of the audience segments with a rule on this field whose operator
+     * or value the new type rejects. Left alone, such a rule matches nobody.
+     *
+     * @return SupportCollection<int, string>
+     */
+    private function segmentsWithRulesTheTypeCannotEvaluate(ValidateSegmentRules $validateSegmentRules, AudienceAttribute $attribute, AudienceAttributeType $type): SupportCollection
+    {
+        return Segment::query()
+            ->where('audience_id', $attribute->audience_id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'rules'])
+            ->filter(fn (Segment $segment): bool => collect($segment->rules)->contains(
+                fn (array $rule): bool => $rule['field'] === SegmentRuleField::Attribute->value
+                    && Str::lower($rule['attribute'] ?? '') === Str::lower($attribute->uuid)
+                    && $validateSegmentRules->attributeRuleMismatch($type, SegmentRuleOperator::tryFrom($rule['operator']), $rule['value']) !== null,
+            ))
+            ->pluck('name')
+            ->values();
     }
 
     private static function valueFitsType(mixed $value, AudienceAttributeType $type): bool

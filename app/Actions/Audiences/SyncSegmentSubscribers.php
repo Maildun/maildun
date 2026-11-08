@@ -16,11 +16,23 @@ class SyncSegmentSubscribers
 
     public function __construct(private ApplySegmentRules $applySegmentRules) {}
 
+    /**
+     * Sync from the segment row as it is now, locked for the length of the
+     * sync. The caller's copy may be older: segments:sync loads a chunk up
+     * front, and syncing a user's earlier rules would overwrite the members of
+     * their edit and stamp it as synced.
+     */
     public function handle(Segment $segment): void
     {
         DB::transaction(function () use ($segment): void {
+            $current = Segment::query()->with('audience')->lockForUpdate()->find($segment->id);
+
+            if ($current === null) {
+                return;
+            }
+
             $matchingIds = $this->applySegmentRules
-                ->handle($segment->audience, $segment->audience->subscribers()->getQuery(), $segment->rules, $segment->match_type)
+                ->handle($current->audience, $current->audience->subscribers()->getQuery(), $current->rules, $current->match_type)
                 ->pluck('subscribers.id')
                 ->map(fn (mixed $id): int => (int) $id);
             $currentIds = DB::table('segment_subscriber')
@@ -47,7 +59,8 @@ class SyncSegmentSubscribers
             }
 
             // A sync is not an edit, so leave updated_at alone.
-            Segment::withoutTimestamps(fn () => $segment->forceFill(['rules_synced_at' => $now])->save());
+            Segment::withoutTimestamps(fn () => $current->forceFill(['rules_synced_at' => $now])->save());
+            $segment->forceFill(['rules_synced_at' => $now])->syncOriginalAttribute('rules_synced_at');
         });
     }
 }
