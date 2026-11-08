@@ -52,7 +52,8 @@ use App\Services\AssistantModels;
 use App\Services\InstallationState;
 use App\Services\SesAccountLimits;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -1115,19 +1116,20 @@ class EmailController extends Controller
      */
     protected function templatesFor(Team $team): array
     {
-        return array_values(EmailTemplate::query()
+        $templates = EmailTemplate::query()
             ->availableTo($team)
             ->where('editor', $team->email_editor->value)
             ->orderedForPicker()
             ->get()
-            ->map(fn (EmailTemplate $template) => [
-                'uuid' => $template->uuid,
-                'name' => $template->name,
-                'description' => $template->description,
-                'editor' => $template->editor->value,
-                'is_starter' => $template->isStarter(),
-            ])
-            ->all());
+            ->all();
+
+        return array_values(array_map(fn (EmailTemplate $template): array => [
+            'uuid' => $template->uuid,
+            'name' => $template->name,
+            'description' => $template->description,
+            'editor' => $template->editor->value,
+            'is_starter' => $template->isStarter(),
+        ], $templates));
     }
 
     /**
@@ -1305,7 +1307,7 @@ class EmailController extends Controller
         ];
     }
 
-    /** @param Relation<Subscriber, Model, mixed> $query */
+    /** @param BelongsToMany<Subscriber, Segment>|HasMany<Subscriber, Audience> $query */
     protected function limitToRecipientPreview(Relation $query, Team $team): void
     {
         $query

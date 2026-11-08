@@ -363,18 +363,19 @@ class TransactionalEmailController extends Controller
      */
     protected function templatesFor(Team $team): array
     {
-        return array_values(EmailTemplate::query()
+        $templates = EmailTemplate::query()
             ->availableTo($team)
             ->where('editor', $team->email_editor->value)
             ->orderedForPicker()
             ->get()
-            ->map(fn (EmailTemplate $template) => [
-                'uuid' => $template->uuid,
-                'name' => $template->name,
-                'description' => $template->description,
-                'editor' => $template->editor->value,
-                'is_starter' => $template->isStarter(),
-            ])
-            ->all());
+            ->all();
+
+        return array_values(array_map(fn (EmailTemplate $template): array => [
+            'uuid' => $template->uuid,
+            'name' => $template->name,
+            'description' => $template->description,
+            'editor' => $template->editor->value,
+            'is_starter' => $template->isStarter(),
+        ], $templates));
     }
 }
