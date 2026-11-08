@@ -5,6 +5,8 @@ use App\Enums\AutomationCondition;
 use App\Enums\AutomationRunStatus;
 use App\Enums\AutomationStatus;
 use App\Enums\AutomationTrigger;
+use App\Enums\SubscriberSource;
+use App\Enums\SubscriberStatus;
 use App\Enums\TeamRole;
 use App\Jobs\ProcessAutomationRun;
 use App\Models\Audience;
@@ -13,7 +15,9 @@ use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TransactionalEmail;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('the list shows the team automations with their open run counts', function () {
@@ -271,6 +275,44 @@ test('deleting an automation cancels the runs still open on it', function () {
         ->and($openStep->refresh()->status)->toBe('cancelled')
         ->and($done->refresh()->status)->toBe(AutomationRunStatus::Completed)
         ->and($doneStep->refresh()->status)->toBe('completed');
+});
+
+test('deleting an automation with more open runs than one query can bind cancels them all', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $automation = Automation::factory()->active()->for($team)->create();
+    $audience = Audience::factory()->for($team)->create();
+    $now = now()->toDateTimeString();
+    foreach (array_chunk(range(1, 33000), 500) as $chunk) {
+        DB::table('subscribers')->insert(array_map(fn (int $number): array => [
+            'uuid' => (string) Str::uuid(),
+            'audience_id' => $audience->id,
+            'email' => "user{$number}@example.com",
+            'status' => SubscriberStatus::Subscribed->value,
+            'source' => SubscriberSource::Manual->value,
+            'subscribed_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], $chunk));
+    }
+    DB::table('subscribers')->where('audience_id', $audience->id)->orderBy('id')->chunkById(500, function ($subscribers) use ($automation, $now): void {
+        DB::table('automation_runs')->insert($subscribers->map(fn (object $subscriber): array => [
+            'uuid' => (string) Str::uuid(),
+            'automation_id' => $automation->id,
+            'subscriber_id' => $subscriber->id,
+            'status' => AutomationRunStatus::Waiting->value,
+            'graph' => '{"nodes":[],"edges":[]}',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ])->all());
+    });
+
+    $this->actingAs($user)
+        ->delete(route('automations.destroy', [$team, $automation]))
+        ->assertRedirect(route('automations.index', $team));
+
+    expect($automation->runs()->where('status', AutomationRunStatus::Cancelled)->count())->toBe(33000)
+        ->and($automation->refresh()->trashed())->toBeTrue();
 });
 
 test('regenerating the api token replaces it', function () {

@@ -88,6 +88,7 @@ class QueueRemainingRecipients
             ->name('Campaign remaining recipients: '.$email->name)
             ->onQueue(config('delivery.queues.campaigns'))
             ->allowFailures()
+            ->before(new RecordCampaignBatch($email->id))
             ->finally(new FinalizeEmailSend($email->id))
             ->dispatch();
 

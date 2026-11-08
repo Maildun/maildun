@@ -78,6 +78,7 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useAppearance } from '@/hooks/use-appearance';
+import { useUnsavedChanges } from '@/hooks/use-unsaved-changes';
 import {
     firstUploadErrorMessage,
     useUploadToast,
@@ -296,20 +297,7 @@ export default function SubscribeFormEdit({
         return stop;
     }, [start, stop, subscribeForm.image_processing]);
 
-    useEffect(() => {
-        const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-            if (!form.isDirty) {
-                return;
-            }
-
-            event.preventDefault();
-        };
-
-        window.addEventListener('beforeunload', warnBeforeUnload);
-
-        return () =>
-            window.removeEventListener('beforeunload', warnBeforeUnload);
-    }, [form.isDirty]);
+    useUnsavedChanges(form.isDirty);
 
     const submitForm = (publishAfterSave = false) => {
         const hasImageUpload =
@@ -419,15 +407,6 @@ export default function SubscribeFormEdit({
             {},
             { onFinish: () => setPublishing(false) },
         );
-    };
-
-    const confirmDiscardChanges = (event: React.MouseEvent) => {
-        if (
-            form.isDirty &&
-            !window.confirm('Discard your unsaved form changes?')
-        ) {
-            event.preventDefault();
-        }
     };
 
     const handleLogoChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -549,7 +528,6 @@ export default function SubscribeFormEdit({
                                 currentTeam.slug,
                                 audience.uuid,
                             ])}
-                            onClick={confirmDiscardChanges}
                             aria-label={`Back to ${audience.name}`}
                             className={buttonVariants({
                                 variant: 'ghost',
@@ -1338,18 +1316,14 @@ export default function SubscribeFormEdit({
                                             type="button"
                                             variant="outline"
                                             size="sm"
-                                            onClick={(event) => {
-                                                confirmDiscardChanges(event);
-
-                                                if (!event.defaultPrevented) {
-                                                    router.visit(
-                                                        audienceAttributes([
-                                                            currentTeam.slug,
-                                                            audience.uuid,
-                                                        ]),
-                                                    );
-                                                }
-                                            }}
+                                            onClick={() =>
+                                                router.visit(
+                                                    audienceAttributes([
+                                                        currentTeam.slug,
+                                                        audience.uuid,
+                                                    ]),
+                                                )
+                                            }
                                         >
                                             Manage audience fields
                                         </Button>

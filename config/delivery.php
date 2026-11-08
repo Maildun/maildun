@@ -8,21 +8,35 @@ return [
     |--------------------------------------------------------------------------
     |
     | The maximum number of messages this instance hands to the mail transport
-    | per second, across campaign, transactional and automation email. Every provider
-    | enforces a quota of its own and rejects the overflow, so this keeps a
-    | large campaign from burning through real recipients on throttling errors.
+    | per second, across campaign, transactional and automation email. Every
+    | provider enforces a quota of its own and rejects the overflow, so this
+    | keeps a large campaign from burning through real recipients on
+    | throttling errors.
     |
     | 0 disables the limit, which is the default so existing installs keep
     | their current behavior. A new Amazon SES account starts at 14 messages
     | per second; check your provider's quota before raising it. SMTP relays
     | vary widely, so use whatever your relay documents.
     |
+    | "transactional_share" is the percentage of that rate reserved for
+    | transactional mail, so a large campaign or automation cannot starve
+    | receipts and password resets. It is rounded down but never below one
+    | message per second; campaigns and automations share the rest, so the
+    | two together never exceed the configured rate. Transactional mail is
+    | capped at its share, so raise it if your API sends arrive in bursts.
+    | A rate of 1, or a share of 0, leaves every send sharing one limit.
+    |
     | "release_after" is how long a job waits before asking for a slot again.
+    |
+    | While a limit is on, a campaign also loads its recipients a few minutes
+    | of sending ahead rather than all at once, so every queued delivery gets
+    | its turn well inside the time a throttled job may wait for a slot.
     |
     */
 
     'rate_limit' => [
         'per_second' => (int) env('MAIL_RATE_LIMIT_PER_SECOND', 0),
+        'transactional_share' => (int) env('MAIL_RATE_LIMIT_TRANSACTIONAL_SHARE', 20),
         'release_after' => (int) env('MAIL_RATE_LIMIT_RELEASE_AFTER', 5),
     ],
 
@@ -60,6 +74,11 @@ return [
     | A delivery already claimed for sending is never re-queued, because the
     | transport may have accepted it. Those are failed instead, so an operator
     | can retry them deliberately from the campaign report.
+    |
+    | Tracking events and SES feedback are stored before they are processed.
+    | One still unprocessed this many minutes after its job was queued is
+    | queued again by emails:dispatch-tracking-events and
+    | emails:dispatch-provider-events.
     |
     */
 

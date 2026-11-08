@@ -71,6 +71,13 @@ test('transactional editor groups secondary actions in an overflow menu', functi
         ->toMatch('/Delete\\s*<\\/DropdownMenuItem>/');
 });
 
+test('transactional editor warns before leaving with unsaved changes', function () {
+    $editor = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/transactional/edit.tsx');
+
+    expect($editor)->toBeString()
+        ->toContain('useUnsavedChanges(form.isDirty);');
+});
+
 test('transactional editor does not export breadcrumb layout data', function () {
     $editor = file_get_contents(dirname(__DIR__, 2).'/resources/js/pages/transactional/edit.tsx');
 

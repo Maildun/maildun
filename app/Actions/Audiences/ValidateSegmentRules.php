@@ -101,19 +101,34 @@ class ValidateSegmentRules
             return;
         }
 
-        if (! in_array($operator, $attribute->type->segmentOperators(), true)) {
+        $mismatch = $this->attributeRuleMismatch($attribute->type, $operator, $value);
+
+        if ($mismatch === 'operator') {
             $errors["{$key}.operator"] = 'The selected operator is not valid for this field.';
-
-            return;
         }
 
-        if ($attribute->type === AudienceAttributeType::Number && ! is_numeric($value)) {
-            $errors["{$key}.value"] = 'The value must be a number.';
+        if ($mismatch === 'value') {
+            $errors["{$key}.value"] = $attribute->type === AudienceAttributeType::Date
+                ? 'The date must be in YYYY-MM-DD format.'
+                : 'The value must be a number.';
+        }
+    }
+
+    /**
+     * The part of a custom field rule that a field of this type cannot
+     * evaluate: 'operator', 'value', or null when the rule fits the type.
+     */
+    public function attributeRuleMismatch(AudienceAttributeType $type, ?SegmentRuleOperator $operator, mixed $value): ?string
+    {
+        if ($operator === null || ! in_array($operator, $type->segmentOperators(), true)) {
+            return 'operator';
         }
 
-        if ($attribute->type === AudienceAttributeType::Date && ! $this->isCalendarDate($value)) {
-            $errors["{$key}.value"] = 'The date must be in YYYY-MM-DD format.';
-        }
+        return match ($type) {
+            AudienceAttributeType::Number => is_numeric($value) ? null : 'value',
+            AudienceAttributeType::Date => $this->isCalendarDate($value) ? null : 'value',
+            AudienceAttributeType::Text => null,
+        };
     }
 
     /**

@@ -1,5 +1,5 @@
 import { useHttp } from '@inertiajs/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -61,20 +61,37 @@ export function RecipientDeliverySheet({
     const request = useHttp<Record<string, never>, DeliveryDetail>({});
     const [detail, setDetail] = useState<DeliveryDetail | null>(null);
     const [failed, setFailed] = useState(false);
+    const latestRequest = useRef(0);
 
     useEffect(() => {
         if (deliveryUuid === null) {
             return;
         }
 
+        // useHttp does not cancel an earlier request, so only the newest one
+        // may fill the sheet: a slow answer for the previous recipient is
+        // dropped instead of replacing (or failing) the one now open.
+        const requestId = latestRequest.current + 1;
+        latestRequest.current = requestId;
+        const isLatest = () => latestRequest.current === requestId;
+
         void request
             .get(showDelivery.url([teamSlug, campaignUuid, deliveryUuid]), {
-                onSuccess: (response) => {
+                onStart: () => {
                     setFailed(false);
-                    setDetail(response);
+                    setDetail(null);
+                },
+                onSuccess: (response) => {
+                    if (isLatest()) {
+                        setDetail(response);
+                    }
                 },
             })
-            .catch(() => setFailed(true));
+            .catch(() => {
+                if (isLatest()) {
+                    setFailed(true);
+                }
+            });
         // Load once per opened recipient; the request object changes identity
         // on every render.
         // eslint-disable-next-line react-hooks/exhaustive-deps

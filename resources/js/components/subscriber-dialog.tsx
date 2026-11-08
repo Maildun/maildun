@@ -256,8 +256,13 @@ export function SubscriberDialog({
                             </Field>
                         )}
                         <Field data-invalid={Boolean(tagsError(form.errors))}>
-                            <FieldLabel>Tags</FieldLabel>
+                            <FieldLabel
+                                htmlFor={`tags-${subscriber?.uuid || 'new'}`}
+                            >
+                                Tags
+                            </FieldLabel>
                             <TagsCombobox
+                                id={`tags-${subscriber?.uuid || 'new'}`}
                                 value={form.data.tags}
                                 availableTags={tags}
                                 onValueChange={(next) =>

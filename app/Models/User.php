@@ -128,6 +128,22 @@ class User extends Authenticatable implements MustVerifyEmail, OAuthenticatable,
     }
 
     /**
+     * Store the address trimmed and lowercased, whichever path writes it.
+     *
+     * Sign-in, the unique check and the Horizon allow list all compare
+     * addresses case-insensitively, so a second spelling of one mailbox must
+     * never reach the table.
+     *
+     * @return Attribute<never, string|null>
+     */
+    protected function email(): Attribute
+    {
+        return Attribute::make(
+            set: fn (?string $value): ?string => $value === null ? null : Str::lower(trim($value)),
+        );
+    }
+
+    /**
      * Get the public URL for the user's uploaded or generated avatar.
      *
      * @return Attribute<string, never>

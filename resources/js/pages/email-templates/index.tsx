@@ -46,12 +46,12 @@ import {
 } from '@/routes/email_templates';
 import type {
     EmailEditorMode,
-    EmailTemplateDetail,
+    EmailTemplateGalleryItem,
     EmailTemplateIndexFilters,
 } from '@/types';
 
 type Props = {
-    templates: EmailTemplateDetail[];
+    templates: EmailTemplateGalleryItem[];
     filters: EmailTemplateIndexFilters;
     defaultEditor: EmailEditorMode;
     canManage: boolean;
@@ -79,30 +79,25 @@ function ScaledEmailFrame({ children }: { children: ReactNode }) {
     );
 }
 
-function TemplatePreview({ template }: { template: EmailTemplateDetail }) {
-    if (template.editor === 'builder' && template.design) {
-        return (
-            <ScaledEmailFrame>
-                <iframe
-                    title={`${template.name} preview`}
-                    sandbox=""
-                    srcDoc={renderBuilderHtml(
-                        toBuilderDocument(template.design),
-                    )}
-                    tabIndex={-1}
-                    className="pointer-events-none h-full w-full border-0 bg-background"
-                />
-            </ScaledEmailFrame>
-        );
-    }
+/**
+ * Previews the html stored with the template. Only a block template with no
+ * stored html yet (a starter, or one never saved from the editor) arrives
+ * with its design, and is rendered here instead.
+ */
+function TemplatePreview({ template }: { template: EmailTemplateGalleryItem }) {
+    const html =
+        template.html ||
+        (template.editor === 'builder' && template.design
+            ? renderBuilderHtml(toBuilderDocument(template.design))
+            : null);
 
-    if (template.html) {
+    if (html) {
         return (
             <ScaledEmailFrame>
                 <iframe
                     title={`${template.name} preview`}
                     sandbox=""
-                    srcDoc={template.html}
+                    srcDoc={html}
                     tabIndex={-1}
                     className="pointer-events-none h-full w-full border-0 bg-background"
                 />
@@ -140,9 +135,9 @@ export default function EmailTemplatesIndex({
     const { currentTeam } = usePage().props;
     const [createOpen, setCreateOpen] = useState(false);
     const [templateToDelete, setTemplateToDelete] =
-        useState<EmailTemplateDetail | null>(null);
+        useState<EmailTemplateGalleryItem | null>(null);
     const [templateToUse, setTemplateToUse] =
-        useState<EmailTemplateDetail | null>(null);
+        useState<EmailTemplateGalleryItem | null>(null);
     const { visit, clear, clearAll, hasActiveFilters, searchKey } =
         useListFilters<EmailTemplateIndexFilters>({
             url: currentTeam ? templatesIndex.url(currentTeam.slug) : '',

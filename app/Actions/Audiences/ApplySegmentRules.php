@@ -100,7 +100,7 @@ class ApplySegmentRules
                 ->orWhereNull($column)),
             SegmentRuleOperator::Before => $query->whereDate($column, '<', $this->calendarDate($value)),
             SegmentRuleOperator::After => $query->whereDate($column, '>', $this->calendarDate($value)),
-            default => null,
+            default => $this->matchNobody($query),
         };
     }
 
@@ -155,7 +155,7 @@ class ApplySegmentRules
             SegmentRuleOperator::DoesNotContain => $query->where(fn (Builder $textQuery) => $textQuery
                 ->whereRaw("LOWER({$expression}) NOT LIKE ? ESCAPE '!'", [...$expressionBindings, $pattern])
                 ->orWhereRaw("{$expression} IS NULL", $expressionBindings)),
-            default => null,
+            default => $this->matchNobody($query),
         };
     }
 
@@ -163,7 +163,8 @@ class ApplySegmentRules
      * A rule on a custom field, read from subscribers.attribute_values. Number
      * fields compare numerically and skip values that are not numbers; date
      * fields compare the YYYY-MM-DD day the value starts with. The field key
-     * is bound rather than written into the SQL.
+     * is bound rather than written into the SQL. A rule whose operator the
+     * field's current type does not accept matches nobody.
      *
      * @param  Builder<Subscriber>  $query
      */
@@ -174,6 +175,12 @@ class ApplySegmentRules
             ? '("subscribers"."attribute_values" ->> CAST(? AS text))'
             : 'json_extract("subscribers"."attribute_values", ?)';
         $path = $isPostgres ? $attribute->key : '$."'.$attribute->key.'"';
+
+        if (! in_array($operator, $attribute->type->segmentOperators(), true)) {
+            $this->matchNobody($query);
+
+            return;
+        }
 
         if ($attribute->type === AudienceAttributeType::Text) {
             $this->applyTextRule($query, $json, [$path], $operator, $value);
@@ -187,7 +194,7 @@ class ApplySegmentRules
             match ($operator) {
                 SegmentRuleOperator::Before => $query->whereRaw("SUBSTR({$json}, 1, 10) < ?", $bindings),
                 SegmentRuleOperator::After => $query->whereRaw("SUBSTR({$json}, 1, 10) > ?", $bindings),
-                default => null,
+                default => $this->matchNobody($query),
             };
 
             return;
@@ -209,8 +216,20 @@ class ApplySegmentRules
                 ->orWhereRaw("{$number} IS NULL", $paths)),
             SegmentRuleOperator::GreaterThan => $query->whereRaw("{$number} > {$bound}", $bindings),
             SegmentRuleOperator::LessThan => $query->whereRaw("{$number} < {$bound}", $bindings),
-            default => null,
+            default => $this->matchNobody($query),
         };
+    }
+
+    /**
+     * An operator the field cannot evaluate, such as "greater than" on a custom
+     * field that has since become Text, matches nobody. Adding no condition
+     * would widen the segment to the whole audience.
+     *
+     * @param  Builder<Subscriber>  $query
+     */
+    private function matchNobody(Builder $query): void
+    {
+        $query->whereRaw('1 = 0');
     }
 
     /**
@@ -223,7 +242,7 @@ class ApplySegmentRules
     private function applyMissingTargetRule(Builder $query, SegmentRuleOperator $operator): void
     {
         if (! in_array($operator, [SegmentRuleOperator::NotEquals, SegmentRuleOperator::DoesNotContain], true)) {
-            $query->whereRaw('1 = 0');
+            $this->matchNobody($query);
         }
     }
 

@@ -27,17 +27,20 @@ import type {
     MergeTag,
 } from '@maildun/email-builder/editor';
 import type { FormEvent } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { AddMergeFieldDialog } from '@/components/add-merge-field-dialog';
 import { CampaignSetupRow } from '@/components/campaign-setup-row';
 import DeleteEmailModal from '@/components/delete-email-modal';
-import { DesignAssistant } from '@/components/design-assistant';
 import type { AssistantModel } from '@/components/design-assistant';
 import { DesignAssistantIcon } from '@/components/design-assistant-icon';
 import { EmailBuilderActions } from '@/components/email-builder-actions';
-import { EmailBuilderEditor } from '@/components/email-builder-editor';
-import { EmailHtmlEditor } from '@/components/email-html-editor';
-import { EmailSourceEditor } from '@/components/email-source-editor';
+import {
+    DesignAssistant,
+    EmailBuilderEditor,
+    EmailEditorFallback,
+    EmailHtmlEditor,
+    EmailSourceEditor,
+} from '@/components/lazy-email-editors';
 import MediaLibraryDialog from '@/components/media-library-dialog';
 import PersonalizationTagsDialog from '@/components/personalization-tags-dialog';
 import SaveEmailAsTemplateDialog from '@/components/save-email-as-template-dialog';
@@ -861,126 +864,144 @@ export default function EmailEdit({
                             </div>
                         </header>
                         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                            {email.editor === 'builder' ? (
-                                <>
-                                    <div className="flex min-h-0 min-w-0 flex-1">
-                                        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                                            <EmailBuilderEditor
-                                                ref={builderRef}
-                                                onPickImage={
-                                                    mediaLibrary
-                                                        ? pickBuilderImage
-                                                        : undefined
-                                                }
-                                                onUploadImage={
-                                                    uploadBuilderImage
-                                                }
-                                                onGeneratePreheader={
-                                                    assistantAvailable
-                                                        ? writePreheader
-                                                        : undefined
-                                                }
-                                                conditions={builderConditions(
-                                                    selectedAudience?.segments ??
-                                                        [],
-                                                    tags,
-                                                )}
-                                                onCreateMergeTag={
-                                                    canAddFields &&
-                                                    selectedAudience
-                                                        ? createMergeField
-                                                        : undefined
-                                                }
-                                                paletteGroups={paletteGroups}
-                                                assistantOpen={
-                                                    assistantAvailable &&
-                                                    assistantOpen
-                                                }
-                                                document={
-                                                    form.data.design ??
-                                                    EMPTY_BUILDER_DOCUMENT
-                                                }
-                                                disabled={!canManage}
-                                                fill
-                                                mergeTags={[
-                                                    ...BUILDER_MERGE_TAGS,
-                                                    ...(
-                                                        selectedAudience?.attributes ??
-                                                        []
-                                                    ).map((attribute) => ({
-                                                        key: attribute.key,
-                                                        label: attribute.name,
-                                                    })),
-                                                ]}
-                                                onChange={(design) =>
-                                                    form.setData(
-                                                        'design',
-                                                        design,
-                                                    )
-                                                }
-                                            />
+                            <Suspense fallback={<EmailEditorFallback />}>
+                                {email.editor === 'builder' ? (
+                                    <>
+                                        <div className="flex min-h-0 min-w-0 flex-1">
+                                            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                                                <EmailBuilderEditor
+                                                    ref={builderRef}
+                                                    onPickImage={
+                                                        mediaLibrary
+                                                            ? pickBuilderImage
+                                                            : undefined
+                                                    }
+                                                    onUploadImage={
+                                                        uploadBuilderImage
+                                                    }
+                                                    onGeneratePreheader={
+                                                        assistantAvailable
+                                                            ? writePreheader
+                                                            : undefined
+                                                    }
+                                                    conditions={builderConditions(
+                                                        selectedAudience?.segments ??
+                                                            [],
+                                                        tags,
+                                                    )}
+                                                    onCreateMergeTag={
+                                                        canAddFields &&
+                                                        selectedAudience
+                                                            ? createMergeField
+                                                            : undefined
+                                                    }
+                                                    paletteGroups={
+                                                        paletteGroups
+                                                    }
+                                                    assistantOpen={
+                                                        assistantAvailable &&
+                                                        assistantOpen
+                                                    }
+                                                    document={
+                                                        form.data.design ??
+                                                        EMPTY_BUILDER_DOCUMENT
+                                                    }
+                                                    disabled={!canManage}
+                                                    fill
+                                                    mergeTags={[
+                                                        ...BUILDER_MERGE_TAGS,
+                                                        ...(
+                                                            selectedAudience?.attributes ??
+                                                            []
+                                                        ).map((attribute) => ({
+                                                            key: attribute.key,
+                                                            label: attribute.name,
+                                                        })),
+                                                    ]}
+                                                    onChange={(design) =>
+                                                        form.setData(
+                                                            'design',
+                                                            design,
+                                                        )
+                                                    }
+                                                />
+                                            </div>
+                                            {assistantAvailable ? (
+                                                <Suspense fallback={null}>
+                                                    <DesignAssistant
+                                                        url={designAssistant.url(
+                                                            [
+                                                                currentTeam.slug,
+                                                                email.uuid,
+                                                            ],
+                                                        )}
+                                                        models={assistantModels}
+                                                        editor={builderRef}
+                                                        open={assistantOpen}
+                                                        campaign={{
+                                                            name: form.data
+                                                                .name,
+                                                            subject:
+                                                                form.data
+                                                                    .subject,
+                                                            preheader:
+                                                                form.data
+                                                                    .preheader,
+                                                            audience:
+                                                                selectedAudience?.name ??
+                                                                null,
+                                                        }}
+                                                        onStreamingChange={
+                                                            setAssistantWorking
+                                                        }
+                                                        onClose={() =>
+                                                            setAssistantOpen(
+                                                                false,
+                                                            )
+                                                        }
+                                                    />
+                                                </Suspense>
+                                            ) : null}
                                         </div>
-                                        {assistantAvailable ? (
-                                            <DesignAssistant
-                                                url={designAssistant.url([
-                                                    currentTeam.slug,
-                                                    email.uuid,
-                                                ])}
-                                                models={assistantModels}
-                                                editor={builderRef}
-                                                open={assistantOpen}
-                                                campaign={{
-                                                    name: form.data.name,
-                                                    subject: form.data.subject,
-                                                    preheader:
-                                                        form.data.preheader,
-                                                    audience:
-                                                        selectedAudience?.name ??
-                                                        null,
-                                                }}
-                                                onStreamingChange={
-                                                    setAssistantWorking
-                                                }
-                                                onClose={() =>
-                                                    setAssistantOpen(false)
-                                                }
-                                            />
-                                        ) : null}
-                                    </div>
-                                    <FieldError>
-                                        {form.errors.design}
-                                    </FieldError>
-                                </>
-                            ) : email.editor === 'html' ? (
-                                <>
-                                    <EmailHtmlEditor
-                                        value={form.data.html}
-                                        disabled={!canManage}
-                                        aria-invalid={Boolean(form.errors.html)}
-                                        onChange={(html) =>
-                                            form.setData('html', html)
-                                        }
-                                    />
-                                    <FieldError>{form.errors.html}</FieldError>
-                                </>
-                            ) : (
-                                <>
-                                    <EmailSourceEditor
-                                        editor={email.editor}
-                                        value={form.data.source}
-                                        disabled={!canManage}
-                                        aria-invalid={Boolean(
-                                            form.errors.source,
-                                        )}
-                                        onChange={(source) =>
-                                            form.setData('source', source)
-                                        }
-                                    />
-                                    <FieldError>
-                                        {form.errors.source}
-                                    </FieldError>
-                                </>
-                            )}
+                                        <FieldError>
+                                            {form.errors.design}
+                                        </FieldError>
+                                    </>
+                                ) : email.editor === 'html' ? (
+                                    <>
+                                        <EmailHtmlEditor
+                                            value={form.data.html}
+                                            disabled={!canManage}
+                                            aria-invalid={Boolean(
+                                                form.errors.html,
+                                            )}
+                                            onChange={(html) =>
+                                                form.setData('html', html)
+                                            }
+                                        />
+                                        <FieldError>
+                                            {form.errors.html}
+                                        </FieldError>
+                                    </>
+                                ) : (
+                                    <>
+                                        <EmailSourceEditor
+                                            editor={email.editor}
+                                            value={form.data.source}
+                                            disabled={!canManage}
+                                            aria-invalid={Boolean(
+                                                form.errors.source,
+                                            )}
+                                            onChange={(source) =>
+                                                form.setData('source', source)
+                                            }
+                                        />
+                                        <FieldError>
+                                            {form.errors.source}
+                                        </FieldError>
+                                    </>
+                                )}
+                            </Suspense>
                         </div>
                     </>
                 ) : (

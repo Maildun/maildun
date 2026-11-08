@@ -3,8 +3,8 @@
 namespace App\Jobs;
 
 use App\Actions\Emails\RenderCampaignContent;
+use App\Concerns\PacesCampaignLoading;
 use App\Enums\EmailDeliveryStatus;
-use App\Enums\EmailStatus;
 use App\Exceptions\EmailTransportException;
 use App\Models\Email;
 use App\Models\EmailDelivery;
@@ -16,11 +16,20 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Str;
-use Throwable;
 
+/**
+ * Loads one page of a campaign's recipients into its batch.
+ *
+ * A loader that fails for good leaves the campaign sending: the deliveries it
+ * already queued still go out, and when the batch finishes ResolveCampaignOutcome
+ * reports Failed because fewer deliveries exist than recipients, which offers
+ * the rest through QueueRemainingRecipients. Failing the campaign here would
+ * strand those queued deliveries, since a delivery is only claimed while its
+ * campaign is sending.
+ */
 class PrepareEmailSendChunk implements ShouldQueue
 {
-    use Batchable, Queueable;
+    use Batchable, PacesCampaignLoading, Queueable;
 
     private const int CHUNK_SIZE = 200;
 
@@ -55,7 +64,7 @@ class PrepareEmailSendChunk implements ShouldQueue
             ->with(['team', 'audience', 'segment'])
             ->findOrFail($this->emailId);
 
-        if (! $email->status->isActive()) {
+        if (! $email->status->isActive() || $this->waitForCampaignBacklog($email)) {
             return;
         }
 
@@ -113,14 +122,6 @@ class PrepareEmailSendChunk implements ShouldQueue
         }
 
         $batch->add([...$deliveryJobs, ...$loaderJobs]);
-    }
-
-    public function failed(?Throwable $exception): void
-    {
-        Email::query()
-            ->whereKey($this->emailId)
-            ->whereIn('status', EmailStatus::active())
-            ->update(['status' => EmailStatus::Failed]);
     }
 
     /** @return list<string> */

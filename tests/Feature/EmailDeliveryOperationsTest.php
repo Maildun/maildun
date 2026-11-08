@@ -3,6 +3,7 @@
 use App\Concerns\ThrottlesEmailDelivery;
 use App\Console\Commands\ResumeEmailDeliveriesCommand;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailSendLane;
 use App\Enums\EmailStatus;
 use App\Jobs\PrepareEmailSendChunk;
 use App\Jobs\ProcessAutomationRun;
@@ -15,9 +16,9 @@ use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
 use App\Models\TransactionalEmail;
 use App\Models\TransactionalEmailDelivery;
-use App\Services\TeamMailer;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Pipeline\Pipeline;
 use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
@@ -25,6 +26,24 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+
+/**
+ * Runs a send job through its middleware and reports whether it got as far as
+ * handle(), which is where it would send.
+ */
+function passesDeliveryMiddleware(object $job): bool
+{
+    $reachedHandle = false;
+
+    (new Pipeline(app()))
+        ->send($job)
+        ->through($job->middleware())
+        ->then(function () use (&$reachedHandle): void {
+            $reachedHandle = true;
+        });
+
+    return $reachedHandle;
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -104,7 +123,7 @@ test('no rate limit is applied when the operator has not configured one', functi
 
     $job = new SendEmailDelivery(1);
 
-    expect($job->middleware())->toBe([])
+    expect($job->middleware())->each->not->toBeInstanceOf(RateLimited::class)
         ->and($job->retryUntil())->toBeNull()
         ->and($job->tries)->toBe(3);
 });
@@ -113,12 +132,47 @@ test('a configured send rate throttles every send job', function (string $jobCla
     config()->set('delivery.rate_limit.per_second', 14);
     config()->set('delivery.rate_limit.release_after', 7);
 
-    $middleware = (new $jobClass(1))->middleware();
+    $throttles = collect((new $jobClass(1))->middleware())->whereInstanceOf(RateLimited::class);
 
-    expect($middleware)->toHaveCount(1)
-        ->and($middleware[0])->toBeInstanceOf(RateLimited::class)
-        ->and($middleware[0]->releaseAfter)->toBe(7);
+    expect($throttles)->toHaveCount(1)
+        ->and($throttles->sole()->releaseAfter)->toBe(7);
 })->with([SendEmailDelivery::class, SendTransactionalEmailDelivery::class, SendAutomationEmailDelivery::class]);
+
+test('a campaign delivery that can no longer send is dropped before it takes a send slot', function (string $reason) {
+    $this->freezeTime();
+    // Splits into one slot a second for bulk mail and one for transactional.
+    config()->set('delivery.rate_limit.per_second', 2);
+    $sending = Email::factory()->create(['status' => EmailStatus::Sending]);
+    $waiting = EmailDelivery::factory()->for($sending)->create(['status' => EmailDeliveryStatus::Queued]);
+    $leftoverJob = match ($reason) {
+        'its batch was cancelled' => (new SendEmailDelivery(EmailDelivery::factory()->for($sending)->create()->id))
+            ->withFakeBatch(cancelledAt: now())[0],
+        'its campaign was stopped' => new SendEmailDelivery(EmailDelivery::factory()
+            ->for(Email::factory()->create(['status' => EmailStatus::Stopped]))
+            ->create(['status' => EmailDeliveryStatus::Cancelled])->id),
+        'it was already sent' => new SendEmailDelivery(EmailDelivery::factory()->for($sending)->create([
+            'status' => EmailDeliveryStatus::Sent,
+            'send_attempted_at' => now(),
+        ])->id),
+    };
+
+    expect(passesDeliveryMiddleware($leftoverJob))->toBeFalse()
+        ->and(passesDeliveryMiddleware(new SendEmailDelivery($waiting->id)))->toBeTrue();
+})->with(['its batch was cancelled', 'its campaign was stopped', 'it was already sent']);
+
+test('campaign and automation sends cannot take the send slots reserved for transactional mail', function () {
+    $this->freezeTime();
+    // Four slots a second for bulk mail, one reserved for transactional.
+    config()->set('delivery.rate_limit.per_second', 5);
+
+    $bulkSends = collect(range(1, 5))
+        ->filter(fn (int $deliveryId): bool => passesDeliveryMiddleware(new SendAutomationEmailDelivery($deliveryId)))
+        ->count();
+
+    expect($bulkSends)->toBe(4)
+        ->and(passesDeliveryMiddleware(new SendTransactionalEmailDelivery(1)))->toBeTrue()
+        ->and(passesDeliveryMiddleware(new SendTransactionalEmailDelivery(2)))->toBeFalse();
+});
 
 test('the automation engine never waits for a send slot', function () {
     config()->set('delivery.rate_limit.per_second', 14);
@@ -140,15 +194,36 @@ test('a throttled job is bounded by time so waiting for a slot never fails a rec
 
 test('the named limiter reflects the configured rate', function () {
     config()->set('delivery.rate_limit.per_second', 0);
-    expect(RateLimiter::limiter(TeamMailer::RATE_LIMITER)())->toBeInstanceOf(Limit::class)
-        ->and(RateLimiter::limiter(TeamMailer::RATE_LIMITER)()->maxAttempts)->toBe(PHP_INT_MAX);
+    expect(RateLimiter::limiter(EmailSendLane::Bulk->limiterName())())->toBeInstanceOf(Limit::class)
+        ->and(RateLimiter::limiter(EmailSendLane::Bulk->limiterName())()->maxAttempts)->toBe(PHP_INT_MAX);
 
     config()->set('delivery.rate_limit.per_second', 14);
-    $limit = RateLimiter::limiter(TeamMailer::RATE_LIMITER)();
+    $limit = RateLimiter::limiter(EmailSendLane::Bulk->limiterName())();
 
-    expect($limit->maxAttempts)->toBe(14)
+    expect($limit->maxAttempts)->toBe(12)
         ->and($limit->decaySeconds)->toBe(1);
 });
+
+test('the send rate is split into a reserved transactional share and the rest for bulk mail', function (
+    int $perSecond,
+    int $transactionalShare,
+    int $bulkSlots,
+    int $transactionalSlots,
+    string $transactionalLimiter,
+) {
+    config()->set('delivery.rate_limit.per_second', $perSecond);
+    config()->set('delivery.rate_limit.transactional_share', $transactionalShare);
+
+    expect(RateLimiter::limiter(EmailSendLane::Bulk->limiterName())()->maxAttempts)->toBe($bulkSlots)
+        ->and(RateLimiter::limiter(EmailSendLane::Transactional->limiterName())()->maxAttempts)->toBe($transactionalSlots)
+        ->and(EmailSendLane::Transactional->limiterName())->toBe($transactionalLimiter);
+})->with([
+    'a fifth of the rate, rounded down' => [14, 20, 12, 2, 'email-delivery-transactional'],
+    'at least one message a second' => [3, 20, 2, 1, 'email-delivery-transactional'],
+    'never the whole rate' => [10, 100, 1, 9, 'email-delivery-transactional'],
+    'too small a rate to split' => [1, 20, 1, 1, 'email-delivery'],
+    'no share reserved' => [14, 0, 14, 14, 'email-delivery'],
+]);
 
 /*
 |--------------------------------------------------------------------------

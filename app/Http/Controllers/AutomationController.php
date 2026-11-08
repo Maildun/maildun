@@ -23,6 +23,7 @@ use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -456,6 +457,7 @@ class AutomationController extends Controller
                 'unsubscribed' => __('Skipped: the recipient had unsubscribed'),
                 'unconfirmed' => __('Skipped: the recipient has not confirmed their subscription'),
                 'already_attempted' => __('Skipped: this step was already attempted'),
+                'duplicate' => __('Skipped: the contact already got this email from this automation through another audience'),
                 default => $result['reason'],
             };
         }
@@ -467,9 +469,15 @@ class AutomationController extends Controller
         foreach (['transactional_email_uuid', 'tag_uuid'] as $key) {
             $uuid = $result[$key] ?? null;
 
-            if (is_string($uuid)) {
-                return $names[$uuid] ?? __('No longer available');
+            if (! is_string($uuid)) {
+                continue;
             }
+
+            $name = $names[$uuid] ?? __('No longer available');
+
+            return ($result['trigger_chain_limit'] ?? false) === true
+                ? __(':name (tagged automations were not started: too many automations in a row started one another)', ['name' => $name])
+                : $name;
         }
 
         if (is_string($result['language'] ?? null)) {
@@ -487,30 +495,34 @@ class AutomationController extends Controller
     {
         Gate::authorize('delete', $automation);
 
-        $openRuns = $automation->runs()
-            ->whereIn('status', AutomationRunStatus::open())
-            ->get();
+        // Cancel through a subquery: an automation can hold more open runs
+        // than one query can bind, and loading them would pull every graph.
+        DB::transaction(function () use ($automation): void {
+            $openRunIds = $automation->runs()
+                ->whereIn('status', AutomationRunStatus::open())
+                ->select('id');
 
-        AutomationRunStep::query()
-            ->whereIn('automation_run_id', $openRuns->modelKeys())
-            ->whereIn('status', ['pending', 'running', 'waiting'])
-            ->update([
-                'status' => 'cancelled',
-                'scheduled_at' => null,
-                'processed_at' => now(),
-            ]);
+            AutomationRunStep::query()
+                ->whereIn('automation_run_id', $openRunIds)
+                ->whereIn('status', ['pending', 'running', 'waiting'])
+                ->update([
+                    'status' => 'cancelled',
+                    'scheduled_at' => null,
+                    'processed_at' => now(),
+                ]);
 
-        AutomationRun::query()
-            ->whereKey($openRuns->modelKeys())
-            ->update([
-                'status' => AutomationRunStatus::Cancelled->value,
-                'current_node_id' => null,
-                'failure_reason' => __('The automation was deleted.'),
-                'completed_at' => now(),
-                'scheduled_at' => null,
-            ]);
+            $automation->runs()
+                ->whereIn('status', AutomationRunStatus::open())
+                ->update([
+                    'status' => AutomationRunStatus::Cancelled->value,
+                    'current_node_id' => null,
+                    'failure_reason' => __('The automation was deleted.'),
+                    'completed_at' => now(),
+                    'scheduled_at' => null,
+                ]);
 
-        $automation->delete();
+            $automation->delete();
+        });
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Automation deleted.')]);
 

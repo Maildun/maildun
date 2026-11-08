@@ -85,8 +85,9 @@ export function BulkSubscriberTagsDialog({
                 </DialogHeader>
 
                 <Field data-invalid={Boolean(tagsError(form.errors))}>
-                    <FieldLabel>Tags</FieldLabel>
+                    <FieldLabel htmlFor="bulk-subscriber-tags">Tags</FieldLabel>
                     <TagsCombobox
+                        id="bulk-subscriber-tags"
                         value={form.data.tags}
                         availableTags={tags}
                         onValueChange={(next) => form.setData('tags', next)}

@@ -14,12 +14,25 @@
 #   docker compose up -d
 #   docker compose exec app php artisan app:install --no-interaction \
 #       --admin-name="Your Name" --admin-email=you@example.com \
-#       --admin-password='a-strong-password' --registration=closed
+#       --admin-password='Replace-With-A-Str0ng-Passphrase!' --registration=closed
+#
+# Production rules apply to that password: at least 12 characters with upper-
+# and lowercase letters, a number and a symbol.
+#
+# The containers run with APP_ENV=production and APP_DEBUG=false whatever .env
+# says, because .env.example is written for a developer machine and debug mode
+# shows stack traces and configuration to anyone who triggers an error. To
+# change them on purpose, set DOCKER_APP_ENV or DOCKER_APP_DEBUG in .env or the
+# shell, e.g. DOCKER_APP_DEBUG=true while diagnosing a private installation.
 
 name: maildun
 
 x-app-env: &app-env
-  # Overrides .env, which points at a developer's own machine.
+  # Overrides .env, which points at a developer's own machine. APP_ENV and
+  # APP_DEBUG read their own DOCKER_* names: Compose also interpolates from
+  # .env, so ${APP_DEBUG} would pick up the example's debug mode.
+  APP_ENV: ${DOCKER_APP_ENV:-production}
+  APP_DEBUG: ${DOCKER_APP_DEBUG:-false}
   DB_CONNECTION: pgsql
   DB_HOST: postgres
   DB_PORT: 5432

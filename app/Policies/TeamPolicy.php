@@ -166,14 +166,6 @@ class TeamPolicy
     }
 
     /**
-     * Determine whether the user can view and run deployment diagnostics.
-     */
-    public function viewSystemCheck(User $user, Team $team): bool
-    {
-        return $user->ownsTeam($team);
-    }
-
-    /**
      * Determine whether the user can delete the model.
      */
     public function delete(User $user, Team $team): bool

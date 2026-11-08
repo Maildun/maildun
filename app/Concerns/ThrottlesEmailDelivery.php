@@ -2,7 +2,7 @@
 
 namespace App\Concerns;
 
-use App\Services\TeamMailer;
+use App\Enums\EmailSendLane;
 use DateTimeInterface;
 use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Queue\Middleware\RateLimitedWithRedis;
@@ -26,18 +26,15 @@ trait ThrottlesEmailDelivery
      */
     public int $maxExceptions = 3;
 
-    /** @return list<object> */
+    /**
+     * Checks that can drop the job run before the throttle, so a job that would
+     * send nothing never spends one of the instance's send slots.
+     *
+     * @return list<object>
+     */
     public function middleware(): array
     {
-        if (! $this->emailRateLimitIsEnabled()) {
-            return [];
-        }
-
-        $middleware = config('cache.default') === 'redis'
-            ? new RateLimitedWithRedis(TeamMailer::RATE_LIMITER)
-            : new RateLimited(TeamMailer::RATE_LIMITER);
-
-        return [$middleware->releaseAfter(max(1, (int) config('delivery.rate_limit.release_after')))];
+        return [...$this->middlewareBeforeSendSlot(), ...$this->sendSlotMiddleware()];
     }
 
     /**
@@ -50,6 +47,41 @@ trait ThrottlesEmailDelivery
     public function retryUntil(): ?DateTimeInterface
     {
         return $this->emailRateLimitIsEnabled() ? now()->addHours(self::RETRY_WINDOW_HOURS) : null;
+    }
+
+    /**
+     * Middleware that runs before a send slot is taken. A job overrides this
+     * to skip work that can no longer send, such as a stopped campaign's.
+     *
+     * @return list<object>
+     */
+    protected function middlewareBeforeSendSlot(): array
+    {
+        return [];
+    }
+
+    /**
+     * Which share of the send rate this job draws from. Campaign and automation
+     * mail share the bulk lane; transactional mail overrides this.
+     */
+    protected function sendLane(): EmailSendLane
+    {
+        return EmailSendLane::Bulk;
+    }
+
+    /** @return list<object> */
+    private function sendSlotMiddleware(): array
+    {
+        if (! $this->emailRateLimitIsEnabled()) {
+            return [];
+        }
+
+        $limiterName = $this->sendLane()->limiterName();
+        $middleware = config('cache.default') === 'redis'
+            ? new RateLimitedWithRedis($limiterName)
+            : new RateLimited($limiterName);
+
+        return [$middleware->releaseAfter(max(1, (int) config('delivery.rate_limit.release_after')))];
     }
 
     private function emailRateLimitIsEnabled(): bool

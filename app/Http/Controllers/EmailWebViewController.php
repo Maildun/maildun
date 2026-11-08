@@ -19,6 +19,18 @@ use Illuminate\Http\Response;
 class EmailWebViewController extends Controller
 {
     /**
+     * The policy for author-supplied markup served on the application origin.
+     *
+     * default-src does not cover form-action or frame-ancestors, so both are
+     * closed explicitly: the page can neither post a lookalike sign-in form
+     * nor be framed. The sandbox gives the page an opaque origin with no
+     * scripts, forms or automatic features. Links still work: following one
+     * navigates this top-level page, and target="_blank" opens a normal,
+     * unsandboxed window for the destination.
+     */
+    private const string CONTENT_SECURITY_POLICY = "default-src 'none'; img-src * data:; style-src * 'unsafe-inline'; font-src * data:; media-src *; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; sandbox allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation";
+
+    /**
      * Test copies have no delivery to host, so this page stands in for
      * {{ web_view_url }} without signing a live copy.
      */
@@ -74,16 +86,33 @@ class EmailWebViewController extends Controller
     /**
      * Serve author-supplied markup as a page of its own.
      *
-     * Scripts are refused by policy because the body is authored by workspace
-     * members and served on the application origin. The default "Powered by
-     * Maildun" credit is appended, linking to the source code.
+     * Scripts, forms and framing are refused by policy because the body is
+     * authored by workspace members and served on the application origin. The
+     * default "Powered by Maildun" credit is appended, linking to the source
+     * code.
      */
     private function page(string $html): Response
     {
-        return response($this->withAttribution($html))
+        return response($this->withAttribution($this->withoutHttpEquiv($html)))
             ->header('Content-Type', 'text/html; charset=UTF-8')
-            ->header('Content-Security-Policy', "default-src 'none'; img-src * data:; style-src * 'unsafe-inline'; font-src * data:; media-src *; base-uri 'none'")
+            ->header('Content-Security-Policy', self::CONTENT_SECURITY_POLICY)
+            ->header('X-Frame-Options', 'DENY')
             ->header('X-Robots-Tag', 'noindex, nofollow');
+    }
+
+    /**
+     * Disarm every http-equiv pragma, refresh above all, which would send a
+     * visitor from this origin to any address the author chose without a
+     * click. The response headers already carry the charset and the policy,
+     * so the page needs none of them.
+     *
+     * The attribute is renamed wherever an attribute name could begin (after
+     * whitespace, a slash, or a closing quote) rather than by parsing tags,
+     * so no tokenizer quirk in the markup can hide one.
+     */
+    private function withoutHttpEquiv(string $html): string
+    {
+        return preg_replace('/(?<=[\t\n\f\r \/"\'])http-equiv(?=[\t\n\f\r ]*=)/i', 'data-http-equiv', $html) ?? $html;
     }
 
     private function withAttribution(string $html): string

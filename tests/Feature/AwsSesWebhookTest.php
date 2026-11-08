@@ -1,12 +1,14 @@
 <?php
 
 use App\Actions\Emails\ProcessSesEvent;
+use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Enums\AutomationTrigger;
 use App\Enums\EmailAddressHealthStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailProvider;
 use App\Enums\SubscriberStatus;
 use App\Events\SubscriberLifecycleOccurred;
+use App\Jobs\ProcessEmailProviderEvent;
 use App\Models\EmailAddressHealth;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
@@ -19,6 +21,9 @@ use Aws\Sns\Message;
 use Aws\Sns\MessageValidator;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+
+use function Pest\Laravel\mock;
 
 function sesFeedbackTopic(string $name = 'maildun-test'): string
 {
@@ -804,4 +809,116 @@ test('the webhook refuses to follow a subscription URL outside Amazon SNS', func
         ->assertUnprocessable();
 
     Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'attacker.example.com'));
+});
+
+/**
+ * A permanent bounce for the given SES attempt, as SES publishes it.
+ *
+ * @return array<string, mixed>
+ */
+function permanentBouncePayload(EmailDeliveryAttempt $attempt): array
+{
+    return [
+        'eventType' => 'Bounce',
+        'mail' => [
+            'timestamp' => now()->toISOString(),
+            'tags' => ['attempt_uuid' => [$attempt->uuid]],
+        ],
+        'bounce' => [
+            'timestamp' => now()->toISOString(),
+            'bounceType' => 'Permanent',
+            'bounceSubType' => 'General',
+        ],
+    ];
+}
+
+test('the webhook stores SES feedback before queueing it for processing', function () {
+    Queue::fake([ProcessEmailProviderEvent::class]);
+    $topicArn = sesFeedbackTopic();
+    $delivery = EmailDelivery::factory()->create([
+        'provider' => EmailProvider::AmazonSes,
+        'status' => EmailDeliveryStatus::Sent,
+    ]);
+    $attempt = createSesFeedbackAttempt($delivery, $topicArn);
+    $signedMessage = signedSnsNotification($topicArn, 'sns-stored-bounce', permanentBouncePayload($attempt));
+    Http::fake([
+        $signedMessage['certificate_url'] => Http::response($signedMessage['certificate']),
+    ]);
+
+    $this->postJson(route('webhooks.aws.ses'), $signedMessage['envelope'])
+        ->assertNoContent();
+
+    $event = EmailProviderEvent::query()->sole();
+    expect($event)
+        ->event_id->toBe('sns-stored-bounce')
+        ->type->toBe('Bounce')
+        ->ses_sns_topic_arn_hash->toBe(hash('sha256', $topicArn))
+        ->processed_at->toBeNull()
+        ->last_dispatched_at->not->toBeNull();
+    expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Sent);
+    Queue::assertPushed(
+        ProcessEmailProviderEvent::class,
+        fn (ProcessEmailProviderEvent $job): bool => $job->eventId === $event->id
+            && $job->queue === config('delivery.queues.tracking'),
+    );
+});
+
+test('feedback whose processing fails stays pending and is applied by a later attempt', function () {
+    $topicArn = sesFeedbackTopic();
+    $subscriber = Subscriber::factory()->create();
+    $delivery = EmailDelivery::factory()->create([
+        'subscriber_id' => $subscriber->id,
+        'provider' => EmailProvider::AmazonSes,
+        'status' => EmailDeliveryStatus::Sent,
+    ]);
+    $attempt = createSesFeedbackAttempt($delivery, $topicArn);
+    $event = app(ProcessSesEvent::class)->record('sns-retried-bounce', permanentBouncePayload($attempt), $topicArn);
+    mock(RecordEmailAddressHealth::class)
+        ->shouldReceive('recordPermanentBounce')
+        ->once()
+        ->andThrow(new RuntimeException('Deadlock detected.'));
+
+    expect(fn () => app()->call([new ProcessEmailProviderEvent($event->id), 'handle']))
+        ->toThrow(RuntimeException::class, 'Deadlock detected.');
+
+    expect($event->fresh())
+        ->processed_at->toBeNull()
+        ->processing_attempts->toBe(1)
+        ->last_error->toBe('Deadlock detected.');
+    expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Sent)
+        ->and($subscriber->fresh()->status)->toBe(SubscriberStatus::Subscribed);
+
+    $this->app->forgetInstance(RecordEmailAddressHealth::class);
+    app()->call([new ProcessEmailProviderEvent($event->id), 'handle']);
+
+    expect($event->fresh()->processed_at)->not->toBeNull()
+        ->and($event->fresh()->email_delivery_attempt_id)->toBe($attempt->id)
+        ->and($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Bounced)
+        ->and($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed);
+});
+
+test('the feedback sweep queues stored events whose job was lost or never queued', function () {
+    Queue::fake([ProcessEmailProviderEvent::class]);
+    $lost = EmailProviderEvent::factory()->create([
+        'email_delivery_id' => null,
+        'processed_at' => null,
+        'last_dispatched_at' => now()->subMinutes(10),
+    ]);
+    $neverQueued = EmailProviderEvent::factory()->create([
+        'email_delivery_id' => null,
+        'processed_at' => null,
+        'last_dispatched_at' => null,
+    ]);
+    EmailProviderEvent::factory()->create([
+        'email_delivery_id' => null,
+        'processed_at' => null,
+        'last_dispatched_at' => now(),
+    ]);
+    EmailProviderEvent::factory()->create(['email_delivery_id' => null]);
+
+    $this->artisan('emails:dispatch-provider-events')->assertSuccessful();
+
+    Queue::assertPushed(ProcessEmailProviderEvent::class, 2);
+    Queue::assertPushed(ProcessEmailProviderEvent::class, fn (ProcessEmailProviderEvent $job): bool => $job->eventId === $lost->id);
+    Queue::assertPushed(ProcessEmailProviderEvent::class, fn (ProcessEmailProviderEvent $job): bool => $job->eventId === $neverQueued->id);
 });

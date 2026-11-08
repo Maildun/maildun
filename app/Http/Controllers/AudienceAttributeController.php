@@ -7,6 +7,7 @@ use App\Http\Requests\SaveAudienceAttributeRequest;
 use App\Jobs\MoveAudienceAttributeValues;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
+use App\Models\AudienceAttributeMove;
 use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
@@ -30,7 +31,7 @@ class AudienceAttributeController extends Controller
         $audienceAttribute->update($request->validated());
 
         if ($audienceAttribute->key !== $previousKey) {
-            MoveAudienceAttributeValues::dispatch($audience->id, $previousKey, $audienceAttribute->id);
+            $this->moveValues($audience, $previousKey, $audienceAttribute);
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Attribute updated.')]);
@@ -64,10 +65,26 @@ class AudienceAttributeController extends Controller
     {
         Gate::authorize('delete', $audienceAttribute);
         $audienceAttribute->delete();
-        MoveAudienceAttributeValues::dispatch($audience->id, $audienceAttribute->key);
+        $this->moveValues($audience, $audienceAttribute->key);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Attribute deleted.')]);
 
         return back();
+    }
+
+    /**
+     * Queue moving members' values off a key, or deleting them when no field
+     * takes them over. The pending move holds the key until it finishes, so
+     * no new field can take it and lose its values to the move.
+     */
+    private function moveValues(Audience $audience, string $fromKey, ?AudienceAttribute $attribute = null): void
+    {
+        $move = AudienceAttributeMove::query()->create([
+            'audience_id' => $audience->id,
+            'audience_attribute_id' => $attribute?->id,
+            'from_key' => $fromKey,
+        ]);
+
+        MoveAudienceAttributeValues::dispatch($audience->id, $fromKey, $attribute?->id, $move->id);
     }
 }

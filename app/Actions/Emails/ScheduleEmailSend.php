@@ -47,19 +47,4 @@ class ScheduleEmailSend
             ->where('status', EmailStatus::Draft)
             ->update(['scheduled_at' => null, 'schedule_error' => null]);
     }
-
-    /**
-     * Take the schedule of a draft whose time has come, so exactly one runner
-     * starts it. A draft that was rescheduled or cancelled in the meantime no
-     * longer matches and is left alone.
-     */
-    public function claimDue(Email $email): bool
-    {
-        return Email::query()
-            ->whereKey($email->id)
-            ->where('status', EmailStatus::Draft)
-            ->whereNotNull('scheduled_at')
-            ->where('scheduled_at', '<=', now())
-            ->update(['scheduled_at' => null]) === 1;
-    }
 }

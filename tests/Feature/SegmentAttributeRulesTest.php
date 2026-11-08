@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AudienceAttributeType;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Segment;
@@ -122,4 +123,20 @@ test('the segment editor offers the audience custom fields', function () {
         ->get(route('audiences.show', [$team, $audience]))
         ->assertInertia(fn (Assert $page) => $page
             ->where('segmentRuleOptions.attributes', [['uuid' => $seats->uuid, 'name' => 'Seats', 'type' => 'number']]));
+});
+
+test('a rule whose operator the field type no longer accepts matches nobody', function () {
+    $audience = Audience::factory()->create();
+    $score = AudienceAttribute::factory()->number()->for($audience)->create(['key' => 'score']);
+    Subscriber::factory()->for($audience)->create(['attribute_values' => ['score' => 80]]);
+    Subscriber::factory()->for($audience)->create(['attribute_values' => ['score' => 10]]);
+    $segment = Segment::factory()->for($audience)->create([
+        'rules' => [['field' => 'attribute', 'attribute' => $score->uuid, 'operator' => 'greater_than', 'value' => '50']],
+    ]);
+    // Saved before type changes were checked against segment rules.
+    $score->update(['type' => AudienceAttributeType::Text]);
+
+    $this->artisan('segments:sync')->assertSuccessful();
+
+    expect($segment->subscribers()->count())->toBe(0);
 });

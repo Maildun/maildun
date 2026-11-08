@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\AutomationRunStatus;
+use Carbon\CarbonInterface;
 use Database\Factories\AutomationRunStepFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -85,6 +86,21 @@ class AutomationRunStep extends Model
                             ->where('scheduled_at', '<=', now());
                     });
             });
+    }
+
+    /**
+     * Branches that have not moved since the given time and, for a delay, were
+     * already due by then: their job had its chance and was probably lost.
+     * A branch still waiting in a busy queue is touched each time it is
+     * queued again, so it is not queued once more on every sweep.
+     *
+     * @param  Builder<$this>  $query
+     */
+    public function scopeStalledSince(Builder $query, CarbonInterface $before): void
+    {
+        $query
+            ->where('updated_at', '<=', $before)
+            ->where(fn (Builder $steps) => $steps->whereNull('scheduled_at')->orWhere('scheduled_at', '<=', $before));
     }
 
     /**

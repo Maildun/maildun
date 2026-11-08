@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Contracts\DnsRecordLookup;
 use App\Contracts\DnsResolver;
 use App\Contracts\MailDomainLookup;
+use App\Enums\EmailSendLane;
 use App\Models\Automation;
 use App\Models\EmailDelivery;
 use App\Models\SubscribeForm;
@@ -12,7 +13,6 @@ use App\Models\Subscriber;
 use App\Services\SystemDnsRecordLookup;
 use App\Services\SystemDnsResolver;
 use App\Services\SystemMailDomainLookup;
-use App\Services\TeamMailer;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -75,11 +75,15 @@ class AppServiceProvider extends ServiceProvider
 
     protected function configureRateLimiters(): void
     {
-        RateLimiter::for(TeamMailer::RATE_LIMITER, function (): Limit {
-            $perSecond = (int) config('delivery.rate_limit.per_second');
+        // One limiter per send lane; the lanes split the configured rate so
+        // transactional mail keeps a reserved share however large a campaign is.
+        foreach (EmailSendLane::cases() as $lane) {
+            RateLimiter::for($lane->value, function () use ($lane): Limit {
+                $perSecond = $lane->perSecond();
 
-            return $perSecond > 0 ? Limit::perSecond($perSecond) : Limit::none();
-        });
+                return $perSecond > 0 ? Limit::perSecond($perSecond) : Limit::none();
+            });
+        }
 
         RateLimiter::for('public-subscribe', function (Request $request): array {
             $subscribeForm = $request->route('subscribeForm');

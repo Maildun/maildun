@@ -757,8 +757,9 @@ function NewContactFields({
                 </Field>
             ) : null}
             <Field data-invalid={Boolean(tagsError(form.errors))}>
-                <FieldLabel>Tags</FieldLabel>
+                <FieldLabel htmlFor={`contact-tags-${suffix}`}>Tags</FieldLabel>
                 <TagsCombobox
+                    id={`contact-tags-${suffix}`}
                     value={form.data.tags}
                     availableTags={tags}
                     onValueChange={(value) => form.setData('tags', value)}

@@ -9,7 +9,9 @@ use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
 use App\Models\User;
+use App\Services\TeamMailer;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Exceptions;
 use Inertia\Testing\AssertableInertia as Assert;
 
 use function Pest\Laravel\mock;
@@ -102,11 +104,9 @@ test('the scheduler starts due campaigns once and leaves future ones alone', fun
 test('the scheduler starts every due campaign when more are due than fit in one page', function () {
     $team = Team::factory()->create();
     Email::factory()->for($team)->count(1005)->create(['scheduled_at' => now()->subMinute()]);
-    mock(StartEmailSend::class)->shouldReceive('handle')->times(1005);
+    mock(StartEmailSend::class)->shouldReceive('startScheduled')->times(1005)->andReturnNull();
 
     $this->artisan('emails:send-scheduled')->assertSuccessful();
-
-    expect(Email::query()->whereNotNull('scheduled_at')->count())->toBe(0);
 });
 
 test('a scheduled send that cannot start keeps the reason on the draft', function () {
@@ -121,6 +121,33 @@ test('a scheduled send that cannot start keeps the reason on the draft', functio
         ->scheduled_at->toBeNull()
         ->schedule_error->toBe('Connect an email provider before sending campaigns.');
     Bus::assertNothingBatched();
+});
+
+test('a scheduled send that fails part-way stays scheduled and starts on the next run', function () {
+    Bus::fake();
+    Exceptions::fake();
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $email = schedulableCampaign($team, ['scheduled_at' => now()->subMinute()]);
+    mock(TeamMailer::class)->shouldReceive('resolve')->once()->andThrow(new RuntimeException('The database connection was lost.'));
+
+    $this->artisan('emails:send-scheduled')->assertSuccessful();
+
+    Exceptions::assertReported(RuntimeException::class);
+    expect($email->fresh())
+        ->status->toBe(EmailStatus::Draft)
+        ->scheduled_at->not->toBeNull()
+        ->schedule_error->toBe('The campaign could not be started. Try sending it again.');
+    Bus::assertNothingBatched();
+
+    $this->app->forgetInstance(TeamMailer::class);
+    $this->artisan('emails:send-scheduled')->assertSuccessful();
+
+    expect($email->fresh())
+        ->status->toBe(EmailStatus::Queued)
+        ->scheduled_at->toBeNull()
+        ->schedule_error->toBeNull();
+    Bus::assertBatchCount(1);
 });
 
 test('sending now clears a pending schedule', function () {

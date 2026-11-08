@@ -10,7 +10,13 @@ A campaign leans on a Redis batch to move every delivery, and FinalizeEmailSend 
 
 The split that matters: a delivery still Queued with send_attempted_at null never reached a transport, so it is safely re-dispatched (claim() makes a racing duplicate lose). A delivery already Sending WAS handed over and may have been accepted — those are failed, never re-queued, or recipients get mailed twice. Same reasoning as FinalizeEmailSend.
 
-FinalizeEmailSend::__invoke takes a nullable Batch so the sweeper can close a campaign whose batch record is already gone, which is the exact stranding case.
+FinalizeEmailSend::__invoke takes a nullable Batch so the sweeper can close a campaign whose batch record is already gone, which is the exact stranding case. A non-null batch closes the campaign only when it is the campaign's current batch_id; an older (stopped) batch finishing during a retry is ignored.
 
 ## Campaign batches live in the database, not Redis
 Correction to "Stalled sends need a sweeper": job batches are stored in the job_batches table (config/queue.php batching.database), not Redis. A Redis flush or eviction loses the queued jobs rather than the batch record, which strands a campaign the same way; the claim/re-queue split and emails:resume behaviour described above still apply. routes/console.php also schedules emails:send-scheduled every minute (withoutOverlapping) to start scheduled drafts.
+
+## Scheduled sends are claimed inside the start transaction
+emails:send-scheduled calls StartEmailSend::startScheduled, which checks the draft is still due under the campaign's row lock and clears scheduled_at in the same transaction that queues it. A crash part-way leaves the draft scheduled for the next run; never claim the schedule in a separate statement first. A validation failure unschedules the draft and records schedule_error; an unexpected error records schedule_error but keeps the schedule so the next run retries.
+
+## SES feedback has a sweeper too
+routes/console.php schedules emails:dispatch-provider-events every minute (withoutOverlapping, onOneServer). It re-queues stored SES feedback (email_provider_events with processed_at null) that was never dispatched or was dispatched longer ago than MAIL_TRACKING_REDISPATCH_AFTER_MINUTES, mirroring emails:dispatch-tracking-events.

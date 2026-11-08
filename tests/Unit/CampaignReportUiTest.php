@@ -333,6 +333,8 @@ test('a recipient opens a detail sheet with attempts and provider feedback', fun
 
     expect($sheet)->toBeString()
         ->toContain('showDelivery.url([teamSlug, campaignUuid, deliveryUuid])')
+        ->toContain('latestRequest.current === requestId')
+        ->toContain('setFailed(false);')
         ->toContain('Send attempts')
         ->toContain('Provider feedback');
 });

@@ -1,5 +1,4 @@
 import {
-    BookmarkAdd02Icon,
     Delete02Icon,
     Edit03Icon,
     MoreHorizontalIcon,
@@ -7,14 +6,8 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { RequestPayload } from '@inertiajs/core';
 import { router } from '@inertiajs/react';
-import { toBlockInput } from '@maildun/email-builder';
-import {
-    useEditorState,
-    useEditorStore,
-    useMessages,
-} from '@maildun/email-builder/editor';
 import type { PaletteGroup } from '@maildun/email-builder/editor';
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,15 +30,18 @@ import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from '@/components/ui/toast';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipTrigger,
-} from '@/components/ui/tooltip';
 import type { SavedSection } from '@/lib/email-builder';
 import { destroy, store, update } from '@/routes/saved_sections';
 
 type Method = 'post' | 'patch' | 'delete';
+
+/**
+ * Reads the block builder's own store, so it loads with the builder rather
+ * than with the compose pages that build this palette group up front.
+ */
+const SaveSelectionButton = lazy(
+    () => import('@/components/save-section-button'),
+);
 
 /**
  * Saves a change and reloads only the page's `savedSections` prop, so an
@@ -53,7 +49,7 @@ type Method = 'post' | 'patch' | 'delete';
  * cancels nor is cancelled by the page's own draft save, and it settles on
  * finish so a visit that ends any other way never leaves a dialog busy.
  */
-function send(
+export function send(
     method: Method,
     url: string,
     data: Record<string, unknown> = {},
@@ -84,7 +80,7 @@ function send(
     });
 }
 
-function errorMessage(failure: unknown): string {
+export function errorMessage(failure: unknown): string {
     return failure instanceof Error ? failure.message : String(failure);
 }
 
@@ -108,7 +104,9 @@ export function useSavedSectionsGroup({
             label: 'Your sections',
             position: 'beforeSections',
             actions: canManage ? (
-                <SaveSelectionButton teamSlug={teamSlug} />
+                <Suspense fallback={null}>
+                    <SaveSelectionButton teamSlug={teamSlug} />
+                </Suspense>
             ) : undefined,
             empty: (
                 <p className="text-xs text-muted-foreground">
@@ -130,83 +128,6 @@ export function useSavedSectionsGroup({
             })),
         }),
         [canManage, sections, teamSlug],
-    );
-}
-
-function SaveSelectionButton({ teamSlug }: { teamSlug: string }) {
-    const editor = useEditorStore();
-    const messages = useMessages();
-    const selectedId = useEditorState((state) => state.selectedId);
-    const reviewing = useEditorState((state) => state.proposal !== null);
-    const selected = useEditorState((state) =>
-        state.selectedId ? state.document.blocks[state.selectedId] : undefined,
-    );
-    const [saving, setSaving] = useState(false);
-    const label = selected ? messages.blocks[selected.type].label : null;
-    const hint = reviewing
-        ? 'Accept or reject the proposal first'
-        : label
-          ? `Save the selected ${label.toLowerCase()} as a section`
-          : 'Select a block to save it as a section';
-
-    return (
-        <>
-            <Tooltip>
-                <TooltipTrigger
-                    render={
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-label={hint}
-                            data-test="save-section"
-                            disabled={!selected || reviewing}
-                            onClick={() => setSaving(true)}
-                        />
-                    }
-                >
-                    <HugeiconsIcon icon={BookmarkAdd02Icon} />
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{hint}</TooltipContent>
-            </Tooltip>
-
-            {saving && selectedId && label ? (
-                <SectionNameDialog
-                    title="Save as section"
-                    description="Saved sections appear under Your sections in every email in this workspace."
-                    action="Save"
-                    name={label}
-                    onOpenChange={setSaving}
-                    onSubmit={async (name) => {
-                        try {
-                            await send('post', store.url(teamSlug), {
-                                name,
-                                blocks: [
-                                    toBlockInput(
-                                        editor.visibleDocument(),
-                                        selectedId,
-                                        false,
-                                    ),
-                                ],
-                            });
-                            toast.add({
-                                type: 'success',
-                                title: `Saved ${name}.`,
-                                description: 'Find it under Your sections.',
-                            });
-                        } catch (failure) {
-                            toast.add({
-                                type: 'error',
-                                title: 'Could not save the section.',
-                                description: errorMessage(failure),
-                            });
-
-                            throw failure;
-                        }
-                    }}
-                />
-            ) : null}
-        </>
     );
 }
 
@@ -306,7 +227,7 @@ function SavedSectionActions({
     );
 }
 
-function SectionNameDialog({
+export function SectionNameDialog({
     title,
     description,
     action,

@@ -61,8 +61,11 @@ type NavGroup = {
 
 export default function SettingsLayout({ children }: PropsWithChildren) {
     const { isCurrentOrParentUrl } = useCurrentUrl();
-    const { currentTeam } = usePage().props;
+    const { appUpdate, currentTeam } = usePage().props;
     const [query, setQuery] = useState('');
+    // The update status is shared only with instance operators, through the
+    // same viewSystemCheck gate that guards the System Check page.
+    const canViewSystemCheck = appUpdate !== null;
 
     const filteredGroups = useMemo(() => {
         const canManageWorkspace = currentTeam?.role !== 'member';
@@ -81,7 +84,7 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                         href: editAppearance(),
                         icon: SunMoonIcon,
                     },
-                    ...(currentTeam?.role === 'owner'
+                    ...(canViewSystemCheck
                         ? [
                               {
                                   title: 'System Check',
@@ -181,7 +184,7 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                       ),
             }))
             .filter((group) => group.items.length > 0);
-    }, [query, currentTeam]);
+    }, [query, currentTeam, canViewSystemCheck]);
 
     // Tags live under the workspace URL, so the longest matching item wins to keep
     // a single entry highlighted instead of both.

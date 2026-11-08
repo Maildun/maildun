@@ -215,9 +215,10 @@ class ResumeEmailDeliveriesCommand extends Command
     }
 
     /**
-     * Transactional sends share the instance-wide send rate with campaigns,
-     * so they too can wait past the stall window. Re-queue them only once
-     * their queue is empty, for the same reason as campaign deliveries.
+     * Transactional sends wait for a send slot too (from their reserved share
+     * of the rate), so they can also sit past the stall window. Re-queue them
+     * only once their queue is empty, for the same reason as campaign
+     * deliveries.
      */
     private function requeueTransactionalDeliveries(CarbonInterface $stalledBefore): int
     {

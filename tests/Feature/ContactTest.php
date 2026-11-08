@@ -269,7 +269,7 @@ test('creating a contact fires tagged automations once its audience memberships 
 
     Event::assertDispatched(SubscriberLifecycleOccurred::class, fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Tagged
         && $event->subscriber->is($subscriber)
-        && $event->context === ['tag_uuid' => $customer->uuid]);
+        && ($event->context['tag_uuid'] ?? null) === $customer->uuid);
 });
 
 test('editing a contact fires tagged automations on every membership for newly added tags only', function () {
@@ -298,7 +298,7 @@ test('editing a contact fires tagged automations on every membership for newly a
     foreach ([$subscriber, $otherMembership] as $membership) {
         Event::assertDispatched(SubscriberLifecycleOccurred::class, fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Tagged
             && $event->subscriber->is($membership)
-            && $event->context === ['tag_uuid' => $customer->uuid]);
+            && ($event->context['tag_uuid'] ?? null) === $customer->uuid);
     }
 });
 
@@ -849,7 +849,7 @@ test('owners can bulk add and remove tags on selected contacts', function () {
         ->and($kept->tags()->count())->toBe(0);
     Event::assertDispatched(SubscriberLifecycleOccurred::class, fn (SubscriberLifecycleOccurred $event): bool => $event->trigger === AutomationTrigger::Tagged
         && $event->subscriber->is($selected)
-        && $event->context === ['tag_uuid' => $vip->uuid]);
+        && ($event->context['tag_uuid'] ?? null) === $vip->uuid);
 
     $this->actingAs($user)
         ->patch(route('contacts.bulk-tags', $team), [

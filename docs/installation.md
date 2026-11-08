@@ -8,7 +8,7 @@ This guide installs Maildun for local development or evaluation. Read [Productio
 - Composer 2
 - Node.js 22 and pnpm 11
 - Redis
-- SQLite, MySQL, MariaDB, or PostgreSQL
+- PostgreSQL, or SQLite for local development
 - An application-wide mail relay for system email
 - An Amazon SES or SMTP account for each workspace that will send email
 
@@ -87,13 +87,21 @@ docker compose up -d
 docker compose exec app php artisan app:install --no-interaction \
     --admin-name="Your Name" \
     --admin-email=you@example.com \
-    --admin-password='a-strong-password' \
+    --admin-password='Replace-With-A-Str0ng-Passphrase!' \
     --registration=closed
 ```
 
 The application listens on port 80 by default; set `APP_PORT` to change it.
 Terminate TLS in front of the container and keep `APP_URL` on `https://`, since
 signed tracking and unsubscribe links are built from it.
+
+The containers always run with `APP_ENV=production` and `APP_DEBUG=false`,
+whatever `.env` says, because `.env.example` is written for local development
+and debug mode shows stack traces and configuration to anyone who triggers an
+error. Set `DOCKER_APP_ENV` or `DOCKER_APP_DEBUG` in `.env` only to change that
+deliberately, for example while diagnosing a private installation. Production
+password rules apply to the administrator created above: at least 12 characters
+with upper- and lowercase letters, a number, and a symbol.
 
 The `storage` volume holds uploaded media, logs, and the Passport signing keys.
 Back it up together with the database and `APP_KEY`. Deleting it invalidates

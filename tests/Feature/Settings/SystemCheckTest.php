@@ -1,19 +1,27 @@
 <?php
 
-use App\Enums\TeamRole;
 use App\Models\User;
-use App\Models\WorkspaceRole;
 use App\Services\AppUpdateChecker;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+
+/**
+ * A verified account listed in HORIZON_ALLOWED_EMAILS.
+ */
+function instanceOperator(): User
+{
+    config()->set('horizon.allowed_emails', ['ops@example.com']);
+
+    return User::factory()->create(['email' => 'ops@example.com']);
+}
 
 test('guests are redirected from system checks', function () {
     $this->get(route('system-check.show'))
         ->assertRedirect(route('login'));
 });
 
-test('owners can view and run system checks', function () {
+test('operators can view and run system checks', function () {
     Storage::fake('local');
     Storage::fake('local_public');
     config()->set([
@@ -21,7 +29,7 @@ test('owners can view and run system checks', function () {
         'filesystems.disks.public' => config('filesystems.disks.local_public'),
     ]);
 
-    $owner = User::factory()->create();
+    $owner = instanceOperator();
 
     $this->actingAs($owner)
         ->get(route('system-check.show'))
@@ -65,7 +73,7 @@ test('live checks stay current after a system test', function () {
         'queue.default' => 'redis',
     ]);
 
-    $owner = User::factory()->create();
+    $owner = instanceOperator();
 
     $this->actingAs($owner)->post(route('system-check.test'))->assertRedirect();
 
@@ -80,7 +88,7 @@ test('live checks stay current after a system test', function () {
             ->where('checks.7.status', 'ready'));
 });
 
-test('owners can refresh the cached Maildun update status', function () {
+test('operators can refresh the cached Maildun update status', function () {
     config()->set([
         'version.current' => '1.2.0',
         'version.update_check.enabled' => true,
@@ -94,7 +102,7 @@ test('owners can refresh the cached Maildun update status', function () {
             'notes_url' => 'https://example.test/releases/1.3.0',
         ]),
     ]);
-    $owner = User::factory()->create();
+    $owner = instanceOperator();
 
     $this->actingAs($owner)
         ->post(route('app-update.refresh'))
@@ -106,33 +114,40 @@ test('owners can refresh the cached Maildun update status', function () {
     ]);
 });
 
-test('system checks forbid non-owner workspace roles', function (string $role) {
-    $user = User::factory()->create();
-    $team = $user->currentTeam;
+test('system checks forbid a workspace owner who is not an operator', function () {
+    config()->set([
+        'horizon.allowed_emails' => ['ops@example.com'],
+        'version.update_check.enabled' => true,
+        'version.update_check.manifest_url' => 'https://updates.example.test/release-manifest.json',
+    ]);
+    Http::fake();
+    $owner = User::factory()->create();
 
-    if ($role === 'support') {
-        WorkspaceRole::create([
-            'team_id' => $team->id,
-            'name' => $role,
-            'label' => 'Support',
-            'guard_name' => 'web',
-        ]);
-    }
-
-    $team->memberships()
-        ->where('user_id', $user->id)
-        ->sole()
-        ->update(['role' => $role]);
-
-    $this->actingAs($user)
+    $this->actingAs($owner)
         ->get(route('system-check.show'))
         ->assertForbidden();
 
-    $this->actingAs($user)
+    $this->actingAs($owner)
         ->post(route('system-check.test'))
         ->assertForbidden();
+
+    $this->actingAs($owner)
+        ->post(route('app-update.refresh'))
+        ->assertForbidden();
+
+    expect($owner->ownsTeam($owner->currentTeam))->toBeTrue();
+    Http::assertNothingSent();
+});
+
+test('the update status is shared only with operators', function (bool $isOperator) {
+    $user = $isOperator ? instanceOperator() : User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('profile.edit'))
+        ->assertInertia(fn (Assert $page) => $isOperator
+            ? $page->where('appUpdate.status', 'unknown')
+            : $page->where('appUpdate', null));
 })->with([
-    'administrator' => TeamRole::Admin->value,
-    'member' => TeamRole::Member->value,
-    'custom workspace role' => 'support',
+    'operator' => true,
+    'workspace owner' => false,
 ]);

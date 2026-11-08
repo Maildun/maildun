@@ -203,6 +203,7 @@ test('the editor navbar has one save notification source and clear save states',
 
     expect($edit)->toBeString()
         ->toContain('const hasUnsavedChanges =')
+        ->toContain('useUnsavedChanges(hasUnsavedChanges);')
         ->toContain("? 'Unsaved changes'")
         ->toContain('disabled={saving || !hasUnsavedChanges}')
         ->toContain('disabled={saving || hasUnsavedChanges}')

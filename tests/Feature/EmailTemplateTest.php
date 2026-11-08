@@ -28,6 +28,42 @@ test('the gallery lists the starter templates alongside the team ones', function
             ->where('templates.4.is_starter', false));
 });
 
+test('the gallery previews stored html and only sends a design when none is stored', function () {
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    EmailTemplate::factory()->builder()->for($team)->create([
+        'name' => 'Saved layout',
+        'html' => '<p>Rendered layout</p>',
+        'source' => 'unused',
+    ]);
+    EmailTemplate::factory()->builder()->for($team)->create(['name' => 'Unsaved layout']);
+
+    $this->actingAs($user)
+        ->get(route('email_templates.index', $team))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('email-templates/index')
+            ->has('templates', 6)
+            ->has('templates.4', fn (Assert $template) => $template
+                ->where('name', 'Saved layout')
+                ->where('editor', EmailEditor::Builder->value)
+                ->where('html', '<p>Rendered layout</p>')
+                ->where('design', null)
+                ->missing('source')
+                ->missing('subject')
+                ->missing('preheader')
+                ->etc())
+            ->where('templates.5.name', 'Unsaved layout')
+            ->where('templates.5.html', null)
+            ->has('templates.5.design.root')
+            ->where('templates.0.name', 'Blank canvas')
+            ->where('templates.0.html', null)
+            ->has('templates.0.design.root')
+            ->where('templates.3.name', 'Blank HTML')
+            ->where('templates.3.design', null)
+            ->missing('templates.3.source'));
+});
+
 test('starter templates are seeded and belong to no team', function () {
     $starters = EmailTemplate::query()->whereNull('team_id')->get();
 

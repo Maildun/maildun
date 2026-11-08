@@ -7,8 +7,8 @@ paths:
 
 # Jscomponents
 
-## Keep campaign geography maps local and human-only
-Campaign insight maps use the checked-in public-domain Natural Earth SVG paths keyed by ISO alpha-2 country codes. Shade only confidently classified human metrics, keep tiny-country points for markets such as Singapore, and do not add a runtime map dependency for this report.
+## Campaign geography uses MapLibre with a lazy local fallback
+The Geography Map tab is an interactive MapLibre GL map (`campaign-insights-map-interactive.tsx`, `maplibre-gl`) on OpenFreeMap vector tiles (`tiles.openfreemap.org`, attribution and licenses in THIRD_PARTY_NOTICES.md). `campaign-insights-map.tsx` lazy-loads it after mount (useMounted + Suspense with a Skeleton placeholder) so neither SSR nor the rest of the report pays for it. When MapLibre cannot start, it calls `onUnavailable` and the card swaps to `campaign-insights-map-fallback.tsx`: the checked-in public-domain Natural Earth SVG paths in `lib/world-map-paths.ts`, keyed by ISO alpha-2 codes. The fallback (with its ~140 KB of paths) is lazy-loaded too, so it is downloaded only on that failure path — never import it statically. Both views shade only confidently classified human metrics; the fallback keeps tiny-country points for markets such as Singapore. Covered by CampaignReportUiTest.
 
 ## Country flags come from flag-icons SVG assets, not emoji
 Country flags render through `<CountryFlag code="ID" />` (resources/js/components/country-flag.tsx), which resolves an SVG URL from the MIT-licensed flag-icons package. Do not go back to regional-indicator emoji — they do not render on Windows/Chrome.
