@@ -51,7 +51,8 @@ class ProfileController extends Controller
 
         $validated = $request->validated();
         $oldAvatarPath = null;
-        $verifiedPreviousEmail = $user->hasVerifiedEmail() ? $user->email : null;
+        $previousEmail = $user->getEmailForVerification();
+        $previousEmailWasVerified = $user->hasVerifiedEmail();
 
         unset($validated['avatar'], $validated['current_password']);
 
@@ -79,9 +80,9 @@ class ProfileController extends Controller
 
             // Only a proven address is told: an unverified one may be a typo
             // that belongs to a stranger.
-            if ($verifiedPreviousEmail !== null) {
-                Notification::route('mail', $verifiedPreviousEmail)
-                    ->notify(new EmailAddressChanged($user->email));
+            if ($previousEmailWasVerified) {
+                Notification::route('mail', $previousEmail)
+                    ->notify(new EmailAddressChanged($user->getEmailForVerification()));
             }
         }
 
