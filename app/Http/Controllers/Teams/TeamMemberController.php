@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Fortify\Fortify;
@@ -77,10 +78,7 @@ class TeamMemberController extends Controller
                     'created_at' => $invitation->created_at->toISOString(),
                 ]),
             'permissions' => $user->toTeamPermissions($team),
-            'availableRoles' => $team->workspaceRoles()
-                ->where('name', '!=', 'owner')
-                ->orderBy('label')
-                ->get(['name', 'label'])
+            'availableRoles' => $team->rolesAssignableBy($user)
                 ->map(fn (WorkspaceRole $role): array => ['value' => $role->name, 'label' => $role->label]),
         ]);
     }
@@ -122,6 +120,12 @@ class TeamMemberController extends Controller
     {
         Gate::authorize('updateMember', $team);
         abort_if($team->owner()?->is($user), 403, __('The team owner role cannot be changed.'));
+
+        if (! $team->rolesAssignableBy($request->user())->contains('name', $request->validated('role'))) {
+            throw ValidationException::withMessages([
+                'role' => __('You cannot assign a role that has permissions you do not hold.'),
+            ]);
+        }
 
         $team->memberships()
             ->where('user_id', $user->id)

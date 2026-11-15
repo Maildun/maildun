@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AuthenticateSession;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\PreserveDesignEmptyStrings;
@@ -13,7 +14,6 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
-use Illuminate\Session\Middleware\AuthenticateSession;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
@@ -51,7 +51,8 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             // Signs out every other session once the account password changes:
-            // a password update, a reset link, or an admin-generated password.
+            // a password update, a reset link, an admin-generated password, or
+            // the first password of an account that signed up with Google.
             AuthenticateSession::class,
             RequireVerifiedEmailForOAuth::class,
             HandleAppearance::class,

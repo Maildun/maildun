@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\TeamPermission;
 use App\Enums\TeamRole;
 use App\Models\Team;
 use App\Models\TeamInvitation;
@@ -553,4 +554,43 @@ test('an invitation of another workspace cannot be cancelled through this one', 
         ->assertNotFound();
 
     $this->assertDatabaseHas('team_invitations', ['id' => $invitation->id]);
+});
+
+test('an invitation cannot carry a role with permissions the inviter lacks', function () {
+    Notification::fake();
+
+    $recruiter = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $role = $team->workspaceRoles()->create([
+        'name' => 'recruiter',
+        'label' => 'Recruiter',
+        'guard_name' => 'web',
+        'is_system' => false,
+    ]);
+    $role->syncPermissions([TeamPermission::CreateInvitation->value]);
+
+    $team->members()->attach($recruiter, ['role' => $role->name]);
+
+    $this->actingAs($recruiter)
+        ->post(route('teams.invitations.store', $team), [
+            'email' => 'accomplice@example.com',
+            'role' => TeamRole::Admin->value,
+        ])
+        ->assertSessionHasErrors(['role' => 'You cannot assign a role that has permissions you do not hold.']);
+
+    $this->assertDatabaseMissing('team_invitations', ['email' => 'accomplice@example.com']);
+    Notification::assertNothingSent();
+
+    $this->actingAs($recruiter)
+        ->post(route('teams.invitations.store', $team), [
+            'email' => 'colleague@example.com',
+            'role' => $role->name,
+        ])
+        ->assertSessionHasNoErrors();
+
+    $this->assertDatabaseHas('team_invitations', [
+        'email' => 'colleague@example.com',
+        'role' => $role->name,
+    ]);
 });

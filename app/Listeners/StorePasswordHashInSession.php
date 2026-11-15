@@ -2,6 +2,7 @@
 
 namespace App\Listeners;
 
+use App\Http\Middleware\AuthenticateSession;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\SessionGuard;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
@@ -11,7 +12,8 @@ use Illuminate\Contracts\Auth\Factory as AuthFactory;
  *
  * AuthenticateSession only records the hash on a session's first authenticated
  * request. A session that signs in and sends nothing else until after a password
- * reset would then record the new hash and stay signed in.
+ * reset would then record the new hash and stay signed in. An account without
+ * a password is marked instead, so its first password signs the session out.
  */
 class StorePasswordHashInSession
 {
@@ -22,13 +24,13 @@ class StorePasswordHashInSession
         $guard = $this->auth->guard($event->guard);
         $passwordHash = $event->user->getAuthPassword();
 
-        if (! $guard instanceof SessionGuard || ! $passwordHash) {
+        if (! $guard instanceof SessionGuard) {
             return;
         }
 
         $guard->getSession()->put(
             'password_hash_'.$event->guard,
-            $guard->hashPasswordForCookie($passwordHash),
+            $passwordHash ? $guard->hashPasswordForCookie($passwordHash) : AuthenticateSession::PASSWORDLESS,
         );
     }
 }

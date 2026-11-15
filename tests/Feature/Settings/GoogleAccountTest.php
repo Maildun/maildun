@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Socialite\Socialite;
 use Laravel\Socialite\Two\User as GoogleUser;
@@ -323,3 +324,65 @@ test('an account with a password still needs it to be deleted', function () {
         ->assertRedirect(route('profile.edit'));
     expect($user->fresh())->not->toBeNull();
 });
+
+test('an account without a password must confirm before changing its email address', function () {
+    $user = User::factory()->withoutPassword()->withGoogle()->create(['email' => 'owner@example.com']);
+
+    $response = $this->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'new-address@example.com',
+        ]);
+
+    $response->assertRedirect(route('password.confirm'))
+        ->assertSessionHas('url.intended', route('profile.edit'));
+    expect($user->fresh()->email)->toBe('owner@example.com');
+});
+
+test('an account without a password can change its email address after a recent confirmation', function () {
+    Notification::fake();
+
+    $user = User::factory()->withoutPassword()->withGoogle()->create(['email' => 'owner@example.com']);
+
+    $response = $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'new-address@example.com',
+        ]);
+
+    $response->assertSessionHasNoErrors()
+        ->assertRedirect(route('profile.edit'));
+    expect($user->fresh()->email)->toBe('new-address@example.com');
+});
+
+test('setting a first password signs out the account\'s other sessions and keeps this one', function (bool $browsedAfterSigningIn) {
+    $user = User::factory()->withoutPassword()->withGoogle()->create();
+
+    auth()->login($user);
+
+    if ($browsedAfterSigningIn) {
+        $this->get(route('profile.edit'))->assertOk();
+    }
+
+    $otherSession = session()->all();
+    switchSession();
+
+    $this->actingAs($user)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->put(route('user-password.update'), [
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ])
+        ->assertSessionHasNoErrors();
+
+    $this->get(route('profile.edit'))->assertOk();
+
+    switchSession($otherSession);
+
+    $this->get(route('profile.edit'))->assertRedirect(route('login'));
+    $this->assertGuest();
+})->with([
+    'after browsing' => true,
+    'straight after signing in' => false,
+]);

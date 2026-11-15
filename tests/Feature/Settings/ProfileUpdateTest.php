@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use App\Notifications\EmailAddressChanged;
 use App\Notifications\VerifyEmail;
 use App\Services\DiceBearAvatarGenerator;
 use Illuminate\Http\UploadedFile;
@@ -28,6 +29,7 @@ test('profile information can be updated', function () {
         ->patch(route('profile.update'), [
             'name' => 'Test User',
             'email' => 'test@example.com',
+            'current_password' => 'password',
         ]);
 
     $response
@@ -72,6 +74,7 @@ test('changing the email address sends a verification link to the new address', 
         ->patch(route('profile.update'), [
             'name' => $user->name,
             'email' => 'new-address@example.com',
+            'current_password' => 'password',
         ])
         ->assertSessionHasNoErrors();
 
@@ -177,6 +180,7 @@ test('a changed email address must be verified again before verified pages open'
         ->patch(route('profile.update'), [
             'name' => $user->name,
             'email' => 'new-address@example.com',
+            'current_password' => 'password',
         ])
         ->assertSessionHasNoErrors();
 
@@ -232,6 +236,7 @@ test('profile update stores the email address lowercased', function () {
         ->patch(route('profile.update'), [
             'name' => $user->name,
             'email' => 'New-Address@Example.COM',
+            'current_password' => 'password',
         ])
         ->assertSessionHasNoErrors();
 
@@ -252,4 +257,67 @@ test('changing only the case of the email address keeps it verified', function (
 
     expect($user->refresh()->email_verified_at)->not->toBeNull();
     Notification::assertNothingSent();
+});
+
+test('changing the email address requires the current password', function (array $credentials) {
+    Notification::fake();
+
+    $user = User::factory()->create(['email' => 'owner@example.com']);
+
+    $this
+        ->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'new-address@example.com',
+            ...$credentials,
+        ])
+        ->assertSessionHasErrors('current_password');
+
+    $user->refresh();
+
+    expect($user->email)->toBe('owner@example.com')
+        ->and($user->email_verified_at)->not->toBeNull();
+    Notification::assertNothingSent();
+})->with([
+    'no password' => [[]],
+    'a wrong password' => [['current_password' => 'wrong-password']],
+]);
+
+test('changing the email address tells the previous address', function () {
+    Notification::fake();
+
+    $user = User::factory()->create(['email' => 'owner@example.com']);
+
+    $this
+        ->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'new-address@example.com',
+            'current_password' => 'password',
+        ])
+        ->assertSessionHasNoErrors();
+
+    Notification::assertSentOnDemand(
+        EmailAddressChanged::class,
+        fn (EmailAddressChanged $notification, array $channels, object $notifiable): bool => $notifiable->routes['mail'] === 'owner@example.com'
+            && $notification->newEmail === 'new-address@example.com',
+    );
+});
+
+test('changing the email address does not write to a previous address that was never verified', function () {
+    Notification::fake();
+
+    $user = User::factory()->unverified()->create(['email' => 'typo@example.com']);
+
+    $this
+        ->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'new-address@example.com',
+            'current_password' => 'password',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($user->refresh()->email)->toBe('new-address@example.com');
+    Notification::assertSentOnDemandTimes(EmailAddressChanged::class, 0);
 });
