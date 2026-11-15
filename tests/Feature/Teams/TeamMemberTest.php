@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\TeamPermission;
 use App\Enums\TeamRole;
 use App\Models\Audience;
 use App\Models\Team;
@@ -574,3 +575,105 @@ test('users outside the selected team cannot be updated or removed', function (s
     'change role' => ['patch', 'teams.members.update', ['role' => TeamRole::Admin->value]],
     'remove' => ['delete', 'teams.members.destroy', []],
 ]);
+
+test('a role with permissions the acting user lacks cannot be given to a member', function (bool $toThemselves) {
+    $manager = User::factory()->create();
+    $member = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $role = $team->workspaceRoles()->create([
+        'name' => 'people',
+        'label' => 'People',
+        'guard_name' => 'web',
+        'is_system' => false,
+    ]);
+    $role->syncPermissions([TeamPermission::UpdateMember->value]);
+
+    $team->members()->attach($manager, ['role' => $role->name]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+
+    $target = $toThemselves ? $manager : $member;
+    $roleBefore = $target->teamRole($team);
+
+    $this
+        ->actingAs($manager)
+        ->patch(route('teams.members.update', [$team, $target]), [
+            'role' => TeamRole::Admin->value,
+        ])
+        ->assertSessionHasErrors(['role' => 'You cannot assign a role that has permissions you do not hold.']);
+
+    expect($target->teamRole($team))->toBe($roleBefore);
+})->with([
+    'to themselves' => true,
+    'to another member' => false,
+]);
+
+test('a custom role can give members a role within its own permissions', function () {
+    $manager = User::factory()->create();
+    $member = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $managerRole = $team->workspaceRoles()->create([
+        'name' => 'people',
+        'label' => 'People',
+        'guard_name' => 'web',
+        'is_system' => false,
+    ]);
+    $managerRole->syncPermissions([TeamPermission::UpdateMember->value, TeamPermission::ManageContact->value]);
+
+    $supportRole = $team->workspaceRoles()->create([
+        'name' => 'support',
+        'label' => 'Support',
+        'guard_name' => 'web',
+        'is_system' => false,
+    ]);
+    $supportRole->syncPermissions([TeamPermission::ManageContact->value]);
+
+    $team->members()->attach($manager, ['role' => $managerRole->name]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+
+    $this
+        ->actingAs($manager)
+        ->patch(route('teams.members.update', [$team, $member]), [
+            'role' => $supportRole->name,
+        ])
+        ->assertRedirect(route('teams.members.index', $team))
+        ->assertSessionHasNoErrors();
+
+    expect($member->teamRole($team))->toBe($supportRole->name);
+});
+
+test('the members page offers only the roles the user may assign', function () {
+    $owner = User::factory()->create();
+    $manager = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $role = $team->workspaceRoles()->create([
+        'name' => 'people',
+        'label' => 'People',
+        'guard_name' => 'web',
+        'is_system' => false,
+    ]);
+    $role->syncPermissions([TeamPermission::UpdateMember->value]);
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($manager, ['role' => $role->name]);
+
+    $this
+        ->actingAs($manager)
+        ->get(route('teams.members.index', $team))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('availableRoles', [['value' => 'people', 'label' => 'People']]),
+        );
+
+    $this
+        ->actingAs($owner)
+        ->get(route('teams.members.index', $team))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('availableRoles', [
+                ['value' => 'admin', 'label' => 'Admin'],
+                ['value' => 'member', 'label' => 'Member'],
+                ['value' => 'people', 'label' => 'People'],
+            ]),
+        );
+});

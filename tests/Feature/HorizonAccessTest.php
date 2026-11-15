@@ -42,6 +42,7 @@ test('horizon stays closed after an account renames itself to an allowlisted add
         ->patch(route('profile.update'), [
             'name' => $user->name,
             'email' => 'Ops@Example.com',
+            'current_password' => 'password',
         ])
         ->assertSessionHasNoErrors();
 

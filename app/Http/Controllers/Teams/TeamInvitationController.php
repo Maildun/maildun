@@ -12,6 +12,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class TeamInvitationController extends Controller
@@ -22,6 +23,12 @@ class TeamInvitationController extends Controller
     public function store(CreateTeamInvitationRequest $request, Team $team): RedirectResponse
     {
         Gate::authorize('inviteMember', $team);
+
+        if (! $team->rolesAssignableBy($request->user())->contains('name', $request->validated('role'))) {
+            throw ValidationException::withMessages([
+                'role' => __('You cannot assign a role that has permissions you do not hold.'),
+            ]);
+        }
 
         $invitation = $team->invitations()->create([
             'email' => $request->validated('email'),

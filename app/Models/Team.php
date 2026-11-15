@@ -259,6 +259,33 @@ class Team extends Model
     }
 
     /**
+     * Get the roles the user may give to a member or an invitation.
+     *
+     * Never the owner role, and never a role holding a permission the user
+     * lacks: UpdateMember and CreateInvitation can be granted to a custom
+     * role on their own, and would otherwise let its holder promote
+     * themselves, or an address they control, to admin.
+     *
+     * @return Collection<int, WorkspaceRole>
+     */
+    public function rolesAssignableBy(User $user): Collection
+    {
+        $roles = $this->workspaceRoles()
+            ->with('permissions:id,name')
+            ->orderBy('label')
+            ->get();
+
+        $userRole = $roles->firstWhere('name', $user->teamRole($this));
+        $userPermissions = $userRole?->permissions->pluck('name') ?? collect();
+
+        return $roles
+            ->filter(fn (WorkspaceRole $role): bool => $role->isAssignable()
+                && $userRole !== null
+                && ($userRole->isOwner() || $role->permissions->pluck('name')->diff($userPermissions)->isEmpty()))
+            ->values();
+    }
+
+    /**
      * Get all invitations for this team.
      *
      * @return HasMany<TeamInvitation, $this>

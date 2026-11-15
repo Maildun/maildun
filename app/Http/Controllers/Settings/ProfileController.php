@@ -7,11 +7,13 @@ use App\Concerns\InteractsWithPasswordConfirmation;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileDeleteRequest;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Notifications\EmailAddressChanged;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -34,14 +36,24 @@ class ProfileController extends Controller
 
     /**
      * Update the user's profile information.
+     *
+     * Moving the account to another address needs the current password, or
+     * for an account without one a recent confirmation, and tells the
+     * previous address.
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
         $user = $request->user();
+
+        if ($request->changesEmail() && ! $user->hasPassword() && ! $this->passwordRecentlyConfirmed($request)) {
+            return $this->redirectToPasswordConfirmation(route('profile.edit'));
+        }
+
         $validated = $request->validated();
         $oldAvatarPath = null;
+        $verifiedPreviousEmail = $user->hasVerifiedEmail() ? $user->email : null;
 
-        unset($validated['avatar']);
+        unset($validated['avatar'], $validated['current_password']);
 
         $user->fill($validated);
 
@@ -64,6 +76,13 @@ class ProfileController extends Controller
 
         if ($emailChanged) {
             $user->sendEmailVerificationNotification();
+
+            // Only a proven address is told: an unverified one may be a typo
+            // that belongs to a stranger.
+            if ($verifiedPreviousEmail !== null) {
+                Notification::route('mail', $verifiedPreviousEmail)
+                    ->notify(new EmailAddressChanged($user->email));
+            }
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Profile updated.')]);

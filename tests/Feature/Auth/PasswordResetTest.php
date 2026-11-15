@@ -94,6 +94,34 @@ test('resetting an unverified account removes its passkeys and two factor authen
         ->and($user->two_factor_confirmed_at)->toBeNull();
 });
 
+test('resetting an unverified account disconnects its google account', function () {
+    $user = User::factory()->unverified()->create();
+    $user->forceFill(['google_id' => '109876543210'])->save();
+
+    $this->post(route('password.update'), [
+        'token' => Password::broker(config('fortify.passwords'))->createToken($user),
+        'email' => $user->email,
+        'password' => 'new-password',
+        'password_confirmation' => 'new-password',
+    ])->assertSessionHasNoErrors();
+
+    expect($user->refresh()->google_id)->toBeNull();
+});
+
+test('resetting a verified account keeps its google account', function () {
+    $user = User::factory()->create();
+    $user->forceFill(['google_id' => '109876543210'])->save();
+
+    $this->post(route('password.update'), [
+        'token' => Password::broker(config('fortify.passwords'))->createToken($user),
+        'email' => $user->email,
+        'password' => 'new-password',
+        'password_confirmation' => 'new-password',
+    ])->assertSessionHasNoErrors();
+
+    expect($user->refresh()->google_id)->toBe('109876543210');
+});
+
 test('resetting a verified account keeps its passkeys and two factor authentication', function () {
     $user = User::factory()->withTwoFactor()->create();
     $passkey = $user->passkeys()->create([
@@ -140,6 +168,34 @@ test('resetting a password signs out the account\'s other sessions', function (b
     switchSession($otherSession);
 
     $this->get($dashboard)->assertRedirect(route('login'));
+    $this->assertGuest();
+})->with([
+    'after browsing' => true,
+    'straight after signing in' => false,
+]);
+
+test('resetting the password of an account that had none signs out its sessions', function (bool $browsedAfterSigningIn) {
+    $user = User::factory()->withoutPassword()->withGoogle()->create();
+
+    auth()->login($user);
+
+    if ($browsedAfterSigningIn) {
+        $this->get(route('profile.edit'))->assertOk();
+    }
+
+    $otherSession = session()->all();
+    switchSession();
+
+    $this->post(route('password.update'), [
+        'token' => Password::broker(config('fortify.passwords'))->createToken($user),
+        'email' => $user->email,
+        'password' => 'new-password',
+        'password_confirmation' => 'new-password',
+    ])->assertSessionHasNoErrors();
+
+    switchSession($otherSession);
+
+    $this->get(route('profile.edit'))->assertRedirect(route('login'));
     $this->assertGuest();
 })->with([
     'after browsing' => true,
