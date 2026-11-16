@@ -19,6 +19,7 @@ use App\Models\TeamApiKey;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
 use App\Models\TransactionalEmail;
+use App\Models\TransactionalEmailDelivery;
 use App\Models\User;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailer;
@@ -234,6 +235,21 @@ test('transactional mail shows its preheader as hidden preview text with caller 
 
     expect($html)->toContain('<body><div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all">Receipt for &lt;Ada&gt;&#847;')
         ->not->toContain('<Ada>');
+});
+
+test('transactional mail carries a text part derived from its html', function () {
+    $email = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create([
+        'html' => '<html><body><div style="display:none">Your receipt</div><p>Paid &amp; done</p><p><a href="https://example.com/receipt">View receipt</a></p></body></html>',
+    ]);
+
+    $message = sentMimeMessage((new TransactionalEmailMessage($delivery))->to($delivery->to_address));
+
+    expect($message->getHtmlBody())->toBe($delivery->html)
+        ->and($message->getTextBody())->toContain('Paid & done')
+        ->toContain('View receipt (https://example.com/receipt)')
+        ->not->toContain('<p>')
+        ->not->toContain('Your receipt');
 });
 
 test('a transactional test copy shows the preheader', function () {
