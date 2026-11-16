@@ -134,6 +134,13 @@ class SendEmailDelivery implements ShouldQueue
             $this->failAttempt($attempt, $exception);
             $this->releaseClaim($delivery);
 
+            // The provider will refuse it again, so do not spend the retries.
+            if ($exception instanceof EmailTransportException && $exception->permanent) {
+                $this->fail($exception);
+
+                return;
+            }
+
             throw $exception;
         }
 

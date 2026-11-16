@@ -175,6 +175,13 @@ class SendAutomationEmailDelivery implements ShouldQueue
             // Nothing reached the recipient, so the queue retries on its backoff.
             $this->releaseClaim($delivery);
 
+            // The provider will refuse it again, so do not spend the retries.
+            if ($exception instanceof EmailTransportException && $exception->permanent) {
+                $this->fail($exception);
+
+                return;
+            }
+
             throw $exception;
         }
 

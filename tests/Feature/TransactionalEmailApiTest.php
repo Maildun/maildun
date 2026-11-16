@@ -2,6 +2,7 @@
 
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\TeamRole;
+use App\Exceptions\EmailTransportException;
 use App\Jobs\SendTransactionalEmailDelivery;
 use App\Mail\AutomationEmail;
 use App\Mail\TransactionalEmailMessage;
@@ -263,6 +264,24 @@ test('an ses transactional send records the message id ses knows it by', functio
 
     expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Sent)
         ->and($delivery->fresh()->provider_message_id)->toBe('0100018c-ses-message-id');
+});
+
+test('a transactional email the provider refuses for good fails at once instead of spending its retries', function () {
+    $email = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create();
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $refusal = new EmailTransportException(permanent: true);
+
+    $teamMailer = Mockery::mock(TeamMailer::class);
+    $teamMailer->shouldReceive('resolve')
+        ->once()
+        ->andReturn(app(TeamMailer::class)->resolve($email->team));
+    $teamMailer->shouldReceive('sendResolved')->once()->andThrow($refusal);
+
+    $job = (new SendTransactionalEmailDelivery($delivery->id))->withFakeQueueInteractions();
+    $job->handle($teamMailer);
+
+    $job->assertFailedWith($refusal);
 });
 
 test('a transactional email the provider may have taken without confirming keeps its claim and is not retried', function () {

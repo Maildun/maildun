@@ -80,6 +80,13 @@ class SendTransactionalEmailDelivery implements ShouldQueue
 
             $this->releaseClaim($delivery);
 
+            // The provider will refuse it again, so do not spend the retries.
+            if ($exception instanceof EmailTransportException && $exception->permanent) {
+                $this->fail($exception);
+
+                return;
+            }
+
             throw $exception;
         }
 

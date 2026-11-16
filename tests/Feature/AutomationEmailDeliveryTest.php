@@ -226,6 +226,24 @@ test('a transport failure hands the automation email back for the queue to retry
         ->and(EmailAddressHealth::query()->count())->toBe(0);
 });
 
+test('an automation email the provider refuses for good fails at once instead of spending its retries', function () {
+    Queue::fake([SendAutomationEmailDelivery::class, ProcessAutomationRun::class]);
+
+    [$run, $delivery] = queuedAutomationSend();
+    $refusal = new EmailTransportException(permanent: true);
+
+    $teamMailer = Mockery::mock(TeamMailer::class);
+    $teamMailer->shouldReceive('resolve')
+        ->once()
+        ->andReturn(app(TeamMailer::class)->resolve($run->automation->team));
+    $teamMailer->shouldReceive('sendResolved')->once()->andThrow($refusal);
+
+    $job = (new SendAutomationEmailDelivery($delivery->id))->withFakeQueueInteractions();
+    $job->handle($teamMailer, app(AdvanceAutomationRun::class));
+
+    $job->assertFailedWith($refusal);
+});
+
 test('an automation email the provider may have taken without confirming is not retried', function () {
     Queue::fake([SendAutomationEmailDelivery::class, ProcessAutomationRun::class]);
 
