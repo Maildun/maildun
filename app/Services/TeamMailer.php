@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Mail;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\Transport\Smtp\EsmtpTransport;
 use Symfony\Component\Mailer\Transport\Smtp\Stream\SocketStream;
+use Symfony\Component\Mime\Message;
 
 class TeamMailer
 {
@@ -125,6 +126,31 @@ class TeamMailer
         } catch (TransportExceptionInterface $exception) {
             throw EmailTransportException::fromTransport($exception);
         }
+    }
+
+    /**
+     * The id the provider knows the message by, which is what its feedback
+     * quotes back. SesV2Transport leaves Symfony's locally generated
+     * Message-ID in place and reports the SES MessageId only as an
+     * X-SES-Message-ID header; SMTP takes the id from the server's reply.
+     */
+    public static function providerMessageId(?SentMessage $sentMessage): ?string
+    {
+        if ($sentMessage === null) {
+            return null;
+        }
+
+        $originalMessage = $sentMessage->getOriginalMessage();
+
+        if ($originalMessage instanceof Message) {
+            $sesMessageId = $originalMessage->getHeaders()->get('X-SES-Message-ID')?->getBodyAsString();
+
+            if (filled($sesMessageId)) {
+                return $sesMessageId;
+            }
+        }
+
+        return $sentMessage->getMessageId();
     }
 
     public function provider(Team $team): string
@@ -298,6 +324,11 @@ class TeamMailer
     }
 
     /**
+     * STARTTLS is always attempted when the server offers it, even with
+     * encryption "none". A connection that logs in must not fall back to
+     * plain text, so "none" with credentials still requires TLS unless local
+     * development allows an unencrypted catcher.
+     *
      * @param  array<string, mixed>  $settings
      * @return array<string, mixed>
      */
@@ -305,6 +336,9 @@ class TeamMailer
     {
         $encryption = $settings['encryption'] ?? 'tls';
         $usesImplicitTls = $encryption === 'ssl';
+        $logsIn = filled($settings['username'] ?? null) || filled($settings['password'] ?? null);
+        $requiresTls = $encryption === 'tls'
+            || ($encryption === 'none' && $logsIn && ! PublicSmtpHostGuard::allowsLoopbackHosts());
 
         return [
             'transport' => 'smtp',
@@ -314,8 +348,8 @@ class TeamMailer
             'username' => $settings['username'] ?? null,
             'password' => $settings['password'] ?? null,
             'timeout' => 10,
-            'auto_tls' => $encryption !== 'none',
-            'require_tls' => $encryption === 'tls',
+            'auto_tls' => true,
+            'require_tls' => $requiresTls,
         ];
     }
 
@@ -331,6 +365,9 @@ class TeamMailer
      * header is read by the SES SMTP endpoint, and SesV2Transport ignores it.
      * Without it SES publishes nothing to SNS and all campaign feedback is lost.
      *
+     * The HTTP timeouts keep a stalled API connection from holding the worker
+     * until the job itself is killed.
+     *
      * @param  array<string, mixed>  $settings
      * @return array<string, mixed>
      */
@@ -344,6 +381,10 @@ class TeamMailer
             'secret' => $this->filledString($settings['secret_access_key'] ?? null),
             'region' => $this->filledString($settings['region'] ?? null) ?? 'us-east-1',
             'token' => null,
+            'http' => [
+                'connect_timeout' => (float) config('delivery.ses.connect_timeout'),
+                'timeout' => (float) config('delivery.ses.timeout'),
+            ],
             'options' => $configurationSet === null
                 ? []
                 : ['ConfigurationSetName' => $configurationSet],

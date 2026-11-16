@@ -14,7 +14,7 @@ Accept: application/json
 Content-Type: application/json
 ```
 
-The base path is `/api/v1`; the [automation trigger](#trigger-an-automation) uses its own path and token. Invalid or revoked keys return `401`. Requests are limited to 120 requests per minute per key, with an additional pre-authentication limit to slow key guessing.
+The base path is `/api/v1`; the [automation trigger](#trigger-an-automation) uses its own path and token. Invalid or revoked keys return `401`. Requests are limited to 120 requests per minute per key and, across all of a workspace's keys, 300 per minute (`API_RATE_LIMIT_PER_TEAM_PER_MINUTE`), with an additional pre-authentication limit to slow key guessing. A self-hosted instance can also cap each workspace's requests per day with `API_RATE_LIMIT_PER_TEAM_PER_DAY` (off by default). A request over any limit returns `429` with a `Retry-After` header.
 
 ## Send a transactional email
 

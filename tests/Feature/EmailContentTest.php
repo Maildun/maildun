@@ -25,7 +25,9 @@ use App\Models\Subscriber;
 use App\Models\Tag;
 use App\Models\TeamEmailIntegration;
 use App\Models\User;
+use App\Services\CampaignAttachmentContents;
 use App\Services\TeamMailer;
+use Aws\Result;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Support\Facades\Bus;
@@ -163,6 +165,20 @@ test('campaign attachments re-check the 10 attachment cap under the campaign loc
     ]))->toThrow(ValidationException::class, 'A campaign may have up to 10 attachments.');
 
     expect($email->attachments()->count())->toBe(9);
+    expect(Storage::disk('local')->allFiles())->toBeEmpty();
+});
+
+test('campaign attachments are refused once they would add up to more than the configured total', function () {
+    Storage::fake('local');
+    config()->set('delivery.attachments.max_total_megabytes', 1);
+    $email = Email::factory()->create();
+    EmailAttachment::factory()->for($email)->create(['size' => 600 * 1024]);
+
+    expect(fn () => app(StoreEmailAttachments::class)->handle($email, [
+        UploadedFile::fake()->create('guide.pdf', 500, 'application/pdf'),
+    ]))->toThrow(ValidationException::class, "A campaign's attachments may add up to 1 MB.");
+
+    expect($email->attachments()->count())->toBe(1);
     expect(Storage::disk('local')->allFiles())->toBeEmpty();
 });
 
@@ -757,6 +773,48 @@ test('campaign attachments go out with every delivered campaign message', functi
                 ->as('price-list.pdf')
                 ->withMime('application/pdf'),
         ));
+});
+
+test('a worker reads each campaign attachment from storage once, not once per recipient', function () {
+    Storage::fake('local');
+    $ses = fakeSesApi(new Result(['MessageId' => 'first']), new Result(['MessageId' => 'second']));
+
+    $email = Email::factory()->create(['status' => EmailStatus::Sending]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $attachment = EmailAttachment::factory()->for($email)->create(['original_name' => 'price-list.pdf', 'size' => 3]);
+    Storage::disk('local')->put($attachment->path, 'pdf');
+    [$first, $second] = EmailDelivery::factory()->count(2)->for($email)->sequence(
+        ['email_address' => 'first@example.com'],
+        ['email_address' => 'second@example.com'],
+    )->create(['status' => EmailDeliveryStatus::Queued]);
+
+    app()->call([new SendEmailDelivery($first->id), 'handle']);
+    // Gone from storage: the second recipient can only get it from the cache.
+    Storage::disk('local')->delete($attachment->path);
+    app()->call([new SendEmailDelivery($second->id), 'handle']);
+
+    $rawMessage = $ses->getLastCommand()['Content']['Raw']['Data'];
+
+    expect($second->fresh()->status)->toBe(EmailDeliveryStatus::Sent)
+        ->and($rawMessage)->toContain('second@example.com')
+        ->and($rawMessage)->toContain('price-list.pdf')
+        ->and($rawMessage)->toContain(base64_encode('pdf'));
+});
+
+test('the attachment cache holds no more than one campaign allowance', function () {
+    Storage::fake('local');
+    config()->set('delivery.attachments.max_total_megabytes', 1);
+    [$older, $newer] = EmailAttachment::factory()->count(2)->create(['size' => 600 * 1024]);
+    Storage::disk('local')->put($older->path, str_repeat('a', 600 * 1024));
+    Storage::disk('local')->put($newer->path, str_repeat('b', 600 * 1024));
+    $contents = app(CampaignAttachmentContents::class);
+
+    $contents->get($older);
+    $contents->get($newer);
+    Storage::disk('local')->delete([$older->path, $newer->path]);
+
+    expect($contents->get($newer))->toBe(str_repeat('b', 600 * 1024))
+        ->and(fn () => $contents->get($older))->toThrow(RuntimeException::class);
 });
 
 test('the link checker gives up on a redirect chain longer than five hops', function () {

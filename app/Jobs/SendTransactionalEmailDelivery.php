@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Concerns\ThrottlesEmailDelivery;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailProvider;
 use App\Enums\EmailSendLane;
 use App\Exceptions\EmailAddressSuppressedException;
@@ -72,7 +73,20 @@ class SendTransactionalEmailDelivery implements ShouldQueue
                 $delivery->from_address,
             );
         } catch (Throwable $exception) {
+            // The message may already be with the provider: keep the claim and
+            // do not retry. emails:resume closes the row.
+            if ($exception instanceof EmailTransportException && $exception->outcomeIsUnknown()) {
+                return;
+            }
+
             $this->releaseClaim($delivery);
+
+            // The provider will refuse it again, so do not spend the retries.
+            if ($exception instanceof EmailTransportException && $exception->permanent) {
+                $this->fail($exception);
+
+                return;
+            }
 
             throw $exception;
         }
@@ -82,7 +96,7 @@ class SendTransactionalEmailDelivery implements ShouldQueue
             ->where('status', EmailDeliveryStatus::Sending)
             ->update([
                 'status' => EmailDeliveryStatus::Sent,
-                'provider_message_id' => $sentMessage?->getMessageId(),
+                'provider_message_id' => TeamMailer::providerMessageId($sentMessage),
                 'sent_at' => now(),
             ]);
     }
@@ -100,6 +114,8 @@ class SendTransactionalEmailDelivery implements ShouldQueue
 
         // Only a delivery that never finished can fail: a late failure must not
         // overwrite one that was sent, nor count against the address's health.
+        // Only a provider refusal says anything about the address; a timeout or
+        // a workspace-side problem (no connection, an unverified sender) does not.
         $failed = TransactionalEmailDelivery::query()
             ->whereKey($this->deliveryId)
             ->whereIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending])
@@ -108,7 +124,9 @@ class SendTransactionalEmailDelivery implements ShouldQueue
                 'failure_reason' => $failureReason,
             ]);
 
-        if ($failed === 0) {
+        if ($failed === 0
+            || ! $exception instanceof EmailTransportException
+            || $exception->failureCode !== EmailFailureCode::ProviderRefused) {
             return;
         }
 

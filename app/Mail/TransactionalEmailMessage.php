@@ -2,6 +2,7 @@
 
 namespace App\Mail;
 
+use App\Actions\Emails\ConvertHtmlToText;
 use App\Enums\EmailProvider;
 use App\Models\TransactionalEmailDelivery;
 use Illuminate\Bus\Queueable;
@@ -31,12 +32,16 @@ class TransactionalEmailMessage extends Mailable
     }
 
     /**
-     * Get the message content definition.
+     * Get the message content definition. The text part is derived from the
+     * HTML, because spam filters score HTML-only mail and some recipients
+     * read plain text.
      */
     public function content(): Content
     {
         return new Content(
             htmlString: $this->delivery->html,
+            text: 'mail.campaign-text',
+            with: ['plainText' => app(ConvertHtmlToText::class)->handle($this->delivery->html)],
         );
     }
 

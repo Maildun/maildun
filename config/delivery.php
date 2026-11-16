@@ -61,6 +61,40 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Amazon SES API Timeouts
+    |--------------------------------------------------------------------------
+    |
+    | Seconds a send waits to connect to the SES API, and for the whole
+    | request. Without them a stalled connection holds the worker until the
+    | job's own timeout kills it, after which nobody knows whether SES took
+    | the message.
+    |
+    */
+
+    'ses' => [
+        'connect_timeout' => (float) env('MAIL_SES_CONNECT_TIMEOUT', 5),
+        'timeout' => (float) env('MAIL_SES_TIMEOUT', 15),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Campaign Attachments
+    |--------------------------------------------------------------------------
+    |
+    | The most a campaign's attachments may add up to, in megabytes. Amazon SES
+    | caps a whole message at 40 MB after base64 encoding (about 30 MB of raw
+    | files), and every queue worker holds the attachments in memory while it
+    | sends, so keep this well under both. Uploads past the limit are refused
+    | and a campaign over it cannot be sent.
+    |
+    */
+
+    'attachments' => [
+        'max_total_megabytes' => (int) env('MAIL_ATTACHMENTS_MAX_TOTAL_MB', 25),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Stalled Delivery Recovery
     |--------------------------------------------------------------------------
     |

@@ -132,6 +132,22 @@ class SaveTeamEmailIntegrationRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
+                if (EmailProvider::tryFrom($this->string('provider')->value()) !== EmailProvider::Smtp
+                    || $this->string('smtp_encryption')->value() !== 'none'
+                    || PublicSmtpHostGuard::allowsLoopbackHosts()) {
+                    return;
+                }
+
+                $password = $this->secret('smtp_password', 'password', $this->currentSettingsFor(EmailProvider::Smtp));
+
+                if ($this->filled('smtp_username') || filled($password)) {
+                    $validator->errors()->add(
+                        'smtp_encryption',
+                        __('Choose TLS or SSL to sign in to the SMTP server, so the username and password are never sent unencrypted.'),
+                    );
+                }
+            },
+            function (Validator $validator): void {
                 if (EmailProvider::tryFrom($this->string('provider')->value()) !== EmailProvider::AmazonSes
                     || $validator->errors()->hasAny(['ses_region', 'ses_sns_topic_arn'])) {
                     return;

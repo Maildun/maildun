@@ -130,6 +130,8 @@ type Props = {
     sendReadiness: SendReadiness;
     /** Deferred: the workspace's SES limits, null for other providers. */
     sesQuota?: SesAccountLimits | null;
+    /** This server's outbound send rate; 0 means unthrottled. */
+    sendRatePerSecond: number;
     suppressedRecipients: SuppressedRecipients;
     unconfirmedRecipients: number;
     missingUnsubscribe: boolean;
@@ -360,15 +362,18 @@ function ContentIssuesCallout({ issues }: { issues: ContentIssue[] }) {
 }
 
 /**
- * SES refuses messages past the account's 24-hour quota, and a sandbox
- * account only delivers to verified addresses, so say so before sending.
+ * SES refuses messages past the account's 24-hour quota or faster than its
+ * per-second rate, and a sandbox account only delivers to verified
+ * addresses, so say so before sending.
  */
 function SesQuotaWarning({
     quota,
     recipientCount,
+    sendRatePerSecond,
 }: {
     quota: SesAccountLimits | null;
     recipientCount: number;
+    sendRatePerSecond: number;
 }) {
     if (quota === null || !quota.available) {
         return null;
@@ -386,18 +391,45 @@ function SesQuotaWarning({
         );
     }
 
-    if (recipientCount <= quota.remaining) {
+    const exceedsQuota = recipientCount > quota.remaining;
+    const outpacesSes =
+        recipientCount > quota.max_send_rate &&
+        (sendRatePerSecond === 0 || sendRatePerSecond > quota.max_send_rate);
+
+    if (!exceedsQuota && !outpacesSes) {
         return null;
     }
 
     return (
-        <p className="text-sm text-warning" data-test="confirm-send-ses-quota">
-            Amazon SES allows {quota.remaining.toLocaleString()} more{' '}
-            {quota.remaining === 1 ? 'message' : 'messages'} in the next 24
-            hours. The other{' '}
-            {(recipientCount - quota.remaining).toLocaleString()} will fail
-            until the quota frees up; you can retry them afterwards.
-        </p>
+        <>
+            {exceedsQuota ? (
+                <p
+                    className="text-sm text-warning"
+                    data-test="confirm-send-ses-quota"
+                >
+                    Amazon SES allows {quota.remaining.toLocaleString()} more{' '}
+                    {quota.remaining === 1 ? 'message' : 'messages'} in the next
+                    24 hours. The other{' '}
+                    {(recipientCount - quota.remaining).toLocaleString()} will
+                    fail until the quota frees up; you can retry them
+                    afterwards.
+                </p>
+            ) : null}
+            {outpacesSes ? (
+                <p
+                    className="text-sm text-warning"
+                    data-test="confirm-send-ses-rate"
+                >
+                    Amazon SES accepts {quota.max_send_rate.toLocaleString()}{' '}
+                    messages per second, but this server sends{' '}
+                    {sendRatePerSecond === 0
+                        ? 'without a limit'
+                        : `up to ${sendRatePerSecond.toLocaleString()} per second`}
+                    . SES turns away the excess and some recipients may fail.
+                    Set MAIL_RATE_LIMIT_PER_SECOND to match SES.
+                </p>
+            ) : null}
+        </>
     );
 }
 
@@ -528,6 +560,7 @@ export default function PreviewAndSend({
     missingUnsubscribe,
     sendReadiness,
     sesQuota,
+    sendRatePerSecond,
     preview: initialPreview,
 }: Props) {
     const { auth, currentTeam } = usePage().props;
@@ -1346,6 +1379,7 @@ export default function PreviewAndSend({
                             <SesQuotaWarning
                                 quota={sesQuota ?? null}
                                 recipientCount={recipientCount}
+                                sendRatePerSecond={sendRatePerSecond}
                             />
                         </Deferred>
                     ) : null}

@@ -73,7 +73,11 @@ final class PublicSmtpHostGuard
         return $this->ensurePublic($hostname);
     }
 
-    private static function allowsLoopbackHosts(): bool
+    /**
+     * The local development opt-in for a loopback SMTP catcher, which also
+     * permits it to take a login without TLS.
+     */
+    public static function allowsLoopbackHosts(): bool
     {
         return app()->environment(['local', 'testing'])
             && config('mail.allow_local_smtp_hosts') === true;

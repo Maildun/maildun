@@ -35,6 +35,7 @@ use App\Models\AudienceAttribute;
 use App\Models\CampaignSeries;
 use App\Models\Email;
 use App\Models\EmailAddressHealth;
+use App\Models\EmailAttachment;
 use App\Models\EmailDelivery;
 use App\Models\EmailLink;
 use App\Models\EmailLinkTrackingAggregate;
@@ -304,6 +305,7 @@ class EmailController extends Controller
                     'size_label' => Number::fileSize($attachment->size),
                 ])->values(),
             ],
+            'attachmentLimitMegabytes' => EmailAttachment::maxTotalMegabytes(),
             'sendReadiness' => $sendReadiness->handle($email),
             'audiences' => $currentTeam->audiences()
                 ->withCount($this->subscribedCount($currentTeam))
@@ -489,6 +491,8 @@ class EmailController extends Controller
                 && $integration->isVerified()
                 ? app(SesAccountLimits::class)->fetch($integration)
                 : null),
+            // Compared with the SES rate client-side: 0 means this server sends unthrottled.
+            'sendRatePerSecond' => max(0, (int) config('delivery.rate_limit.per_second')),
             'recipientCount' => (clone $recipientQuery)->count(),
             'suppressedRecipients' => $this->suppressedRecipients($email),
             'unconfirmedRecipients' => $this->campaignSubscribers($email)

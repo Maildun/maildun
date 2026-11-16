@@ -7,6 +7,7 @@ use App\Enums\EmailStatus;
 use App\Exceptions\EmailTransportException;
 use App\Jobs\PrepareEmailSendChunk;
 use App\Models\Email;
+use App\Models\EmailAttachment;
 use App\Services\ResolvedEmailTransport;
 use App\Services\TeamMailer;
 use Illuminate\Bus\Batch;
@@ -74,6 +75,12 @@ class StartEmailSend
 
         if ($lockedEmail->audience_id === null || $missingContent || blank($lockedEmail->subject)) {
             throw ValidationException::withMessages(['email' => __('Choose recipients and complete the subject and content before sending.')]);
+        }
+
+        if ($lockedEmail->attachmentsExceedSizeLimit()) {
+            throw ValidationException::withMessages(['email' => __('Attachments may add up to :size MB. Remove some before sending.', [
+                'size' => EmailAttachment::maxTotalMegabytes(),
+            ])]);
         }
 
         try {

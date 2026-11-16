@@ -184,6 +184,15 @@ class Email extends Model
     }
 
     /**
+     * Whether the attachments add up to more than one message may carry, for
+     * example after the limit was lowered while this draft waited.
+     */
+    public function attachmentsExceedSizeLimit(): bool
+    {
+        return (int) $this->attachments()->sum('size') > EmailAttachment::maxTotalBytes();
+    }
+
+    /**
      * The address the email is sent from, falling back through the audience,
      * then the team, then the application default.
      */

@@ -166,8 +166,21 @@ class SendAutomationEmailDelivery implements ShouldQueue
                 $sendable->resolvedFromAddress(),
             );
         } catch (Throwable $exception) {
+            // The message may already be with the provider: keep the claim and
+            // do not retry. automations:resume closes the step and the row.
+            if ($exception instanceof EmailTransportException && $exception->outcomeIsUnknown()) {
+                return;
+            }
+
             // Nothing reached the recipient, so the queue retries on its backoff.
             $this->releaseClaim($delivery);
+
+            // The provider will refuse it again, so do not spend the retries.
+            if ($exception instanceof EmailTransportException && $exception->permanent) {
+                $this->fail($exception);
+
+                return;
+            }
 
             throw $exception;
         }
@@ -177,7 +190,7 @@ class SendAutomationEmailDelivery implements ShouldQueue
             ->where('status', EmailDeliveryStatus::Sending)
             ->update([
                 'status' => EmailDeliveryStatus::Sent,
-                'provider_message_id' => $sentMessage?->getMessageId(),
+                'provider_message_id' => TeamMailer::providerMessageId($sentMessage),
                 'sent_at' => now(),
             ]);
 

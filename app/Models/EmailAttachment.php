@@ -43,6 +43,19 @@ class EmailAttachment extends Model
         });
     }
 
+    /**
+     * The most one campaign's attachments may add up to, in bytes.
+     */
+    public static function maxTotalBytes(): int
+    {
+        return max(0, (int) config('delivery.attachments.max_total_megabytes')) * 1024 * 1024;
+    }
+
+    public static function maxTotalMegabytes(): int
+    {
+        return intdiv(self::maxTotalBytes(), 1024 * 1024);
+    }
+
     /** @return BelongsTo<Email, $this> */
     public function email(): BelongsTo
     {

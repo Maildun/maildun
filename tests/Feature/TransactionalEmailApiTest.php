@@ -2,11 +2,13 @@
 
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\TeamRole;
+use App\Exceptions\EmailTransportException;
 use App\Jobs\SendTransactionalEmailDelivery;
 use App\Mail\AutomationEmail;
 use App\Mail\TransactionalEmailMessage;
 use App\Models\Audience;
 use App\Models\Subscriber;
+use App\Models\Team;
 use App\Models\TeamApiKey;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
@@ -14,6 +16,7 @@ use App\Models\TransactionalEmail;
 use App\Models\TransactionalEmailDelivery;
 use App\Models\User;
 use App\Services\TeamMailer;
+use Aws\Result;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 
@@ -249,6 +252,56 @@ test('the delivery job sends once and records the result', function () {
         ->and($delivery->fresh()->sent_at)->not->toBeNull();
 });
 
+test('an ses transactional send records the message id ses knows it by', function () {
+    fakeSesApi(new Result(['MessageId' => '0100018c-ses-message-id']));
+    $email = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create([
+        'from_address' => 'mail@example.com',
+    ]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    TeamSender::factory()->for($email->team)->create(['email' => 'mail@example.com']);
+
+    (new SendTransactionalEmailDelivery($delivery->id))->handle(app(TeamMailer::class));
+
+    expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Sent)
+        ->and($delivery->fresh()->provider_message_id)->toBe('0100018c-ses-message-id');
+});
+
+test('a transactional email the provider refuses for good fails at once instead of spending its retries', function () {
+    $email = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create();
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $refusal = new EmailTransportException(permanent: true);
+
+    $teamMailer = Mockery::mock(TeamMailer::class);
+    $teamMailer->shouldReceive('resolve')
+        ->once()
+        ->andReturn(app(TeamMailer::class)->resolve($email->team));
+    $teamMailer->shouldReceive('sendResolved')->once()->andThrow($refusal);
+
+    $job = (new SendTransactionalEmailDelivery($delivery->id))->withFakeQueueInteractions();
+    $job->handle($teamMailer);
+
+    $job->assertFailedWith($refusal);
+});
+
+test('a transactional email the provider may have taken without confirming keeps its claim and is not retried', function () {
+    $email = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create();
+    TeamEmailIntegration::factory()->for($email->team)->smtp()->create();
+
+    $teamMailer = Mockery::mock(TeamMailer::class);
+    $teamMailer->shouldReceive('resolve')
+        ->once()
+        ->andReturn(app(TeamMailer::class)->resolve($email->team));
+    $teamMailer->shouldReceive('sendResolved')->once()->andThrow(unconfirmedSmtpHandover());
+
+    (new SendTransactionalEmailDelivery($delivery->id))->handle($teamMailer);
+
+    expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Sending)
+        ->and($delivery->fresh()->send_attempted_at)->not->toBeNull();
+});
+
 test('transactional mail carries its feedback correlation tag only through amazon ses', function (string $provider, bool $tagged) {
     $email = TransactionalEmail::factory()->published()->create();
     $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create(['provider' => $provider]);
@@ -260,6 +313,38 @@ test('transactional mail carries its feedback correlation tag only through amazo
     'smtp' => ['smtp', false],
     'the platform array mailer' => ['array', false],
 ]);
+
+test('a workspace cannot raise its api allowance by issuing more keys', function () {
+    config()->set('api.rate_limit.per_team_per_minute', 3);
+    $team = Team::factory()->create();
+    $first = TeamApiKey::issue($team, 'First')['token'];
+    $second = TeamApiKey::issue($team, 'Second')['token'];
+    $otherWorkspace = TeamApiKey::issue(Team::factory()->create(), 'Other')['token'];
+    $status = route('api.v1.transactional-deliveries.show', 'missing');
+
+    $this->withToken($first)->getJson($status)->assertNotFound();
+    $this->withToken($first)->getJson($status)->assertNotFound();
+    $this->withToken($second)->getJson($status)->assertNotFound();
+
+    $this->withToken($second)->getJson($status)->assertTooManyRequests();
+    $this->withToken($otherWorkspace)->getJson($status)->assertNotFound();
+});
+
+test('an optional daily cap holds a workspace to its api allowance for the day', function () {
+    config()->set('api.rate_limit.per_team_per_day', 2);
+    $token = TeamApiKey::issue(Team::factory()->create(), 'Production')['token'];
+    $status = route('api.v1.transactional-deliveries.show', 'missing');
+
+    $this->withToken($token)->getJson($status)->assertNotFound();
+    $this->withToken($token)->getJson($status)->assertNotFound();
+    $this->withToken($token)->getJson($status)->assertTooManyRequests();
+
+    $this->travel(2)->hours();
+    $this->withToken($token)->getJson($status)->assertTooManyRequests();
+
+    $this->travel(1)->day();
+    $this->withToken($token)->getJson($status)->assertNotFound();
+});
 
 test('api errors carry a machine readable code', function () {
     $email = TransactionalEmail::factory()->published()->create();

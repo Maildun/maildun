@@ -21,6 +21,7 @@ use App\Mail\CampaignEmail;
 use App\Models\Audience;
 use App\Models\Email;
 use App\Models\EmailAddressHealth;
+use App\Models\EmailAttachment;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
 use App\Models\EmailSendRun;
@@ -31,6 +32,7 @@ use App\Models\TeamEmailIntegration;
 use App\Models\User;
 use App\Services\ResolvedEmailTransport;
 use App\Services\TeamMailer;
+use Aws\Result;
 use Illuminate\Bus\Batch;
 use Illuminate\Bus\PendingBatch;
 use Illuminate\Queue\CallQueuedHandler;
@@ -148,6 +150,30 @@ test('a campaign whose only subscribers are suppressed cannot be queued', functi
     $this->actingAs($user)
         ->post(route('emails.send', [$team, $email]))
         ->assertSessionHasErrors(['email' => 'This campaign has no subscribed recipients.']);
+
+    Bus::assertNothingBatched();
+
+    expect($email->fresh()->status)->toBe(EmailStatus::Draft);
+});
+
+test('a campaign whose attachments exceed the total size limit cannot be queued', function () {
+    Bus::fake();
+    config()->set('delivery.attachments.max_total_megabytes', 1);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello</p>',
+    ]);
+    EmailAttachment::factory()->count(2)->for($email)->create(['size' => 600 * 1024]);
+
+    $this->actingAs($user)
+        ->post(route('emails.send', [$team, $email]))
+        ->assertSessionHasErrors(['email' => 'Attachments may add up to 1 MB. Remove some before sending.']);
 
     Bus::assertNothingBatched();
 
@@ -424,6 +450,23 @@ test('a delivery job sends one tracked message through the configured mailer', f
     expect($delivery->fresh()->status->value)->toBe('sent');
 });
 
+test('an ses send records the message id ses knows it by, not the local one', function () {
+    fakeSesApi(new Result(['MessageId' => '0100018c-ses-message-id']));
+    $email = Email::factory()->create(['status' => EmailStatus::Sending]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $delivery = $email->deliveries()->create([
+        'subscriber_id' => Subscriber::factory()->create()->id,
+        'email_address' => 'reader@example.com',
+        'status' => 'queued',
+        'provider' => 'ses',
+    ]);
+
+    app()->call([new SendEmailDelivery($delivery->id), 'handle']);
+
+    expect($delivery->fresh()->provider_message_id)->toBe('0100018c-ses-message-id')
+        ->and($delivery->attempts()->sole()->provider_message_id)->toBe('0100018c-ses-message-id');
+});
+
 test('a delivery gives its text part a working unsubscribe link', function () {
     Mail::fake();
     $email = Email::factory()->create([
@@ -524,6 +567,19 @@ test('ses correlation tags reach the message as the metadata headers the api tra
             'delivery_uuid' => $delivery->uuid,
             'attempt_uuid' => $attempt->uuid,
         ]);
+});
+
+test('the ses api client gives up on a stalled connection instead of holding the worker', function () {
+    config()->set('delivery.ses.connect_timeout', 4);
+    config()->set('delivery.ses.timeout', 12);
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->ses()->create();
+
+    config()->set('mail.mailers.ses-timeout-check', app(TeamMailer::class)->resolve($team)->configuration);
+    $client = Mail::mailer('ses-timeout-check')->getSymfonyTransport()->ses();
+
+    // The client applies its http options to every command it sends.
+    expect($client->getCommand('SendEmail')['@http'])->toMatchArray(['connect_timeout' => 4.0, 'timeout' => 12.0]);
 });
 
 test('the resolved ses transport carries the workspace configuration set, not the platform one', function () {
@@ -1506,6 +1562,42 @@ test('a transport failure hands the delivery back so the queue can retry it', fu
         ->and($delivery->fresh()->send_attempted_at)->toBeNull()
         ->and($delivery->attempts()->sole()->status)->toBe(EmailDeliveryStatus::Failed)
         ->and($delivery->attempts()->sole()->failure_reason)->toBe(__('Delivery failed.'));
+});
+
+test('a delivery the provider refuses for good fails at once instead of spending its retries', function () {
+    $email = Email::factory()->create(['html' => '<p>Hello</p>', 'status' => EmailStatus::Queued]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $delivery = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+    $refusal = new EmailTransportException(permanent: true);
+
+    $teamMailer = Mockery::mock(TeamMailer::class);
+    $teamMailer->shouldReceive('resolve')
+        ->once()
+        ->andReturn(app(TeamMailer::class)->resolve($email->team));
+    $teamMailer->shouldReceive('sendResolved')->once()->andThrow($refusal);
+
+    $job = (new SendEmailDelivery($delivery->id))->withFakeQueueInteractions();
+    $job->handle(app(BuildTrackedEmailHtml::class), $teamMailer);
+
+    $job->assertFailedWith($refusal);
+});
+
+test('a delivery the provider may have taken without confirming keeps its claim and is not retried', function () {
+    $email = Email::factory()->create(['html' => '<p>Hello</p>', 'status' => EmailStatus::Queued]);
+    TeamEmailIntegration::factory()->for($email->team)->smtp()->create();
+    $delivery = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+
+    $teamMailer = Mockery::mock(TeamMailer::class);
+    $teamMailer->shouldReceive('resolve')
+        ->once()
+        ->andReturn(app(TeamMailer::class)->resolve($email->team));
+    $teamMailer->shouldReceive('sendResolved')->once()->andThrow(unconfirmedSmtpHandover());
+
+    (new SendEmailDelivery($delivery->id))->handle(app(BuildTrackedEmailHtml::class), $teamMailer);
+
+    expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Sending)
+        ->and($delivery->fresh()->send_attempted_at)->not->toBeNull()
+        ->and($delivery->attempts()->sole()->status)->toBe(EmailDeliveryStatus::Sending);
 });
 
 test('a deliberate retry re-arms a delivery that already went out', function () {

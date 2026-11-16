@@ -22,6 +22,8 @@ use App\Models\TransactionalEmail;
 use App\Models\TransactionalEmailDelivery;
 use App\Models\User;
 use App\Services\TeamMailer;
+use Aws\Command;
+use Aws\Exception\AwsException;
 use Illuminate\Mail\Mailer;
 use Illuminate\Support\Facades\Mail;
 use Symfony\Component\Mailer\Exception\TransportException;
@@ -138,6 +140,63 @@ test('custom smtp refuses non-public dns answers before opening a mail transport
 
     Mail::assertNothingSent();
 });
+
+test('an smtp failure is unconfirmed only after the whole message was handed over without a reply', function (TransportException $failure, bool $unknown) {
+    $exception = EmailTransportException::fromTransport($failure);
+
+    expect($exception->outcomeIsUnknown())->toBe($unknown)
+        ->and($exception->getMessage() === __(EmailTransportException::OUTCOME_UNKNOWN_MESSAGE))->toBe($unknown);
+})->with([
+    'timed out waiting for the reply to the end of data' => fn () => [smtpTransportFailure(
+        'Connection to "smtp.example.com:587" timed out.', 0, '> DATA', '< 354 Go ahead', '> .',
+    ), true],
+    'connection dropped after the end of data' => fn () => [smtpTransportFailure(
+        'Connection to "smtp.example.com:587" has been closed unexpectedly.', 0, '> DATA', '< 354 Go ahead', '> .',
+    ), true],
+    'refused after the end of data' => fn () => [smtpTransportFailure(
+        'Expected response code "250" but got code "554", with message "554 Message rejected".', 554, '> DATA', '< 354 Go ahead', '> .',
+    ), false],
+    'timed out before the message was sent' => fn () => [smtpTransportFailure(
+        'Connection to "smtp.example.com:587" timed out.', 0, '> MAIL FROM:<mail@example.com>',
+    ), false],
+    'could not connect' => fn () => [smtpTransportFailure('Connection could not be established with host "smtp.example.com:587".', 0), false],
+]);
+
+test('provider refusals a retry cannot fix are permanent, throttling and outages are not', function (TransportException $failure, bool $permanent) {
+    expect(EmailTransportException::fromTransport($failure)->permanent)->toBe($permanent);
+})->with([
+    'ses rejected the message' => fn () => [sesApiFailure('MessageRejected', 'Illegal address'), true],
+    'ses sending paused' => fn () => [sesApiFailure('SendingPausedException', 'Sending is paused for this account.'), true],
+    'ses sandbox recipient not verified' => fn () => [new TransportException('Request to AWS SES V2 API failed. Reason: Email address is not verified. The following identities failed the check in region US-EAST-1: reader@example.com.'), true],
+    'ses throttling' => fn () => [sesApiFailure('TooManyRequestsException', 'Maximum sending rate exceeded.'), false],
+    'smtp mailbox unavailable' => fn () => [smtpTransportFailure('Expected response code "250" but got code "550".', 550), true],
+    'smtp temporary failure' => fn () => [smtpTransportFailure('Expected response code "250" but got code "451".', 451), false],
+    'could not connect' => fn () => [new TransportException('Connection could not be established with host "smtp.example.com:587".'), false],
+]);
+
+test('custom smtp always tries starttls and insists on it before sending credentials', function (string $encryption, ?string $username, bool $allowsLocalSmtp, bool $requiresTls) {
+    config()->set('mail.allow_local_smtp_hosts', $allowsLocalSmtp);
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->smtp()->create([
+        'settings' => [
+            'host' => 'smtp.public.example',
+            'port' => 587,
+            'username' => $username,
+            'password' => $username === null ? null : 'smtp-secret',
+            'encryption' => $encryption,
+        ],
+    ]);
+
+    expect(app(TeamMailer::class)->configuration($team))->toMatchArray([
+        'auto_tls' => true,
+        'require_tls' => $requiresTls,
+    ]);
+})->with([
+    'tls' => ['tls', 'smtp-user', false, true],
+    'no encryption with credentials' => ['none', 'smtp-user', false, true],
+    'no encryption without credentials' => ['none', null, false, false],
+    'no encryption to a local catcher' => ['none', 'smtp-user', true, false],
+]);
 
 test('custom smtp pins the socket to a validated address while preserving the tls hostname', function () {
     $resolver = Mockery::mock(DnsResolver::class);
@@ -349,3 +408,13 @@ test('campaign transactional and automation failures persist only the safe trans
             $run->steps()->where('node_id', 'send')->value('result'),
         ]))->not->toContain($secret);
 });
+
+/** The TransportException SesV2Transport raises for an SES API error. */
+function sesApiFailure(string $errorCode, string $errorMessage): TransportException
+{
+    return new TransportException(
+        'Request to AWS SES V2 API failed. Reason: '.$errorMessage.'.',
+        0,
+        new AwsException($errorMessage, new Command('SendEmail'), ['code' => $errorCode, 'message' => $errorMessage]),
+    );
+}

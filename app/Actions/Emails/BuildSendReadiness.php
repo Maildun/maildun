@@ -4,6 +4,7 @@ namespace App\Actions\Emails;
 
 use App\Exceptions\EmailTransportException;
 use App\Models\Email;
+use App\Models\EmailAttachment;
 use App\Services\ResolvedEmailTransport;
 use App\Services\TeamMailer;
 
@@ -64,6 +65,15 @@ class BuildSendReadiness
                 null,
             ),
         ];
+
+        if ($email->attachmentsExceedSizeLimit()) {
+            $checks[] = $this->check(
+                'attachments',
+                false,
+                __('Attachments may add up to :size MB. Remove some before sending.', ['size' => EmailAttachment::maxTotalMegabytes()]),
+                null,
+            );
+        }
 
         return [
             'ready' => collect($checks)->every(fn (array $check): bool => $check['passed']),

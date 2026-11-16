@@ -125,14 +125,27 @@ class SendEmailDelivery implements ShouldQueue
                 $delivery->email->resolvedFromAddress(),
             );
         } catch (Throwable $exception) {
+            // The message may already be with the provider: keep the claim and
+            // do not retry. FinalizeEmailSend or emails:resume closes the row.
+            if ($exception instanceof EmailTransportException && $exception->outcomeIsUnknown()) {
+                return;
+            }
+
             $this->failAttempt($attempt, $exception);
             $this->releaseClaim($delivery);
+
+            // The provider will refuse it again, so do not spend the retries.
+            if ($exception instanceof EmailTransportException && $exception->permanent) {
+                $this->fail($exception);
+
+                return;
+            }
 
             throw $exception;
         }
 
         $sentAt = now();
-        $providerMessageId = $sentMessage?->getMessageId();
+        $providerMessageId = TeamMailer::providerMessageId($sentMessage);
 
         DB::transaction(function () use ($attempt, $delivery, $providerMessageId, $sentAt): void {
             EmailDeliveryAttempt::query()
@@ -190,8 +203,12 @@ class SendEmailDelivery implements ShouldQueue
         }, attempts: 3);
 
         // A late failure must not count against the address's health when the
-        // delivery had already finished.
-        if ($failed === 0) {
+        // delivery had already finished, and neither does a failure that says
+        // nothing about the address: a timeout, or a workspace-side problem
+        // such as a disconnected provider or an unverified sender.
+        if ($failed === 0
+            || ! $exception instanceof EmailTransportException
+            || $exception->failureCode !== EmailFailureCode::ProviderRefused) {
             return;
         }
 

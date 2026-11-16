@@ -146,6 +146,7 @@ import type { AudienceAttributeTypeOption } from '@/types/audiences';
 
 type Props = {
     email: EmailDetail;
+    attachmentLimitMegabytes: number;
     audiences: EmailAudienceOption[];
     defaults: EmailSenderDefaults;
     senders: EmailSenderOption[];
@@ -245,6 +246,7 @@ function CampaignDesignPreview({
 
 export default function EmailEdit({
     email,
+    attachmentLimitMegabytes,
     audiences,
     defaults,
     senders,
@@ -1891,7 +1893,9 @@ export default function EmailEdit({
                                 <p className="font-medium">Attachments</p>
                                 <p className="text-sm text-muted-foreground">
                                     Add up to 10 JPEG, JPG, GIF, PNG, PDF, or
-                                    ZIP files. Each file may be up to 10 MB.
+                                    ZIP files. Each file may be up to 10 MB, and
+                                    together they may add up to{' '}
+                                    {attachmentLimitMegabytes} MB.
                                 </p>
                             </div>
                             {email.attachments.length > 0 ? (

@@ -16,6 +16,7 @@ class RenderCampaignContent
     public function __construct(
         private readonly ConvertHtmlToText $htmlToText = new ConvertHtmlToText,
         private readonly ResolveConditionalSections $conditions = new ResolveConditionalSections,
+        private readonly GuardMergedUrlScheme $urlScheme = new GuardMergedUrlScheme,
     ) {}
 
     /**
@@ -149,18 +150,19 @@ class RenderCampaignContent
             $content = $this->hydrateMarkdownMergeLinks($content);
         }
 
-        return (string) preg_replace_callback(self::PATTERN, function (array $matches) use ($data, $escape): string {
-            $key = $matches[1];
+        return (string) preg_replace_callback(self::PATTERN, function (array $matches) use ($content, $data, $escape): string {
+            [$tag, $offset] = $matches[0];
+            $key = $matches[1][0];
 
             if (! array_key_exists($key, $data)) {
-                return $matches[0];
+                return $tag;
             }
 
             $value = $data[$key];
             $string = is_scalar($value) || $value === null ? (string) $value : '';
 
-            return $escape ? e($string) : $string;
-        }, $content);
+            return $escape ? e($this->urlScheme->handle($content, $offset, $string)) : $string;
+        }, $content, flags: PREG_OFFSET_CAPTURE);
     }
 
     /**

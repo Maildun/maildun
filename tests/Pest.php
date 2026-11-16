@@ -2,12 +2,20 @@
 
 use App\Contracts\MailDomainLookup;
 use App\Enums\TeamPermission;
+use App\Exceptions\EmailTransportException;
 use App\Models\Team;
 use App\Models\User;
 use App\Models\WorkspaceRole;
 use App\Services\SesFeedbackVerifier;
+use Aws\Exception\AwsException;
+use Aws\MockHandler;
+use Aws\Result;
+use Aws\SesV2\SesV2Client;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Mail\Transport\SesV2Transport;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\TestCase;
 
 /*
@@ -138,4 +146,56 @@ function fakeMailDomains(array $domains = []): void
             return $this->domains[$domain] ?? null;
         }
     });
+}
+
+/**
+ * Send ses-v2 mail through the real SesV2Transport, answered by queued AWS
+ * results instead of the network. The handler is returned so a test can see
+ * what was sent.
+ */
+function fakeSesApi(Result|AwsException ...$responses): MockHandler
+{
+    $handler = new MockHandler($responses);
+
+    Mail::extend('ses-v2', fn (array $config): SesV2Transport => new SesV2Transport(
+        new SesV2Client([
+            'region' => 'us-east-1',
+            'version' => 'latest',
+            'credentials' => ['key' => 'AKIAIOSFODNN7EXAMPLE', 'secret' => str_repeat('a', 40)],
+            'retries' => 0,
+            'handler' => $handler,
+        ]),
+        $config['options'] ?? [],
+    ));
+
+    return $handler;
+}
+
+/**
+ * An SMTP failure carrying the session transcript Symfony appends, one
+ * command or reply per line, as the transport would raise it.
+ */
+function smtpTransportFailure(string $message, int $replyCode, string ...$transcript): TransportException
+{
+    $exception = new TransportException($message, $replyCode);
+    $exception->appendDebug(implode('', array_map(
+        fn (string $line): string => '[2026-11-16T10:00:00.000000+00:00] '.$line."\n",
+        $transcript,
+    )));
+
+    return $exception;
+}
+
+/**
+ * The sanitized exception for an SMTP session that timed out waiting for the
+ * reply to its end-of-data marker: the server may have queued the message.
+ */
+function unconfirmedSmtpHandover(): EmailTransportException
+{
+    return EmailTransportException::fromTransport(smtpTransportFailure(
+        'Connection to "smtp.example.com:587" timed out.',
+        0,
+        '> MAIL FROM:<mail@example.com>', '< 250 OK', '> RCPT TO:<reader@example.com>', '< 250 OK',
+        '> DATA', '< 354 Go ahead', '> .',
+    ));
 }
