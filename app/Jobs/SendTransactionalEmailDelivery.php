@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Actions\Emails\RecordEmailAddressHealth;
 use App\Concerns\ThrottlesEmailDelivery;
 use App\Enums\EmailDeliveryStatus;
+use App\Enums\EmailFailureCode;
 use App\Enums\EmailProvider;
 use App\Enums\EmailSendLane;
 use App\Exceptions\EmailAddressSuppressedException;
@@ -113,6 +114,8 @@ class SendTransactionalEmailDelivery implements ShouldQueue
 
         // Only a delivery that never finished can fail: a late failure must not
         // overwrite one that was sent, nor count against the address's health.
+        // Only a provider refusal says anything about the address; a timeout or
+        // a workspace-side problem (no connection, an unverified sender) does not.
         $failed = TransactionalEmailDelivery::query()
             ->whereKey($this->deliveryId)
             ->whereIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending])
@@ -121,7 +124,9 @@ class SendTransactionalEmailDelivery implements ShouldQueue
                 'failure_reason' => $failureReason,
             ]);
 
-        if ($failed === 0) {
+        if ($failed === 0
+            || ! $exception instanceof EmailTransportException
+            || $exception->failureCode !== EmailFailureCode::ProviderRefused) {
             return;
         }
 

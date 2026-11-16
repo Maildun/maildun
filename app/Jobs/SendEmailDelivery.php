@@ -203,8 +203,12 @@ class SendEmailDelivery implements ShouldQueue
         }, attempts: 3);
 
         // A late failure must not count against the address's health when the
-        // delivery had already finished.
-        if ($failed === 0) {
+        // delivery had already finished, and neither does a failure that says
+        // nothing about the address: a timeout, or a workspace-side problem
+        // such as a disconnected provider or an unverified sender.
+        if ($failed === 0
+            || ! $exception instanceof EmailTransportException
+            || $exception->failureCode !== EmailFailureCode::ProviderRefused) {
             return;
         }
 

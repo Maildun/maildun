@@ -7,6 +7,8 @@ use App\Enums\EmailAddressHealthStatus;
 use App\Enums\EmailDeliveryStatus;
 use App\Enums\EmailFailureCode;
 use App\Enums\EmailProvider;
+use App\Enums\EmailStatus;
+use App\Exceptions\EmailTransportException;
 use App\Jobs\SendEmailDelivery;
 use App\Jobs\SendTransactionalEmailDelivery;
 use App\Models\Email;
@@ -163,6 +165,34 @@ test('send failures are recorded without suppressing the address', function () {
         ->and($health->failure_count)->toBe(1)
         ->and(app(RecordEmailAddressHealth::class)->isSuppressed($team, 'user@example.com'))->toBeFalse();
 });
+
+test('only a provider refusal counts against the address when a send fails for good', function (Closure $failure, bool $charged) {
+    $email = Email::factory()->create(['status' => EmailStatus::Sending]);
+    $campaignDelivery = EmailDelivery::factory()->for($email)->create([
+        'email_address' => 'reader@example.com',
+        'status' => EmailDeliveryStatus::Sending,
+        'provider' => EmailProvider::AmazonSes->value,
+    ]);
+    $transactional = TransactionalEmail::factory()->for($email->team)->published()->create();
+    $transactionalDelivery = TransactionalEmailDelivery::factory()->for($transactional)->for($email->team)->create([
+        'to_address' => 'buyer@example.com',
+        'status' => EmailDeliveryStatus::Sending,
+        'provider' => EmailProvider::AmazonSes->value,
+    ]);
+
+    (new SendEmailDelivery($campaignDelivery->id))->failed($failure());
+    (new SendTransactionalEmailDelivery($transactionalDelivery->id))->failed($failure());
+
+    expect($campaignDelivery->fresh()->status)->toBe(EmailDeliveryStatus::Failed)
+        ->and($transactionalDelivery->fresh()->status)->toBe(EmailDeliveryStatus::Failed)
+        ->and(EmailAddressHealth::query()->pluck('email')->sort()->values()->all())
+        ->toBe($charged ? ['buyer@example.com', 'reader@example.com'] : []);
+})->with([
+    'the provider refused it' => [fn (): Throwable => new EmailTransportException, true],
+    'no provider connected' => [fn (): Throwable => EmailTransportException::providerUnavailable(), false],
+    'an unverified sender' => [fn (): Throwable => EmailTransportException::unauthorizedSender(), false],
+    'a worker timeout' => [fn (): Throwable => new RuntimeException('The job timed out.'), false],
+]);
 
 test('transactional api rejects a workspace suppressed recipient before queueing', function () {
     Queue::fake();
