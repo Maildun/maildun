@@ -130,3 +130,23 @@ test('the send page loads the quota as a deferred prop and the editor does not r
         ->assertInertia(fn (Assert $page) => $page
             ->reload(fn (Assert $reload) => $reload->missing('sesQuota'), only: 'sesQuota'));
 });
+
+test('the send step gets the server send rate to compare with the SES rate', function (int $configured, int $reported) {
+    config()->set('delivery.rate_limit.per_second', $configured);
+    $user = User::factory()->create();
+    TeamEmailIntegration::factory()->for($user->currentTeam)->ses()->create();
+    $audience = Audience::factory()->for($user->currentTeam)->create();
+    Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'audience_id' => $audience->id,
+        'subject' => 'Hello',
+        'html' => '<p>Hi</p>',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('emails.preview-and-send', [$user->currentTeam, $email]))
+        ->assertInertia(fn (Assert $page) => $page->where('sendRatePerSecond', $reported));
+})->with([
+    'unthrottled' => [0, 0],
+    'throttled' => [14, 14],
+]);

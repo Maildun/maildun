@@ -491,6 +491,8 @@ class EmailController extends Controller
                 && $integration->isVerified()
                 ? app(SesAccountLimits::class)->fetch($integration)
                 : null),
+            // Compared with the SES rate client-side: 0 means this server sends unthrottled.
+            'sendRatePerSecond' => max(0, (int) config('delivery.rate_limit.per_second')),
             'recipientCount' => (clone $recipientQuery)->count(),
             'suppressedRecipients' => $this->suppressedRecipients($email),
             'unconfirmedRecipients' => $this->campaignSubscribers($email)
