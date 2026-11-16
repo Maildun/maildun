@@ -569,6 +569,19 @@ test('ses correlation tags reach the message as the metadata headers the api tra
         ]);
 });
 
+test('the ses api client gives up on a stalled connection instead of holding the worker', function () {
+    config()->set('delivery.ses.connect_timeout', 4);
+    config()->set('delivery.ses.timeout', 12);
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->ses()->create();
+
+    config()->set('mail.mailers.ses-timeout-check', app(TeamMailer::class)->resolve($team)->configuration);
+    $client = Mail::mailer('ses-timeout-check')->getSymfonyTransport()->ses();
+
+    // The client applies its http options to every command it sends.
+    expect($client->getCommand('SendEmail')['@http'])->toMatchArray(['connect_timeout' => 4.0, 'timeout' => 12.0]);
+});
+
 test('the resolved ses transport carries the workspace configuration set, not the platform one', function () {
     config()->set('services.ses.configuration_set', 'maildun-production');
 

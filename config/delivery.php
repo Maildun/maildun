@@ -61,6 +61,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Amazon SES API Timeouts
+    |--------------------------------------------------------------------------
+    |
+    | Seconds a send waits to connect to the SES API, and for the whole
+    | request. Without them a stalled connection holds the worker until the
+    | job's own timeout kills it, after which nobody knows whether SES took
+    | the message.
+    |
+    */
+
+    'ses' => [
+        'connect_timeout' => (float) env('MAIL_SES_CONNECT_TIMEOUT', 5),
+        'timeout' => (float) env('MAIL_SES_TIMEOUT', 15),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Campaign Attachments
     |--------------------------------------------------------------------------
     |
