@@ -132,7 +132,7 @@ class SendEmailDelivery implements ShouldQueue
         }
 
         $sentAt = now();
-        $providerMessageId = $sentMessage?->getMessageId();
+        $providerMessageId = TeamMailer::providerMessageId($sentMessage);
 
         DB::transaction(function () use ($attempt, $delivery, $providerMessageId, $sentAt): void {
             EmailDeliveryAttempt::query()

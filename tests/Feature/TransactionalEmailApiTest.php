@@ -14,6 +14,7 @@ use App\Models\TransactionalEmail;
 use App\Models\TransactionalEmailDelivery;
 use App\Models\User;
 use App\Services\TeamMailer;
+use Aws\Result;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Queue;
 
@@ -247,6 +248,21 @@ test('the delivery job sends once and records the result', function () {
         ->and($delivery->fresh()->provider)->toBe('ses')
         ->and($delivery->fresh()->uses_team_email_integration)->toBeTrue()
         ->and($delivery->fresh()->sent_at)->not->toBeNull();
+});
+
+test('an ses transactional send records the message id ses knows it by', function () {
+    fakeSesApi(new Result(['MessageId' => '0100018c-ses-message-id']));
+    $email = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create([
+        'from_address' => 'mail@example.com',
+    ]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    TeamSender::factory()->for($email->team)->create(['email' => 'mail@example.com']);
+
+    (new SendTransactionalEmailDelivery($delivery->id))->handle(app(TeamMailer::class));
+
+    expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Sent)
+        ->and($delivery->fresh()->provider_message_id)->toBe('0100018c-ses-message-id');
 });
 
 test('transactional mail carries its feedback correlation tag only through amazon ses', function (string $provider, bool $tagged) {

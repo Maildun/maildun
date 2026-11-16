@@ -177,7 +177,7 @@ class SendAutomationEmailDelivery implements ShouldQueue
             ->where('status', EmailDeliveryStatus::Sending)
             ->update([
                 'status' => EmailDeliveryStatus::Sent,
-                'provider_message_id' => $sentMessage?->getMessageId(),
+                'provider_message_id' => TeamMailer::providerMessageId($sentMessage),
                 'sent_at' => now(),
             ]);
 

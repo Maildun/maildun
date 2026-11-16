@@ -6,7 +6,13 @@ use App\Models\Team;
 use App\Models\User;
 use App\Models\WorkspaceRole;
 use App\Services\SesFeedbackVerifier;
+use Aws\Exception\AwsException;
+use Aws\MockHandler;
+use Aws\Result;
+use Aws\SesV2\SesV2Client;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Mail\Transport\SesV2Transport;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -138,4 +144,27 @@ function fakeMailDomains(array $domains = []): void
             return $this->domains[$domain] ?? null;
         }
     });
+}
+
+/**
+ * Send ses-v2 mail through the real SesV2Transport, answered by queued AWS
+ * results instead of the network. The handler is returned so a test can see
+ * what was sent.
+ */
+function fakeSesApi(Result|AwsException ...$responses): MockHandler
+{
+    $handler = new MockHandler($responses);
+
+    Mail::extend('ses-v2', fn (array $config): SesV2Transport => new SesV2Transport(
+        new SesV2Client([
+            'region' => 'us-east-1',
+            'version' => 'latest',
+            'credentials' => ['key' => 'AKIAIOSFODNN7EXAMPLE', 'secret' => str_repeat('a', 40)],
+            'retries' => 0,
+            'handler' => $handler,
+        ]),
+        $config['options'] ?? [],
+    ));
+
+    return $handler;
 }

@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Mail;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\Transport\Smtp\EsmtpTransport;
 use Symfony\Component\Mailer\Transport\Smtp\Stream\SocketStream;
+use Symfony\Component\Mime\Message;
 
 class TeamMailer
 {
@@ -125,6 +126,31 @@ class TeamMailer
         } catch (TransportExceptionInterface $exception) {
             throw EmailTransportException::fromTransport($exception);
         }
+    }
+
+    /**
+     * The id the provider knows the message by, which is what its feedback
+     * quotes back. SesV2Transport leaves Symfony's locally generated
+     * Message-ID in place and reports the SES MessageId only as an
+     * X-SES-Message-ID header; SMTP takes the id from the server's reply.
+     */
+    public static function providerMessageId(?SentMessage $sentMessage): ?string
+    {
+        if ($sentMessage === null) {
+            return null;
+        }
+
+        $originalMessage = $sentMessage->getOriginalMessage();
+
+        if ($originalMessage instanceof Message) {
+            $sesMessageId = $originalMessage->getHeaders()->get('X-SES-Message-ID')?->getBodyAsString();
+
+            if (filled($sesMessageId)) {
+                return $sesMessageId;
+            }
+        }
+
+        return $sentMessage->getMessageId();
     }
 
     public function provider(Team $team): string

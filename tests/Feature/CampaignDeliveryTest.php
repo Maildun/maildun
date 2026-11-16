@@ -31,6 +31,7 @@ use App\Models\TeamEmailIntegration;
 use App\Models\User;
 use App\Services\ResolvedEmailTransport;
 use App\Services\TeamMailer;
+use Aws\Result;
 use Illuminate\Bus\Batch;
 use Illuminate\Bus\PendingBatch;
 use Illuminate\Queue\CallQueuedHandler;
@@ -422,6 +423,23 @@ test('a delivery job sends one tracked message through the configured mailer', f
     Mail::assertSent(CampaignEmail::class, fn (CampaignEmail $mail): bool => $mail->hasTo('reader@example.com')
         && str_contains($mail->trackedHtml, '/track/emails/'));
     expect($delivery->fresh()->status->value)->toBe('sent');
+});
+
+test('an ses send records the message id ses knows it by, not the local one', function () {
+    fakeSesApi(new Result(['MessageId' => '0100018c-ses-message-id']));
+    $email = Email::factory()->create(['status' => EmailStatus::Sending]);
+    TeamEmailIntegration::factory()->for($email->team)->ses()->create();
+    $delivery = $email->deliveries()->create([
+        'subscriber_id' => Subscriber::factory()->create()->id,
+        'email_address' => 'reader@example.com',
+        'status' => 'queued',
+        'provider' => 'ses',
+    ]);
+
+    app()->call([new SendEmailDelivery($delivery->id), 'handle']);
+
+    expect($delivery->fresh()->provider_message_id)->toBe('0100018c-ses-message-id')
+        ->and($delivery->attempts()->sole()->provider_message_id)->toBe('0100018c-ses-message-id');
 });
 
 test('a delivery gives its text part a working unsubscribe link', function () {
