@@ -324,6 +324,11 @@ class TeamMailer
     }
 
     /**
+     * STARTTLS is always attempted when the server offers it, even with
+     * encryption "none". A connection that logs in must not fall back to
+     * plain text, so "none" with credentials still requires TLS unless local
+     * development allows an unencrypted catcher.
+     *
      * @param  array<string, mixed>  $settings
      * @return array<string, mixed>
      */
@@ -331,6 +336,9 @@ class TeamMailer
     {
         $encryption = $settings['encryption'] ?? 'tls';
         $usesImplicitTls = $encryption === 'ssl';
+        $logsIn = filled($settings['username'] ?? null) || filled($settings['password'] ?? null);
+        $requiresTls = $encryption === 'tls'
+            || ($encryption === 'none' && $logsIn && ! PublicSmtpHostGuard::allowsLoopbackHosts());
 
         return [
             'transport' => 'smtp',
@@ -340,8 +348,8 @@ class TeamMailer
             'username' => $settings['username'] ?? null,
             'password' => $settings['password'] ?? null,
             'timeout' => 10,
-            'auto_tls' => $encryption !== 'none',
-            'require_tls' => $encryption === 'tls',
+            'auto_tls' => true,
+            'require_tls' => $requiresTls,
         ];
     }
 

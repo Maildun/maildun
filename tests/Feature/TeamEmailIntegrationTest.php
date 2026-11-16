@@ -105,6 +105,56 @@ test('the connection endpoint rejects loopback SMTP hosts without local opt-in',
     'IPv4 loopback' => ['127.0.0.1'],
 ]);
 
+test('an SMTP connection that signs in cannot turn encryption off', function () {
+    config()->set('mail.allow_local_smtp_hosts', false);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('teams.email-provider.store', $team), validSmtpConnectionPayload([
+            'smtp_encryption' => 'none',
+        ]))
+        ->assertSessionHasErrors('smtp_encryption');
+
+    expect($team->emailIntegration()->exists())->toBeFalse();
+});
+
+test('an SMTP connection keeping a stored password cannot turn encryption off', function () {
+    config()->set('mail.allow_local_smtp_hosts', false);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $integration = TeamEmailIntegration::factory()->for($team)->smtp()->create([
+        'settings' => validSmtpSettings(),
+    ]);
+
+    $this->actingAs($user)
+        ->patch(route('teams.email-provider.update', [$team, $integration]), validSmtpConnectionPayload([
+            'smtp_username' => '',
+            'smtp_encryption' => 'none',
+        ]))
+        ->assertSessionHasErrors('smtp_encryption');
+
+    expect($integration->fresh()->settings['encryption'])->toBe('tls');
+});
+
+test('an SMTP connection may skip encryption when it does not sign in or targets a local catcher', function (bool $allowsLocalSmtp, string $username) {
+    config()->set('mail.allow_local_smtp_hosts', $allowsLocalSmtp);
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+
+    $this->actingAs($user)
+        ->post(route('teams.email-provider.store', $team), validSmtpConnectionPayload([
+            'smtp_username' => $username,
+            'smtp_encryption' => 'none',
+        ]))
+        ->assertSessionHasNoErrors();
+
+    expect($team->emailIntegration()->firstOrFail()->settings['encryption'])->toBe('none');
+})->with([
+    'an open relay without credentials' => [false, ''],
+    'a local catcher in development' => [true, 'mailer'],
+]);
+
 test('a delivery test accepts explicit From and To addresses without a sender', function () {
     Queue::fake();
     $user = User::factory()->create();

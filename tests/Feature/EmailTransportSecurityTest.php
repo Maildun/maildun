@@ -139,6 +139,30 @@ test('custom smtp refuses non-public dns answers before opening a mail transport
     Mail::assertNothingSent();
 });
 
+test('custom smtp always tries starttls and insists on it before sending credentials', function (string $encryption, ?string $username, bool $allowsLocalSmtp, bool $requiresTls) {
+    config()->set('mail.allow_local_smtp_hosts', $allowsLocalSmtp);
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->smtp()->create([
+        'settings' => [
+            'host' => 'smtp.public.example',
+            'port' => 587,
+            'username' => $username,
+            'password' => $username === null ? null : 'smtp-secret',
+            'encryption' => $encryption,
+        ],
+    ]);
+
+    expect(app(TeamMailer::class)->configuration($team))->toMatchArray([
+        'auto_tls' => true,
+        'require_tls' => $requiresTls,
+    ]);
+})->with([
+    'tls' => ['tls', 'smtp-user', false, true],
+    'no encryption with credentials' => ['none', 'smtp-user', false, true],
+    'no encryption without credentials' => ['none', null, false, false],
+    'no encryption to a local catcher' => ['none', 'smtp-user', true, false],
+]);
+
 test('custom smtp pins the socket to a validated address while preserving the tls hostname', function () {
     $resolver = Mockery::mock(DnsResolver::class);
     $resolver->shouldReceive('resolve')
