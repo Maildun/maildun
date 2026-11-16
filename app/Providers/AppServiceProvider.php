@@ -10,6 +10,7 @@ use App\Models\Automation;
 use App\Models\EmailDelivery;
 use App\Models\SubscribeForm;
 use App\Models\Subscriber;
+use App\Models\TeamApiKey;
 use App\Services\SystemDnsRecordLookup;
 use App\Services\SystemDnsResolver;
 use App\Services\SystemMailDomainLookup;
@@ -142,8 +143,26 @@ class AppServiceProvider extends ServiceProvider
         // Keyed by the token, not the authenticated key: the framework's middleware
         // priority runs every throttle before AuthenticateTeamApiKey, so the
         // teamApiKey attribute is never set here and each key needs its own bucket.
-        RateLimiter::for('team-api', function (Request $request): Limit {
-            return Limit::perMinute(120)->by('team-api:'.$this->apiTokenFingerprint($request));
+        // The workspace limits look the key up themselves, so a workspace cannot
+        // multiply its allowance by issuing more keys.
+        RateLimiter::for('team-api', function (Request $request): array {
+            $limits = [Limit::perMinute(120)->by('team-api:'.$this->apiTokenFingerprint($request))];
+            $teamId = TeamApiKey::findToken($request->bearerToken())?->team_id;
+
+            if ($teamId === null) {
+                return $limits;
+            }
+
+            $limits[] = Limit::perMinute(max(1, (int) config('api.rate_limit.per_team_per_minute')))
+                ->by('team-api:team:'.$teamId);
+
+            $perDay = (int) config('api.rate_limit.per_team_per_day');
+
+            if ($perDay > 0) {
+                $limits[] = Limit::perDay($perDay)->by('team-api:team-day:'.$teamId);
+            }
+
+            return $limits;
         });
 
         // A cap on top of team-api, so a burst of conversion webhooks cannot

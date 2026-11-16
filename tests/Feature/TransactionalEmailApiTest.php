@@ -8,6 +8,7 @@ use App\Mail\AutomationEmail;
 use App\Mail\TransactionalEmailMessage;
 use App\Models\Audience;
 use App\Models\Subscriber;
+use App\Models\Team;
 use App\Models\TeamApiKey;
 use App\Models\TeamEmailIntegration;
 use App\Models\TeamSender;
@@ -312,6 +313,38 @@ test('transactional mail carries its feedback correlation tag only through amazo
     'smtp' => ['smtp', false],
     'the platform array mailer' => ['array', false],
 ]);
+
+test('a workspace cannot raise its api allowance by issuing more keys', function () {
+    config()->set('api.rate_limit.per_team_per_minute', 3);
+    $team = Team::factory()->create();
+    $first = TeamApiKey::issue($team, 'First')['token'];
+    $second = TeamApiKey::issue($team, 'Second')['token'];
+    $otherWorkspace = TeamApiKey::issue(Team::factory()->create(), 'Other')['token'];
+    $status = route('api.v1.transactional-deliveries.show', 'missing');
+
+    $this->withToken($first)->getJson($status)->assertNotFound();
+    $this->withToken($first)->getJson($status)->assertNotFound();
+    $this->withToken($second)->getJson($status)->assertNotFound();
+
+    $this->withToken($second)->getJson($status)->assertTooManyRequests();
+    $this->withToken($otherWorkspace)->getJson($status)->assertNotFound();
+});
+
+test('an optional daily cap holds a workspace to its api allowance for the day', function () {
+    config()->set('api.rate_limit.per_team_per_day', 2);
+    $token = TeamApiKey::issue(Team::factory()->create(), 'Production')['token'];
+    $status = route('api.v1.transactional-deliveries.show', 'missing');
+
+    $this->withToken($token)->getJson($status)->assertNotFound();
+    $this->withToken($token)->getJson($status)->assertNotFound();
+    $this->withToken($token)->getJson($status)->assertTooManyRequests();
+
+    $this->travel(2)->hours();
+    $this->withToken($token)->getJson($status)->assertTooManyRequests();
+
+    $this->travel(1)->day();
+    $this->withToken($token)->getJson($status)->assertNotFound();
+});
 
 test('api errors carry a machine readable code', function () {
     $email = TransactionalEmail::factory()->published()->create();
