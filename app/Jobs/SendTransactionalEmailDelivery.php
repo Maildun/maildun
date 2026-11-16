@@ -72,6 +72,12 @@ class SendTransactionalEmailDelivery implements ShouldQueue
                 $delivery->from_address,
             );
         } catch (Throwable $exception) {
+            // The message may already be with the provider: keep the claim and
+            // do not retry. emails:resume closes the row.
+            if ($exception instanceof EmailTransportException && $exception->outcomeIsUnknown()) {
+                return;
+            }
+
             $this->releaseClaim($delivery);
 
             throw $exception;

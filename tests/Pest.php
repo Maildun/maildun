@@ -2,6 +2,7 @@
 
 use App\Contracts\MailDomainLookup;
 use App\Enums\TeamPermission;
+use App\Exceptions\EmailTransportException;
 use App\Models\Team;
 use App\Models\User;
 use App\Models\WorkspaceRole;
@@ -14,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Transport\SesV2Transport;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\TestCase;
 
 /*
@@ -167,4 +169,33 @@ function fakeSesApi(Result|AwsException ...$responses): MockHandler
     ));
 
     return $handler;
+}
+
+/**
+ * An SMTP failure carrying the session transcript Symfony appends, one
+ * command or reply per line, as the transport would raise it.
+ */
+function smtpTransportFailure(string $message, int $replyCode, string ...$transcript): TransportException
+{
+    $exception = new TransportException($message, $replyCode);
+    $exception->appendDebug(implode('', array_map(
+        fn (string $line): string => '[2026-11-16T10:00:00.000000+00:00] '.$line."\n",
+        $transcript,
+    )));
+
+    return $exception;
+}
+
+/**
+ * The sanitized exception for an SMTP session that timed out waiting for the
+ * reply to its end-of-data marker: the server may have queued the message.
+ */
+function unconfirmedSmtpHandover(): EmailTransportException
+{
+    return EmailTransportException::fromTransport(smtpTransportFailure(
+        'Connection to "smtp.example.com:587" timed out.',
+        0,
+        '> MAIL FROM:<mail@example.com>', '< 250 OK', '> RCPT TO:<reader@example.com>', '< 250 OK',
+        '> DATA', '< 354 Go ahead', '> .',
+    ));
 }

@@ -1564,6 +1564,24 @@ test('a transport failure hands the delivery back so the queue can retry it', fu
         ->and($delivery->attempts()->sole()->failure_reason)->toBe(__('Delivery failed.'));
 });
 
+test('a delivery the provider may have taken without confirming keeps its claim and is not retried', function () {
+    $email = Email::factory()->create(['html' => '<p>Hello</p>', 'status' => EmailStatus::Queued]);
+    TeamEmailIntegration::factory()->for($email->team)->smtp()->create();
+    $delivery = EmailDelivery::factory()->for($email)->create(['status' => EmailDeliveryStatus::Queued]);
+
+    $teamMailer = Mockery::mock(TeamMailer::class);
+    $teamMailer->shouldReceive('resolve')
+        ->once()
+        ->andReturn(app(TeamMailer::class)->resolve($email->team));
+    $teamMailer->shouldReceive('sendResolved')->once()->andThrow(unconfirmedSmtpHandover());
+
+    (new SendEmailDelivery($delivery->id))->handle(app(BuildTrackedEmailHtml::class), $teamMailer);
+
+    expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Sending)
+        ->and($delivery->fresh()->send_attempted_at)->not->toBeNull()
+        ->and($delivery->attempts()->sole()->status)->toBe(EmailDeliveryStatus::Sending);
+});
+
 test('a deliberate retry re-arms a delivery that already went out', function () {
     Bus::fake();
 

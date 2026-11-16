@@ -166,6 +166,12 @@ class SendAutomationEmailDelivery implements ShouldQueue
                 $sendable->resolvedFromAddress(),
             );
         } catch (Throwable $exception) {
+            // The message may already be with the provider: keep the claim and
+            // do not retry. automations:resume closes the step and the row.
+            if ($exception instanceof EmailTransportException && $exception->outcomeIsUnknown()) {
+                return;
+            }
+
             // Nothing reached the recipient, so the queue retries on its backoff.
             $this->releaseClaim($delivery);
 

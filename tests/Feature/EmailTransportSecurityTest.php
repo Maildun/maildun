@@ -139,6 +139,27 @@ test('custom smtp refuses non-public dns answers before opening a mail transport
     Mail::assertNothingSent();
 });
 
+test('an smtp failure is unconfirmed only after the whole message was handed over without a reply', function (TransportException $failure, bool $unknown) {
+    $exception = EmailTransportException::fromTransport($failure);
+
+    expect($exception->outcomeIsUnknown())->toBe($unknown)
+        ->and($exception->getMessage() === __(EmailTransportException::OUTCOME_UNKNOWN_MESSAGE))->toBe($unknown);
+})->with([
+    'timed out waiting for the reply to the end of data' => fn () => [smtpTransportFailure(
+        'Connection to "smtp.example.com:587" timed out.', 0, '> DATA', '< 354 Go ahead', '> .',
+    ), true],
+    'connection dropped after the end of data' => fn () => [smtpTransportFailure(
+        'Connection to "smtp.example.com:587" has been closed unexpectedly.', 0, '> DATA', '< 354 Go ahead', '> .',
+    ), true],
+    'refused after the end of data' => fn () => [smtpTransportFailure(
+        'Expected response code "250" but got code "554", with message "554 Message rejected".', 554, '> DATA', '< 354 Go ahead', '> .',
+    ), false],
+    'timed out before the message was sent' => fn () => [smtpTransportFailure(
+        'Connection to "smtp.example.com:587" timed out.', 0, '> MAIL FROM:<mail@example.com>',
+    ), false],
+    'could not connect' => fn () => [smtpTransportFailure('Connection could not be established with host "smtp.example.com:587".', 0), false],
+]);
+
 test('custom smtp always tries starttls and insists on it before sending credentials', function (string $encryption, ?string $username, bool $allowsLocalSmtp, bool $requiresTls) {
     config()->set('mail.allow_local_smtp_hosts', $allowsLocalSmtp);
     $team = Team::factory()->create();

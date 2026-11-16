@@ -125,6 +125,12 @@ class SendEmailDelivery implements ShouldQueue
                 $delivery->email->resolvedFromAddress(),
             );
         } catch (Throwable $exception) {
+            // The message may already be with the provider: keep the claim and
+            // do not retry. FinalizeEmailSend or emails:resume closes the row.
+            if ($exception instanceof EmailTransportException && $exception->outcomeIsUnknown()) {
+                return;
+            }
+
             $this->failAttempt($attempt, $exception);
             $this->releaseClaim($delivery);
 

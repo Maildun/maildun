@@ -265,6 +265,23 @@ test('an ses transactional send records the message id ses knows it by', functio
         ->and($delivery->fresh()->provider_message_id)->toBe('0100018c-ses-message-id');
 });
 
+test('a transactional email the provider may have taken without confirming keeps its claim and is not retried', function () {
+    $email = TransactionalEmail::factory()->published()->create();
+    $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create();
+    TeamEmailIntegration::factory()->for($email->team)->smtp()->create();
+
+    $teamMailer = Mockery::mock(TeamMailer::class);
+    $teamMailer->shouldReceive('resolve')
+        ->once()
+        ->andReturn(app(TeamMailer::class)->resolve($email->team));
+    $teamMailer->shouldReceive('sendResolved')->once()->andThrow(unconfirmedSmtpHandover());
+
+    (new SendTransactionalEmailDelivery($delivery->id))->handle($teamMailer);
+
+    expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Sending)
+        ->and($delivery->fresh()->send_attempted_at)->not->toBeNull();
+});
+
 test('transactional mail carries its feedback correlation tag only through amazon ses', function (string $provider, bool $tagged) {
     $email = TransactionalEmail::factory()->published()->create();
     $delivery = TransactionalEmailDelivery::factory()->for($email)->for($email->team)->create(['provider' => $provider]);

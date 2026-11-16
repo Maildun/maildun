@@ -12,6 +12,8 @@ final class EmailTransportException extends RuntimeException
 
     public const string UNAUTHORIZED_SENDER_MESSAGE = 'The From address is not authorized for the connected email provider.';
 
+    public const string OUTCOME_UNKNOWN_MESSAGE = 'The email provider took the message but never confirmed it, so it may have been delivered. It is not retried automatically.';
+
     /**
      * Known provider failures mapped to fixed, credential-free explanations.
      *
@@ -75,6 +77,10 @@ final class EmailTransportException extends RuntimeException
 
     public static function fromTransport(TransportExceptionInterface $exception): self
     {
+        if (self::wasHandedOverWithoutReply($exception)) {
+            return new self(__(self::OUTCOME_UNKNOWN_MESSAGE), EmailFailureCode::NoReport);
+        }
+
         $providerMessage = mb_strtolower($exception->getMessage());
 
         foreach (self::KNOWN_FAILURES as $message => $needles) {
@@ -86,5 +92,33 @@ final class EmailTransportException extends RuntimeException
         }
 
         return new self;
+    }
+
+    /**
+     * Whether the message may have gone out anyway, so sending it again could
+     * mail the recipient twice.
+     */
+    public function outcomeIsUnknown(): bool
+    {
+        return $this->failureCode === EmailFailureCode::NoReport;
+    }
+
+    /**
+     * An SMTP session that already sent the end-of-data marker handed the
+     * whole message over. If it then failed without an SMTP reply (a timeout
+     * or a dropped connection) the server may well have queued it. A 4xx or
+     * 5xx reply is a definite refusal, and anything that failed before the
+     * marker never reached the server, so both are safe to retry. The
+     * transcript can contain credentials, so it is only matched, never kept.
+     */
+    private static function wasHandedOverWithoutReply(TransportExceptionInterface $exception): bool
+    {
+        $replyCode = (int) $exception->getCode();
+
+        if ($replyCode >= 400 && $replyCode < 600) {
+            return false;
+        }
+
+        return preg_match('/\] > \.$/m', $exception->getDebug()) === 1;
     }
 }
