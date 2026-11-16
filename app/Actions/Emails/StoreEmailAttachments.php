@@ -5,6 +5,7 @@ namespace App\Actions\Emails;
 use App\Enums\EmailStatus;
 use App\Enums\StorageBackend;
 use App\Models\Email;
+use App\Models\EmailAttachment;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -18,7 +19,8 @@ class StoreEmailAttachments
      * Store uploaded files as attachments of a draft campaign.
      *
      * The campaign row is locked so two concurrent uploads, or an upload racing
-     * a send, cannot slip past the draft check or the 10-attachment cap. Files
+     * a send, cannot slip past the draft check, the 10-attachment cap or the
+     * total size limit. Files
      * already written to the private disk are removed again when anything fails.
      *
      * @param  list<UploadedFile>  $files
@@ -35,6 +37,14 @@ class StoreEmailAttachments
 
                 if ($lockedEmail->attachments()->count() + count($files) > 10) {
                     throw ValidationException::withMessages(['attachments' => __('A campaign may have up to 10 attachments.')]);
+                }
+
+                $incomingBytes = array_sum(array_map(fn (UploadedFile $file): int => (int) $file->getSize(), $files));
+
+                if ((int) $lockedEmail->attachments()->sum('size') + $incomingBytes > EmailAttachment::maxTotalBytes()) {
+                    throw ValidationException::withMessages(['attachments' => __('A campaign\'s attachments may add up to :size MB.', [
+                        'size' => EmailAttachment::maxTotalMegabytes(),
+                    ])]);
                 }
 
                 foreach ($files as $file) {

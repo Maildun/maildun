@@ -61,6 +61,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Campaign Attachments
+    |--------------------------------------------------------------------------
+    |
+    | The most a campaign's attachments may add up to, in megabytes. Amazon SES
+    | caps a whole message at 40 MB after base64 encoding (about 30 MB of raw
+    | files), and every queue worker holds the attachments in memory while it
+    | sends, so keep this well under both. Uploads past the limit are refused
+    | and a campaign over it cannot be sent.
+    |
+    */
+
+    'attachments' => [
+        'max_total_megabytes' => (int) env('MAIL_ATTACHMENTS_MAX_TOTAL_MB', 25),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Stalled Delivery Recovery
     |--------------------------------------------------------------------------
     |

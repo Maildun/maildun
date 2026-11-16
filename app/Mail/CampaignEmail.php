@@ -3,8 +3,10 @@
 namespace App\Mail;
 
 use App\Enums\EmailProvider;
+use App\Models\EmailAttachment;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
+use App\Services\CampaignAttachmentContents;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
@@ -55,13 +57,21 @@ class CampaignEmail extends Mailable
         );
     }
 
-    /** @return array<int, Attachment> */
+    /**
+     * Every recipient gets the same files, so they are read through the
+     * worker's cache rather than downloaded again for each delivery.
+     *
+     * @return array<int, Attachment>
+     */
     public function attachments(): array
     {
+        $contents = app(CampaignAttachmentContents::class);
+
         return $this->delivery->email->attachments
-            ->map(fn ($attachment): Attachment => Attachment::fromStorageDisk($attachment->disk, $attachment->path)
-                ->as($attachment->original_name)
-                ->withMime($attachment->mime_type))
+            ->map(fn (EmailAttachment $attachment): Attachment => Attachment::fromData(
+                fn (): string => $contents->get($attachment),
+                $attachment->original_name,
+            )->withMime($attachment->mime_type))
             ->all();
     }
 

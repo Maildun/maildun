@@ -3,6 +3,7 @@
 use App\Actions\Emails\BuildSendReadiness;
 use App\Models\Audience;
 use App\Models\Email;
+use App\Models\EmailAttachment;
 use App\Models\Subscriber;
 use App\Models\Team;
 use App\Models\TeamEmailIntegration;
@@ -96,4 +97,19 @@ test('preview and send receives the readiness and what the confirmation repeats'
             ->where('sendReadiness.ready', true)
             ->where('campaign.subject', 'Hello')
             ->where('campaign.from_address', $email->resolvedFromAddress()));
+});
+
+test('attachments over the total size limit block the send', function () {
+    config()->set('delivery.attachments.max_total_megabytes', 1);
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $email = readyCampaign($team);
+
+    expect(readinessByKey($email))->not->toHaveKey('attachments');
+
+    EmailAttachment::factory()->count(2)->for($email)->create(['size' => 600 * 1024]);
+    $readiness = app(BuildSendReadiness::class)->handle($email);
+
+    expect($readiness['ready'])->toBeFalse()
+        ->and(readinessByKey($email))->toMatchArray(['attachments' => false]);
 });

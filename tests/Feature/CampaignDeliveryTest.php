@@ -21,6 +21,7 @@ use App\Mail\CampaignEmail;
 use App\Models\Audience;
 use App\Models\Email;
 use App\Models\EmailAddressHealth;
+use App\Models\EmailAttachment;
 use App\Models\EmailDelivery;
 use App\Models\EmailDeliveryAttempt;
 use App\Models\EmailSendRun;
@@ -149,6 +150,30 @@ test('a campaign whose only subscribers are suppressed cannot be queued', functi
     $this->actingAs($user)
         ->post(route('emails.send', [$team, $email]))
         ->assertSessionHasErrors(['email' => 'This campaign has no subscribed recipients.']);
+
+    Bus::assertNothingBatched();
+
+    expect($email->fresh()->status)->toBe(EmailStatus::Draft);
+});
+
+test('a campaign whose attachments exceed the total size limit cannot be queued', function () {
+    Bus::fake();
+    config()->set('delivery.attachments.max_total_megabytes', 1);
+
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'html' => '<p>Hello</p>',
+    ]);
+    EmailAttachment::factory()->count(2)->for($email)->create(['size' => 600 * 1024]);
+
+    $this->actingAs($user)
+        ->post(route('emails.send', [$team, $email]))
+        ->assertSessionHasErrors(['email' => 'Attachments may add up to 1 MB. Remove some before sending.']);
 
     Bus::assertNothingBatched();
 
