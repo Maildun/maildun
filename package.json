@@ -12,6 +12,7 @@
         "format:check": "prettier --check resources/",
         "lint": "eslint . --fix",
         "lint:check": "eslint .",
+        "test:js": "node --test tests/Unit/*.test.ts",
         "types:check": "tsc --noEmit"
     },
     "devDependencies": {
