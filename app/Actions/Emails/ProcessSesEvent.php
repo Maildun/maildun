@@ -131,15 +131,16 @@ class ProcessSesEvent
                     return;
                 }
 
+                $this->loadCampaignWithTeam($delivery);
+
                 if ($this->isLatestAttempt($attempt)) {
                     $this->applyFeedback($delivery, $type, $payload, $occurredAt);
 
-                    if ($type === 'Reject') {
+                    if ($type === 'Reject' && ! $delivery->email->trashed()) {
                         $this->campaignOutcome->refresh($delivery->email);
                     }
                 }
 
-                $delivery->loadMissing('email.team');
                 $this->recordHealth(
                     $delivery->email->team,
                     $delivery->email_address,
@@ -158,7 +159,7 @@ class ProcessSesEvent
 
             if ($transactionalDelivery instanceof TransactionalEmailDelivery) {
                 $this->applyFeedback($transactionalDelivery, $type, $payload, $occurredAt);
-                $transactionalDelivery->loadMissing('team');
+                $transactionalDelivery->loadMissing(['team' => fn ($query) => $query->withTrashed()]);
                 $this->recordHealth(
                     $transactionalDelivery->team,
                     $transactionalDelivery->to_address,
@@ -173,7 +174,7 @@ class ProcessSesEvent
 
             if ($automationDelivery instanceof AutomationEmailDelivery) {
                 $this->applyFeedback($automationDelivery, $type, $payload, $occurredAt);
-                $automationDelivery->loadMissing('team');
+                $automationDelivery->loadMissing(['team' => fn ($query) => $query->withTrashed()]);
                 $this->recordHealth(
                     $automationDelivery->team,
                     $automationDelivery->to_address,
@@ -202,7 +203,7 @@ class ProcessSesEvent
                 $this->applyFeedback($legacyDelivery, $type, $payload, $occurredAt);
             }
 
-            $legacyDelivery->loadMissing('email.team');
+            $this->loadCampaignWithTeam($legacyDelivery);
             $this->recordHealth(
                 $legacyDelivery->email->team,
                 $legacyDelivery->email_address,
@@ -220,6 +221,20 @@ class ProcessSesEvent
         if ($unsubscribed !== null) {
             event(new SubscriberLifecycleOccurred(AutomationTrigger::Unsubscribed, $unsubscribed));
         }
+    }
+
+    /**
+     * Feedback keeps arriving after a campaign or its workspace is deleted.
+     * Both are soft deleted, so load them regardless: a complaint about a
+     * deleted campaign must still suppress the address.
+     */
+    private function loadCampaignWithTeam(EmailDelivery $delivery): void
+    {
+        $delivery->loadMissing([
+            'email' => fn ($query) => $query->withTrashed()->with([
+                'team' => fn ($query) => $query->withTrashed(),
+            ]),
+        ]);
     }
 
     /** @param array<string, mixed> $mail */
