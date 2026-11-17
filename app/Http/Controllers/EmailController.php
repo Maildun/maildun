@@ -53,6 +53,7 @@ use App\Services\AssistantModels;
 use App\Services\InstallationState;
 use App\Services\SesAccountLimits;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -61,6 +62,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Number;
@@ -96,10 +98,6 @@ class EmailController extends Controller
                 'sent_at',
                 'updated_at',
             ])
-            ->withCount([
-                'deliveries as processed_count' => fn (Builder $query) => $query
-                    ->whereNotIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending]),
-            ])
             ->with([
                 'audience' => function (Relation $query) use ($currentTeam): void {
                     $query
@@ -133,8 +131,11 @@ class EmailController extends Controller
             })
             ->orderByDesc('updated_at')
             ->paginate(15)
-            ->withQueryString()
-            ->through(function (Email $email): array {
+            ->withQueryString();
+        $processedCounts = $this->processedCounts($emails->getCollection());
+
+        $emails = $emails
+            ->through(function (Email $email) use ($processedCounts): array {
                 $recipientSource = $email->segment ?? $email->audience;
                 $status = $email->status === EmailStatus::Draft && $email->sent_at
                     ? EmailStatus::Sent
@@ -170,7 +171,7 @@ class EmailController extends Controller
                         : [],
                     'last_tested_at' => $email->last_tested_at?->toISOString(),
                     'progress' => $status->isActive()
-                        ? (int) min(100, round(((int) $email->getAttribute('processed_count')) / max($email->recipient_count, 1) * 100))
+                        ? (int) min(100, round($processedCounts->get($email->id, 0) / max($email->recipient_count, 1) * 100))
                         : null,
                     'updated_at' => $email->updated_at?->toISOString(),
                 ];
@@ -192,6 +193,34 @@ class EmailController extends Controller
             'defaultEditor' => $currentTeam->email_editor->value,
             'canManage' => Gate::allows('create', [Email::class, $currentTeam]),
         ]);
+    }
+
+    /**
+     * Finished deliveries of the listed campaigns that are still sending. The
+     * index polls every few seconds while one is, so finished campaigns are
+     * left out instead of recounting all of their deliveries each time.
+     *
+     * @param  EloquentCollection<int, Email>  $emails
+     * @return SupportCollection<int, int>
+     */
+    private function processedCounts(EloquentCollection $emails): SupportCollection
+    {
+        $activeIds = $emails
+            ->filter(fn (Email $email): bool => $email->status->isActive())
+            ->modelKeys();
+
+        if ($activeIds === []) {
+            return collect();
+        }
+
+        return EmailDelivery::query()
+            ->whereIn('email_id', $activeIds)
+            ->whereNotIn('status', [EmailDeliveryStatus::Queued, EmailDeliveryStatus::Sending])
+            ->toBase()
+            ->selectRaw('email_id, count(*) as aggregate')
+            ->groupBy('email_id')
+            ->pluck('aggregate', 'email_id')
+            ->map(fn (mixed $count): int => (int) $count);
     }
 
     public function store(StoreEmailRequest $request, Team $currentTeam): RedirectResponse
@@ -768,35 +797,25 @@ class EmailController extends Controller
         $trackingAggregate = $email->getRelation('trackingAggregate');
         $deliveries = $email->deliveries();
         $recipientCount = max($email->recipient_count, 1);
-        $processedCount = (clone $deliveries)->whereNotIn('status', [
-            EmailDeliveryStatus::Queued,
-            EmailDeliveryStatus::Sending,
-        ])->count();
+        $totals = $this->deliveryTotals($email);
+        $processedCount = $totals['processed'];
         $openedCount = $trackingAggregate instanceof EmailTrackingAggregate
             ? $trackingAggregate->unique_opens_count
             : 0;
         $clickedCount = $trackingAggregate instanceof EmailTrackingAggregate
             ? $trackingAggregate->unique_clicks_count
             : 0;
-        $sesRecipientCount = (clone $deliveries)
-            ->whereIn('provider', EmailProvider::withSesFeedback())
-            ->count();
-        $deliveredCount = (clone $deliveries)
-            ->whereIn('provider', EmailProvider::withSesFeedback())
-            ->whereNotNull('delivered_at')
-            ->count();
+        $sesRecipientCount = $totals['ses_recipients'];
+        $deliveredCount = $totals['delivered'];
         $deliveryFeedback = match (true) {
             $sesRecipientCount === 0 => 'unavailable',
             $sesRecipientCount < $email->recipient_count => 'partial',
             default => 'available',
         };
-        $bouncedCount = (clone $deliveries)->where('status', EmailDeliveryStatus::Bounced)->count();
-        $complainedCount = (clone $deliveries)->where('status', EmailDeliveryStatus::Complained)->count();
-        $unsubscribedCount = (clone $deliveries)->whereNotNull('unsubscribed_at')->count();
-        $failedCount = (clone $deliveries)->whereIn('status', [
-            EmailDeliveryStatus::Failed,
-            EmailDeliveryStatus::Rejected,
-        ])->count();
+        $bouncedCount = $totals['bounced'];
+        $complainedCount = $totals['complained'];
+        $unsubscribedCount = $totals['unsubscribed'];
+        $failedCount = $totals['failed'];
         $sendRuns = $this->sendRunHistory($email);
         $currentRun = $sendRuns[0] ?? null;
         $progress = $email->status->isActive() ? $this->sendProgress($email, $currentRun) : null;
@@ -841,7 +860,7 @@ class EmailController extends Controller
                 'unsubscribed' => $unsubscribedCount,
                 'failed' => $failedCount,
                 'retrying' => $retryingCount,
-                'cancelled' => (clone $deliveries)->where('status', EmailDeliveryStatus::Cancelled)->count(),
+                'cancelled' => $totals['cancelled'],
                 'unqueued' => app(QueueRemainingRecipients::class)->remainingCount($email),
                 'retryable' => $retryableCount,
                 'unconfirmed' => $unconfirmedRetryableCount,
@@ -864,6 +883,50 @@ class EmailController extends Controller
             'sendRuns' => $sendRuns,
             'failureCauses' => $this->failureCauses($email),
             'canManage' => Gate::allows('send', $email),
+        ];
+    }
+
+    /**
+     * The campaign's delivery counts by outcome, in one pass over its
+     * deliveries instead of one count query each.
+     *
+     * @return array{processed: int, ses_recipients: int, delivered: int, bounced: int, complained: int, unsubscribed: int, failed: int, cancelled: int}
+     */
+    private function deliveryTotals(Email $email): array
+    {
+        $sesProviders = array_map(
+            fn (EmailProvider $provider): string => $provider->value,
+            EmailProvider::withSesFeedback(),
+        );
+        $sesPlaceholders = implode(', ', array_fill(0, count($sesProviders), '?'));
+
+        $row = $email->deliveries()
+            ->toBase()
+            ->selectRaw('count(case when status not in (?, ?) then 1 end) as processed', [
+                EmailDeliveryStatus::Queued->value,
+                EmailDeliveryStatus::Sending->value,
+            ])
+            ->selectRaw("count(case when provider in ({$sesPlaceholders}) then 1 end) as ses_recipients", $sesProviders)
+            ->selectRaw("count(case when provider in ({$sesPlaceholders}) and delivered_at is not null then 1 end) as delivered", $sesProviders)
+            ->selectRaw('count(case when status = ? then 1 end) as bounced', [EmailDeliveryStatus::Bounced->value])
+            ->selectRaw('count(case when status = ? then 1 end) as complained', [EmailDeliveryStatus::Complained->value])
+            ->selectRaw('count(case when unsubscribed_at is not null then 1 end) as unsubscribed')
+            ->selectRaw('count(case when status in (?, ?) then 1 end) as failed', [
+                EmailDeliveryStatus::Failed->value,
+                EmailDeliveryStatus::Rejected->value,
+            ])
+            ->selectRaw('count(case when status = ? then 1 end) as cancelled', [EmailDeliveryStatus::Cancelled->value])
+            ->first();
+
+        return [
+            'processed' => (int) ($row->processed ?? 0),
+            'ses_recipients' => (int) ($row->ses_recipients ?? 0),
+            'delivered' => (int) ($row->delivered ?? 0),
+            'bounced' => (int) ($row->bounced ?? 0),
+            'complained' => (int) ($row->complained ?? 0),
+            'unsubscribed' => (int) ($row->unsubscribed ?? 0),
+            'failed' => (int) ($row->failed ?? 0),
+            'cancelled' => (int) ($row->cancelled ?? 0),
         ];
     }
 

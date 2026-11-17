@@ -2126,3 +2126,40 @@ test('a loader that fails for good leaves its queued deliveries sending and the 
     expect($queued->fresh()->status)->toBe(EmailDeliveryStatus::Sent)
         ->and($email->fresh()->status)->toBe(EmailStatus::Failed);
 });
+
+test('the campaign report counts every delivery outcome', function () {
+    $user = User::factory()->create();
+    $email = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 9,
+        'send_started_at' => now()->subHour(),
+        'sent_at' => now()->subHour(),
+    ]);
+
+    foreach ([
+        ['status' => EmailDeliveryStatus::Delivered, 'provider' => EmailProvider::AmazonSes, 'delivered_at' => now()],
+        ['status' => EmailDeliveryStatus::Delivered, 'provider' => EmailProvider::AmazonSes, 'delivered_at' => now(), 'unsubscribed_at' => now()],
+        ['status' => EmailDeliveryStatus::Sent, 'provider' => EmailProvider::Smtp],
+        ['status' => EmailDeliveryStatus::Bounced, 'provider' => EmailProvider::AmazonSes],
+        ['status' => EmailDeliveryStatus::Complained, 'provider' => EmailProvider::AmazonSes, 'delivered_at' => now()],
+        ['status' => EmailDeliveryStatus::Failed, 'provider' => EmailProvider::Smtp],
+        ['status' => EmailDeliveryStatus::Rejected, 'provider' => EmailProvider::AmazonSes],
+        ['status' => EmailDeliveryStatus::Cancelled, 'provider' => EmailProvider::Smtp],
+        ['status' => EmailDeliveryStatus::Queued, 'provider' => EmailProvider::Smtp],
+    ] as $attributes) {
+        EmailDelivery::factory()->for($email)->create($attributes);
+    }
+
+    $this->actingAs($user)
+        ->get(route('emails.show', [$user->currentTeam, $email]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('metrics.processed', 8)
+            ->where('metrics.feedback_recipient_count', 5)
+            ->where('metrics.delivered', 3)
+            ->where('metrics.bounced', 1)
+            ->where('metrics.complained', 1)
+            ->where('metrics.unsubscribed', 1)
+            ->where('metrics.failed', 2)
+            ->where('metrics.cancelled', 1));
+});
