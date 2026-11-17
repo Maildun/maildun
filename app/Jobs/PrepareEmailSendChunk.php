@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Actions\Emails\RenderCampaignContent;
+use App\Concerns\ClaimsCampaignLoaderPage;
 use App\Concerns\PacesCampaignLoading;
 use App\Enums\EmailDeliveryStatus;
 use App\Exceptions\EmailTransportException;
@@ -29,7 +30,7 @@ use Illuminate\Support\Str;
  */
 class PrepareEmailSendChunk implements ShouldQueue
 {
-    use Batchable, PacesCampaignLoading, Queueable;
+    use Batchable, ClaimsCampaignLoaderPage, PacesCampaignLoading, Queueable;
 
     private const int CHUNK_SIZE = 200;
 
@@ -44,6 +45,7 @@ class PrepareEmailSendChunk implements ShouldQueue
         public int $emailId,
         public int $afterSubscriberId = 0,
     ) {
+        $this->loaderToken = (string) Str::uuid();
         $this->onQueue(config('delivery.queues.campaigns'));
     }
 
@@ -56,7 +58,7 @@ class PrepareEmailSendChunk implements ShouldQueue
     {
         $batch = $this->batch();
 
-        if ($batch === null || $batch->cancelled()) {
+        if ($batch === null || $batch->cancelled() || $this->anotherLoaderOwnsPage('send:'.$this->afterSubscriberId)) {
             return;
         }
 

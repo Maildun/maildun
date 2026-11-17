@@ -3,12 +3,14 @@
 namespace App\Jobs;
 
 use App\Actions\Emails\RetryEmailDeliveries;
+use App\Concerns\ClaimsCampaignLoaderPage;
 use App\Concerns\PacesCampaignLoading;
 use App\Models\Email;
 use App\Models\EmailSendRun;
 use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Str;
 
 /**
  * Re-arms the next page of a retry run and adds its delivery jobs, plus the
@@ -21,7 +23,7 @@ use Illuminate\Foundation\Queue\Queueable;
  */
 class PrepareEmailRetryChunk implements ShouldQueue
 {
-    use Batchable, PacesCampaignLoading, Queueable;
+    use Batchable, ClaimsCampaignLoaderPage, PacesCampaignLoading, Queueable;
 
     public int $tries = 3;
 
@@ -40,6 +42,7 @@ class PrepareEmailRetryChunk implements ShouldQueue
         public ?array $deliveryIds = null,
         public int $afterDeliveryId = 0,
     ) {
+        $this->loaderToken = (string) Str::uuid();
         $this->onQueue(config('delivery.queues.campaigns'));
     }
 
@@ -50,7 +53,7 @@ class PrepareEmailRetryChunk implements ShouldQueue
     {
         $batch = $this->batch();
 
-        if ($batch === null || $batch->cancelled()) {
+        if ($batch === null || $batch->cancelled() || $this->anotherLoaderOwnsPage('retry:'.$this->sendRunId.':'.$this->afterDeliveryId)) {
             return;
         }
 
