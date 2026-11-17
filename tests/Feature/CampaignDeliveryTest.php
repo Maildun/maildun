@@ -2163,3 +2163,66 @@ test('the campaign report counts every delivery outcome', function () {
             ->where('metrics.failed', 2)
             ->where('metrics.cancelled', 1));
 });
+
+test('a retry page whose loader died before queueing it is taken again, but nothing is re-armed twice', function () {
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'status' => EmailStatus::Sending,
+        'recipient_count' => 3,
+    ]);
+    $deliveries = Subscriber::factory()->for($audience)->count(3)->create()->map(
+        fn (Subscriber $subscriber) => EmailDelivery::factory()->for($email)->for($subscriber)->create([
+            'email_address' => $subscriber->email,
+            'status' => EmailDeliveryStatus::Failed,
+        ]),
+    );
+    $run = $email->sendRuns()->create([
+        'kind' => EmailSendRunKind::Retry,
+        'recipient_count' => 3,
+        'started_at' => now(),
+    ]);
+    $retry = app(RetryEmailDeliveries::class);
+
+    $page = $retry->rearmPage($email, $run, false, null, 0);
+
+    // The worker died before adding the page's jobs; the loader's retry takes the same rows.
+    expect($retry->rearmPage($email, $run, false, null, 0))->toBe($page)
+        ->and($page)->toBe($deliveries->modelKeys());
+
+    // A row this run already sent that failed again waits for the next retry.
+    $deliveries->first()->fresh()->update([
+        'status' => EmailDeliveryStatus::Failed,
+        'send_attempted_at' => null,
+    ]);
+
+    expect($retry->rearmPage($email, $run, false, null, 0))->toBe(array_slice($page, 1));
+});
+
+test('a duplicate loader for a page another loader owns stands aside', function () {
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->smtp()->create();
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->count(2)->create();
+    $email = Email::factory()->for($team)->create([
+        'audience_id' => $audience->id,
+        'status' => EmailStatus::Sending,
+        'html' => '<p>Hello</p>',
+    ]);
+    [$loader, $batch] = (new PrepareEmailSendChunk($email->id))->withFakeBatch('campaign-batch');
+    [$duplicate, $duplicateBatch] = (new PrepareEmailSendChunk($email->id))->withFakeBatch('campaign-batch');
+
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+    $duplicate->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    expect($batch->added)->toHaveCount(2)
+        ->and($duplicateBatch->added)->toBe([]);
+
+    // The owning loader's own retry still runs its page.
+    $loader->handle(app(RenderCampaignContent::class), app(TeamMailer::class));
+
+    expect($batch->added)->toHaveCount(4)
+        ->and($email->deliveries()->count())->toBe(2);
+});

@@ -115,6 +115,12 @@ class RetryEmailDeliveries
      * retryable deliveries after the given id and point them at the run. Only
      * that page is locked. Returns the re-armed ids in order.
      *
+     * A row this run already re-armed is never re-armed for a second attempt,
+     * even if it failed again. A row it re-armed whose job was never queued
+     * (the loader's worker died between committing the page and adding the
+     * jobs) is still Queued and unclaimed, so the loader's retry takes it
+     * again instead of stranding it until emails:resume.
+     *
      * @param  list<int>|null  $deliveryIds
      * @return list<int>
      */
@@ -127,7 +133,17 @@ class RetryEmailDeliveries
     ): array {
         return DB::transaction(function () use ($email, $sendRun, $includeUnconfirmed, $deliveryIds, $afterDeliveryId): array {
             /** @var list<int> $page */
-            $page = $this->retryable($email, $includeUnconfirmed, $deliveryIds)
+            $page = $email->deliveries()
+                ->when($deliveryIds !== null, fn (Builder $deliveries) => $deliveries->whereIn('email_deliveries.id', $deliveryIds))
+                ->where(fn (Builder $candidates) => $candidates
+                    ->where(fn (Builder $retryable) => $this->constrainToRetryable($retryable, $email, $includeUnconfirmed)
+                        ->where(fn (Builder $notArmedByThisRun) => $notArmedByThisRun
+                            ->whereNull('email_deliveries.email_send_run_id')
+                            ->orWhere('email_deliveries.email_send_run_id', '!=', $sendRun->id)))
+                    ->orWhere(fn (Builder $armedButNeverQueued) => $armedButNeverQueued
+                        ->where('email_deliveries.email_send_run_id', $sendRun->id)
+                        ->where('email_deliveries.status', EmailDeliveryStatus::Queued)
+                        ->whereNull('email_deliveries.send_attempted_at')))
                 ->where('email_deliveries.id', '>', $afterDeliveryId)
                 ->orderBy('email_deliveries.id')
                 ->limit(self::PAGE_SIZE)
@@ -167,9 +183,22 @@ class RetryEmailDeliveries
      */
     private function retryable(Email $email, bool $includeUnconfirmed, ?array $deliveryIds): HasMany
     {
-        return $email->deliveries()
+        $deliveries = $email->deliveries()
+            ->when($deliveryIds !== null, fn (Builder $deliveries) => $deliveries->whereIn('email_deliveries.id', $deliveryIds));
+
+        $this->constrainToRetryable($deliveries->getQuery(), $email, $includeUnconfirmed);
+
+        return $deliveries;
+    }
+
+    /**
+     * @param  Builder<EmailDelivery>  $deliveries
+     * @return Builder<EmailDelivery>
+     */
+    private function constrainToRetryable(Builder $deliveries, Email $email, bool $includeUnconfirmed): Builder
+    {
+        return $deliveries
             ->retryableFor($email->team)
-            ->when($deliveryIds !== null, fn (Builder $deliveries) => $deliveries->whereIn('email_deliveries.id', $deliveryIds))
             ->when(
                 ! $includeUnconfirmed,
                 fn (Builder $deliveries) => $deliveries->whereNot(fn (Builder $unconfirmed) => $unconfirmed->unconfirmed()),
