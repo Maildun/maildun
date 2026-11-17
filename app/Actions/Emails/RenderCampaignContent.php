@@ -88,22 +88,6 @@ class RenderCampaignContent
         ];
     }
 
-    /**
-     * Preview fills delivery-only link tags so {{ unsubscribe_url }} and
-     * {{ web_view_url }} render as hrefs before a send creates those URLs.
-     *
-     * @return array<string, mixed>
-     */
-    public function previewData(Subscriber $subscriber, CarbonInterface $date): array
-    {
-        return [
-            ...$this->mergeData($subscriber, $date),
-            'unsubscribe_url' => '#unsubscribe',
-            'web_view_url' => '#web-view',
-            'subscribe_url' => '#subscribe',
-        ];
-    }
-
     /** @param array<string, mixed> $data */
     public function html(string $content, array $data): string
     {
