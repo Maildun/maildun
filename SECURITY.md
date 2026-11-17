@@ -18,7 +18,9 @@ Security fixes are applied to the current `main` branch and, when tagged release
 
 ## Known issues
 
-None. `composer audit` and `pnpm audit` report no advisories, and `pnpm-workspace.yaml` ignores none. Any advisory accepted in the future is listed here with the reason it cannot be fixed yet.
+`composer audit` reports no advisories. `pnpm-workspace.yaml` ignores one `pnpm audit` advisory that has no fixed release yet. Each accepted advisory is listed here with the reason it cannot be fixed yet.
+
+- **GHSA-fc5q-39xc-vjpf** (high): ReDoS in `picomatch` 4.0.7 and earlier, which includes the latest release. Maildun locks 2.3.2 and 4.0.7. Only the Vite build plugins (`vite`, `tinyglobby`, `laravel-vite-plugin`) load it, to match file globs from the project's own configuration while assets are built. It is not part of the PHP application or the browser bundle, and no request input reaches it. The ignore is removed and an `overrides` floor added once a fixed version is published.
 
 ## Operator responsibilities
 
