@@ -21,3 +21,6 @@ CI runs `pnpm audit --audit-level=high`. The one known moderate advisory, GHSA-w
 
 ## pnpm audit has no ignored advisories
 `pnpm-workspace.yaml` has no `audit.ignore`. The shadcn CLI is not a dependency (run it with `pnpm dlx shadcn@latest`), which removed braces and deepmerge, the two advisories with no patched release. Lift transitive packages with an `overrides` floor and a comment naming the advisory. Do not add an ignore without the same justification here and in SECURITY.md "Known issues".
+
+## Ignored advisories need a matching Known issues entry (supersedes "no ignored advisories")
+`pnpm-workspace.yaml` ignores GHSA-fc5q-39xc-vjpf through `auditConfig.ignoreGhsas` (pnpm 11 reads that key; `audit.ignore` does not exist). The advisory is a picomatch ReDoS with no patched release (latest is 4.0.7), reached only through the Vite build plugins. Remove the ignore and add an `overrides` floor once a fixed picomatch ships. Any other ignore still needs the same justification here and in SECURITY.md "Known issues".
