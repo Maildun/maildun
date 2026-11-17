@@ -22,7 +22,12 @@ function gatedWorkspaceActions(): array
         'team:update' => [TeamPermission::UpdateTeam, fn (Team $team, User $other): array => ['patch', route('teams.update', $team), ['name' => 'Renamed workspace']]],
         'team:delete' => [TeamPermission::DeleteTeam, fn (Team $team, User $other): array => ['delete', route('teams.destroy', $team), ['name' => $team->name]]],
         'member:update' => [TeamPermission::UpdateMember, fn (Team $team, User $other): array => ['patch', route('teams.members.update', [$team, $other]), ['role' => TeamRole::Admin->value]]],
-        'member:remove' => [TeamPermission::RemoveMember, fn (Team $team, User $other): array => ['delete', route('teams.members.destroy', [$team, $other]), []]],
+        'member:remove' => [TeamPermission::RemoveMember, function (Team $team, User $other): array {
+            // Members can only remove someone whose role ranks below theirs.
+            assignCustomRole($team, $other, []);
+
+            return ['delete', route('teams.members.destroy', [$team, $other]), []];
+        }],
         'invitation:create' => [TeamPermission::CreateInvitation, fn (Team $team, User $other): array => ['post', route('teams.invitations.store', $team), ['email' => 'invitee@example.com', 'role' => TeamRole::Member->value]]],
         'invitation:cancel' => [TeamPermission::CancelInvitation, fn (Team $team, User $other): array => ['delete', route('teams.invitations.destroy', [$team, TeamInvitation::factory()->for($team)->create()]), []]],
     ];
