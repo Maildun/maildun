@@ -7,6 +7,7 @@ use App\Enums\SegmentMatchType;
 use App\Enums\SubscriberLanguage;
 use App\Enums\SubscriberSource;
 use App\Enums\SubscriberStatus;
+use App\Jobs\SyncSegmentMembers;
 use App\Models\Audience;
 use App\Models\AudienceAttribute;
 use App\Models\Email;
@@ -19,6 +20,7 @@ use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -265,6 +267,50 @@ test('creating a segment immediately syncs matching subscribers', function () {
 
     expect($segment->rules_synced_at)->not->toBeNull()
         ->and($segment->subscribers()->count())->toBe(1);
+});
+
+test('creating a segment queues its member sync instead of running it in the request', function () {
+    Queue::fake();
+    $user = User::factory()->create();
+    $team = $user->currentTeam;
+    $audience = Audience::factory()->for($team)->create();
+    Subscriber::factory()->for($audience)->create(['status' => SubscriberStatus::Subscribed]);
+
+    $this->actingAs($user)
+        ->post(route('audiences.segments.store', [$team, $audience]), [
+            'name' => 'Subscribed only',
+            'match_type' => 'all',
+            'rules' => [
+                ['field' => 'status', 'operator' => 'equals', 'value' => 'subscribed'],
+            ],
+        ])
+        ->assertRedirect();
+
+    $segment = Segment::query()->where('name', 'Subscribed only')->firstOrFail();
+
+    expect($segment->rules_synced_at)->toBeNull()
+        ->and($segment->subscribers()->count())->toBe(0);
+    Queue::assertPushed(SyncSegmentMembers::class, fn (SyncSegmentMembers $job): bool => $job->segmentId === $segment->id);
+});
+
+test('a resync leaves members who still match untouched', function () {
+    $audience = Audience::factory()->create();
+    $kept = Subscriber::factory()->for($audience)->create(['email' => 'kept@example.com']);
+    $dropped = Subscriber::factory()->for($audience)->create(['email' => 'dropped@example.org']);
+    $segment = Segment::factory()->for($audience)->create([
+        'rules' => [['field' => 'email', 'operator' => 'contains', 'value' => '@example.']],
+    ]);
+    app(SyncSegmentSubscribers::class)->handle($segment);
+    $keptSince = DB::table('segment_subscriber')->where('subscriber_id', $kept->id)->value('created_at');
+
+    $this->travel(1)->hour();
+    $added = Subscriber::factory()->for($audience)->create(['email' => 'added@example.com']);
+    $segment->update(['rules' => [['field' => 'email', 'operator' => 'contains', 'value' => '@example.com']]]);
+    app(SyncSegmentSubscribers::class)->handle($segment);
+
+    expect($segment->subscribers()->orderBy('subscribers.id')->pluck('subscribers.id')->all())->toBe([$kept->id, $added->id])
+        ->and($segment->subscribers()->whereKey($dropped->id)->exists())->toBeFalse()
+        ->and(DB::table('segment_subscriber')->where('subscriber_id', $kept->id)->value('created_at'))->toBe($keptSince);
 });
 
 test('updating segment rules resyncs matching subscribers', function () {
