@@ -24,6 +24,13 @@ use App\Models\User;
 use App\Services\TeamMailer;
 use Aws\Command;
 use Aws\Exception\AwsException;
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\ConnectTimeoutException;
+use GuzzleHttp\Exception\NetworkException;
+use GuzzleHttp\Exception\NetworkTimeoutException;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Promise\PromiseInterface;
+use GuzzleHttp\Psr7\Request;
 use Illuminate\Mail\Mailer;
 use Illuminate\Support\Facades\Mail;
 use Symfony\Component\Mailer\Exception\TransportException;
@@ -161,6 +168,57 @@ test('an smtp failure is unconfirmed only after the whole message was handed ove
     ), false],
     'could not connect' => fn () => [smtpTransportFailure('Connection could not be established with host "smtp.example.com:587".', 0), false],
 ]);
+
+test('an ses api call is unconfirmed only when the request may have reached ses without an answer', function (TransportException $failure, bool $unknown) {
+    $exception = EmailTransportException::fromTransport($failure);
+
+    expect($exception->outcomeIsUnknown())->toBe($unknown)
+        ->and($exception->getMessage() === __(EmailTransportException::OUTCOME_UNKNOWN_MESSAGE))->toBe($unknown);
+})->with([
+    'read timed out after the request was sent' => fn () => [sesConnectionFailure(
+        fn (Request $request) => new NetworkTimeoutException('cURL error 28: Operation timed out', $request),
+    ), true],
+    'connection dropped before the reply' => fn () => [sesConnectionFailure(
+        fn (Request $request) => new NetworkException('cURL error 52: Empty reply from server', $request),
+    ), true],
+    'timed out while connecting' => fn () => [sesConnectionFailure(
+        fn (Request $request) => new ConnectTimeoutException('cURL error 28: Connection timed out', $request),
+    ), false],
+    'could not connect' => fn () => [sesConnectionFailure(
+        fn (Request $request) => new ConnectException('cURL error 7: Failed to connect', $request),
+    ), false],
+    'ses answered with an error' => fn () => [sesApiFailure('TooManyRequestsException', 'Maximum sending rate exceeded.'), false],
+]);
+
+test('an ses api read timeout is sent once and reported as unconfirmed', function () {
+    $team = Team::factory()->create();
+    TeamEmailIntegration::factory()->for($team)->ses()->create();
+    $requests = 0;
+
+    $configuration = app(TeamMailer::class)->resolve($team)->configuration;
+    $configuration['http_handler'] = function (Request $request) use (&$requests): PromiseInterface {
+        $requests++;
+
+        return Create::rejectionFor([
+            'exception' => new NetworkTimeoutException('cURL error 28: Operation timed out', $request),
+            'connection_error' => true,
+        ]);
+    };
+    config()->set('mail.mailers.ses-timeout-once', $configuration);
+
+    $exception = null;
+
+    try {
+        Mail::mailer('ses-timeout-once')->raw('Hello', fn ($message) => $message
+            ->to('reader@example.com')
+            ->from('sender@example.com'));
+    } catch (TransportException $caught) {
+        $exception = EmailTransportException::fromTransport($caught);
+    }
+
+    expect($requests)->toBe(1)
+        ->and($exception?->outcomeIsUnknown())->toBeTrue();
+});
 
 test('provider refusals a retry cannot fix are permanent, throttling and outages are not', function (TransportException $failure, bool $permanent) {
     expect(EmailTransportException::fromTransport($failure)->permanent)->toBe($permanent);
@@ -416,5 +474,19 @@ function sesApiFailure(string $errorCode, string $errorMessage): TransportExcept
         'Request to AWS SES V2 API failed. Reason: '.$errorMessage.'.',
         0,
         new AwsException($errorMessage, new Command('SendEmail'), ['code' => $errorCode, 'message' => $errorMessage]),
+    );
+}
+
+/**
+ * @param  Closure(Request): Throwable  $transferError
+ */
+function sesConnectionFailure(Closure $transferError): TransportException
+{
+    $previous = $transferError(new Request('POST', 'https://email.us-east-1.amazonaws.com/v2/email/outbound-emails'));
+
+    return new TransportException(
+        'Request to AWS SES V2 API failed. Reason: '.$previous->getMessage().'.',
+        0,
+        new AwsException($previous->getMessage(), new Command('SendEmail'), ['connection_error' => true], $previous),
     );
 }
