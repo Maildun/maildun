@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -25,6 +26,12 @@ class DashboardController extends Controller
 {
     /** @var list<int> */
     private const PERIODS = [7, 30, 90];
+
+    /**
+     * How long the delivery aggregates behind the overview and chart may be
+     * served from cache.
+     */
+    private const AGGREGATE_CACHE_SECONDS = 60;
 
     public function __invoke(Request $request, Team $currentTeam): Response
     {
@@ -109,31 +116,41 @@ class DashboardController extends Controller
             EmailProvider::withSesFeedback(),
         );
 
-        $deliveryStats = (clone $deliveries)
-            ->whereNotNull('sent_at')
-            ->where('sent_at', '>=', $periodStart)
-            ->toBase()
-            ->selectRaw('count(*) as sent')
-            ->selectRaw('count(case when provider in ('.implode(', ', array_fill(0, count($sesProviders), '?')).') then 1 end) as ses_sent', $sesProviders)
-            ->selectRaw('count(case when delivered_at is not null then 1 end) as delivered')
-            ->selectRaw('count(case when first_opened_at is not null then 1 end) as opened')
-            ->selectRaw('count(case when first_clicked_at is not null then 1 end) as clicked')
-            ->selectRaw('count(case when bounced_at is not null then 1 end) as bounced')
-            ->selectRaw('count(case when complained_at is not null then 1 end) as complained')
-            ->first();
+        // Delivery aggregates join every delivery of the workspace, so they
+        // are cached briefly rather than recomputed on every visit.
+        $aggregates = Cache::remember(
+            "dashboard:delivery-aggregates:{$team->id}:{$period}:{$today->toDateString()}",
+            self::AGGREGATE_CACHE_SECONDS,
+            fn (): array => [
+                'stats' => (array) ((clone $deliveries)
+                    ->whereNotNull('sent_at')
+                    ->where('sent_at', '>=', $periodStart)
+                    ->toBase()
+                    ->selectRaw('count(*) as sent')
+                    ->selectRaw('count(case when provider in ('.implode(', ', array_fill(0, count($sesProviders), '?')).') then 1 end) as ses_sent', $sesProviders)
+                    ->selectRaw('count(case when delivered_at is not null then 1 end) as delivered')
+                    ->selectRaw('count(case when first_opened_at is not null then 1 end) as opened')
+                    ->selectRaw('count(case when first_clicked_at is not null then 1 end) as clicked')
+                    ->selectRaw('count(case when bounced_at is not null then 1 end) as bounced')
+                    ->selectRaw('count(case when complained_at is not null then 1 end) as complained')
+                    ->first() ?? []),
+                'failed' => (clone $deliveries)
+                    ->where('send_attempted_at', '>=', $periodStart)
+                    ->whereIn('status', EmailDeliveryStatus::retryable())
+                    ->count(),
+                'performance' => $this->performance($subscribers, $deliveries, $periodStart, $today),
+            ],
+        );
+        $deliveryStats = $aggregates['stats'];
 
-        $sent = (int) ($deliveryStats->sent ?? 0);
+        $sent = (int) ($deliveryStats['sent'] ?? 0);
         // Only Amazon SES reports delivery, so a rate over SMTP sends would
         // read as 0% rather than unknown.
-        $sesSent = (int) ($deliveryStats->ses_sent ?? 0);
-        $delivered = (int) ($deliveryStats->delivered ?? 0);
-        $opened = (int) ($deliveryStats->opened ?? 0);
-        $clicked = (int) ($deliveryStats->clicked ?? 0);
-
-        $failed = (clone $deliveries)
-            ->where('send_attempted_at', '>=', $periodStart)
-            ->whereIn('status', EmailDeliveryStatus::retryable())
-            ->count();
+        $sesSent = (int) ($deliveryStats['ses_sent'] ?? 0);
+        $delivered = (int) ($deliveryStats['delivered'] ?? 0);
+        $opened = (int) ($deliveryStats['opened'] ?? 0);
+        $clicked = (int) ($deliveryStats['clicked'] ?? 0);
+        $failed = (int) $aggregates['failed'];
 
         return [
             'period' => $period,
@@ -160,10 +177,10 @@ class DashboardController extends Controller
             ],
             'deliveryIssues' => [
                 'failed' => $failed,
-                'bounced' => (int) ($deliveryStats->bounced ?? 0),
-                'complained' => (int) ($deliveryStats->complained ?? 0),
+                'bounced' => (int) ($deliveryStats['bounced'] ?? 0),
+                'complained' => (int) ($deliveryStats['complained'] ?? 0),
             ],
-            'performance' => $this->performance($subscribers, $deliveries, $periodStart, $today),
+            'performance' => $aggregates['performance'],
             'draftCampaigns' => array_values($team->emails()
                 ->select(['uuid', 'name', 'updated_at'])
                 ->where('status', EmailStatus::Draft)
