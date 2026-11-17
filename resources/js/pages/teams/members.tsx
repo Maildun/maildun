@@ -297,7 +297,8 @@ export default function TeamMembers({
                                     {permissions.canUpdateMember ||
                                     permissions.canRemoveMember ? (
                                         <TableCell className="w-[1%] text-right">
-                                            {member.role !== 'owner' ? (
+                                            {member.role !== 'owner' &&
+                                            member.can_manage ? (
                                                 <MemberActions
                                                     member={member}
                                                     canEdit={

@@ -37,6 +37,7 @@ class TeamMemberController extends Controller
         $user = $request->user();
         $roleLabels = $team->workspaceRoles()->pluck('label', 'name');
         $canUpdateMember = $user->can('updateMember', $team);
+        $manageableRoles = $team->memberRolesManageableBy($user);
         $members = $team->members()->orderByPivot('created_at');
 
         if ($canUpdateMember) {
@@ -57,11 +58,16 @@ class TeamMemberController extends Controller
             'members' => $members
                 ->paginate($this->perPage($request, 'members_per_page'))
                 ->withQueryString()
-                ->through(fn (User $member): array => $this->memberProps(
-                    $member,
-                    $roleLabels->get($member->pivot->role),
-                    $canUpdateMember && $user->can('manageMemberPassword', [$team, $member]),
-                )),
+                ->through(function (User $member) use ($user, $team, $roleLabels, $canUpdateMember, $manageableRoles): array {
+                    $canManage = $member->is($user) || $manageableRoles->contains($member->pivot->role);
+
+                    return $this->memberProps(
+                        $member,
+                        $roleLabels->get($member->pivot->role),
+                        $canManage,
+                        $canManage && $canUpdateMember && $user->can('manageMemberPassword', [$team, $member]),
+                    );
+                }),
             'invitations' => $team->invitations()
                 ->whereNull('accepted_at')
                 ->latest()
@@ -93,9 +99,9 @@ class TeamMemberController extends Controller
     /**
      * Serialize a team member for the settings page.
      *
-     * @return array{id: int, uuid: string, name: string, email: string, avatar: string|null, role: string, role_label: string, can_manage_password: bool, can_generate_password: bool}
+     * @return array{id: int, uuid: string, name: string, email: string, avatar: string|null, role: string, role_label: string, can_manage: bool, can_manage_password: bool, can_generate_password: bool}
      */
-    private function memberProps(User $member, ?string $roleLabel, bool $canManagePassword): array
+    private function memberProps(User $member, ?string $roleLabel, bool $canManage, bool $canManagePassword): array
     {
         /** @var Membership $membership */
         $membership = $member->getRelation('pivot');
@@ -108,6 +114,7 @@ class TeamMemberController extends Controller
             'avatar' => $member->avatar ?? null,
             'role' => $membership->role,
             'role_label' => $roleLabel ?? str($membership->role)->headline()->toString(),
+            'can_manage' => $canManage,
             'can_manage_password' => $canManagePassword,
             'can_generate_password' => $canManagePassword && $member->hasPassword(),
         ];
@@ -126,6 +133,8 @@ class TeamMemberController extends Controller
                 'role' => __('You cannot assign a role that has permissions you do not hold.'),
             ]);
         }
+
+        Gate::authorize('manageMember', [$team, $user]);
 
         $team->memberships()
             ->where('user_id', $user->id)
@@ -208,6 +217,7 @@ class TeamMemberController extends Controller
         Gate::authorize('removeMember', $team);
 
         abort_if($team->owner()?->is($user), 403, __('The team owner cannot be removed.'));
+        Gate::authorize('manageMember', [$team, $user]);
 
         $team->memberships()
             ->where('user_id', $user->id)

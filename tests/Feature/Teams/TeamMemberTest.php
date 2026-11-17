@@ -556,6 +556,110 @@ test('plain members cannot manage other members', function (string $method, stri
     'send reset link' => ['post', 'teams.members.send-password-reset-link', []],
 ]);
 
+test('admins cannot manage another admin', function (string $method, string $routeName, array $payload) {
+    $owner = User::factory()->create();
+    $admin = User::factory()->create();
+    $peer = User::factory()->create(['password' => 'peer-password']);
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
+    $team->members()->attach($peer, ['role' => TeamRole::Admin->value]);
+
+    $this
+        ->actingAs($admin)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->{$method}(route($routeName, [$team, $peer]), $payload)
+        ->assertForbidden();
+
+    expect($peer->fresh()->teamRole($team))->toBe(TeamRole::Admin->value)
+        ->and(Hash::check('peer-password', $peer->fresh()->password))->toBeTrue();
+})->with([
+    'change role' => ['patch', 'teams.members.update', ['role' => TeamRole::Member->value]],
+    'remove' => ['delete', 'teams.members.destroy', []],
+    'generate password' => ['post', 'teams.members.generate-password', []],
+    'send reset link' => ['post', 'teams.members.send-password-reset-link', []],
+]);
+
+test('owners can manage admins', function () {
+    $owner = User::factory()->create();
+    $admin = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
+
+    $this
+        ->actingAs($owner)
+        ->patch(route('teams.members.update', [$team, $admin]), ['role' => TeamRole::Member->value])
+        ->assertRedirect(route('teams.members.index', $team));
+
+    expect($admin->fresh()->teamRole($team))->toBe(TeamRole::Member->value);
+
+    $team->memberships()->where('user_id', $admin->id)->update(['role' => TeamRole::Admin->value]);
+
+    $this
+        ->actingAs($owner)
+        ->delete(route('teams.members.destroy', [$team, $admin]))
+        ->assertRedirect(route('teams.members.index', $team));
+
+    expect($admin->fresh()->belongsToTeam($team))->toBeFalse();
+});
+
+test('a custom role cannot manage members who hold permissions it lacks', function (string $method, string $routeName, array $payload) {
+    $manager = User::factory()->create();
+    $member = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $role = $team->workspaceRoles()->create([
+        'name' => 'people',
+        'label' => 'People',
+        'guard_name' => 'web',
+        'is_system' => false,
+    ]);
+    $role->syncPermissions([TeamPermission::UpdateMember->value, TeamPermission::RemoveMember->value]);
+
+    $team->members()->attach($manager, ['role' => $role->name]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+
+    $this
+        ->actingAs($manager)
+        ->withSession(['auth.password_confirmed_at' => time()])
+        ->{$method}(route($routeName, [$team, $member]), $payload)
+        ->assertForbidden();
+
+    expect($member->fresh()->teamRole($team))->toBe(TeamRole::Member->value);
+})->with([
+    'remove' => ['delete', 'teams.members.destroy', []],
+    'generate password' => ['post', 'teams.members.generate-password', []],
+    'send reset link' => ['post', 'teams.members.send-password-reset-link', []],
+]);
+
+test('the members page offers member actions only for members the user ranks above', function () {
+    $owner = User::factory()->create(['name' => 'Owner']);
+    $admin = User::factory()->create(['name' => 'Admin']);
+    $peer = User::factory()->create(['name' => 'Peer admin']);
+    $member = User::factory()->create(['name' => 'Member']);
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
+    $team->members()->attach($peer, ['role' => TeamRole::Admin->value]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+
+    $members = collect($this->actingAs($admin)
+        ->get(route('teams.members.index', $team))
+        ->viewData('page')['props']['members']['data'])
+        ->keyBy('name');
+
+    expect($members->map(fn (array $row): bool => $row['can_manage'])->all())->toEqual([
+        'Owner' => false,
+        'Admin' => true,
+        'Peer admin' => false,
+        'Member' => true,
+    ])->and($members['Peer admin']['can_manage_password'])->toBeFalse();
+});
+
 test('users outside the selected team cannot be updated or removed', function (string $method, string $routeName, array $payload) {
     $owner = User::factory()->create();
     $outsider = User::factory()->create();
@@ -629,8 +733,15 @@ test('a custom role can give members a role within its own permissions', functio
     ]);
     $supportRole->syncPermissions([TeamPermission::ManageContact->value]);
 
+    $traineeRole = $team->workspaceRoles()->create([
+        'name' => 'trainee',
+        'label' => 'Trainee',
+        'guard_name' => 'web',
+        'is_system' => false,
+    ]);
+
     $team->members()->attach($manager, ['role' => $managerRole->name]);
-    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $team->members()->attach($member, ['role' => $traineeRole->name]);
 
     $this
         ->actingAs($manager)
