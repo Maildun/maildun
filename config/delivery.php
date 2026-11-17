@@ -112,13 +112,18 @@ return [
     | Tracking events and SES feedback are stored before they are processed.
     | One still unprocessed this many minutes after its job was queued is
     | queued again by emails:dispatch-tracking-events and
-    | emails:dispatch-provider-events.
+    | emails:dispatch-provider-events. Each dispatch gets the job's own
+    | retries; once an event has failed this many processing attempts in
+    | total it is marked failed and left alone, so events that can never
+    | succeed do not crowd out genuinely lost ones. Pass --retry-failed to
+    | either command to try failed events again after a fix.
     |
     */
 
     'recovery' => [
         'stalled_after_minutes' => (int) env('MAIL_STALLED_AFTER_MINUTES', 15),
         'tracking_redispatch_after_minutes' => (int) env('MAIL_TRACKING_REDISPATCH_AFTER_MINUTES', 5),
+        'event_max_processing_attempts' => (int) env('MAIL_EVENT_MAX_PROCESSING_ATTEMPTS', 25),
     ],
 
 ];

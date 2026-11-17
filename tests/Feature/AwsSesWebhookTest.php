@@ -1014,3 +1014,34 @@ test('the feedback sweep queues stored events whose job was lost or never queued
     Queue::assertPushed(ProcessEmailProviderEvent::class, fn (ProcessEmailProviderEvent $job): bool => $job->eventId === $lost->id);
     Queue::assertPushed(ProcessEmailProviderEvent::class, fn (ProcessEmailProviderEvent $job): bool => $job->eventId === $neverQueued->id);
 });
+
+test('the feedback sweep stops re-queueing an event that keeps failing', function () {
+    Queue::fake([ProcessEmailProviderEvent::class]);
+    config()->set('delivery.recovery.event_max_processing_attempts', 3);
+    $exhausted = EmailProviderEvent::factory()->create([
+        'email_delivery_id' => null,
+        'processed_at' => null,
+        'processing_attempts' => 3,
+        'last_error' => 'Deadlock detected.',
+    ]);
+    $retrying = EmailProviderEvent::factory()->create([
+        'email_delivery_id' => null,
+        'processed_at' => null,
+        'processing_attempts' => 2,
+    ]);
+
+    $this->artisan('emails:dispatch-provider-events')->assertSuccessful();
+
+    Queue::assertPushed(ProcessEmailProviderEvent::class, 1);
+    Queue::assertPushed(ProcessEmailProviderEvent::class, fn (ProcessEmailProviderEvent $job): bool => $job->eventId === $retrying->id);
+    expect($exhausted->fresh())
+        ->failed_at->not->toBeNull()
+        ->last_error->toBe('Deadlock detected.');
+
+    $this->artisan('emails:dispatch-provider-events', ['--retry-failed' => true])->assertSuccessful();
+
+    Queue::assertPushed(ProcessEmailProviderEvent::class, fn (ProcessEmailProviderEvent $job): bool => $job->eventId === $exhausted->id);
+    expect($exhausted->fresh())
+        ->failed_at->toBeNull()
+        ->processing_attempts->toBe(0);
+});

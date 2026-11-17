@@ -6,9 +6,10 @@ use App\Models\EmailTrackingEvent;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 
 #[Signature('emails:prune-tracking {--days= : Override the configured retention period} {--batch= : Override the configured delete batch size}')]
-#[Description('Delete processed tracking event payloads after the privacy retention period')]
+#[Description('Delete processed and failed tracking event payloads after the privacy retention period')]
 class PruneEmailTrackingEventsCommand extends Command
 {
     /**
@@ -33,7 +34,7 @@ class PruneEmailTrackingEventsCommand extends Command
 
         do {
             $ids = EmailTrackingEvent::query()
-                ->whereNotNull('processed_at')
+                ->where(fn (Builder $query) => $query->whereNotNull('processed_at')->orWhereNotNull('failed_at'))
                 ->where('occurred_at', '<', $cutoff)
                 ->oldest('id')
                 ->limit($batchSize)
