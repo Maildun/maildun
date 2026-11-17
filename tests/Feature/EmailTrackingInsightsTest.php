@@ -145,7 +145,7 @@ test('campaign insights separate human bot proxy and unknown engagement', functi
         ]);
 });
 
-test('processed tracking event payloads expire without deleting pending events or insights', function () {
+test('processed and failed tracking event payloads expire without deleting pending events or insights', function () {
     $email = Email::factory()->create();
     $delivery = EmailDelivery::factory()->for($email)->create();
     $old = EmailTrackingEvent::factory()->for($delivery, 'delivery')->create([
@@ -162,6 +162,11 @@ test('processed tracking event payloads expire without deleting pending events o
         'processed_at' => null,
         'occurred_at' => now()->subDays(91),
     ]);
+    $failed = EmailTrackingEvent::factory()->for($delivery, 'delivery')->create([
+        'processed_at' => null,
+        'failed_at' => now()->subDays(80),
+        'occurred_at' => now()->subDays(91),
+    ]);
 
     app()->call([(new ProcessEmailTrackingEvent($old->id)), 'handle']);
 
@@ -173,6 +178,7 @@ test('processed tracking event payloads expire without deleting pending events o
     expect($old->fresh())->toBeNull()
         ->and($recent->fresh())->not->toBeNull()
         ->and($pending->fresh())->not->toBeNull()
+        ->and($failed->fresh())->toBeNull()
         ->and(EmailTrackingInsightAggregate::query()->where('email_id', $email->id)->exists())
         ->toBeTrue();
 });

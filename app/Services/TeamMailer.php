@@ -366,7 +366,9 @@ class TeamMailer
      * Without it SES publishes nothing to SNS and all campaign feedback is lost.
      *
      * The HTTP timeouts keep a stalled API connection from holding the worker
-     * until the job itself is killed.
+     * until the job itself is killed. The SDK's own retries are off: a timed
+     * out SendEmail may already have been accepted, so resending it inside the
+     * same attempt could mail the recipient twice. The queue decides retries.
      *
      * @param  array<string, mixed>  $settings
      * @return array<string, mixed>
@@ -381,6 +383,7 @@ class TeamMailer
             'secret' => $this->filledString($settings['secret_access_key'] ?? null),
             'region' => $this->filledString($settings['region'] ?? null) ?? 'us-east-1',
             'token' => null,
+            'retries' => 0,
             'http' => [
                 'connect_timeout' => (float) config('delivery.ses.connect_timeout'),
                 'timeout' => (float) config('delivery.ses.timeout'),

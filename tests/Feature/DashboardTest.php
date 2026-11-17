@@ -490,3 +490,29 @@ test('users cannot open the dashboard of a workspace they do not belong to', fun
         ->get(route('dashboard', $otherTeam))
         ->assertForbidden();
 });
+
+test('dashboard delivery aggregates are served from a short cache', function () {
+    $user = User::factory()->create();
+    $campaign = Email::factory()->for($user->currentTeam)->create([
+        'status' => EmailStatus::Sent,
+        'recipient_count' => 2,
+        'send_started_at' => now()->subDay(),
+        'sent_at' => now()->subDay(),
+    ]);
+    EmailDelivery::factory()->for($campaign)->create(['sent_at' => now()->subDay()]);
+
+    $sent = fn (): int => collect($this->actingAs($user)
+        ->get(route('dashboard', $user->currentTeam))
+        ->viewData('page')['props']['dashboard']['performance'])
+        ->sum('sent');
+
+    expect($sent())->toBe(1);
+
+    EmailDelivery::factory()->for($campaign)->create(['sent_at' => now()->subDay()]);
+
+    expect($sent())->toBe(1);
+
+    $this->travel(61)->seconds();
+
+    expect($sent())->toBe(2);
+});

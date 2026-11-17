@@ -62,10 +62,33 @@ class TeamPolicy
     }
 
     /**
+     * Determine whether the user ranks above the member, so may change their
+     * role, remove them or manage their password. Users may always act on
+     * themselves; the actions they can take are limited elsewhere.
+     */
+    public function manageMember(User $user, Team $team, User $member): Response
+    {
+        if ($member->is($user)) {
+            return Response::allow();
+        }
+
+        $memberRole = $member->teamRole($team);
+
+        if ($memberRole === null) {
+            return Response::denyAsNotFound();
+        }
+
+        return $team->memberRolesManageableBy($user)->contains($memberRole)
+            ? Response::allow()
+            : Response::deny(__('You can only manage members whose role ranks below yours.'));
+    }
+
+    /**
      * Determine whether the user can set or reset a member's password from the team.
      *
      * A password unlocks every workspace the member belongs to or has a pending invitation to,
-     * so the user must be able to manage the member in each of them. Every account starts with
+     * so the user must be able to manage the member in each of them, and must rank above the
+     * member in this one: otherwise one Admin could sign in as another. Every account starts with
      * a personal workspace, so one the member still uses alone and has left empty is exempt.
      */
     public function manageMemberPassword(User $user, Team $team, User $member): Response
@@ -85,6 +108,12 @@ class TeamPolicy
             if ($memberTeam->is($team)) {
                 if ($ownsMemberTeam) {
                     return Response::deny(__('The team owner password cannot be managed.'));
+                }
+
+                $rank = $this->manageMember($user, $team, $member);
+
+                if ($rank->denied()) {
+                    return $rank;
                 }
 
                 continue;

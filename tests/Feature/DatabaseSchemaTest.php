@@ -86,3 +86,10 @@ test('fresh migrations preserve the consolidated application schema', function (
         ->and($senderIntegrationForeignKey['foreign_table'] ?? null)->toBe('team_email_integrations')
         ->and(EmailTemplate::query()->whereNull('team_id')->count())->toBe(4);
 });
+
+test('deliveries can be found by their send run through an index', function () {
+    $indexedColumns = collect(Schema::getIndexes('email_deliveries'))->pluck('columns');
+
+    expect($indexedColumns)->toContain(['email_send_run_id'])
+        ->and($indexedColumns)->toContain(['email_id', 'provider', 'uses_team_email_integration']);
+});

@@ -23,6 +23,8 @@ dataset('scheduled commands', [
     'emails:prune-tracking' => ['emails:prune-tracking', '0 0 * * *'],
     'contacts:prune-imports' => ['contacts:prune-imports', '0 0 * * *'],
     'passport:purge' => ['passport:purge --hours=168', '0 0 * * *'],
+    'queue:prune-batches' => ['queue:prune-batches --hours=48', '0 0 * * *'],
+    'queue:prune-failed' => ['queue:prune-failed --hours=168', '0 0 * * *'],
     'app:check-for-updates' => ['app:check-for-updates', '0 0 * * *'],
     'audiences:snapshot-subscribers' => ['audiences:snapshot-subscribers', '0 * * * *'],
 ]);

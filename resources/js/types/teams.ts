@@ -53,6 +53,8 @@ export type TeamMember = {
     avatar?: string | null;
     role: TeamRole;
     role_label: string;
+    /** Whether the signed-in user ranks above this member (or is them), so may edit or remove them. */
+    can_manage: boolean;
     can_manage_password: boolean;
     /** Whether an admin may set a password for this member rather than only emailing a reset link. */
     can_generate_password: boolean;

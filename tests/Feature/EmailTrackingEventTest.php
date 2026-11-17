@@ -148,6 +148,55 @@ test('the recovery command dispatches only missing or stale pending events', fun
     expect($missing->fresh()->last_dispatched_at)->not->toBeNull();
 });
 
+test('the recovery command gives up on an event that keeps failing', function () {
+    Queue::fake();
+    config()->set('delivery.recovery.event_max_processing_attempts', 3);
+
+    $exhausted = EmailTrackingEvent::factory()->create([
+        'processing_attempts' => 3,
+        'last_error' => 'The tracked link does not belong to the delivery campaign.',
+    ]);
+    $retrying = EmailTrackingEvent::factory()->create(['processing_attempts' => 2]);
+
+    $this->artisan('emails:dispatch-tracking-events')->assertSuccessful();
+
+    Queue::assertPushed(ProcessEmailTrackingEvent::class, 1);
+    Queue::assertPushed(
+        ProcessEmailTrackingEvent::class,
+        fn (ProcessEmailTrackingEvent $job): bool => $job->eventId === $retrying->id,
+    );
+    expect($exhausted->fresh())
+        ->failed_at->not->toBeNull()
+        ->last_dispatched_at->toBeNull()
+        ->last_error->toBe('The tracked link does not belong to the delivery campaign.');
+
+    $this->travel(10)->minutes();
+    $this->artisan('emails:dispatch-tracking-events')->assertSuccessful();
+
+    Queue::assertNotPushed(
+        ProcessEmailTrackingEvent::class,
+        fn (ProcessEmailTrackingEvent $job): bool => $job->eventId === $exhausted->id,
+    );
+});
+
+test('failed tracking events are queued again on request', function () {
+    Queue::fake();
+    $failed = EmailTrackingEvent::factory()->create([
+        'processing_attempts' => 25,
+        'failed_at' => now(),
+    ]);
+
+    $this->artisan('emails:dispatch-tracking-events', ['--retry-failed' => true])->assertSuccessful();
+
+    Queue::assertPushed(
+        ProcessEmailTrackingEvent::class,
+        fn (ProcessEmailTrackingEvent $job): bool => $job->eventId === $failed->id,
+    );
+    expect($failed->fresh())
+        ->failed_at->toBeNull()
+        ->processing_attempts->toBe(0);
+});
+
 test('tracking event payloads are immutable after capture', function () {
     $event = EmailTrackingEvent::factory()->create();
 

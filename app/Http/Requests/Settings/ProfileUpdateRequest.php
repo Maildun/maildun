@@ -4,6 +4,7 @@ namespace App\Http\Requests\Settings;
 
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
+use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
@@ -21,11 +22,21 @@ class ProfileUpdateRequest extends FormRequest
      * password to type; ProfileController asks it for a recent confirmation
      * instead.
      *
-     * @return array<string, ValidationRule|array<mixed>|string>
+     * While registration is closed an account only exists because an
+     * invitation admitted its address, so an unverified account may not swap
+     * that address for another before proving it owns the invited one.
+     *
+     * @return array<string, ValidationRule|Closure|array<mixed>|string>
      */
     public function rules(): array
     {
         $rules = $this->profileRules($this->user()->id);
+
+        if ($this->changesEmail() && ! config('fortify.registration_open') && ! $this->user()->hasVerifiedEmail()) {
+            $rules['email'][] = function (string $attribute, mixed $value, Closure $fail): void {
+                $fail(__('Verify your current email address before changing it.'));
+            };
+        }
 
         if ($this->changesEmail() && $this->user()->hasPassword()) {
             $rules['current_password'] = $this->currentPasswordRules();

@@ -4,6 +4,7 @@ namespace App\Exceptions;
 
 use App\Enums\EmailFailureCode;
 use Aws\Exception\AwsException;
+use GuzzleHttp\Exception\ConnectException;
 use RuntimeException;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 
@@ -114,7 +115,7 @@ final class EmailTransportException extends RuntimeException
 
     public static function fromTransport(TransportExceptionInterface $exception): self
     {
-        if (self::wasHandedOverWithoutReply($exception)) {
+        if (self::wasHandedOverWithoutReply($exception) || self::wasSentToSesWithoutAnswer($exception)) {
             return new self(__(self::OUTCOME_UNKNOWN_MESSAGE), EmailFailureCode::NoReport);
         }
 
@@ -178,5 +179,25 @@ final class EmailTransportException extends RuntimeException
         }
 
         return preg_match('/\] > \.$/m', $exception->getDebug()) === 1;
+    }
+
+    /**
+     * The SES API equivalent: the HTTP connection was up, so the request may
+     * have reached SES, but it timed out or dropped before SES answered. SES
+     * can accept the message and still miss the read timeout. A failure to
+     * connect never reached SES, and an error document is a definite refusal,
+     * so both of those stay safe to retry.
+     */
+    private static function wasSentToSesWithoutAnswer(TransportExceptionInterface $exception): bool
+    {
+        $previous = $exception->getPrevious();
+
+        if (! $previous instanceof AwsException
+            || ! $previous->isConnectionError()
+            || $previous->getAwsErrorCode() !== null) {
+            return false;
+        }
+
+        return ! $previous->getPrevious() instanceof ConnectException;
     }
 }

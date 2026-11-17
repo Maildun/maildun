@@ -12,8 +12,6 @@ test('it encodes a png as webp', function () {
     expect($converted['width'])->toBe(100)
         ->and($converted['height'])->toBe(80)
         ->and($image)->not->toBeFalse();
-
-    imagedestroy($image);
 });
 
 test('it downscales images whose long edge is over 1920 pixels', function () {
@@ -41,7 +39,6 @@ function fakePng(int $width, int $height): string
     ob_start();
     imagepng($image);
     $contents = ob_get_clean();
-    imagedestroy($image);
 
     expect($contents)->toBeString();
 

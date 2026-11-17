@@ -182,10 +182,14 @@ test('a duplicate sweep cannot double-advance the same run', function () {
     $run = parkedRun(AutomationRunStatus::Waiting, now()->subHour()->toDateTimeString(), now()->subHours(2)->toDateTimeString());
 
     $this->artisan('automations:resume')->assertSuccessful();
+    Queue::assertPushed(ProcessAutomationRun::class, 1);
+
+    // The first job looks lost: the queue is empty again a window later.
+    Queue::fake();
     $this->travel(16)->minutes();
     $this->artisan('automations:resume')->assertSuccessful();
 
-    Queue::assertPushed(ProcessAutomationRun::class, 2);
+    Queue::assertPushed(ProcessAutomationRun::class, 1);
 
     // Both jobs hold the same pre-claim snapshot; only the first claim wins.
     $first = AutomationRun::query()->findOrFail($run->id);
@@ -298,15 +302,18 @@ test('a queued email whose job was lost is queued again once per window', functi
     ]);
 
     $this->artisan('automations:resume')->assertSuccessful();
-    $this->artisan('automations:resume')->assertSuccessful();
-
     Queue::assertPushed(SendAutomationEmailDelivery::class, 1);
+
+    // Even with the queue emptied, the touched row waits out a window.
+    Queue::fake();
+    $this->artisan('automations:resume')->assertSuccessful();
+    Queue::assertNothingPushed();
 
     // The re-queued job can be lost too, so the next window tries again.
     $this->travel(16)->minutes();
     $this->artisan('automations:resume')->assertSuccessful();
 
-    Queue::assertPushed(SendAutomationEmailDelivery::class, 2);
+    Queue::assertPushed(SendAutomationEmailDelivery::class, 1);
     Queue::assertPushed(
         SendAutomationEmailDelivery::class,
         fn (SendAutomationEmailDelivery $job): bool => $job->deliveryId === $delivery->id,
@@ -358,9 +365,12 @@ test('a re-queued branch is not queued again until it has stalled for another wi
     $run = parkedRun(AutomationRunStatus::Pending, null, now()->subHour()->toDateTimeString());
 
     $this->artisan('automations:resume')->assertSuccessful();
-    $this->artisan('automations:resume')->assertSuccessful();
-
     Queue::assertPushed(ProcessAutomationRun::class, 1);
+
+    // Even with the queue emptied, the touched step waits out a window.
+    Queue::fake();
+    $this->artisan('automations:resume')->assertSuccessful();
+    Queue::assertNothingPushed();
 
     $this->travel(16)->minutes();
     $this->artisan('automations:resume')->assertSuccessful();
@@ -369,7 +379,33 @@ test('a re-queued branch is not queued again until it has stalled for another wi
         ProcessAutomationRun::class,
         fn (ProcessAutomationRun $job): bool => $job->automationRunId === $run->id && $job->nodeId === 'wait',
     );
-    Queue::assertPushed(ProcessAutomationRun::class, 2);
+    Queue::assertPushed(ProcessAutomationRun::class, 1);
+});
+
+test('nothing is queued again while the queue still has jobs waiting', function () {
+    $run = parkedRun(AutomationRunStatus::Pending, null, now()->subHour()->toDateTimeString());
+    $sending = parkedRun(AutomationRunStatus::Running, null);
+    $step = $sending->steps()->where('node_id', 'wait')->sole();
+    $step->forceFill(['updated_at' => now()->subHour()])->saveQuietly();
+    AutomationEmailDelivery::factory()->create([
+        'automation_run_id' => $sending->id,
+        'automation_run_step_id' => $step->id,
+        'team_id' => $sending->automation->team_id,
+        'status' => EmailDeliveryStatus::Queued,
+        'sent_at' => null,
+        'updated_at' => now()->subHour(),
+    ]);
+    $backlog = parkedRun(AutomationRunStatus::Pending, null);
+    ProcessAutomationRun::dispatch($backlog->id, 'wait');
+
+    $this->artisan('automations:resume')->assertSuccessful();
+
+    Queue::assertPushed(ProcessAutomationRun::class, 1);
+    Queue::assertNotPushed(SendAutomationEmailDelivery::class);
+    Queue::assertNotPushed(
+        ProcessAutomationRun::class,
+        fn (ProcessAutomationRun $job): bool => $job->automationRunId === $run->id,
+    );
 });
 
 test('branches of a deleted workspace are left parked', function () {

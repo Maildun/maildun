@@ -41,24 +41,28 @@ class EnsureRegistrationIsOpen
      * An invitation can only be accepted by a signed-in user, so closing
      * registration outright would strand everyone who has been invited. The
      * register form does not post the code back, so the GET is matched on the
-     * code in the link and the POST on the address being signed up.
+     * code in the link. The POST is matched on the address being signed up
+     * alone, whatever code is in the URL: an invitation admits the address it
+     * was sent to, not whoever holds the link.
      */
     private function hasPendingInvitation(Request $request): bool
     {
-        $code = $request->query('invitation');
-        $email = $request->input('email');
+        if ($request->routeIs('register')) {
+            $code = $request->query('invitation');
 
-        if (! is_string($code) && ! is_string($email)) {
-            return false;
+            return is_string($code) && TeamInvitation::query()
+                ->where('code', $code)
+                ->whereNull('accepted_at')
+                ->where(fn ($query) => $query
+                    ->whereNull('expires_at')
+                    ->orWhere('expires_at', '>=', now()))
+                ->exists();
         }
 
-        return TeamInvitation::query()
-            ->when(is_string($code), fn ($query) => $query->where('code', $code))
-            ->when(! is_string($code), fn ($query) => $query->where('email', $email))
-            ->whereNull('accepted_at')
-            ->where(fn ($query) => $query
-                ->whereNull('expires_at')
-                ->orWhere('expires_at', '>=', now()))
-            ->exists();
+        $email = $request->input('email');
+
+        return is_string($email)
+            && trim($email) !== ''
+            && TeamInvitation::query()->pendingFor(trim($email))->exists();
     }
 }

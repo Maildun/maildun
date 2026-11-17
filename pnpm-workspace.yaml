@@ -33,6 +33,17 @@ overrides:
   source-map-js@>=1.0.0 <1.2.2: ^1.2.2
   zod@>=4.0.0 <4.6.6: ^4.6.7
 
+# Advisories with no patched release yet, so no floor can lift them. Each is
+# also listed under "Known issues" in SECURITY.md; drop it and add a floor to
+# overrides as soon as a fixed version is published.
+# - GHSA-fc5q-39xc-vjpf: ReDoS in picomatch <=4.0.7, the latest release (2.3.2
+#   and 4.0.7 are locked). Only the Vite build plugins load it, to match file
+#   globs from the project's own config while building assets; it is not in the
+#   PHP runtime or the browser bundle, and no request input reaches it.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf
+
 # minimatch 11 removed makeRe(); import-x's no-internal-modules rule imported it
 # at load time, which broke the whole plugin. The patch matches with Minimatch
 # objects instead, with the same result.
