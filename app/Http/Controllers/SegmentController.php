@@ -8,6 +8,7 @@ use App\Actions\Audiences\EnsureSegmentRulesCanChange;
 use App\Actions\Audiences\SyncSegmentSubscribers;
 use App\Enums\SubscriberLanguage;
 use App\Http\Requests\SaveSegmentRequest;
+use App\Jobs\SyncSegmentMembers;
 use App\Models\Audience;
 use App\Models\Contact;
 use App\Models\Segment;
@@ -22,15 +23,16 @@ use Inertia\Response;
 
 class SegmentController extends Controller
 {
-    public function store(SaveSegmentRequest $request, Team $currentTeam, Audience $audience, SyncSegmentSubscribers $syncSegmentSubscribers): RedirectResponse
+    /**
+     * The members of a new segment are materialized by a queued job, so a
+     * large audience cannot time the request out; the segment page says its
+     * rules have not synced until the job has run.
+     */
+    public function store(SaveSegmentRequest $request, Team $currentTeam, Audience $audience): RedirectResponse
     {
         Gate::authorize('create', [Segment::class, $audience]);
-        $segment = DB::transaction(function () use ($request, $audience, $syncSegmentSubscribers): Segment {
-            $segment = $audience->segments()->create($request->validated());
-            $syncSegmentSubscribers->handle($segment);
-
-            return $segment;
-        });
+        $segment = $audience->segments()->create($request->validated());
+        SyncSegmentMembers::dispatch($segment->id);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Segment created.')]);
 
