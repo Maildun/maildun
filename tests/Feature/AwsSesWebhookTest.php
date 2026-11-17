@@ -508,6 +508,98 @@ test('a complaint updates the latest attempt and unsubscribes the recipient', fu
         && $event->subscriber->is($subscriber));
 });
 
+test('a complaint about a deleted campaign still suppresses the address and unsubscribes the recipient', function () {
+    $topicArn = sesFeedbackTopic();
+    $subscriber = Subscriber::factory()->create();
+    $delivery = EmailDelivery::factory()->create([
+        'subscriber_id' => $subscriber->id,
+        'provider' => EmailProvider::AmazonSes,
+        'status' => EmailDeliveryStatus::Delivered,
+    ]);
+    $attempt = createSesFeedbackAttempt($delivery, $topicArn, ['status' => EmailDeliveryStatus::Delivered]);
+    $delivery->email->delete();
+
+    app(ProcessSesEvent::class)->handle('sns-complaint-deleted-campaign', [
+        'eventType' => 'Complaint',
+        'mail' => ['tags' => ['attempt_uuid' => [$attempt->uuid]]],
+        'complaint' => ['timestamp' => now()->toISOString()],
+    ], $topicArn);
+
+    $health = EmailAddressHealth::query()
+        ->where('team_id', $delivery->email->team_id)
+        ->where('email', strtolower($delivery->email_address))
+        ->first();
+
+    expect(EmailProviderEvent::query()->sole()->processed_at)->not->toBeNull()
+        ->and($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Complained)
+        ->and($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed)
+        ->and($health?->status)->toBe(EmailAddressHealthStatus::Suppressed);
+});
+
+test('a permanent bounce in a deleted workspace still suppresses the address', function () {
+    $topicArn = sesFeedbackTopic();
+    $subscriber = Subscriber::factory()->create();
+    $delivery = EmailDelivery::factory()->create([
+        'subscriber_id' => $subscriber->id,
+        'provider' => EmailProvider::AmazonSes,
+        'status' => EmailDeliveryStatus::Sent,
+    ]);
+    $attempt = createSesFeedbackAttempt($delivery, $topicArn);
+    $delivery->email->team->delete();
+
+    app(ProcessSesEvent::class)->handle('sns-bounce-deleted-workspace', permanentBouncePayload($attempt), $topicArn);
+
+    expect(EmailProviderEvent::query()->sole()->processed_at)->not->toBeNull()
+        ->and($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Bounced)
+        ->and($subscriber->fresh()->status)->toBe(SubscriberStatus::Unsubscribed)
+        ->and(EmailAddressHealth::query()->where('team_id', $delivery->email->team_id)->value('status'))
+        ->toBe(EmailAddressHealthStatus::Suppressed);
+});
+
+test('an SES reject for a deleted campaign is applied without refreshing the campaign outcome', function () {
+    $topicArn = sesFeedbackTopic();
+    $delivery = EmailDelivery::factory()->create([
+        'provider' => EmailProvider::AmazonSes,
+        'status' => EmailDeliveryStatus::Sent,
+    ]);
+    $attempt = createSesFeedbackAttempt($delivery, $topicArn);
+    $delivery->email->delete();
+
+    app(ProcessSesEvent::class)->handle('sns-reject-deleted-campaign', [
+        'eventType' => 'Reject',
+        'mail' => ['tags' => ['attempt_uuid' => [$attempt->uuid]]],
+        'reject' => ['reason' => 'Bad content'],
+    ], $topicArn);
+
+    expect(EmailProviderEvent::query()->sole()->processed_at)->not->toBeNull()
+        ->and($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Rejected);
+});
+
+test('a permanent bounce on a transactional delivery in a deleted workspace still suppresses the recipient', function () {
+    $topicArn = sesFeedbackTopic();
+    $delivery = createSesTransactionalDelivery([
+        'to_address' => 'gone@example.com',
+        'status' => EmailDeliveryStatus::Sent,
+        'provider_message_id' => 'ses-transactional-deleted-workspace',
+        'ses_sns_topic_arn_hash' => hash('sha256', $topicArn),
+        'sent_at' => now(),
+    ]);
+    $delivery->team->delete();
+
+    app(ProcessSesEvent::class)->handle('sns-transactional-deleted-workspace', [
+        'eventType' => 'Bounce',
+        'mail' => [
+            'messageId' => 'ses-transactional-deleted-workspace',
+            'tags' => ['transactional_delivery_uuid' => [$delivery->uuid]],
+        ],
+        'bounce' => ['bounceType' => 'Permanent', 'bounceSubType' => 'General'],
+    ], $topicArn);
+
+    expect($delivery->fresh()->status)->toBe(EmailDeliveryStatus::Bounced)
+        ->and(EmailAddressHealth::query()->where('team_id', $delivery->team_id)->value('status'))
+        ->toBe(EmailAddressHealthStatus::Suppressed);
+});
+
 test('late delivery cannot overwrite a bounce and complaint remains terminal', function () {
     $topicArn = sesFeedbackTopic();
     $subscriber = Subscriber::factory()->create();
