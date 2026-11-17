@@ -31,6 +31,12 @@ Schedule::command('emails:dispatch-provider-events')->everyMinute()->withoutOver
 // Detailed events expire; durable campaign aggregates remain available.
 Schedule::command('emails:prune-tracking')->daily()->withoutOverlapping()->onOneServer();
 
+// Finished job batches and failed jobs are only diagnostics once they are a
+// few days old; without pruning both tables grow with every campaign. Batches
+// still running (a paced campaign can take hours) are never pruned.
+Schedule::command('queue:prune-batches --hours=48')->daily()->withoutOverlapping()->onOneServer();
+Schedule::command('queue:prune-failed --hours=168')->daily()->withoutOverlapping()->onOneServer();
+
 // Uploaded contact lists are personal data: drop abandoned drafts after a week
 // and the files of failed imports nobody retried after a month.
 Schedule::command('contacts:prune-imports')->daily()->withoutOverlapping()->onOneServer();
