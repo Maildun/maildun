@@ -15,6 +15,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use RuntimeException;
 
 #[Signature('automations:resume')]
@@ -31,7 +32,8 @@ class ResumeAutomationRunsCommand extends Command
      * the send job each delivery, with a conditional update before doing the
      * work. Only work that has not moved for the stall window goes back on the
      * queue, and it is touched when it does, so a branch still waiting in a
-     * busy queue is not pushed again every five minutes. Steps of a paused
+     * busy queue is not pushed again every five minutes. Nothing is pushed
+     * again at all while the queue still has jobs waiting. Steps of a paused
      * automation, and of a deleted workspace, are left parked.
      */
     public function handle(AdvanceAutomationRun $advance): int
@@ -74,6 +76,13 @@ class ResumeAutomationRunsCommand extends Command
                 }
             });
 
+        // Automation jobs run on the default queue. While it has jobs waiting
+        // to be picked up, a branch or email still waiting its turn looks
+        // exactly like one whose job was lost, and pushing it again only grows
+        // the backlog every window. Delayed and running jobs do not count: a
+        // long delay node must not hold recovery back for days.
+        $queueHasBacklog = Queue::pendingSize() > 0;
+
         // An email whose send job was lost sits Queued under a running step.
         // Touching the row after the push keeps the next sweep off it for a
         // window, and a failed push leaves it for the next sweep. A throttled
@@ -82,19 +91,21 @@ class ResumeAutomationRunsCommand extends Command
         $lostBefore = (int) config('delivery.rate_limit.per_second') > 0
             ? $staleBefore->copy()->subHours(SendAutomationEmailDelivery::RETRY_WINDOW_HOURS)
             : $staleBefore;
-        AutomationEmailDelivery::query()
-            ->where('status', EmailDeliveryStatus::Queued)
-            ->whereNull('send_attempted_at')
-            ->where('updated_at', '<=', $lostBefore)
-            ->whereHas('step', fn ($steps) => $steps->where('status', 'running'))
-            ->orderBy('id')
-            ->chunkById(100, function ($deliveries) use (&$resumed): void {
-                foreach ($deliveries as $delivery) {
-                    SendAutomationEmailDelivery::dispatch($delivery->id);
-                    $delivery->touch();
-                    $resumed++;
-                }
-            });
+        if (! $queueHasBacklog) {
+            AutomationEmailDelivery::query()
+                ->where('status', EmailDeliveryStatus::Queued)
+                ->whereNull('send_attempted_at')
+                ->where('updated_at', '<=', $lostBefore)
+                ->whereHas('step', fn ($steps) => $steps->where('status', 'running'))
+                ->orderBy('id')
+                ->chunkById(100, function ($deliveries) use (&$resumed): void {
+                    foreach ($deliveries as $delivery) {
+                        SendAutomationEmailDelivery::dispatch($delivery->id);
+                        $delivery->touch();
+                        $resumed++;
+                    }
+                });
+        }
 
         // A queued email whose step is no longer running, or is gone with its
         // deleted subscriber, will never be sent. Its job closes it when it
@@ -119,19 +130,21 @@ class ResumeAutomationRunsCommand extends Command
         // which re-dispatches them itself. Branches of a deleted automation
         // still go out so the engine can cancel them; those of a deleted
         // workspace do not, because its automations must stop running.
-        AutomationRunStep::query()
-            ->dueForDispatch()
-            ->stalledSince($staleBefore)
-            ->whereDoesntHave('run.automation', fn ($query) => $query->where('status', '!=', AutomationStatus::Active))
-            ->whereDoesntHave('run.automation.team', fn ($query) => $query->onlyTrashed())
-            ->orderBy('id')
-            ->chunkById(100, function ($steps) use (&$resumed): void {
-                foreach ($steps as $step) {
-                    ProcessAutomationRun::dispatch($step->automation_run_id, $step->node_id);
-                    $step->touch();
-                    $resumed++;
-                }
-            });
+        if (! $queueHasBacklog) {
+            AutomationRunStep::query()
+                ->dueForDispatch()
+                ->stalledSince($staleBefore)
+                ->whereDoesntHave('run.automation', fn ($query) => $query->where('status', '!=', AutomationStatus::Active))
+                ->whereDoesntHave('run.automation.team', fn ($query) => $query->onlyTrashed())
+                ->orderBy('id')
+                ->chunkById(100, function ($steps) use (&$resumed): void {
+                    foreach ($steps as $step) {
+                        ProcessAutomationRun::dispatch($step->automation_run_id, $step->node_id);
+                        $step->touch();
+                        $resumed++;
+                    }
+                });
+        }
 
         // An open run with no open branch has nothing left to close it, and
         // the open-run index keeps its subscriber out of the automation.
