@@ -29,6 +29,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_dispatched_at
  * @property int $processing_attempts
  * @property string|null $last_error
+ * @property Carbon|null $failed_at
  * @property Carbon|null $created_at
  */
 #[Fillable([
@@ -83,6 +84,7 @@ class EmailProviderEvent extends Model
             'processed_at' => 'datetime',
             'last_dispatched_at' => 'datetime',
             'processing_attempts' => 'integer',
+            'failed_at' => 'datetime',
         ];
     }
 }

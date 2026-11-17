@@ -24,6 +24,7 @@ use LogicException;
  * @property Carbon|null $last_dispatched_at
  * @property int $processing_attempts
  * @property string|null $last_error
+ * @property Carbon|null $failed_at
  * @property string|null $user_agent
  * @property string|null $ip_hash
  * @property bool|null $is_bot
@@ -54,6 +55,7 @@ use LogicException;
     'last_dispatched_at',
     'processing_attempts',
     'last_error',
+    'failed_at',
     'user_agent',
     'ip_hash',
     'is_bot',
@@ -142,6 +144,7 @@ class EmailTrackingEvent extends Model
             'occurred_at' => 'datetime',
             'processed_at' => 'datetime',
             'last_dispatched_at' => 'datetime',
+            'failed_at' => 'datetime',
             'is_bot' => 'boolean',
             'is_proxy' => 'boolean',
             'classification' => EmailTrackingClassification::class,
