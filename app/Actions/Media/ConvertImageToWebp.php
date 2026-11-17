@@ -36,8 +36,6 @@ class ConvertImageToWebp
                 $newHeight = (int) round($height * $scale);
 
                 if ($newWidth < 1 || $newHeight < 1) {
-                    imagedestroy($source);
-
                     throw new RuntimeException('Unable to resize the uploaded image.');
                 }
 
@@ -53,7 +51,6 @@ class ConvertImageToWebp
         ob_start();
         $wasEncoded = imagewebp($source, null, $quality);
         $encoded = ob_get_clean();
-        imagedestroy($source);
 
         if (! $wasEncoded || ! is_string($encoded) || $encoded === '') {
             throw new RuntimeException('Unable to convert the uploaded image to WebP.');
@@ -80,15 +77,11 @@ class ConvertImageToWebp
         $transparent = imagecolorallocatealpha($resized, 0, 0, 0, 127);
 
         if ($transparent === false) {
-            imagedestroy($resized);
-            imagedestroy($source);
-
             throw new RuntimeException('Unable to preserve image transparency.');
         }
 
         imagefilledrectangle($resized, 0, 0, $safeWidth, $safeHeight, $transparent);
         imagecopyresampled($resized, $source, 0, 0, 0, 0, $safeWidth, $safeHeight, $width, $height);
-        imagedestroy($source);
 
         return $resized;
     }
