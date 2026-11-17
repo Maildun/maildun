@@ -93,6 +93,65 @@ test('an invited person can still create their account while it is closed', func
     expect(User::query()->where('email', 'invited@example.com')->exists())->toBeTrue();
 });
 
+test('an invitation code does not admit an address it was not sent to', function () {
+    closeRegistration();
+    $invitation = pendingInvitation('invited@example.com');
+
+    $this->post(route('register.store', ['invitation' => $invitation->code]), [
+        'name' => 'Someone Else',
+        'email' => 'someone-else@example.com',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+    ])->assertRedirect(route('login'));
+
+    $this->assertGuest();
+    expect(User::query()->where('email', 'someone-else@example.com')->exists())->toBeFalse();
+});
+
+test('an invited address is admitted whatever its case', function () {
+    closeRegistration();
+    pendingInvitation('invited@example.com');
+
+    $this->post(route('register.store'), [
+        'name' => 'Invited User',
+        'email' => 'Invited@Example.com',
+        'password' => 'password',
+        'password_confirmation' => 'password',
+    ]);
+
+    $this->assertAuthenticated();
+});
+
+test('an unverified account cannot swap its invited address while registration is closed', function () {
+    closeRegistration();
+    $user = User::factory()->unverified()->create(['email' => 'invited@example.com']);
+
+    $this->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'someone-else@example.com',
+            'current_password' => 'password',
+        ])
+        ->assertSessionHasErrors(['email' => 'Verify your current email address before changing it.']);
+
+    expect($user->refresh()->email)->toBe('invited@example.com');
+});
+
+test('a verified account can still change its address while registration is closed', function () {
+    closeRegistration();
+    $user = User::factory()->create(['email' => 'invited@example.com']);
+
+    $this->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'new-address@example.com',
+            'current_password' => 'password',
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($user->refresh()->email)->toBe('new-address@example.com');
+});
+
 test('an expired invitation does not reopen registration', function () {
     closeRegistration();
     $invitation = pendingInvitation();
