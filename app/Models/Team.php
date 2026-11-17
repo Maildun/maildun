@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
@@ -282,6 +283,50 @@ class Team extends Model
             ->filter(fn (WorkspaceRole $role): bool => $role->isAssignable()
                 && $userRole !== null
                 && ($userRole->isOwner() || $role->permissions->pluck('name')->diff($userPermissions)->isEmpty()))
+            ->values();
+    }
+
+    /**
+     * Get the names of the roles whose members the user ranks above.
+     *
+     * The owner ranks above every other role. Anyone else ranks above a role
+     * only when they hold every permission it has and at least one more, so a
+     * peer (one Admin and another) cannot demote, remove or take over the
+     * other, and a custom role holding UpdateMember cannot act on members who
+     * can do things it cannot.
+     *
+     * @return SupportCollection<int, string>
+     */
+    public function memberRolesManageableBy(User $user): SupportCollection
+    {
+        $roles = $this->workspaceRoles()
+            ->with('permissions:id,name')
+            ->get();
+
+        $userRole = $roles->firstWhere('name', $user->teamRole($this));
+
+        if ($userRole === null) {
+            return collect();
+        }
+
+        $userPermissions = $userRole->permissions->pluck('name');
+
+        return $roles
+            ->filter(function (WorkspaceRole $role) use ($userRole, $userPermissions): bool {
+                if (! $role->isAssignable()) {
+                    return false;
+                }
+
+                if ($userRole->isOwner()) {
+                    return true;
+                }
+
+                $rolePermissions = $role->permissions->pluck('name');
+
+                return $rolePermissions->diff($userPermissions)->isEmpty()
+                    && $userPermissions->diff($rolePermissions)->isNotEmpty();
+            })
+            ->pluck('name')
             ->values();
     }
 
